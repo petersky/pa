@@ -1,7 +1,7 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-25T16:13:29.020585+00:00",
+  "as_of": "2026-10-25T16:24:29.099894+00:00",
   "completion": "OPEN: all findings retain unverified scope; no whole-PA acceptance.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
@@ -209086,7 +209086,170 @@
       "retested": "Complete reference/serial health equality and all12511cold+6144hot payloads/order verified. Concurrent batched health still exceeds500ms; no global latency acceptance.",
       "resolution": "open",
       "next_actor": "this same systemic session",
-      "next_action": "Consider bounded fetchmany128 source repair with missing-object/duplicate/null/empty/failure/fresh-health/concurrency regressions and mixed acceptance; retain all residuals and do not rerun unchanged probe for green."
+      "next_action": "Consider bounded fetchmany128 source repair with missing-object/duplicate/null/empty/failure/fresh-health/concurrency regressions and mixed acceptance; retain all residuals and do not rerun unchanged probe for green.",
+      "stage_history": [
+        {
+          "as_of": "before_context_sensitive_json_page_diagnostic",
+          "values": {
+            "id": "concern:transcript-health-reference-fetch-amplification",
+            "kind": "concern",
+            "finding": "Fresh transcript health materializes complete cold references through one observed fetch per row",
+            "family": "transcript",
+            "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+            "cause_classification": "source_and_disposable_amplification_confirmed_long_tail_cause_unverified",
+            "measurement": {
+              "artifact": "docs/benchmarks/systemic-health-reference-probe-20261018.json",
+              "sha256": "a92039711c1ab51ccc5666af41861fd6292b819313c7a6bd8131f38c7ac91cc8",
+              "summary": {
+                "references": {
+                  "baseline": {
+                    "wall_ms": {
+                      "samples": 8,
+                      "max": 57.918,
+                      "p50": 53.444,
+                      "p95": 57.918,
+                      "p99": 57.918
+                    },
+                    "cpu_ms": {
+                      "samples": 8,
+                      "max": 54.703,
+                      "p50": 50.344,
+                      "p95": 54.703,
+                      "p99": 54.703
+                    }
+                  },
+                  "batched": {
+                    "wall_ms": {
+                      "samples": 8,
+                      "max": 35.61,
+                      "p50": 31.63,
+                      "p95": 35.61,
+                      "p99": 35.61
+                    },
+                    "cpu_ms": {
+                      "samples": 8,
+                      "max": 32.183,
+                      "p50": 30.414,
+                      "p95": 32.183,
+                      "p99": 32.183
+                    }
+                  }
+                },
+                "health": {
+                  "baseline": {
+                    "wall_ms": {
+                      "samples": 8,
+                      "max": 446.639,
+                      "p50": 406.497,
+                      "p95": 446.639,
+                      "p99": 446.639
+                    },
+                    "cpu_ms": {
+                      "samples": 8,
+                      "max": 416.529,
+                      "p50": 375.396,
+                      "p95": 416.529,
+                      "p99": 416.529
+                    }
+                  },
+                  "batched": {
+                    "wall_ms": {
+                      "samples": 8,
+                      "max": 407.461,
+                      "p50": 360.626,
+                      "p95": 407.461,
+                      "p99": 407.461
+                    },
+                    "cpu_ms": {
+                      "samples": 8,
+                      "max": 399.293,
+                      "p50": 349.738,
+                      "p95": 399.293,
+                      "p99": 399.293
+                    }
+                  }
+                },
+                "concurrent": {
+                  "baseline": {
+                    "wall_ms": {
+                      "samples": 3,
+                      "max": 2836.348,
+                      "p50": 712.24,
+                      "p95": 2836.348,
+                      "p99": 2836.348
+                    },
+                    "cpu_ms": {
+                      "samples": 3,
+                      "max": 499.351,
+                      "p50": 344.587,
+                      "p95": 499.351,
+                      "p99": 499.351
+                    }
+                  },
+                  "batched": {
+                    "wall_ms": {
+                      "samples": 3,
+                      "max": 671.541,
+                      "p50": 534.105,
+                      "p95": 671.541,
+                      "p99": 671.541
+                    },
+                    "cpu_ms": {
+                      "samples": 3,
+                      "max": 506.424,
+                      "p50": 309.242,
+                      "p95": 506.424,
+                      "p99": 506.424
+                    }
+                  }
+                }
+              },
+              "append_ms": {
+                "baseline": {
+                  "samples": 3,
+                  "max": 406.094,
+                  "p50": 306.474,
+                  "p95": 406.094,
+                  "p99": 406.094
+                },
+                "batched": {
+                  "samples": 3,
+                  "max": 287.528,
+                  "p50": 220.438,
+                  "p95": 287.528,
+                  "p99": 287.528
+                }
+              },
+              "worker_warnings": 4
+            },
+            "fix_or_existing_owner": "This systemic session; shared health cost linked to bounded backup scope without changing backup data/recovery ownership or original accepted database-card scope.",
+            "implemented": false,
+            "merged": [],
+            "deployed": "Unimplemented prototype only.",
+            "retested": "Complete reference/serial health equality and all12511cold+6144hot payloads/order verified. Concurrent batched health still exceeds500ms; no global latency acceptance.",
+            "resolution": "open",
+            "next_actor": "this same systemic session",
+            "next_action": "Consider bounded fetchmany128 source repair with missing-object/duplicate/null/empty/failure/fresh-health/concurrency regressions and mixed acceptance; retain all residuals and do not rerun unchanged probe for green.",
+            "stage_history": []
+          }
+        }
+      ],
+      "after575_diagnostic_followup": {
+        "artifact": "docs/benchmarks/systemic-after575-diagnostics-20261025.json",
+        "sha256": "9914e4ea8872c7ad64d09e4f60694d7a6de3e8e01f482d3c0f240d41b4c99682",
+        "raw": "docs/benchmarks/systemic-after575-diagnostics-20261025.raw.json.gz",
+        "raw_sha256": "94dac24888dee94e74775f808d6d59f71e635a3624de77e5521fbbd90c79cc8b",
+        "source_base": "4292415709ae3777dc705b4d974392b1f80b95a9",
+        "findings": 663,
+        "concerns": 130,
+        "runtime_operations": 110,
+        "route_groups": 50,
+        "new_names": 0,
+        "deployed": false,
+        "accepted": false,
+        "hypothesis": "Reference row delivery is expensive in this private mixed context:227.523/243.763mswall with46.692/51.825msCPU. Text-only JSONpage prototype yields29.672/24.208mswall; wholemaintenance1070.901/804.535ms both stillfail500ms. Earlieridle fullhealth under1ms benefit is retained; context changes the hypothesis, not historical results. Successfulnativebusy/GIL/scheduling/physicalIO remain unseparated. Nontext/BLOB/error/cancellation/transactioncleanup and broader concurrentparity remain unverified; queryprototype not implemented.",
+        "next_action": "Prove fullnontext/error/cancellation/snapshot/cleanup compatibility and representative mixed benefit before any source repair; preserve fresh health/nativeintegrity."
+      }
     },
     {
       "id": "concern:pr537-concurrent-base-integration",
@@ -213573,7 +213736,9 @@
       "cause_classification": "confirmed_leaf_cpu_cost_with_mixed_and_deployed_residuals",
       "cause": "All-lowercase64-ASCII-hex validation performs up to800704 Python character iterations for12511 valid references on each fresh health call; compiled fullmatch preserves that exact language in native code. Both fresh health calls and nativequick_check remain distinct and uncached.",
       "implemented": "Compiled ASCII64lowercasehex fullmatch; fresh references/nativeintegrity/case/searchpermissions/symlink/error/fallback/twohealthreads unchanged.",
-      "merged": [],
+      "merged": [
+        "https://github.com/petersky/pa/pull/575"
+      ],
       "deployed": false,
       "retested": "86existing/expandedcontracts and fivealternating12511-object exactsource healthpairs; exactcandidatewheel mixed100/9600ordered/0warningsorfailures/one867.696msmaintenanceviolation.",
       "measurement": {
@@ -213590,7 +213755,51 @@
       },
       "resolution": "open",
       "next_actor": "This same systemic session; PA scheduler owns final independent acceptance.",
-      "next_action": "Ready supervisedPR/exactheadCI/independentgreen/protectedmerge; after currentbbcontinuation settles safely activate exactmergedtarget and retest. Continue every residual; no blanketclosure."
+      "next_action": "Ready supervisedPR/exactheadCI/independentgreen/protectedmerge; after currentbbcontinuation settles safely activate exactmergedtarget and retest. Continue every residual; no blanketclosure.",
+      "stage_history": [
+        {
+          "as_of": "before_pr575_integration",
+          "values": {
+            "id": "concern:transcript-health-digest-validation",
+            "kind": "concern",
+            "finding": "Python character-loop CPU during fresh transcript hash validation",
+            "family": "transcript",
+            "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+            "cause_classification": "confirmed_leaf_cpu_cost_with_mixed_and_deployed_residuals",
+            "cause": "All-lowercase64-ASCII-hex validation performs up to800704 Python character iterations for12511 valid references on each fresh health call; compiled fullmatch preserves that exact language in native code. Both fresh health calls and nativequick_check remain distinct and uncached.",
+            "implemented": "Compiled ASCII64lowercasehex fullmatch; fresh references/nativeintegrity/case/searchpermissions/symlink/error/fallback/twohealthreads unchanged.",
+            "merged": [],
+            "deployed": false,
+            "retested": "86existing/expandedcontracts and fivealternating12511-object exactsource healthpairs; exactcandidatewheel mixed100/9600ordered/0warningsorfailures/one867.696msmaintenanceviolation.",
+            "measurement": {
+              "artifact": "docs/benchmarks/systemic-health-digest-validation-20261025.json",
+              "sha256": "360826b7358fdda79ddba2d4249494e01bb7183806b7aeb3d1b38c3d2d66dfbf",
+              "raw": "docs/benchmarks/systemic-health-digest-validation-20261025.raw.json.gz",
+              "source_base": "d244274ba50a5c057040471403bfbb7dedade9f6",
+              "findings_after": 663,
+              "concerns_after": 130,
+              "tests": 86,
+              "maintenance_ms": 867.696,
+              "deployed": false,
+              "whole_card_accepted": false
+            },
+            "resolution": "open",
+            "next_actor": "This same systemic session; PA scheduler owns final independent acceptance.",
+            "next_action": "Ready supervisedPR/exactheadCI/independentgreen/protectedmerge; after currentbbcontinuation settles safely activate exactmergedtarget and retest. Continue every residual; no blanketclosure.",
+            "stage_history": []
+          }
+        }
+      ],
+      "integration_followup": {
+        "pr": 575,
+        "head": "65683d9877c903b9f6fff768014da73cc3573105",
+        "merge": "4292415709ae3777dc705b4d974392b1f80b95a9",
+        "watch": "cf658b5b-440c-4c1b-bea3-35754fc55481",
+        "head_ci": 40210732138,
+        "main_ci": 40211048052,
+        "head_main_ci": "5firstattemptsuccess each",
+        "source_merge_tree": "0b5b429c05ecf275f5f2d4647184741d594e502b"
+      }
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -308188,5 +308397,19 @@
     "maintenance_ms": 867.696,
     "deployed": false,
     "whole_card_accepted": false
+  },
+  "after575_health_diagnostics_stage": {
+    "artifact": "docs/benchmarks/systemic-after575-diagnostics-20261025.json",
+    "sha256": "9914e4ea8872c7ad64d09e4f60694d7a6de3e8e01f482d3c0f240d41b4c99682",
+    "raw": "docs/benchmarks/systemic-after575-diagnostics-20261025.raw.json.gz",
+    "raw_sha256": "94dac24888dee94e74775f808d6d59f71e635a3624de77e5521fbbd90c79cc8b",
+    "source_base": "4292415709ae3777dc705b4d974392b1f80b95a9",
+    "findings": 663,
+    "concerns": 130,
+    "runtime_operations": 110,
+    "route_groups": 50,
+    "new_names": 0,
+    "deployed": false,
+    "accepted": false
   }
 }

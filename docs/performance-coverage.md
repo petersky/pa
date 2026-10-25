@@ -1,3 +1,36 @@
+# PR575 integration and remaining health delivery diagnostics — 2026-10-25
+
+All **663 findings / 130 concerns stay open**. [Complete followup evidence](benchmarks/systemic-after575-diagnostics-20261025.json) and [lossless full numeric bundle](benchmarks/systemic-after575-diagnostics-20261025.raw.json.gz) retain both new mixed diagnostics, every method timeline/rawsample, and the complete current110operation/50route inventory. No new unrepresented operation/route names were found; name coverage does not establish every branch/provider/deployment.
+
+PR575 exacthead65683d98 merged42924157, equal tree0b5b429c; supervisor stablegreen8observations plus independent5success/no approvalsrequired/reviews/threads/fullpagination/attribution/protection/CLEAN. HeadCI40210732138 andmain40211048052 both five first-attempt successes. PR574 head+main also five successes each. Actual loaded source remains87e/package921c50/PID68901/startupa74e/Interactive4/config86968; neither repair deployed.
+
+New numeric method wrappers locate mixed-context health cost: reference delivery227.523/243.763ms wall versus46.692/51.825ms threadCPU,12511rows each. A **private text-only** JSONpage prototype returns99SQLaggregate rows containing all references,29.672/24.208ms wall; fullmaintenance1070.901ms and804.535ms both violate500ms. Both stages retain9600ordered events/0workerwarnings/failures/timeouts/rejections. These are separate instrumented stages; nested method times must not be added, and modulefilehashes do not imply unwrappedmethods. Earlieridle under1ms fullhealth benefit remains retained. Nativebusy/GIL/scheduling/physicalIO and BLOB/nontext/error/cancellation/snapshotcleanup compatibility remain unresolved; no query repair is implemented or accepted.
+
+The following is every slow-or-failed operation in the owner snapshot2026-10-25T16:19:56.947966Z–16:19:57.052022Z. Counts/processmaxima cover this87eprocess lifetime; percentile windows differ. All110operation/50route numeric records are preserved in the bundle, including bytes and all phase metrics. The5effect-preparation failures have max4.328ms; underlying errors were not inspected and may be normal fencing denials, not a proved latency cause.
+
+| Operation | Submitted / slow / failed / timed out | Process max ms | Window samples / p50 / p95 / p99 / max ms |
+|---|---:|---:|---|
+| `fleet.overview.sync` | 1697/1/0/1 | 1302.002 | 256/6.346/10.426/13.394/61.379 |
+| `fleet.overview_cache_write` | 14673/3/0/0 | 1442.988 | 256/1.971/4.932/46.259/50.366 |
+| `health.canonical_obligation` | 867/1/0/1 | 1012.603 | 256/1.33/10.848/80.093/391.424 |
+| `http.fleet_overview` | 9566/0/1321/1321 | 4164.244 | 256/18.755/51.94/149.815/236.011 |
+| `http.pr_supervisor_peer` | 186/0/11/0 | 5005.141 | 186/35.618/4504.752/5004.5/5005.141 |
+| `progress.sequence_allocate` | 390/1/0/0 | 1328.78 | 256/27.411/55.7/86.313/161.599 |
+| `sqlite.agent_session_save` | 162/2/0/0 | 1628.396 | 162/3.892/21.14/1192.947/1628.396 |
+| `sqlite.pr_supervisor_effect_prepare` | 8/0/5/0 | 4.328 | 8/1.557/4.328/4.328/4.328 |
+| `sync.peer_http` | 63/0/6/0 | 3117.256 | 63/22.171/3006.452/3117.256/3117.256 |
+| `sync.reconcile_head` | 51/2/0/0 | 865.822 | 51/133.35/494.299/865.822/865.822 |
+| `workspace.collect_garbage` | 1/1/0/0 | 1697.723 | 1/1697.723/1697.723/1697.723/1697.723 |
+| `workspace.project_provision` | 7/0/1/0 | 1352.002 | 7/913.404/1352.002/1352.002/1352.002 |
+
+Artifact delivery: the complete214991B bundle hit HTTP413/correlation980f3eb9 while the card already had its allowed ten attachments. Supported receipt is failed/ValueError/effectunknown; no successful new attachment is claimed. All ten originals remain. A proposed local byte split was abandoned without uploading parts because count quota would still apply. No retry/removal/raised quota; exact unchanged bundle is published here through review instead. Originalblob-ingest effects remain unknown.
+
+Currentbb51550b continuation settles only after this turn; no new install/restart while pending. Same session owns allremaining repair/exactactivation/95GET/mixed/coldstartup/transcriptdrain/concurrency/order/CAS/admission/lease/receipt/sync/realprovider/MCP/workspace/peer/logging/retention/GCpublication/savedplan/payload/nativeattribution work. Awake-window request13076 remains pending. NormalPA scheduler owns final17dindependentverification; originalbackupb527/DB89957 accepted scopes stayclosed. No Donefrommerge/install/fastsubset or changes to warnings/timeouts/durability/defaults/permissions/power/clock.
+
+---
+
+Prior stages retain their original as-of status; integration followup above supersedes their old pending states while preserving all evidence.
+
 # Fresh transcript health digest CPU — 2026-10-25
 
 All **663 findings / 130 concerns remain open**; every prior finding and stage is retained. [Complete evidence](benchmarks/systemic-health-digest-validation-20261025.json) and [lossless full raw inputs](benchmarks/systemic-health-digest-validation-20261025.raw.json.gz) include the rejected query prototype, source proofs, each separate mixed stage, every returned operation/route, count/window/maximum/byte value and raw sample.
