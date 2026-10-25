@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-25T22:33:55.404976+00:00",
-  "completion": "OPEN: all 672 findings / 138 concerns. Actual f789c0bb activation/scoped retests proven; maintenance 816.726 ms private / 5213.879 ms natural and all peer/log/full-path criteria remain. Watch matching repair is source only.",
+  "as_of": "2026-10-25T22:53:01.367048+00:00",
+  "completion": "OPEN: all 673 findings / 139 concerns, including every prior 672 finding. PR590 is integrated but first main CI failed; no rollout. New test-only diagnostic evidence preserves all original deadlines. Actual loaded f789c0bb and all maintenance/peer/log/full-path residuals remain.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -215347,6 +215347,30 @@
       "resolution": "open",
       "next_actor": "Same systemic session; normal scheduler owns final independent verification",
       "next_action": "Inspect new exact-head CI and numeric artifact; retain original first failure and obtain causal scheduling/CPU/GC/native evidence on recurrence. Do not infer resolution from a passing subset or rerun blindly."
+    },
+    {
+      "id": "concern:sync-unrelated-surfaces-ci-deadline",
+      "kind": "concern",
+      "finding": "Unrelated HTTP surfaces exceed their unchanged 100 ms deadline during offloaded sync-status read in first PR590 main CI",
+      "family": "validation",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "observed_failure_root_unverified",
+      "cause": "UNVERIFIED: no loop CPU/GC/scheduling observation covers the Linux failed span. Different passing spans do not explain it.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-pr590-unrelated-deadline-followup-20261025.json",
+        "failed_run": 40241198766,
+        "attempt": 1,
+        "job": 121313146518,
+        "observed_ms": 207.3376409999952,
+        "deadline_ms": 100
+      },
+      "implemented": "Existing bounded DeadlineEvidence records the original unrelated-request span, loop thread CPU, retained long GC overlaps and delayed worker intervals. Artifact publication occurs after assertions or on error through the existing CI upload step. No product code changes.",
+      "merged": [],
+      "deployed": "Test-only source follow-up; actual application remains f789c0bb. PR590 application index is integrated but uninstalled.",
+      "retested": "Private isolated and 4175-item full-collection source probes pass; 24 scoped contracts pass. Not Linux CI or historical cause proof.",
+      "resolution": "open",
+      "next_actor": "this same card/session",
+      "next_action": "Retain Linux exact-span artifact on first-attempt protected head/main CI; investigate any observed tail without altering 100 ms/190 ms assertions, worker delay, GC policy or provider defaults. Continue all 672 prior findings and independent acceptance."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -310179,6 +310203,16 @@
       "path": "docs/benchmarks/systemic-exact589-activation-watch-matching-20261025.raw.json.gz",
       "sha256": "f227267b1a590c2803c7cac6878cf156ed3d2215c509f89da506a89082e67f53",
       "bytes": 701102
+    },
+    "all_prior_fields_preserved": true
+  },
+  "pr590_unrelated_deadline_followup_stage": {
+    "artifact": "docs/benchmarks/systemic-pr590-unrelated-deadline-followup-20261025.json",
+    "sha256": "22009293775a7d1b946632ed1d8b72f8bb84ef9f3a99511ff3140e0825b2d5b3",
+    "raw": {
+      "path": "docs/benchmarks/systemic-pr590-unrelated-deadline-followup-20261025.raw.json.gz",
+      "sha256": "ed1f91f565dff9bbae5c25ed8edad6d01a64dc5c827eb9674652a6e1c7bd9d8e",
+      "bytes": 942509
     },
     "all_prior_fields_preserved": true
   }

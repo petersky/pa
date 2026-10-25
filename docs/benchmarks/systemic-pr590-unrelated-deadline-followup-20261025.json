@@ -1,0 +1,267 @@
+{
+  "contract": "pa.pr590-unrelated-deadline-followup/v1",
+  "observed_at": "2026-10-25T22:53:01.367048+00:00",
+  "source_base": "84975be0adfcd2e2f7f404dd7e61c19dd173f2d0",
+  "host": "macbook / 0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+  "pr590_integration": {
+    "watched_head": "59da7bb659ec1648e487edd6fcbed7469237fcba",
+    "watch_id": "2478ab20-eabf-4486-a009-0e6bbcbaeaed",
+    "merge_commit": "84975be0adfcd2e2f7f404dd7e61c19dd173f2d0",
+    "equal_tree": "89b0b8d8d1aefd67e71bf19ef1cbcb6ee58d2bc7",
+    "head_ci": 40240825106,
+    "head_ci_status": "Five first-attempt terminal successes",
+    "main_ci": 40241198766,
+    "main_ci_status": "FAILED first attempt: four jobs success / test (3) failure. No retry. Not eligible for rollout.",
+    "main_failure": {
+      "job": 121313146518,
+      "test": "tests/test_async_responsiveness.py::RequestPathResponsivenessTests::test_slow_sync_disk_read_does_not_stall_unrelated_surfaces",
+      "observed_ms": 207.3376409999952,
+      "deadline_ms": 100,
+      "passed": 1042,
+      "failed": 1,
+      "passing_subtests": 135,
+      "callback_log_seconds": 0.2,
+      "cause": "Unverified; no CPU/GC data for failed span",
+      "report_id": "ae30ef05-cf6b-4373-aded-179ab105eac4",
+      "report_revision": 1,
+      "report_hash": "b5ac353ae4d129b78527b06dfa7388101f4d469cd900346f7d8fa50ead9ddf1d",
+      "retry_issued": false,
+      "log_sha256": "71190956c00aa220416d9cc93f24359d3841ee532740705b751b3c261b55e482"
+    }
+  },
+  "actual_loaded": {
+    "loaded_module_version": "1.5.9",
+    "source_revision": "f789c0bb053ec3435132d519e4d0e93d5350bb6a",
+    "package_identity": "sha256:02e52ae8d31e3e3ff986e8beab8e46887f8204b1fb1c0749647bec0d9c5d9e9a",
+    "pid": 51822,
+    "startup_id": "a6c276ff-5d32-49aa-b9ff-f9f4e292870b"
+  },
+  "prepared_successor": "84975be0 is NOT installed; failed main blocks activation.",
+  "original_failure_cause": "UNVERIFIED: no loop CPU/GC/scheduling observation covers the Linux failed span. Different passing spans do not explain it.",
+  "diagnostic_change": "Existing bounded DeadlineEvidence records the original unrelated-request span, loop thread CPU, retained long GC overlaps and delayed worker intervals. Artifact publication occurs after assertions or on error through the existing CI upload step. No product code changes.",
+  "preserved_semantics": {
+    "original_entire_body_ast_equal_after_removing_only_diagnostics": true,
+    "assertions": 4,
+    "request_deadline_ms": 100,
+    "slow_worker_lower_bound_ms": 190,
+    "worker_delay_seconds": 0.2,
+    "worker_body_ast_equal": true,
+    "gc_policy_unchanged": true
+  },
+  "private_probes": [
+    {
+      "mode": "isolated",
+      "python": "3.14.9 (main, Oct 21 2026, 17:47:42) [Clang 23.1.3 ]",
+      "source_files_verified": 439,
+      "test_sha256": "9800cfbd3d02fb1b1f558a7b499e4b0112f57eb7b948eab327df72f4933a1b14",
+      "collected_total": 1,
+      "reports": [
+        {
+          "when": "setup",
+          "outcome": "passed",
+          "duration_seconds": 0.00024091708473861217
+        },
+        {
+          "when": "call",
+          "outcome": "passed",
+          "duration_seconds": 0.22744637494906783
+        },
+        {
+          "when": "teardown",
+          "outcome": "passed",
+          "duration_seconds": 0.0002490829210728407
+        }
+      ],
+      "evidence": [
+        {
+          "contract": "pa.test-deadline-evidence/v1",
+          "python": "3.14.9",
+          "platform": "Darwin",
+          "source_sha": null,
+          "gc_thresholds": [
+            2000,
+            10,
+            10
+          ],
+          "loop_thread_id": 8276681088,
+          "request_wall_ms": 4.0590830612927675,
+          "request_loop_thread_cpu_ms": 3.5227079999999855,
+          "gc_events_total": 0,
+          "gc_events_retained": 0,
+          "gc_events_dropped": 0,
+          "request_gc_overlaps": [],
+          "worker_calls_started": 1,
+          "worker_calls_total": 1,
+          "worker_calls_incomplete": 0,
+          "worker_events_dropped": 0,
+          "worker_intervals": [
+            {
+              "wall_ms": 210.03812504932284,
+              "thread_cpu_ms": 0.039041000000000006,
+              "thread_id": 6170161152,
+              "start_relative_ms": -4.247791948728263,
+              "end_relative_ms": 205.79033310059458
+            }
+          ],
+          "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+        }
+      ],
+      "original_method_restored_ast_equal": true,
+      "worker_body_ast_equal": true,
+      "gc_policy_unchanged": true,
+      "gc_callbacks_restored": true
+    },
+    {
+      "mode": "full-collection",
+      "python": "3.14.9 (main, Oct 21 2026, 17:47:42) [Clang 23.1.3 ]",
+      "source_files_verified": 439,
+      "test_sha256": "9800cfbd3d02fb1b1f558a7b499e4b0112f57eb7b948eab327df72f4933a1b14",
+      "collected_total": 4175,
+      "reports": [
+        {
+          "when": "setup",
+          "outcome": "passed",
+          "duration_seconds": 0.00024087505880743265
+        },
+        {
+          "when": "call",
+          "outcome": "passed",
+          "duration_seconds": 0.22916612506378442
+        },
+        {
+          "when": "teardown",
+          "outcome": "passed",
+          "duration_seconds": 0.000346834072843194
+        }
+      ],
+      "evidence": [
+        {
+          "contract": "pa.test-deadline-evidence/v1",
+          "python": "3.14.9",
+          "platform": "Darwin",
+          "source_sha": null,
+          "gc_thresholds": [
+            2000,
+            10,
+            10
+          ],
+          "loop_thread_id": 8276681088,
+          "request_wall_ms": 4.085832973942161,
+          "request_loop_thread_cpu_ms": 3.5576250000000087,
+          "gc_events_total": 0,
+          "gc_events_retained": 0,
+          "gc_events_dropped": 0,
+          "request_gc_overlaps": [],
+          "worker_calls_started": 1,
+          "worker_calls_total": 1,
+          "worker_calls_incomplete": 0,
+          "worker_events_dropped": 0,
+          "worker_intervals": [
+            {
+              "wall_ms": 210.03829198889434,
+              "thread_cpu_ms": 0.03225,
+              "thread_id": 6166835200,
+              "start_relative_ms": -4.298583953641355,
+              "end_relative_ms": 205.739708035253
+            }
+          ],
+          "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+        }
+      ],
+      "original_method_restored_ast_equal": true,
+      "worker_body_ast_equal": true,
+      "gc_policy_unchanged": true,
+      "gc_callbacks_restored": true
+    }
+  ],
+  "scoped_contracts": {
+    "passed": 24,
+    "failed": 0,
+    "source_files_verified": 439,
+    "scope": "Serial private source contracts on macOS Python 3.14.9. Fixture observer tests deliberately collect GC only inside their own private contract, as before. No service/provider/network load, CI retry, deadline or GC policy change."
+  },
+  "observer_cost": "New samples include diagnostic clocks/callback/wrapper cost. Existing helper cost was previously measured separately; no new observer speedup or zero-cost claim. GC minimum 1 ms, capacity 32; total/retained/dropped and incomplete worker counts remain.",
+  "handoff_settlement": {
+    "identity": {
+      "version": 1,
+      "owner": "restart",
+      "realm_id": "default",
+      "idempotency_key": "systemic-exactf789c0bb-lifecycle-watch-managed-restart-20261025-v1",
+      "operation": "agent_restart_handoff",
+      "request_fingerprint": null
+    },
+    "status": "continuation_delivered",
+    "accepted": true,
+    "committed": true,
+    "projected": null,
+    "effect": "complete",
+    "phase": "succeeded",
+    "phase_version": 6,
+    "attempt": 1,
+    "reason_code": "continuation_delivered",
+    "next_action": null,
+    "effect_state": "confirmed",
+    "worker_state": "absent",
+    "domain_stage": "continuation_delivered",
+    "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+    "handoff_id": "36c5e7c8-5717-5cf6-92f1-80713ceb34b6",
+    "continuation_prompt_id": "restart-handoff:36c5e7c8-5717-5cf6-92f1-80713ceb34b6",
+    "idempotency_key": "systemic-exactf789c0bb-lifecycle-watch-managed-restart-20261025-v1",
+    "owner": "restart",
+    "realm_id": "default",
+    "operation": "agent_restart_handoff",
+    "durable": true,
+    "recovery_state": "continuation_delivered",
+    "recovery_action": null,
+    "result": {
+      "handoff_id": "36c5e7c8-5717-5cf6-92f1-80713ceb34b6",
+      "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+      "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "project_id": "fdc04d91-1222-447b-859c-38e67bcab6eb",
+      "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+      "status": "continuation_delivered",
+      "failure_stage": null,
+      "error": null,
+      "attempts": 1,
+      "created_at": "2026-10-25T22:27:39.639434+00:00",
+      "updated_at": "2026-10-25T22:47:41.038012+00:00",
+      "delivered_at": "2026-10-25T22:47:41.038012+00:00"
+    }
+  },
+  "backup": {
+    "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "backup_count": 9,
+    "verified_backup_count": 8,
+    "limited_backup_count": 1,
+    "backup_state": "limited",
+    "automatic_backups_paused": false,
+    "next_scheduled_run": "2026-10-26T03:31:38.189124Z",
+    "consecutive_failures": 0,
+    "active_runs": [],
+    "active_restores": [],
+    "historical_missing_object_count": 1,
+    "historical_missing_decoded_bytes": 2842
+  },
+  "residuals": [
+    "Private mixed maintenance 816.726 ms and natural maintenance 5213.879 ms still violate 500 ms. Inclusive phase/CPU/SQL counters remain; native successful busy/holder/GIL/scheduling/GC/physical disk attribution unseparated. No check/compaction/deadline change.",
+    "New failed 100 ms unrelated-surface test needs bounded exact-source attribution without blind CI retry or historic cause inference. Different passing deadline artifacts remain separate.",
+    "Every prior foreground/background, full Kernel/real provider/MCP/placement/workspace/queue/admission/lease/receipt/order/CAS/sync/acceptance, startup/drain/concurrency, native wait/CPU/disk/fsync/query/fetch/serialization/payload/call/write-amplification requirement remains open.",
+    "Macmini status 500/current build/log gaps, older Monica/Alex builds, every peer latency/log/retention/FD gap and cumulative dropped-log/status counters remain open. No peer update or credential fallback.",
+    "Accepted original backup/DB scopes stay accepted; ten attachments and old 555/0b79/f403/d448/HTTP413 unknown effects retain original identities, passive recovery only, no replay/rearm/replacement."
+  ],
+  "acceptance": {
+    "findings": 673,
+    "concerns": 139,
+    "original_672_findings_preserved": true,
+    "all_resolution": "open",
+    "accepted": false,
+    "lane": "active",
+    "requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57"
+  },
+  "scope": "Complete prior source-integration bundle and separate 105/49 and 108/49 runtime populations are retained losslessly. New private source probes on macOS Python 3.14.9 are not Linux CI or installed-package equivalence. The original Linux 207.338 ms failure has no CPU/GC evidence for that span and remains unclassified. No CI retry, deadline/GC/configuration/default change, production load, installation or restart. Raw logs, full prompts and native backup history remain local/hash-only. No populations pooled or prior artifacts rewritten.",
+  "raw": {
+    "path": "docs/benchmarks/systemic-pr590-unrelated-deadline-followup-20261025.raw.json.gz",
+    "sha256": "ed1f91f565dff9bbae5c25ed8edad6d01a64dc5c827eb9674652a6e1c7bd9d8e",
+    "bytes": 942509
+  }
+}
