@@ -1,7 +1,7 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-25T16:48:39.158738+00:00",
+  "as_of": "2026-10-25T17:07:50.720654+00:00",
   "completion": "OPEN: all findings retain unverified scope; no whole-PA acceptance.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
@@ -209080,13 +209080,13 @@
         "worker_warnings": 4
       },
       "fix_or_existing_owner": "This systemic session; shared health cost linked to bounded backup scope without changing backup data/recovery ownership or original accepted database-card scope.",
-      "implemented": false,
+      "implemented": "Source boundedJSONpages with pinnedsnapshot/nativefallback/aggregateaccounting; reviewpending.",
       "merged": [],
-      "deployed": "Unimplemented prototype only.",
-      "retested": "Complete reference/serial health equality and all12511cold+6144hot payloads/order verified. Concurrent batched health still exceeds500ms; no global latency acceptance.",
+      "deployed": false,
+      "retested": "105contracts,8standalonechecks,5idlewholehealthpairs and finalmixed100/9600ordered. Idlemedian26.166->26.984ms; maintenance883.442ms stillfails.",
       "resolution": "open",
       "next_actor": "this same systemic session",
-      "next_action": "Consider bounded fetchmany128 source repair with missing-object/duplicate/null/empty/failure/fresh-health/concurrency regressions and mixed acceptance; retain all residuals and do not rerun unchanged probe for green.",
+      "next_action": "Integrate only exactstablegreen supervisedhead; activation requires settlingoldnativehandoff, exactfrozenattestation and representative retest. Continue residualattribution.",
       "stage_history": [
         {
           "as_of": "before_context_sensitive_json_page_diagnostic",
@@ -209232,6 +209232,313 @@
             "next_action": "Consider bounded fetchmany128 source repair with missing-object/duplicate/null/empty/failure/fresh-health/concurrency regressions and mixed acceptance; retain all residuals and do not rerun unchanged probe for green.",
             "stage_history": []
           }
+        },
+        {
+          "as_of": "before_snapshot_json_reference_source",
+          "values": {
+            "id": "concern:transcript-health-reference-fetch-amplification",
+            "kind": "concern",
+            "finding": "Fresh transcript health materializes complete cold references through one observed fetch per row",
+            "family": "transcript",
+            "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+            "cause_classification": "source_and_disposable_amplification_confirmed_long_tail_cause_unverified",
+            "measurement": {
+              "artifact": "docs/benchmarks/systemic-health-reference-probe-20261018.json",
+              "sha256": "a92039711c1ab51ccc5666af41861fd6292b819313c7a6bd8131f38c7ac91cc8",
+              "summary": {
+                "references": {
+                  "baseline": {
+                    "wall_ms": {
+                      "samples": 8,
+                      "max": 57.918,
+                      "p50": 53.444,
+                      "p95": 57.918,
+                      "p99": 57.918
+                    },
+                    "cpu_ms": {
+                      "samples": 8,
+                      "max": 54.703,
+                      "p50": 50.344,
+                      "p95": 54.703,
+                      "p99": 54.703
+                    }
+                  },
+                  "batched": {
+                    "wall_ms": {
+                      "samples": 8,
+                      "max": 35.61,
+                      "p50": 31.63,
+                      "p95": 35.61,
+                      "p99": 35.61
+                    },
+                    "cpu_ms": {
+                      "samples": 8,
+                      "max": 32.183,
+                      "p50": 30.414,
+                      "p95": 32.183,
+                      "p99": 32.183
+                    }
+                  }
+                },
+                "health": {
+                  "baseline": {
+                    "wall_ms": {
+                      "samples": 8,
+                      "max": 446.639,
+                      "p50": 406.497,
+                      "p95": 446.639,
+                      "p99": 446.639
+                    },
+                    "cpu_ms": {
+                      "samples": 8,
+                      "max": 416.529,
+                      "p50": 375.396,
+                      "p95": 416.529,
+                      "p99": 416.529
+                    }
+                  },
+                  "batched": {
+                    "wall_ms": {
+                      "samples": 8,
+                      "max": 407.461,
+                      "p50": 360.626,
+                      "p95": 407.461,
+                      "p99": 407.461
+                    },
+                    "cpu_ms": {
+                      "samples": 8,
+                      "max": 399.293,
+                      "p50": 349.738,
+                      "p95": 399.293,
+                      "p99": 399.293
+                    }
+                  }
+                },
+                "concurrent": {
+                  "baseline": {
+                    "wall_ms": {
+                      "samples": 3,
+                      "max": 2836.348,
+                      "p50": 712.24,
+                      "p95": 2836.348,
+                      "p99": 2836.348
+                    },
+                    "cpu_ms": {
+                      "samples": 3,
+                      "max": 499.351,
+                      "p50": 344.587,
+                      "p95": 499.351,
+                      "p99": 499.351
+                    }
+                  },
+                  "batched": {
+                    "wall_ms": {
+                      "samples": 3,
+                      "max": 671.541,
+                      "p50": 534.105,
+                      "p95": 671.541,
+                      "p99": 671.541
+                    },
+                    "cpu_ms": {
+                      "samples": 3,
+                      "max": 506.424,
+                      "p50": 309.242,
+                      "p95": 506.424,
+                      "p99": 506.424
+                    }
+                  }
+                }
+              },
+              "append_ms": {
+                "baseline": {
+                  "samples": 3,
+                  "max": 406.094,
+                  "p50": 306.474,
+                  "p95": 406.094,
+                  "p99": 406.094
+                },
+                "batched": {
+                  "samples": 3,
+                  "max": 287.528,
+                  "p50": 220.438,
+                  "p95": 287.528,
+                  "p99": 287.528
+                }
+              },
+              "worker_warnings": 4
+            },
+            "fix_or_existing_owner": "This systemic session; shared health cost linked to bounded backup scope without changing backup data/recovery ownership or original accepted database-card scope.",
+            "implemented": false,
+            "merged": [],
+            "deployed": "Unimplemented prototype only.",
+            "retested": "Complete reference/serial health equality and all12511cold+6144hot payloads/order verified. Concurrent batched health still exceeds500ms; no global latency acceptance.",
+            "resolution": "open",
+            "next_actor": "this same systemic session",
+            "next_action": "Consider bounded fetchmany128 source repair with missing-object/duplicate/null/empty/failure/fresh-health/concurrency regressions and mixed acceptance; retain all residuals and do not rerun unchanged probe for green.",
+            "stage_history": [
+              {
+                "as_of": "before_context_sensitive_json_page_diagnostic",
+                "values": {
+                  "id": "concern:transcript-health-reference-fetch-amplification",
+                  "kind": "concern",
+                  "finding": "Fresh transcript health materializes complete cold references through one observed fetch per row",
+                  "family": "transcript",
+                  "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+                  "cause_classification": "source_and_disposable_amplification_confirmed_long_tail_cause_unverified",
+                  "measurement": {
+                    "artifact": "docs/benchmarks/systemic-health-reference-probe-20261018.json",
+                    "sha256": "a92039711c1ab51ccc5666af41861fd6292b819313c7a6bd8131f38c7ac91cc8",
+                    "summary": {
+                      "references": {
+                        "baseline": {
+                          "wall_ms": {
+                            "samples": 8,
+                            "max": 57.918,
+                            "p50": 53.444,
+                            "p95": 57.918,
+                            "p99": 57.918
+                          },
+                          "cpu_ms": {
+                            "samples": 8,
+                            "max": 54.703,
+                            "p50": 50.344,
+                            "p95": 54.703,
+                            "p99": 54.703
+                          }
+                        },
+                        "batched": {
+                          "wall_ms": {
+                            "samples": 8,
+                            "max": 35.61,
+                            "p50": 31.63,
+                            "p95": 35.61,
+                            "p99": 35.61
+                          },
+                          "cpu_ms": {
+                            "samples": 8,
+                            "max": 32.183,
+                            "p50": 30.414,
+                            "p95": 32.183,
+                            "p99": 32.183
+                          }
+                        }
+                      },
+                      "health": {
+                        "baseline": {
+                          "wall_ms": {
+                            "samples": 8,
+                            "max": 446.639,
+                            "p50": 406.497,
+                            "p95": 446.639,
+                            "p99": 446.639
+                          },
+                          "cpu_ms": {
+                            "samples": 8,
+                            "max": 416.529,
+                            "p50": 375.396,
+                            "p95": 416.529,
+                            "p99": 416.529
+                          }
+                        },
+                        "batched": {
+                          "wall_ms": {
+                            "samples": 8,
+                            "max": 407.461,
+                            "p50": 360.626,
+                            "p95": 407.461,
+                            "p99": 407.461
+                          },
+                          "cpu_ms": {
+                            "samples": 8,
+                            "max": 399.293,
+                            "p50": 349.738,
+                            "p95": 399.293,
+                            "p99": 399.293
+                          }
+                        }
+                      },
+                      "concurrent": {
+                        "baseline": {
+                          "wall_ms": {
+                            "samples": 3,
+                            "max": 2836.348,
+                            "p50": 712.24,
+                            "p95": 2836.348,
+                            "p99": 2836.348
+                          },
+                          "cpu_ms": {
+                            "samples": 3,
+                            "max": 499.351,
+                            "p50": 344.587,
+                            "p95": 499.351,
+                            "p99": 499.351
+                          }
+                        },
+                        "batched": {
+                          "wall_ms": {
+                            "samples": 3,
+                            "max": 671.541,
+                            "p50": 534.105,
+                            "p95": 671.541,
+                            "p99": 671.541
+                          },
+                          "cpu_ms": {
+                            "samples": 3,
+                            "max": 506.424,
+                            "p50": 309.242,
+                            "p95": 506.424,
+                            "p99": 506.424
+                          }
+                        }
+                      }
+                    },
+                    "append_ms": {
+                      "baseline": {
+                        "samples": 3,
+                        "max": 406.094,
+                        "p50": 306.474,
+                        "p95": 406.094,
+                        "p99": 406.094
+                      },
+                      "batched": {
+                        "samples": 3,
+                        "max": 287.528,
+                        "p50": 220.438,
+                        "p95": 287.528,
+                        "p99": 287.528
+                      }
+                    },
+                    "worker_warnings": 4
+                  },
+                  "fix_or_existing_owner": "This systemic session; shared health cost linked to bounded backup scope without changing backup data/recovery ownership or original accepted database-card scope.",
+                  "implemented": false,
+                  "merged": [],
+                  "deployed": "Unimplemented prototype only.",
+                  "retested": "Complete reference/serial health equality and all12511cold+6144hot payloads/order verified. Concurrent batched health still exceeds500ms; no global latency acceptance.",
+                  "resolution": "open",
+                  "next_actor": "this same systemic session",
+                  "next_action": "Consider bounded fetchmany128 source repair with missing-object/duplicate/null/empty/failure/fresh-health/concurrency regressions and mixed acceptance; retain all residuals and do not rerun unchanged probe for green.",
+                  "stage_history": []
+                }
+              }
+            ],
+            "after575_diagnostic_followup": {
+              "artifact": "docs/benchmarks/systemic-after575-diagnostics-20261025.json",
+              "sha256": "9914e4ea8872c7ad64d09e4f60694d7a6de3e8e01f482d3c0f240d41b4c99682",
+              "raw": "docs/benchmarks/systemic-after575-diagnostics-20261025.raw.json.gz",
+              "raw_sha256": "94dac24888dee94e74775f808d6d59f71e635a3624de77e5521fbbd90c79cc8b",
+              "source_base": "4292415709ae3777dc705b4d974392b1f80b95a9",
+              "findings": 663,
+              "concerns": 130,
+              "runtime_operations": 110,
+              "route_groups": 50,
+              "new_names": 0,
+              "deployed": false,
+              "accepted": false,
+              "hypothesis": "Reference row delivery is expensive in this private mixed context:227.523/243.763mswall with46.692/51.825msCPU. Text-only JSONpage prototype yields29.672/24.208mswall; wholemaintenance1070.901/804.535ms both stillfail500ms. Earlieridle fullhealth under1ms benefit is retained; context changes the hypothesis, not historical results. Successfulnativebusy/GIL/scheduling/physicalIO remain unseparated. Nontext/BLOB/error/cancellation/transactioncleanup and broader concurrentparity remain unverified; queryprototype not implemented.",
+              "next_action": "Prove fullnontext/error/cancellation/snapshot/cleanup compatibility and representative mixed benefit before any source repair; preserve fresh health/nativeintegrity."
+            }
+          }
         }
       ],
       "after575_diagnostic_followup": {
@@ -209249,6 +209556,15 @@
         "accepted": false,
         "hypothesis": "Reference row delivery is expensive in this private mixed context:227.523/243.763mswall with46.692/51.825msCPU. Text-only JSONpage prototype yields29.672/24.208mswall; wholemaintenance1070.901/804.535ms both stillfail500ms. Earlieridle fullhealth under1ms benefit is retained; context changes the hypothesis, not historical results. Successfulnativebusy/GIL/scheduling/physicalIO remain unseparated. Nontext/BLOB/error/cancellation/transactioncleanup and broader concurrentparity remain unverified; queryprototype not implemented.",
         "next_action": "Prove fullnontext/error/cancellation/snapshot/cleanup compatibility and representative mixed benefit before any source repair; preserve fresh health/nativeintegrity."
+      },
+      "source_reference_page_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-pages-20261025.json",
+        "sha256": "d728fc6b53fe59b3fa2a874f18bfa87d6747c8525def2369c663fb4c21614ca1",
+        "raw": "docs/benchmarks/systemic-reference-pages-20261025.raw.json.gz",
+        "raw_sha256": "9db0209c3e27d415277fbadef4a074d7a2f740520f1351b93df47ce4fee50ad0",
+        "as_of": "2026-10-25T17:07:50.720654+00:00",
+        "deployed": false,
+        "accepted": false
       }
     },
     {
@@ -213958,6 +214274,43 @@
         "actual_loaded": true,
         "accepted": false
       }
+    },
+    {
+      "id": "concern:ci577-history-recovery-request-count",
+      "kind": "concern",
+      "finding": "Recent history recovery exceeds request count bound during CI browser journey",
+      "family": "agent-history",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "observed_ci_failure_cause_unverified",
+      "measurement": {
+        "run": 40213642311,
+        "attempt": 1,
+        "job": 121230001103,
+        "test": "test_recent_reentry_failed_history_live_preview_anchors_and_thread_isolation",
+        "observed_history_requests": 3,
+        "baseline_requests": 1,
+        "allowed_extra_requests": 1,
+        "warnings_ms": {
+          "sqlite.transcript_read": [
+            551.8,
+            575.7
+          ],
+          "sqlite.transcript_append": [
+            900.2
+          ]
+        },
+        "log_sha256": "d9e81bd98fd8d03f00f0419169f8e01899ba5cd7eefb6c8f270493770db75379",
+        "report": "42669023-065b-4e68-8acc-68168f6b2568",
+        "status": "Original failure retained. Isolated unchanged1pass10.29s and one sameheadfailedshardretry succeeded; rootcause unresolved."
+      },
+      "implemented": false,
+      "merged": [],
+      "deployed": "Unverified; docsPR applicationbytes unchanged.",
+      "retested": "Isolated unchanged1pass10.29s; one sameheadfailedshardretry passes; originalfailure not resolved.",
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Prove request/timer ordering with deterministic privatefixture controls before product/test repair; retain allassertions/deadlines.",
+      "report": "42669023-065b-4e68-8acc-68168f6b2568"
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -308579,6 +308932,15 @@
     "source": "7460b4d51f46d338c56d665599053cedaff07fcb",
     "package": "sha256:a4d2a3751d3ff48572c9f05261b912c0942ee06248f0322014a8c07ac60b676f",
     "actual_loaded": true,
+    "accepted": false
+  },
+  "reference_snapshot_pages_source_stage": {
+    "artifact": "docs/benchmarks/systemic-reference-pages-20261025.json",
+    "sha256": "d728fc6b53fe59b3fa2a874f18bfa87d6747c8525def2369c663fb4c21614ca1",
+    "raw": "docs/benchmarks/systemic-reference-pages-20261025.raw.json.gz",
+    "raw_sha256": "9db0209c3e27d415277fbadef4a074d7a2f740520f1351b93df47ce4fee50ad0",
+    "as_of": "2026-10-25T17:07:50.720654+00:00",
+    "deployed": false,
     "accepted": false
   }
 }

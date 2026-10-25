@@ -1,3 +1,21 @@
+# Snapshot-preserving reference pages — 2026-10-25
+
+All **664 findings /131 concerns remain open**. [Complete source evidence](benchmarks/systemic-reference-pages-20261025.json) and [lossless raw inputs](benchmarks/systemic-reference-pages-20261025.raw.json.gz) retain every earlier stage, including failures and slower idle results. This source repair is not deployed.
+
+Fresh health now reads distinct text references in pages of128 JSON values within one SQLite read snapshot. Non-text values and pages exceeding SQLite's string limit fall back to native rows in that same snapshot. Native errors and cancellation cannot return a partial set. Numeric observations retain all12511aggregate items/838337bytes per diagnostic health read alongside99returned rows/202observed calls. Both fresh maintenance checks and native integrity/filesystem diagnostics remain.
+
+105storage/health/GC/maintenance/backup contracts pass, including concurrent insert/delete snapshot parity, BLOB/numeric/text/error/cancellation/interrupt behavior. The aggregate-size counterexample failed before correction and now passes. Private boot smoke builds550routes in1001.524ms; source+wheel build succeeds. These are validation checks, not realprovider/fullstartup acceptance.
+
+Five final alternating idle whole-health pairs are slightly slower: median26.166→26.984ms, max26.471→27.621ms; all cold bytes and complete health values match. In a separate instrumented private mixed prototype, two reference reads take28.504/28.153ms wall and9.347/9.914ms CPU. Earlier227.523/243.763ms reference diagnostics remain in prior artifacts; no pooled or statistical whole-path speedup is claimed. Distinct100iteration stages retain9600ordered events/0workerwarnings/failures/timeouts/rejections, but maintenance still fails500ms: installed baseline998.796ms, compatibleprototype780.227ms, initialsource876.778ms, finalsource883.442ms. Successfulnativebusy/GIL/scheduling/disk attribution remains open.
+
+PR577 merged exact8c9ff336 ase4c62a33, equal tree1486b268, after supervisorstablegreen17 and independent5terminalsuccess/noapprovalsrequired/reviews/threads/fullpagination/attribution/protection/CLEAN. MainCI40214443468 passes5checks firstattempt. HeadCI40213642311 originally failed a browser recovery bound (3requests vs1+1), with transcript reads551.8/575.7ms and append900.2ms; the unchanged isolated journey passes and exactlyonefailedshardretry passes. That original failure is retained as a new open concern, not erased or attributed to source changes.
+
+Actual installed source remains7460/packagea4d2/PID88315/startup591ffd90/Interactive4/config86968. The existing0f633native continuation remains queued; no new install/restart is authorized from this source stage alone. Same session owns all remaining663prior findings plus the CI concern, all original inventory/provider/peer/logging/retention/receipt/GC/admission/durability requirements, and exact activation/retest after review. Normal PA scheduler owns final17dindependentverification. Originalbackupb527/DB89957 accepted scopes remain closed.
+
+---
+
+Prior stages retain their original as-of state and evidence.
+
 # Exact7460 activation and awake-window retest — 2026-10-25
 
 **All663findings/130concerns remain open.** [Complete retest](benchmarks/systemic-loaded7460-awake-20261025.json) and [lossless numeric inputs](benchmarks/systemic-loaded7460-awake-20261025.raw.json.gz) preserve installation, actual loaded identity, every sample and full runtime counters/windows/bytes. The correlated operator response was applied only to its originating acceptance window; no private response value is published.

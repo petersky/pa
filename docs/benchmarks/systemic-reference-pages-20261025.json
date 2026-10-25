@@ -1,0 +1,143 @@
+{
+  "contract": "pa.reference-pages-source-repair/v1",
+  "as_of": "2026-10-25T17:07:50.720654+00:00",
+  "source_base": "e4c62a33b21602858239d56ddb0a1aa70bc2fcd1",
+  "source_file_sha256": "a2b2071b221babf10639c1a0e4fc5ac1d688cbfd0098bafee815424d90ae6cca",
+  "repair": "Read complete distinct text references in128item JSON pages within one fresh read snapshot. Native row fallback preserves nontext values and aggregate-size limits. Native errors/cancellation never return partial references. Complete aggregate items/bytes remain observable.",
+  "raw": {
+    "path": "docs/benchmarks/systemic-reference-pages-20261025.raw.json.gz",
+    "sha256": "9db0209c3e27d415277fbadef4a074d7a2f740520f1351b93df47ce4fee50ad0",
+    "bytes": 259729,
+    "scope": "All compatibility proofs, intermediate and final source/prototype mixed rawlatencies/bytes/counters/phases, alternating micro samples, final105contract output, size-limit regression failure, and exactPR577 integration facts. No stage pooling or dropped outliers."
+  },
+  "compatibility": {
+    "standalone_checks": {
+      "text_empty_nul_unicode_quotes_duplicates_batch_boundaries": 521,
+      "blob_and_numeric_affinity_native_fallback": true,
+      "one_snapshot_across_concurrent_insert_and_delete": true,
+      "outer_transaction_ownership_preserved": true,
+      "baseexception_no_partial_result_and_reader_cleanup": true,
+      "native_interrupt_original_error_and_cleanup": true,
+      "malformed_utf8_preserves_native_failure": true,
+      "missing_table_error_and_cleanup": true
+    },
+    "final_storage_contracts": 105,
+    "native_size_limit": "New counterexample failed beforefallback correction and passesafter. Individual64byte references fit1024byte limit; aggregatepage exceeds it; fallback reads originalsnapshot.",
+    "preserved": "Both fresh maintenance health reads, nativequick_check, eventderived references, missing-object/error/case/searchpermission/symlink behavior, coldbytes/order/publicationguards, durability/CAS/admission/lease/receipt/sync semantics. No warning or deadline changes."
+  },
+  "idle_micro": {
+    "pairs": 5,
+    "summary": {
+      "baseline": {
+        "wall_ms": {
+          "samples": 5,
+          "max": 26.471,
+          "p50": 26.166,
+          "p95": 26.471,
+          "p99": 26.471
+        },
+        "thread_cpu_ms": {
+          "samples": 5,
+          "max": 26.472,
+          "p50": 26.167,
+          "p95": 26.472,
+          "p99": 26.472
+        }
+      },
+      "candidate": {
+        "wall_ms": {
+          "samples": 5,
+          "max": 27.621,
+          "p50": 26.984,
+          "p95": 27.621,
+          "p99": 27.621
+        },
+        "thread_cpu_ms": {
+          "samples": 5,
+          "max": 27.621,
+          "p50": 26.987,
+          "p95": 27.621,
+          "p99": 27.621
+        }
+      }
+    },
+    "all_file_bytes_unchanged": true,
+    "interpretation": "Final idle wholehealthmedian26.166->26.984ms/max26.471->27.621ms. No idle benefit; this small regression is retained. Earlier idle stage26.547->26.873ms also retained."
+  },
+  "mixed_stages": {
+    "installed7460_baseline_ms": 998.796,
+    "compatible_inmemory_prototype_ms": 780.227,
+    "initial_source_before_sizefallback_ms": 876.778,
+    "final_source_ms": 883.442,
+    "final_source_warnings": {},
+    "final_source_threshold_violations": {
+      "maintenance.run": 1
+    },
+    "retained": 9600,
+    "scope": "Distinct private100iteration runs, not a paired statistical wholepathspeedup or deployed acceptance. All retained ordered events/content/sync checks pass; every stage still fails500msmaintenance."
+  },
+  "reference_method_diagnostic": {
+    "wall_ms": [
+      28.504417,
+      28.152708
+    ],
+    "thread_cpu_ms": [
+      9.34675,
+      9.913542
+    ],
+    "rows_per_health": 99,
+    "aggregate_items_per_health": 12511,
+    "aggregate_bytes_per_health": 838337,
+    "observed_calls_per_health": 202,
+    "scope": "Two measured calls in compatibleprototype under mixedload; original archived diagnostic227.523/243.763ms retained separately. Nativewait/GIL/scheduling/disk not fully separated; modulefilehash does not imply unwrapped diagnostic methods."
+  },
+  "boot": {
+    "private_smoke_ms": 1001.523917,
+    "routes": 550,
+    "scope": "Kernel.boot().build_app only; no lifecycle/realprovider/network acceptance."
+  },
+  "build": "uvbuild source+wheel succeeded; no install/restart",
+  "pr577_integration": {
+    "head": "8c9ff336c80142321cd7605df3428232eb920be3",
+    "merge": "e4c62a33b21602858239d56ddb0a1aa70bc2fcd1",
+    "watch": "4b9eff9b-325d-4514-9283-48017edf300f",
+    "supervisor_stable_observations": 17,
+    "independent": "5success/noapprovalsrequired/reviews/threads/fullpagination/attribution/protection/CLEAN",
+    "equal_tree": "1486b2681a132536d81a5d48cc84f94a1737f043",
+    "head_ci": 40213642311,
+    "head_ci_attempts": "Attempt1browserfailure retained; exactlyonefailedshardretry passes. Not firstattemptallgreen.",
+    "main_ci": 40214443468,
+    "main_ci_status": "All5firstattemptsuccess independently read; application source remains7460installed."
+  },
+  "ci_recovery_concern": {
+    "run": 40213642311,
+    "attempt": 1,
+    "job": 121230001103,
+    "test": "test_recent_reentry_failed_history_live_preview_anchors_and_thread_isolation",
+    "observed_history_requests": 3,
+    "baseline_requests": 1,
+    "allowed_extra_requests": 1,
+    "warnings_ms": {
+      "sqlite.transcript_read": [
+        551.8,
+        575.7
+      ],
+      "sqlite.transcript_append": [
+        900.2
+      ]
+    },
+    "log_sha256": "d9e81bd98fd8d03f00f0419169f8e01899ba5cd7eefb6c8f270493770db75379",
+    "report": "42669023-065b-4e68-8acc-68168f6b2568",
+    "status": "Original failure retained. Isolated unchanged1pass10.29s and one sameheadfailedshardretry succeeded; rootcause unresolved."
+  },
+  "deployment": "New reference source NOT installed/activated; actualruntime remains7460/packagea4d2/PID88315/startup591ffd90/Interactive4/config86968 atlastsupportedread. No newrestart while existing0f633continuationqueued.",
+  "acceptance": {
+    "revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+    "policy": "independent_agent_v1",
+    "accepted": false,
+    "findings_open": 664,
+    "concerns_open": 131,
+    "scheduler_owns_final_verifier": true,
+    "remaining": "Maintenance883.442ms, all six runtime slow/failed families, realprovider/MCP/placement/workspace/queue/order/concurrency/admission/lease/receipt/CAS/sync/acceptance, nativebusy/GIL/CPU/disk/fsync/GC/query/serialization/callamp/payload, peerbuild/log/retention/logloss/GCpublication/savedplan/draft/unknowneffects. Originalbackupb527/DB89957 acceptedscopes stayclosed; no productionGCdeletion/faults or directstoremutation."
+  }
+}
