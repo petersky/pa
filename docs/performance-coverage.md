@@ -1,3 +1,17 @@
+# Migration cursor seek; maintenance acceptance remains open
+
+The ledger now retains **665 open findings and 132 concerns**, including every prior row unchanged. [Complete source evidence](benchmarks/systemic-legacy-cursor-seek-20261025.json) preserves all samples, counts, bytes, phases, warnings and failures in its adjacent lossless raw bundle.
+
+The legacy migration cursor used an `OR` predicate that scanned earlier sessions through the composite index. A tuple lower bound seeks the same `(session_id, seq)` index. In a synthetic 100,000-row fixture, sampled SQLite work falls from at least 554,000 to 8,000 instructions for the same 500 ordered rows. Eleven cursor cases preserve results, including boundaries, Unicode, null and malformed cursor values. Five alternating query pairs have median times of 3.369 ms and 0.257 ms. This isolates query work; it does not explain the entire live 2,503.788 ms migration plus health phase.
+
+The change retains per-row canonical hydration and validation, batch size, ordering, durable cursor publication, error handling and completion behavior. **107 contracts pass.** The new regression fails against the archived method with 553,000 sampled instructions. Private boot exposes 550 routes in 1,052.686 ms; this excludes real-provider startup acceptance.
+
+The private source mixed run retains **9,600 ordered events**, with zero worker warnings, failures, timeouts or rejections. **Maintenance still fails at 948.832 ms against the unchanged 500 ms limit.** The fixture does not contain a large late migration cursor; that branch is measured separately by the query comparison and regression. Earlier installed and source failures remain preserved; these separate runs do not establish a statistical whole-path speedup.
+
+PR #579 is integrated as `a7b03c7a1678872683af788030b4b9618cf11d54`, with five first-attempt successful jobs on both its head and main CI. Actual loaded code remains `aa711e4b702781118562117ec90ca649138d7683`; the GC allocation and cursor repairs remain undeployed. The current managed continuation must settle before another exact installation or restart. Full native integrity/VACUUM costs, per-row migration hydration, health filesystem checks, native waits, scheduling/IO, payloads, provider/peer/logging gaps and every original acceptance requirement remain open. Independently accepted original backup and DB scopes stay closed.
+
+---
+
 # Exact `aa711e4b` activation and retained maintenance cost — 2026-10-25
 
 All **664 findings and 131 concerns remain open**. [Complete activation and repair evidence](benchmarks/systemic-aa711-activation-gc-digest-20261025.json) and [lossless raw inputs](benchmarks/systemic-aa711-activation-gc-digest-20261025.raw.json.gz) preserve every stage, source identity, sample, counter, byte total and diagnostic. Earlier stages below retain their original as-of statements; this section supersedes their deployment status.

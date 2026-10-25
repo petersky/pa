@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-25T17:46:54.054498+00:00",
-  "completion": "OPEN: all 664 findings and 131 concerns. Exact aa711 activation and bounded retests are recorded; remaining maintenance violations, full inventory and independent acceptance requirements remain.",
+  "as_of": "2026-10-25T18:04:04.365395+00:00",
+  "completion": "OPEN: all 665 findings and 132 concerns. The migration cursor seek is a scoped source repair; maintenance and all original independent acceptance requirements remain open.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -214384,6 +214384,27 @@
       "next_actor": "this same systemic session",
       "next_action": "Prove request/timer ordering with deterministic privatefixture controls before product/test repair; retain allassertions/deadlines.",
       "report": "42669023-065b-4e68-8acc-68168f6b2568"
+    },
+    {
+      "id": "concern:transcript-legacy-migration-cursor-scan",
+      "kind": "concern",
+      "finding": "Legacy transcript migration scans earlier cursor rows on every batch",
+      "family": "maintenance",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_synthetic_query_plan_and_vm_work_live_contribution_unquantified",
+      "cause": "The legacy migration OR cursor predicate scans the existing composite index from earlier sessions. A tuple lower bound seeks that same index and returns identical ordered rows in the declared synthetic cases.",
+      "fix_or_existing_owner": "This systemic session; reuse existing migration path and composite index.",
+      "implemented": "Tuple cursor seek in source; review and integration pending.",
+      "merged": [],
+      "deployed": "Not deployed. Actual loaded build remains aa711e4b.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-legacy-cursor-seek-20261025.json",
+        "sha256": "5ee2888420fe8f0962a2c85bcceeba75f9946eb1139ae2ba5890dc042fdacb6b"
+      },
+      "retested": "107 contracts pass; archived query fails the VM-work regression. Eleven cursor parity cases and five alternating query pairs pass. Mixed maintenance remains 948.832 ms.",
+      "resolution": "open",
+      "next_actor": "This card/session",
+      "next_action": "Complete protected review, exact integration and activation after the current handoff settles. Measure a representative late migration batch and continue per-row validation/health/native maintenance attribution."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -309050,5 +309071,16 @@
       "concern:transcript-health-reference-fetch-amplification",
       "route-followup:/api/instance/maintenance"
     ]
+  },
+  "legacy_cursor_seek_stage": {
+    "artifact": "docs/benchmarks/systemic-legacy-cursor-seek-20261025.json",
+    "sha256": "5ee2888420fe8f0962a2c85bcceeba75f9946eb1139ae2ba5890dc042fdacb6b",
+    "all_prior_ids_retained": true,
+    "prior_rows_unchanged": true,
+    "raw": {
+      "path": "docs/benchmarks/systemic-legacy-cursor-seek-20261025.raw.json.gz",
+      "sha256": "f6f7678028d8e425c2146ba4681ff4aa9c94aca2ea73bf33cc7161415d6d8f24",
+      "bytes": 86277
+    }
   }
 }
