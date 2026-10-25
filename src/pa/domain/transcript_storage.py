@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from pa.core.operation_budget import measured_lock, report_work_progress
-from pa.core.performance import PerformanceMetrics, retention_phase
+from pa.core.performance import PerformanceMetrics, current_observation, retention_phase
 from pa.core.sqlite_metrics import ObservedConnection, derived_connection
 from pa.domain.models import TranscriptEvent
 
@@ -636,13 +636,75 @@ class TranscriptStorage:
         return missing
 
     def referenced_hashes(self) -> set[str]:
-        """Read every event reference with bounded cursor materialization."""
+        """Read every reference from one fresh snapshot in bounded JSON pages.
+
+        SQLite's text index supplies distinct keyset pages without one observed
+        Python fetch per reference. Malformed non-text catalog values retain the
+        native row path, including its value types and decoding errors.
+        """
         with self._conn() as conn:
-            cursor = conn.execute("SELECT DISTINCT cold_hash FROM transcript_events WHERE cold_hash IS NOT NULL")
-            hashes = set()
-            while rows := cursor.fetchmany(128):
-                hashes.update(row[0] for row in rows)
-            return hashes
+            conn.execute("SAVEPOINT transcript_health_references")
+            read_error = None
+            try:
+                def native_references():
+                    cursor = conn.execute(
+                        "SELECT DISTINCT cold_hash FROM transcript_events WHERE cold_hash IS NOT NULL"
+                    )
+                    result = set()
+                    while rows := cursor.fetchmany(128):
+                        result.update(row[0] for row in rows)
+                    return result
+
+                # This first SELECT pins the read snapshot before either the
+                # fallback or successive keyset pages. Publication/deletion
+                # between pages must not create a mixed health view.
+                nontext = conn.execute(
+                    "SELECT 1 FROM transcript_events WHERE cold_hash IS NOT NULL "
+                    "AND typeof(cold_hash) != 'text' LIMIT 1"
+                ).fetchone()
+                hashes = set()
+                if nontext:
+                    return native_references()
+                last = None
+                while True:
+                    predicate, parameters = ("", ()) if last is None else (" AND cold_hash > ?", (last,))
+                    try:
+                        row = conn.execute(
+                            "SELECT json_group_array(cold_hash) FROM ("
+                            "SELECT DISTINCT cold_hash FROM transcript_events "
+                            "WHERE cold_hash IS NOT NULL" + predicate +
+                            " ORDER BY cold_hash LIMIT 128)", parameters,
+                        ).fetchone()
+                    except sqlite3.DataError as exc:
+                        # Malformed long references can fit individually but
+                        # exceed SQLite's string limit as one JSON page. Keep
+                        # native behavior and the already pinned snapshot.
+                        if getattr(exc, "sqlite_errorcode", None) != sqlite3.SQLITE_TOOBIG or not conn.in_transaction:
+                            raise
+                        return native_references()
+                    values = json.loads(row[0])
+                    observation = current_observation.get()
+                    if observation is not None:
+                        observation.sqlite_aggregate_items += len(values)
+                        observation.sqlite_aggregate_bytes += len(row[0].encode("utf-8"))
+                    if not values:
+                        return hashes
+                    hashes.update(values)
+                    last = values[-1]
+            except BaseException as exc:
+                read_error = exc
+                raise
+            finally:
+                # A native interrupt can already have rolled back SQLite's
+                # transaction. Never replace the original error with a missing
+                # savepoint error, and never return partial references.
+                if conn.in_transaction:
+                    try:
+                        conn.execute("RELEASE SAVEPOINT transcript_health_references")
+                    except BaseException:
+                        if read_error is None:
+                            raise
+                        read_error.add_note("Reference read cleanup failed; connection scope will roll back and close.")
 
     def operation(self, name: str) -> dict[str, Any] | None:
         with self._conn() as conn:

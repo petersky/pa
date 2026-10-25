@@ -1,6 +1,6 @@
 """Compare fresh transcript health on private identical retained objects.
 
-Only the archived missing-object method differs between stages. Both stages
+Only the selected archived method differs between stages. Both stages
 retain the current native integrity check and read fresh event references.
 """
 from __future__ import annotations
@@ -22,10 +22,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-def run(output: Path, *, baseline: str, count: int, pairs: int) -> dict:
+def run(output: Path, *, baseline: str, count: int, pairs: int,
+        method_name: str = "_missing_referenced_objects") -> dict:
     assert re.fullmatch(r"[0-9a-f]{40}", baseline)
     assert 1 <= count <= 15000 and 1 <= pairs <= 20
     assert not output.exists(), "Preserve earlier measurements"
+    assert method_name in {"_missing_referenced_objects", "referenced_hashes"}
     with tempfile.TemporaryDirectory(prefix="pa-fresh-health-") as temporary:
         root = Path(temporary)
         os.environ.update(PA_DATA_DIR=str(root / "data"),
@@ -41,12 +43,12 @@ def run(output: Path, *, baseline: str, count: int, pairs: int) -> dict:
         cls = next(n for n in ast.parse(source).body
                    if isinstance(n, ast.ClassDef) and n.name == "TranscriptStorage")
         method = next(n for n in cls.body if isinstance(n, ast.FunctionDef)
-                      and n.name == "_missing_referenced_objects")
+                      and n.name == method_name)
         baseline_code = textwrap.dedent("\n".join(source.splitlines()[method.lineno - 1:method.end_lineno]))
         namespace = vars(module).copy()
         exec(compile(baseline_code, "<archived-health-baseline>", "exec"), namespace)
-        functions = {"baseline": namespace["_missing_referenced_objects"],
-                     "candidate": module.TranscriptStorage._missing_referenced_objects}
+        functions = {"baseline": namespace[method_name],
+                     "candidate": getattr(module.TranscriptStorage, method_name)}
         storage = module.TranscriptStorage(root / "fixture.db")
         for start in range(0, count, 256):
             storage.append([
@@ -73,7 +75,7 @@ def run(output: Path, *, baseline: str, count: int, pairs: int) -> dict:
                         def measured():
                             wall, cpu = time.perf_counter_ns(), time.thread_time_ns()
                             offset = time.time() - time.monotonic()
-                            with patch.object(storage, "_missing_referenced_objects", lambda: functions[label](storage)):
+                            with patch.object(storage, method_name, lambda: functions[label](storage)):
                                 answer = storage.metrics()
                             assert answer == expected
                             return {"stage": label, "pair": pair,
@@ -92,6 +94,7 @@ def run(output: Path, *, baseline: str, count: int, pairs: int) -> dict:
         assert contents() == before
         value = {"contract": "pa.transcript-fresh-health-comparison/v1",
                  "observed_at": datetime.now(UTC).isoformat(), "baseline": baseline,
+                 "compared_method": method_name,
                  "source_sha256": hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest(),
                  "baseline_method_sha256": hashlib.sha256(baseline_code.encode()).hexdigest(),
                  "candidate_method_sha256": hashlib.sha256(inspect.getsource(functions["candidate"]).encode()).hexdigest(),
@@ -114,6 +117,9 @@ if __name__ == "__main__":
     parser.add_argument("--baseline", default="d244274ba50a5c057040471403bfbb7dedade9f6")
     parser.add_argument("--objects", type=int, default=12511)
     parser.add_argument("--pairs", type=int, default=5)
+    parser.add_argument("--method", choices=["_missing_referenced_objects", "referenced_hashes"],
+                        default="_missing_referenced_objects")
     args = parser.parse_args()
-    value = run(args.output, baseline=args.baseline, count=args.objects, pairs=args.pairs)
+    value = run(args.output, baseline=args.baseline, count=args.objects, pairs=args.pairs,
+                method_name=args.method)
     print(json.dumps({"output": str(args.output), "summary": value["summary"]}))
