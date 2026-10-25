@@ -8,14 +8,15 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from pa.domain.models import AgentSession, CardLane
 from pa.core.async_runtime import AsyncRuntime
 from pa.domain.projection import CardProjection
 from pa.execution.dispatch import DispatchRecord
 from pa.instance.session_lifecycle import SessionLifecyclePolicy
-from pa.pr_supervisor.models import PRWatchStatus
+from pa.pr_supervisor.models import PRWatch, PRWatchStatus
+from pa.pr_supervisor.store import PRSupervisorStore
 
 
 class _Store:
@@ -80,6 +81,85 @@ def _dispatch(**values):
 
 
 class SessionLifecycleDecisionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_watch_metadata_preserves_every_status_retirement_and_link(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = PRSupervisorStore(Path(tmp) / "watches.db")
+            for index, status in enumerate(PRWatchStatus):
+                for retired in (False, True):
+                    with self.subTest(status=status, retired=retired):
+                        watch = store.upsert_watch(PRWatch(
+                            id="watch", repository="owner/repo", pr_number=1,
+                            pr_url="https://example.invalid/1", status=status,
+                            originating_session_id="session-1", card_id="shared",
+                            realm_id="other", retired_at=datetime.now(UTC) if retired else None,
+                            state={"proof": "retained" * 8192},
+                        ))
+                        links = store.lifecycle_watch_links()
+                        self.assertEqual(len(links), 1)
+                        self.assertEqual(
+                            links[0], (watch.originating_session_id, watch.card_id, watch.status)
+                        )
+                        for session in (
+                            _session(lifecycle_owner="dispatch"),
+                            _session(id="another-session", card_id="shared", lifecycle_owner="dispatch"),
+                            _session(id="unrelated", card_id="other", lifecycle_owner="dispatch"),
+                        ):
+                            old = await self.decide(session, watches=[watch])
+                            new = await self.decide(session, watches=links)
+                            self.assertEqual(new, old)
+                        # Retired active/blocked records still guard closure;
+                        # this is intentionally not the default live-watch view.
+                        linked = await self.decide(_session(lifecycle_owner="dispatch"), watches=links)
+                        self.assertEqual(linked, (
+                            ("retained", "actionable_pr_watch")
+                            if status in {PRWatchStatus.ACTIVE, PRWatchStatus.BLOCKED}
+                            else ("close", "pr_watch_terminal")
+                        ))
+                        self.assertEqual(store.get_watch("watch").state, watch.state)
+
+    async def test_sweep_reads_only_watch_links_without_proof_hydration(self):
+        import sqlite3
+        from contextlib import contextmanager
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = PRSupervisorStore(Path(tmp) / "watches.db")
+            store.upsert_watch(PRWatch(
+                id="w", repository="owner/repo", pr_number=1,
+                pr_url="https://example.invalid/1", originating_session_id="session-1",
+                state={"proof": "retained" * 8192},
+            ))
+            manager = _Manager()
+            manager.store.list_sessions = lambda **kwargs: [_session()]
+            manager.workspace_manager.list = lambda: []
+            policy = SessionLifecyclePolicy(manager, {"pr_supervisor": SimpleNamespace(store=store)})
+            original = store._conn
+
+            @contextmanager
+            def metadata_only():
+                with original() as conn:
+                    def authorize(action, table, column, *_rest):
+                        if action == sqlite3.SQLITE_READ and table == "pr_watches":
+                            return (sqlite3.SQLITE_OK if column in {
+                                "originating_session_id", "card_id", "status", "updated_at"
+                            } else sqlite3.SQLITE_DENY)
+                        return sqlite3.SQLITE_OK
+                    conn.set_authorizer(authorize)
+                    yield conn
+
+            try:
+                with patch.object(store, "_conn", metadata_only), patch.object(
+                    store, "_row_to_watch", side_effect=AssertionError("proof hydration")
+                ), patch.object(store, "list_watches", side_effect=AssertionError("full watch read")):
+                    result = await policy.run_once()
+                self.assertEqual(result["retained:actionable_pr_watch"], 1)
+                # A later sweep must read fresh status, not cache its guard.
+                watch = store.get_watch("w")
+                watch.status = PRWatchStatus.MERGED
+                store.upsert_watch(watch)
+                self.assertEqual(store.lifecycle_watch_links()[0].status, PRWatchStatus.MERGED)
+            finally:
+                await policy.close()
+
     async def decide(
         self,
         session=None,

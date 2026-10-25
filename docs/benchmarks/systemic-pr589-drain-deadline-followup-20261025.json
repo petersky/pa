@@ -1,0 +1,384 @@
+{
+  "contract": "pa.pr589-drain-deadline-followup/v1",
+  "observed_at": "2026-10-25T22:07:40.685732+00:00",
+  "first_attempt": {
+    "head": "c58c79f55a815c76a3244d79a2638f7252cbdd65",
+    "run": 40237985987,
+    "job": 121303572580,
+    "attempt": 1,
+    "result": "failure",
+    "success_jobs": 4,
+    "failed_jobs": 1,
+    "passed_tests": 1041,
+    "failed_tests": 1,
+    "skipped_tests": 1,
+    "passing_subtests": 182,
+    "drain_start_wall_ms": 379.661598,
+    "deadline_ms": 200,
+    "stage": "Synchronous _start_drain assertion before receipt/snapshot/heartbeat phase",
+    "cpu_gc_attribution": "Unavailable for this historical span; cause unverified",
+    "retry_issued": false,
+    "original_log_sha256": "408828a49fb902dbdaf665ab72875a4318609ffe896572d9d326fe1bfc9d1517",
+    "original_log_bytes": 38827
+  },
+  "diagnostic_repair": "Only the private delayed-receipt test now observes its original synchronous start span with the existing bounded DeadlineEvidence helper. The original 200 ms start, snapshot and heartbeat contracts, receipt authorization, no-loop storage read/thread checks, queue order, one delivery and timer release/cancellation remain. Numeric CPU/GC context is always uploaded by the existing CI artifact step; no GC/deadline setting, production runtime or schema change.",
+  "historical_limit": "The first failed span has no CPU/GC evidence and is not explained by this later instrumentation. A passed corrected CI head would not resolve this finding or prove whole-PA acceptance. PR580/586/588 first-attempt failures remain separately open/intact.",
+  "private_probes": [
+    {
+      "scope": "isolated",
+      "exit_code": 0,
+      "collected_items": 1,
+      "start_drain": {
+        "phase": "_start_drain",
+        "start_monotonic": 723815.698804,
+        "wall_ms": 0.018916,
+        "thread_cpu_ms": 0.018625,
+        "thread_id": 8276681088
+      },
+      "dropped_gc_events": 0,
+      "gc_overlaps_start": [],
+      "source_proof": null,
+      "limits": "Initial isolated probe records configured source paths and expected file hash but lacks child source-path attestation; full-collection probe independently checks its imported source path and all 439 files. Neither is Linux CI equivalence or a historical cause classification."
+    },
+    {
+      "scope": "fullcollection",
+      "exit_code": 0,
+      "collected_items": 4172,
+      "start_drain": {
+        "phase": "_start_drain",
+        "start_monotonic": 723842.770179416,
+        "wall_ms": 0.023625,
+        "thread_cpu_ms": 0.023291,
+        "thread_id": 8276681088
+      },
+      "dropped_gc_events": 0,
+      "gc_overlaps_start": [],
+      "source_proof": {
+        "package_path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa",
+        "files_verified": 439,
+        "agent_session_path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/instance/agent_session.py",
+        "agent_session_sha256": "9bfea9566b1d8bf5c26c623a5a053b32f010d11f2397c1a82fda0e6c2b027ea7"
+      },
+      "limits": "Initial isolated probe records configured source paths and expected file hash but lacks child source-path attestation; full-collection probe independently checks its imported source path and all 439 files. Neither is Linux CI equivalence or a historical cause classification."
+    }
+  ],
+  "regressions": {
+    "deadline_artifacts": [
+      {
+        "contract": "pa.test-deadline-evidence/v1",
+        "python": "3.14.2",
+        "platform": "Darwin",
+        "source_sha": null,
+        "gc_thresholds": [
+          2000,
+          10,
+          0
+        ],
+        "loop_thread_id": 8276681088,
+        "request_wall_ms": 0.008084112778306007,
+        "request_loop_thread_cpu_ms": 0.00733300000010928,
+        "gc_events_total": 0,
+        "gc_events_retained": 0,
+        "gc_events_dropped": 0,
+        "request_gc_overlaps": [],
+        "worker_calls_started": 0,
+        "worker_calls_total": 0,
+        "worker_calls_incomplete": 0,
+        "worker_events_dropped": 0,
+        "worker_intervals": [],
+        "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+      }
+    ],
+    "started_at": "2026-10-25T22:05:49.756996+00:00",
+    "finished_at": "2026-10-25T22:05:54.151067+00:00",
+    "elapsed_seconds": 4.3939663340570405,
+    "exit_code": 0,
+    "arguments": [
+      "uv",
+      "run",
+      "pytest",
+      "-o",
+      "addopts=",
+      "-q",
+      "tests/test_restart_handoff.py",
+      "tests/test_agent_snapshot_timing_evidence.py",
+      "tests/test_session_lifecycle.py"
+    ],
+    "log_sha256": "8f3bd6a625207b2322ea03e2b5e23786f5249c760e5e974805f9ac8eb753589d",
+    "source_sha256": "86622e606ab7d51c53274e1ad3dced69aff9fa3d4f3576ee55ab5b87f0334b06",
+    "scope": "Isolated private roots before all PA imports; targeted restart continuation authorization/order/cancellation/closure/observer privacy regressions, overlapping prior suites. No service mutation or real provider workload."
+  },
+  "passed_tests": 107,
+  "passing_subtests": 10,
+  "observer_cost": {
+    "observed_at": "2026-10-25T22:06:45.125098+00:00",
+    "python": "3.14.9 (main, Oct 21 2026, 17:47:42) [Clang 23.1.3 ]",
+    "iterations_per_sample": 10001,
+    "samples": [
+      {
+        "pair": 0,
+        "variant": "plain",
+        "wall_ms": 0.790125
+      },
+      {
+        "pair": 0,
+        "variant": "observed",
+        "wall_ms": 3.49675
+      },
+      {
+        "pair": 1,
+        "variant": "observed",
+        "wall_ms": 3.440458
+      },
+      {
+        "pair": 1,
+        "variant": "plain",
+        "wall_ms": 0.770875
+      },
+      {
+        "pair": 2,
+        "variant": "plain",
+        "wall_ms": 0.788
+      },
+      {
+        "pair": 2,
+        "variant": "observed",
+        "wall_ms": 3.484167
+      },
+      {
+        "pair": 3,
+        "variant": "observed",
+        "wall_ms": 3.438291
+      },
+      {
+        "pair": 3,
+        "variant": "plain",
+        "wall_ms": 0.833875
+      },
+      {
+        "pair": 4,
+        "variant": "plain",
+        "wall_ms": 0.837209
+      },
+      {
+        "pair": 4,
+        "variant": "observed",
+        "wall_ms": 3.52675
+      }
+    ],
+    "median_ms": {
+      "plain": 0.790125,
+      "observed": 3.484167
+    },
+    "added_microseconds_per_call": 0.26937726227377257,
+    "gc_policy_unchanged": true,
+    "helper_sha256": "6703abdc811b60b55ea18dd8870e07798cc5e28c7aff02ab4b68609187dcb74f",
+    "scope": "Five alternating private empty-body timer samples; both variants keep an active GC evidence context. Measures begin/finish clock and CPU observation overhead only, excluding artifact publication outside the responsiveness span. Not a drain speedup, CI equivalence, stable microbenchmark or proof of historical cause. No GC policy/interpreter/default change."
+  },
+  "original_run_other_artifacts": {
+    "contract": "pa.ci-deadline-artifact-observation/v1",
+    "observed_at": "2026-10-25T22:05:50.245754+00:00",
+    "run": 40237985987,
+    "attempt": 1,
+    "run_conclusion": "failure",
+    "head_sha": "c58c79f55a815c76a3244d79a2638f7252cbdd65",
+    "github_sha": "755eda371fdc38e995d0b5f8362ab90f56085690",
+    "verified_test_merge_parents": [
+      "16821dc910a45930d3673d92af75017cd4dfb773",
+      "c58c79f55a815c76a3244d79a2638f7252cbdd65"
+    ],
+    "artifacts": [
+      {
+        "metadata": {
+          "id": 12615603544,
+          "node_id": "MDg6QXJ0aWZhY3QxMjYxNTYwMzU0NA==",
+          "name": "deadline-evidence-0-1",
+          "size_in_bytes": 1639,
+          "url": "https://api.github.com/repos/petersky/pa/actions/artifacts/12615603544",
+          "archive_download_url": "https://api.github.com/repos/petersky/pa/actions/artifacts/12615603544/zip",
+          "expired": false,
+          "digest": "sha256:6a4e54b28d65a52ceff00f1de05f1f21c6a4a7c9824f2e32606a71b483a16341",
+          "created_at": "2026-10-25T22:00:53Z",
+          "updated_at": "2026-10-25T22:00:53Z",
+          "expires_at": "2027-01-23T21:58:41Z",
+          "workflow_run": {
+            "id": 40237985987,
+            "repository_id": 1249661450,
+            "head_repository_id": 1249661450,
+            "head_branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+            "head_sha": "c58c79f55a815c76a3244d79a2638f7252cbdd65"
+          }
+        },
+        "local_zip": ".dev/pr589-first-head-deadline-evidence-12615603544-20261025.zip",
+        "zip_sha256": "6a4e54b28d65a52ceff00f1de05f1f21c6a4a7c9824f2e32606a71b483a16341",
+        "zip_bytes": 1639
+      }
+    ],
+    "entries": [
+      {
+        "artifact": 12615603544,
+        "name": "agent-snapshot-163adca996bf47dcb43b8fc89d75f24f.json",
+        "evidence": {
+          "contract": "pa.test-deadline-evidence/v1",
+          "python": "3.14.9",
+          "platform": "Linux",
+          "source_sha": "755eda371fdc38e995d0b5f8362ab90f56085690",
+          "gc_thresholds": [
+            2000,
+            10,
+            10
+          ],
+          "loop_thread_id": 139753919145792,
+          "request_wall_ms": 6.0794360000215875,
+          "request_loop_thread_cpu_ms": 3.01117299999909,
+          "gc_events_total": 1,
+          "gc_events_retained": 1,
+          "gc_events_dropped": 0,
+          "request_gc_overlaps": [
+            {
+              "wall_ms": 3.81617099998266,
+              "thread_cpu_ms": 1.4536290000002339,
+              "thread_id": 139753919145792,
+              "generation": 0,
+              "collected": 534,
+              "uncollectable": 0,
+              "start_relative_ms": 0.06151300001988602,
+              "end_relative_ms": 3.877684000002546
+            }
+          ],
+          "worker_calls_started": 1,
+          "worker_calls_total": 1,
+          "worker_calls_incomplete": 0,
+          "worker_events_dropped": 0,
+          "worker_intervals": [
+            {
+              "wall_ms": 0.40735300001415453,
+              "thread_cpu_ms": 0.408249,
+              "thread_id": 139753403971264,
+              "start_relative_ms": 4.330030000005536,
+              "end_relative_ms": 4.73738300001969
+            }
+          ],
+          "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+        }
+      },
+      {
+        "artifact": 12615603544,
+        "name": "incomplete-worker-01fb38d98e7d41d28e0e39e25a6b2a66.json",
+        "evidence": {
+          "contract": "pa.test-deadline-evidence/v1",
+          "python": "3.14.9",
+          "platform": "Linux",
+          "source_sha": "755eda371fdc38e995d0b5f8362ab90f56085690",
+          "gc_thresholds": [
+            2000,
+            10,
+            10
+          ],
+          "loop_thread_id": 139753919145792,
+          "request_wall_ms": 3.115518000015527,
+          "request_loop_thread_cpu_ms": 0.10358399999965684,
+          "gc_events_total": 0,
+          "gc_events_retained": 0,
+          "gc_events_dropped": 0,
+          "request_gc_overlaps": [],
+          "worker_calls_started": 1,
+          "worker_calls_total": 1,
+          "worker_calls_incomplete": 0,
+          "worker_events_dropped": 0,
+          "worker_intervals": [
+            {
+              "wall_ms": 4.226489000018319,
+              "thread_cpu_ms": 0.023145000000000002,
+              "thread_id": 139753631721152,
+              "start_relative_ms": 0.12133199999198041,
+              "end_relative_ms": 4.347821000010299
+            }
+          ],
+          "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+        }
+      }
+    ],
+    "scope": "Actual first-attempt FAILED Linux Python3.14.9 CI run numeric artifacts from other observed tests. The failed drain-start job emitted no timing JSON, so these do not observe its span. Head GITHUB_SHA synthetic tested merge is independently verified, main is exact integrated source. No historical failed run, private diagnostic or scope correction is rewritten. Passing bounded deadline probes do not explain earlier failures or establish whole-PA performance acceptance."
+  },
+  "other_artifact_scope": "A different passing snapshot test in the original failed run records request 6.079 ms and 3.816 ms generation-0 GC overlap. This is a different shard/span, not the failing drain start. No artifact exists for the failed span.",
+  "local_download_limits": "First nested host-Python capture produced an empty local file and did not retain stderr, so its exact cause is unknown. Second capture retained an API connection error under restricted network and stopped before metadata output. A direct approved gh read and provider-approved capture then succeeded. No CI rerun or service fault is inferred. A separate unquoted question mark in a read-only shell URL failed glob expansion before request; corrected quoted GET saved final metadata.",
+  "source_patch": {
+    "base_head": "c58c79f55a815c76a3244d79a2638f7252cbdd65",
+    "test_sha256": "86622e606ab7d51c53274e1ad3dced69aff9fa3d4f3576ee55ab5b87f0334b06",
+    "application_delta_since_c58": "None; existing two-file lifecycle source repair unchanged."
+  },
+  "runtime": {
+    "path": ".dev/pr589-first-failure-control-20261025.json",
+    "operations": 95,
+    "routes": 40,
+    "scope": "New separate local 95/40 current-process numeric snapshot with all failure/SQL/CPU/lock/fsync/byte fields. Lifetime maxima and rolling windows not pooled with earlier 85/35 or peer inventories."
+  },
+  "actual_loaded": {
+    "loaded_module_version": "1.5.9",
+    "source_revision": "16821dc910a45930d3673d92af75017cd4dfb773",
+    "package_identity": "sha256:7d07db4372706b11efc1265dd560da61168ede48a9974e57114114b62ca44a01",
+    "pid": 44547,
+    "startup_id": "eb075c72-8dbd-4df9-93e4-a42fc1c5318c"
+  },
+  "backup": {
+    "backup_state": "limited",
+    "backup_count": 9,
+    "verified_backup_count": 8,
+    "limited_backup_count": 1,
+    "automatic_backups_paused": false,
+    "next_scheduled_run": "2026-10-26T03:31:38.189124Z",
+    "consecutive_failures": 0
+  },
+  "handoff": {
+    "id": "b73d1602-9cf6-5377-bc39-d2f304240e03",
+    "idempotency_key": "systemic-exact16821dc9-failure-evidence-managed-restart-20261025-v1",
+    "status": "continuation_queued",
+    "delivered_at": null,
+    "error": null,
+    "observation": {
+      "identity": {
+        "version": 1,
+        "owner": "restart",
+        "realm_id": "default",
+        "idempotency_key": "systemic-exact16821dc9-failure-evidence-managed-restart-20261025-v1",
+        "operation": "agent_restart_handoff",
+        "request_fingerprint": null
+      },
+      "status": "continuation_queued",
+      "accepted": true,
+      "committed": true,
+      "projected": null,
+      "effect": "pending",
+      "phase": "running",
+      "phase_version": 5,
+      "attempt": 1,
+      "reason_code": "continuation_queued",
+      "next_action": "finish_continuation_turn",
+      "effect_state": "pending",
+      "worker_state": "active",
+      "domain_stage": "continuation_queued",
+      "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+      "handoff_id": "b73d1602-9cf6-5377-bc39-d2f304240e03",
+      "continuation_prompt_id": "restart-handoff:b73d1602-9cf6-5377-bc39-d2f304240e03"
+    }
+  },
+  "failure_report": {
+    "id": "ae42aa46-bde2-41a4-8672-cfee1a73746f",
+    "revision": 1,
+    "hash": "2700a8f1179d37f860016be8718c2c2c84df584a5839a37eee55f41407866b2d"
+  },
+  "acceptance": {
+    "findings": 672,
+    "concerns": 138,
+    "all_resolution": "open",
+    "requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+    "accepted": false,
+    "lane": "active"
+  },
+  "raw": {
+    "path": "docs/benchmarks/systemic-pr589-drain-deadline-followup-20261025.raw.json.gz",
+    "sha256": "b81e5a0901ca99cb6076399b412f9b771c9988c9bff3c9faef15ac5450a8d320",
+    "bytes": 44766
+  }
+}
