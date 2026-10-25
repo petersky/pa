@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-25T18:18:36.018454+00:00",
-  "completion": "OPEN: all 666 findings and 133 concerns. Main CI failures, source concurrency repair, maintenance and every original independent acceptance requirement remain open.",
+  "as_of": "2026-10-25T18:40:17.693900+00:00",
+  "completion": "OPEN: all 667 findings and 134 concerns. Exact 1e827977 activation and bounded retests are verified; maintenance, peer freshness, logging gaps and all original independent acceptance requirements remain open.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -214445,6 +214445,27 @@
           "stage": "First source suite; preserved unchanged."
         }
       ]
+    },
+    {
+      "id": "concern:transcript-cold-payload-duplicate-digest",
+      "kind": "concern",
+      "finding": "Duplicate SHA-256 work on complete cold transcript reads",
+      "family": "transcript",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_duplicate_hash_work_live_contribution_unquantified",
+      "cause": "Valid cold payload bytes are hashed twice by the same SHA-256 function before comparison against two independent stored identities.",
+      "fix_or_existing_owner": "This systemic session; one digest compared against both identities.",
+      "implemented": "Source repair; protected review and integration pending.",
+      "merged": [],
+      "deployed": "Not deployed; actual loaded source remains exact 1e827977.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-exact581-payload-hash-20261025.json",
+        "sha256": "52b5101b8c787a0a98455b0a8347026f5444b61c9c891afe0c531f29666a384b"
+      },
+      "resolution": "open",
+      "next_actor": "This card/session",
+      "retested": "109 contracts and three subtests pass; archived method fails work-count regression. Source mixed retains 9,600 events but maintenance remains 892.344 ms.",
+      "next_action": "Complete protected PR/supervisor/head and main CI, then exact activation after the current continuation settles. Continue maintenance, peer, logging and every original acceptance obligation."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -309142,5 +309163,18 @@
       "bytes": 45256
     },
     "all_prior_stages_retained": true
+  },
+  "exact581_activation_payload_hash_stage": {
+    "artifact": "docs/benchmarks/systemic-exact581-payload-hash-20261025.json",
+    "sha256": "52b5101b8c787a0a98455b0a8347026f5444b61c9c891afe0c531f29666a384b",
+    "raw": {
+      "path": "docs/benchmarks/systemic-exact581-payload-hash-20261025.raw.json.gz",
+      "sha256": "9ee6917337368b43788e3d17a2281b36f0e48a9530d1d92048ac2b1011d02aaf",
+      "bytes": 384705
+    },
+    "all_prior_rows_unchanged": true,
+    "loaded_source": "1e82797763020e25685868fa6d4be62f77a33a76",
+    "new_source_repair_deployed": false,
+    "interpretation": "This top-level stage supersedes only current activation observations; historical per-row labels and every older failed/interrupted stage remain unchanged. Every row remains open, including unobserved branches."
   }
 }
