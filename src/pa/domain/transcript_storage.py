@@ -410,12 +410,14 @@ class TranscriptStorage:
             rows = conn.execute(f"SELECT * FROM (SELECT * FROM transcript_events WHERE session_id=? {clause} ORDER BY seq DESC LIMIT ?) ORDER BY seq", params).fetchall()
         return [self._event(row) for row in rows]
 
-    def list_range(self, session_id: str, *, start_seq: int | None = None, end_seq: int | None = None, limit: int = MAX_PAGE_SIZE) -> list[TranscriptEvent]:
+    def list_range(self, session_id: str, *, start_seq: int | None = None, end_seq: int | None = None,
+                   limit: int = MAX_PAGE_SIZE, _connection: sqlite3.Connection | None = None) -> list[TranscriptEvent]:
         sql, params = "SELECT * FROM transcript_events WHERE session_id=?", [session_id]
         if start_seq is not None: sql += " AND seq>=?"; params.append(start_seq)
         if end_seq is not None: sql += " AND seq<=?"; params.append(end_seq)
         sql += " ORDER BY seq LIMIT ?"; params.append(max(1, min(limit, MAX_PAGE_SIZE)))
-        with self._conn() as conn: rows = conn.execute(sql, params).fetchall()
+        with (nullcontext(_connection) if _connection is not None else self._conn()) as conn:
+            rows = conn.execute(sql, params).fetchall()
         return [self._event(row) for row in rows]
 
     def next_seq(self, session_id: str) -> int:
