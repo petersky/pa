@@ -1,3 +1,19 @@
+# Current peer coverage extends the open ledger to 670 findings
+
+A [bounded supported peer follow-up](benchmarks/systemic-exact585-peer-followup-20261025.json), captured `20:21:47.214008–20:21:47.876143 UTC`, preserves **every returned operation and route count, p50/p95/p99/window maximum, process maximum, failure, byte and loop field** in the adjacent lossless numeric bundle. Four ordinary reads per peer check identity, readiness, status and runtime, with a five-second bound and no retries, redirects, update/restart or configuration change. All twelve reads succeed; that is a one-off reachability result, not peer acceptance or a latency distribution.
+
+| Peer | Runtime operations / route groups | Loaded-source evidence | Current residual examples |
+| --- | --- | --- | --- |
+| Macmini `02dbcd47` | 66 / 22 | PID `41996`, version `1.5.9`; loaded revision/package/startup absent | Sync reconcile process/window max **58,771.791 ms**, bounded p95 **2,084.099 ms**; PR-peer bounded p50 **5,005.787 ms**, p95 **5,015.553 ms**. |
+| Monica `2d22a9e1` | 67 / 23 | `0d6638ccf355aeaf07627b5cc10d5c302c6b83e8`, PID `89216`, startup `73281cc0-f305-493d-82a3-6bfb13a4ff59` | GitHub snapshot process/window max **7,245.450 ms**, bounded p95 **2,743.099 ms**; sync-peer p95 **3,004.060 ms**. |
+| Alex `f72a46d3` | 60 / 22 | `0d6638ccf355aeaf07627b5cc10d5c302c6b83e8`, PID `3228613`, startup `c92f08fb-50f0-485a-8536-1731279d20f0` | Sync-peer process max **12,008.228 ms**, bounded p95 **3,001.893 ms**; Fleet bounded p99 **781.359 ms**. |
+
+Every operation family and failure counter is retained, including Fleet/cache/provider/MCP/health/PR/SQL/sync/workspace branches and short failures. Lifetime counters may overlap failure/timeout categories and do not date individual incidents. Current windows are distinct from process maxima and original October 16 logs. No shared-cause, sleep, network, native-holder or repair-deployment attribution is inferred. Peer logs, installed-file proof and retained-history coverage remain open. The local `24c85fc7` repair is not automatically active on peers with older or unknown loaded source.
+
+All **669 prior rows and every prior field remain intact**. One previously unlisted peer runtime route, `/telemetry/query`, adds a row for **670 open findings / 136 concerns**. Its emitted key and all three host populations are preserved exactly; no direct request was made to it, no guessed `/api` prefix or cross-build registered-route parity is claimed. Existing peer concern owns coordination; no new worker, verifier, card or fleet-policy/default change occurred. All original slow names, baseline operations/routes and later concerns remain required. Normal independent acceptance under `17d034a6-efc7-4a9d-badc-d3fe012d0b57` remains pending and the requested lane remains `active`.
+
+---
+
 # SQLite CPU activation and indexed health type checks; acceptance remains open
 
 All **669 findings and 136 concerns remain open**. The [complete new evidence](benchmarks/systemic-exact585-reference-type-20261025.json) and adjacent lossless numeric bundle preserve every returned runtime operation/route window, process maximum, CPU/SQL/lock/fsync phase, failure, byte count, raw fixture sample and write-amplification population. Every prior row field and immutable artifact is retained. Existing concerns own the follow-up; no worker, verifier or duplicate concern was created.

@@ -1,0 +1,5115 @@
+{
+  "contract": "pa.exact585-peer-performance-followup/v1",
+  "observed_at": "2026-10-25T20:23:10.228785+00:00",
+  "started_at": "2026-10-25T20:21:47.214008+00:00",
+  "finished_at": "2026-10-25T20:21:47.876143+00:00",
+  "local_runtime_build": {
+    "loaded_module_version": "1.5.9",
+    "source_revision": "24c85fc7546336efc52c6074d7c2853771e2ed48",
+    "package_identity": "sha256:c7aefc23278c6642302adbdd8ca1be2a78ec378a027a05ab7a08e8d28fb81c8e",
+    "pid": 24453,
+    "startup_id": "a57641c0-591f-4dd6-9894-9d79f87ad4ee"
+  },
+  "peers": [
+    {
+      "source": "http://100.78.2.112:8080",
+      "identity": {
+        "id": "02dbcd47-8f40-44eb-8403-5eb57545afc8",
+        "name": "macmini"
+      },
+      "status": {
+        "instance_id": "02dbcd47-8f40-44eb-8403-5eb57545afc8",
+        "process_id": 41996,
+        "runtime_build": null,
+        "version": "1.5.9"
+      },
+      "reads": [
+        {
+          "path": "/api/instance",
+          "started_at": "2026-10-25T20:21:47.216458+00:00",
+          "ok": true,
+          "status": 200,
+          "decoded_response_bytes": 410,
+          "correlation_id": "37f1e4df-b20f-454a-bccb-e0c19a2e2047",
+          "elapsed_ms": 24.789,
+          "finished_at": "2026-10-25T20:21:47.241252+00:00"
+        },
+        {
+          "path": "/api/ready",
+          "started_at": "2026-10-25T20:21:47.241397+00:00",
+          "ok": true,
+          "status": 200,
+          "decoded_response_bytes": 135,
+          "correlation_id": "acde6ce7-570a-4d6e-bbfa-89ecf2312aa7",
+          "readiness": {
+            "ready": null,
+            "status": "ready",
+            "state": null
+          },
+          "elapsed_ms": 10.071,
+          "finished_at": "2026-10-25T20:21:47.251472+00:00"
+        },
+        {
+          "path": "/api/status",
+          "started_at": "2026-10-25T20:21:47.251564+00:00",
+          "ok": true,
+          "status": 200,
+          "decoded_response_bytes": 2248,
+          "correlation_id": "4354f0a1-93b0-4c86-961d-ae1eb6b93159",
+          "elapsed_ms": 245.458,
+          "finished_at": "2026-10-25T20:21:47.497043+00:00"
+        },
+        {
+          "path": "/api/runtime",
+          "started_at": "2026-10-25T20:21:47.497765+00:00",
+          "ok": true,
+          "status": 200,
+          "decoded_response_bytes": 168339,
+          "correlation_id": "ff5218e9-45d8-4bea-ba72-717e8cd857eb",
+          "elapsed_ms": 83.773,
+          "finished_at": "2026-10-25T20:21:47.581569+00:00"
+        }
+      ],
+      "operations": {
+        "agent.quiesce_snapshot_clear": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 20.317,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 20.317,
+            "p50": 20.317,
+            "p95": 20.317,
+            "p99": 20.317
+          },
+          "sqlite_busy_failures": 0
+        },
+        "agent.recovery_sessions": {
+          "submitted": 123033,
+          "completed": 123033,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 29,
+          "max_runtime_ms": 10193.672,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 30.862,
+            "p50": 1.398,
+            "p95": 7.299,
+            "p99": 11.323
+          },
+          "sqlite_busy_failures": 0
+        },
+        "agent.startup_state_read": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 142.428,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 142.428,
+            "p50": 142.428,
+            "p95": 142.428,
+            "p99": 142.428
+          },
+          "sqlite_busy_failures": 0
+        },
+        "dispatch.completion_pending_read": {
+          "submitted": 123077,
+          "completed": 123077,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 32,
+          "max_runtime_ms": 5783.345,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 93.291,
+            "p50": 1.013,
+            "p95": 2.721,
+            "p99": 10.41
+          },
+          "sqlite_busy_failures": 0
+        },
+        "dispatch.followup_pending_read": {
+          "submitted": 123077,
+          "completed": 123077,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 19,
+          "max_runtime_ms": 4952.999,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 32.287,
+            "p50": 0.703,
+            "p95": 2.286,
+            "p99": 17.412
+          },
+          "sqlite_busy_failures": 0
+        },
+        "dispatch.record_read": {
+          "submitted": 760794,
+          "completed": 760794,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 38,
+          "max_runtime_ms": 4934.316,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 2.826,
+            "p50": 0.273,
+            "p95": 0.61,
+            "p99": 1.491
+          },
+          "sqlite_busy_failures": 0
+        },
+        "filesystem.github_credentials_read": {
+          "submitted": 117979,
+          "completed": 117979,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 2,
+          "max_runtime_ms": 4041.635,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 32.299,
+            "p50": 1.228,
+            "p95": 4.114,
+            "p99": 9.753
+          },
+          "sqlite_busy_failures": 0
+        },
+        "filesystem.workspace_completion": {
+          "submitted": 2882,
+          "completed": 2881,
+          "active": 0,
+          "failed": 1,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 1,
+          "max_runtime_ms": 728.48,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 89.364,
+            "p50": 3.326,
+            "p95": 13.991,
+            "p99": 38.221
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview.activity": {
+          "submitted": 11,
+          "completed": 11,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 493.646,
+          "runtime_ms": {
+            "samples": 11,
+            "max": 493.646,
+            "p50": 25.184,
+            "p95": 493.646,
+            "p99": 493.646
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview.mcp_bootstrap": {
+          "submitted": 10,
+          "completed": 9,
+          "active": 0,
+          "failed": 1,
+          "timed_out": 1,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 10,
+          "max_runtime_ms": 16945.56,
+          "runtime_ms": {
+            "samples": 10,
+            "max": 16945.56,
+            "p50": 5722.984,
+            "p95": 16945.56,
+            "p99": 16945.56
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview.reachability": {
+          "submitted": 40264,
+          "completed": 40263,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 2,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 26,
+          "max_runtime_ms": 3844.472,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 48.368,
+            "p50": 8.713,
+            "p95": 17.44,
+            "p99": 38.156
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview.repositories": {
+          "submitted": 9,
+          "completed": 9,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 216.701,
+          "runtime_ms": {
+            "samples": 9,
+            "max": 216.701,
+            "p50": 23.959,
+            "p95": 216.701,
+            "p99": 216.701
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview.status": {
+          "submitted": 40264,
+          "completed": 40264,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 28,
+          "max_runtime_ms": 3886.033,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 48.229,
+            "p50": 9.25,
+            "p95": 18.659,
+            "p99": 38.198
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview.supervisor": {
+          "submitted": 8,
+          "completed": 8,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 52.886,
+          "runtime_ms": {
+            "samples": 8,
+            "max": 52.886,
+            "p50": 19.312,
+            "p95": 52.886,
+            "p99": 52.886
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview.sync": {
+          "submitted": 83213,
+          "completed": 82253,
+          "active": 0,
+          "failed": 959,
+          "timed_out": 7,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 181,
+          "max_runtime_ms": 16587.452,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 497.637,
+            "p50": 11.183,
+            "p95": 56.487,
+            "p99": 99.19
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview_cache_read": {
+          "submitted": 1679526,
+          "completed": 1679526,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 415,
+          "max_runtime_ms": 29192.496,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 22.485,
+            "p50": 1.109,
+            "p95": 10.36,
+            "p99": 17.258
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview_cache_write": {
+          "submitted": 526144,
+          "completed": 521982,
+          "active": 0,
+          "failed": 4162,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 545,
+          "max_runtime_ms": 18864.755,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 242.426,
+            "p50": 9.327,
+            "p95": 31.118,
+            "p99": 215.425
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview_response_json": {
+          "submitted": 272125,
+          "completed": 272123,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 2,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 104,
+          "max_runtime_ms": 3723.973,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 30.225,
+            "p50": 4.775,
+            "p95": 15.616,
+            "p99": 27.011
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.update_check": {
+          "submitted": 13,
+          "completed": 13,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 8,
+          "max_runtime_ms": 4338.522,
+          "runtime_ms": {
+            "samples": 13,
+            "max": 4338.522,
+            "p50": 564.696,
+            "p95": 4338.522,
+            "p99": 4338.522
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.update_recovery": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 144.249,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 144.249,
+            "p50": 144.249,
+            "p95": 144.249,
+            "p99": 144.249
+          },
+          "sqlite_busy_failures": 0
+        },
+        "goal.dispatch_lifecycle_index": {
+          "submitted": 20469,
+          "completed": 20469,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 3,
+          "max_runtime_ms": 1491.499,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 1491.499,
+            "p50": 0.374,
+            "p95": 1.617,
+            "p99": 36.815
+          },
+          "sqlite_busy_failures": 0
+        },
+        "health.canonical_obligation": {
+          "submitted": 19335,
+          "completed": 19244,
+          "active": 0,
+          "failed": 91,
+          "timed_out": 3,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 50,
+          "max_runtime_ms": 31489.879,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 1625.649,
+            "p50": 18.986,
+            "p95": 95.224,
+            "p99": 471.316
+          },
+          "sqlite_busy_failures": 0
+        },
+        "http.fleet_overview": {
+          "submitted": 362365,
+          "completed": 272143,
+          "active": 0,
+          "failed": 90222,
+          "timed_out": 87788,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 11513.748,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 136.579,
+            "p50": 51.461,
+            "p95": 99.595,
+            "p99": 119.919
+          },
+          "sqlite_busy_failures": 0
+        },
+        "http.github": {
+          "submitted": 661,
+          "completed": 661,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 2163.136,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 1068.86,
+            "p50": 296.988,
+            "p95": 497.604,
+            "p99": 993.977
+          },
+          "sqlite_busy_failures": 0
+        },
+        "http.pr_supervisor_lease": {
+          "submitted": 259,
+          "completed": 194,
+          "active": 0,
+          "failed": 64,
+          "timed_out": 0,
+          "cancelled": 1,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 5638.95,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 5638.95,
+            "p50": 154.871,
+            "p95": 5006.894,
+            "p99": 5069.487
+          },
+          "sqlite_busy_failures": 0
+        },
+        "http.pr_supervisor_peer": {
+          "submitted": 826426,
+          "completed": 756260,
+          "active": 0,
+          "failed": 70166,
+          "timed_out": 673,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 28029.592,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 5144.43,
+            "p50": 5005.787,
+            "p95": 5015.553,
+            "p99": 5039.414
+          },
+          "sqlite_busy_failures": 0
+        },
+        "maintenance.run": {
+          "submitted": 8,
+          "completed": 8,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 2169.433,
+          "runtime_ms": {
+            "samples": 8,
+            "max": 2169.433,
+            "p50": 794.611,
+            "p95": 2169.433,
+            "p99": 2169.433
+          },
+          "sqlite_busy_failures": 0
+        },
+        "notifications.list_page": {
+          "submitted": 9282,
+          "completed": 9282,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 444.158,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 308.695,
+            "p50": 1.495,
+            "p95": 7.215,
+            "p99": 19.831
+          },
+          "sqlite_busy_failures": 0
+        },
+        "notifications.present_page": {
+          "submitted": 9282,
+          "completed": 9282,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 98.112,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 5.175,
+            "p50": 0.29,
+            "p95": 0.67,
+            "p99": 2.907
+          },
+          "sqlite_busy_failures": 0
+        },
+        "pr_supervisor.github_response_json": {
+          "submitted": 661,
+          "completed": 661,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 65.233,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 65.233,
+            "p50": 0.527,
+            "p95": 0.944,
+            "p99": 15.146
+          },
+          "sqlite_busy_failures": 0
+        },
+        "pr_supervisor.response_json": {
+          "submitted": 756454,
+          "completed": 756454,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 11,
+          "max_runtime_ms": 1589.224,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 7.512,
+            "p50": 0.529,
+            "p95": 0.917,
+            "p99": 4.391
+          },
+          "sqlite_busy_failures": 0
+        },
+        "progress.pending_read": {
+          "submitted": 204525,
+          "completed": 204525,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 79,
+          "max_runtime_ms": 8718.668,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 90.001,
+            "p50": 9.754,
+            "p95": 13.553,
+            "p99": 59.315
+          },
+          "sqlite_busy_failures": 0
+        },
+        "provider.status.codex": {
+          "submitted": 18,
+          "completed": 18,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 2,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 18,
+          "max_runtime_ms": 5806.383,
+          "runtime_ms": {
+            "samples": 18,
+            "max": 5806.383,
+            "p50": 690.854,
+            "p95": 5806.383,
+            "p99": 5806.383
+          },
+          "sqlite_busy_failures": 0
+        },
+        "provider.status.cursor": {
+          "submitted": 18,
+          "completed": 18,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 2,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 18,
+          "max_runtime_ms": 5359.502,
+          "runtime_ms": {
+            "samples": 18,
+            "max": 5359.502,
+            "p50": 2699.346,
+            "p95": 5359.502,
+            "p99": 5359.502
+          },
+          "sqlite_busy_failures": 0
+        },
+        "provider.status.openinterpreter": {
+          "submitted": 18,
+          "completed": 18,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 1,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 6,
+          "max_runtime_ms": 4369.46,
+          "runtime_ms": {
+            "samples": 18,
+            "max": 4369.46,
+            "p50": 486.337,
+            "p95": 4369.46,
+            "p99": 4369.46
+          },
+          "sqlite_busy_failures": 0
+        },
+        "reconciliation.dispatch_read": {
+          "submitted": 123090,
+          "completed": 123090,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 42,
+          "max_runtime_ms": 6686.661,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 93.962,
+            "p50": 1.378,
+            "p95": 3.206,
+            "p99": 17.175
+          },
+          "sqlite_busy_failures": 0
+        },
+        "runtime.status_snapshot": {
+          "submitted": 3,
+          "completed": 2,
+          "active": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 44.412,
+          "runtime_ms": {
+            "samples": 2,
+            "max": 44.412,
+            "p50": 40.336,
+            "p95": 44.412,
+            "p99": 44.412
+          },
+          "sqlite_busy_failures": 0
+        },
+        "selection.catalog_enrichment": {
+          "submitted": 18,
+          "completed": 18,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 2,
+          "max_runtime_ms": 1059.768,
+          "runtime_ms": {
+            "samples": 18,
+            "max": 1059.768,
+            "p50": 6.506,
+            "p95": 1059.768,
+            "p99": 1059.768
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.agent_session_read": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 27.948,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 27.948,
+            "p50": 27.948,
+            "p95": 27.948,
+            "p99": 27.948
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.card_read": {
+          "submitted": 1168212,
+          "completed": 1168212,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 58,
+          "max_runtime_ms": 4181.126,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 27.83,
+            "p50": 1.011,
+            "p95": 2.48,
+            "p99": 7.073
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.card_write": {
+          "submitted": 7,
+          "completed": 7,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 161.241,
+          "runtime_ms": {
+            "samples": 7,
+            "max": 161.241,
+            "p50": 64.352,
+            "p95": 161.241,
+            "p99": 161.241
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_capability_write": {
+          "submitted": 9283,
+          "completed": 9282,
+          "active": 0,
+          "failed": 1,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 4,
+          "max_runtime_ms": 1067.229,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 225.781,
+            "p50": 4.766,
+            "p95": 15.902,
+            "p99": 59.759
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_completion_due_read": {
+          "submitted": 117975,
+          "completed": 117973,
+          "active": 0,
+          "failed": 2,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 325,
+          "max_runtime_ms": 15722.403,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 233.497,
+            "p50": 11.843,
+            "p95": 61.321,
+            "p99": 170.531
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_due_read": {
+          "submitted": 117973,
+          "completed": 117973,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 30,
+          "max_runtime_ms": 1751.326,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 22.601,
+            "p50": 1.502,
+            "p95": 2.331,
+            "p99": 9.675
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_eligibility_recovery": {
+          "submitted": 615,
+          "completed": 615,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 357.695,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 159.245,
+            "p50": 5.697,
+            "p95": 33.713,
+            "p99": 84.566
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_event_write": {
+          "submitted": 408603,
+          "completed": 408603,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 53,
+          "max_runtime_ms": 3792.358,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 556.397,
+            "p50": 4.113,
+            "p95": 8.279,
+            "p99": 77.913
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_metric": {
+          "submitted": 54099,
+          "completed": 54097,
+          "active": 0,
+          "failed": 2,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 16,
+          "max_runtime_ms": 6887.018,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 101.299,
+            "p50": 4.467,
+            "p95": 10.862,
+            "p99": 24.436
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_watch_read": {
+          "submitted": 420052,
+          "completed": 420052,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 134,
+          "max_runtime_ms": 4269.201,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 605.429,
+            "p50": 5.469,
+            "p95": 33.415,
+            "p99": 84.381
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_watch_write": {
+          "submitted": 408667,
+          "completed": 408667,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 141,
+          "max_runtime_ms": 7590.731,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 191.581,
+            "p50": 11.331,
+            "p95": 21.847,
+            "p99": 90.18
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.project_read": {
+          "submitted": 760794,
+          "completed": 760794,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 46,
+          "max_runtime_ms": 5527.281,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 28.899,
+            "p50": 0.673,
+            "p95": 2.497,
+            "p99": 10.501
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.repository_read": {
+          "submitted": 760919,
+          "completed": 760919,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 57,
+          "max_runtime_ms": 8615.552,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 41.283,
+            "p50": 0.889,
+            "p95": 4.009,
+            "p99": 13.46
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.restart_handoffs_pending": {
+          "submitted": 123034,
+          "completed": 123034,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 17,
+          "max_runtime_ms": 3920.177,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 12.02,
+            "p50": 0.57,
+            "p95": 1.517,
+            "p99": 4.853
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.restart_handoffs_watchdog": {
+          "submitted": 123033,
+          "completed": 123033,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 36,
+          "max_runtime_ms": 10965.057,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 95.005,
+            "p50": 1.028,
+            "p95": 6.39,
+            "p99": 29.456
+          },
+          "sqlite_busy_failures": 0
+        },
+        "startup.agent_manager": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 5.135,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 5.135,
+            "p50": 5.135,
+            "p95": 5.135,
+            "p99": 5.135
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.commit_read": {
+          "submitted": 2951394,
+          "completed": 2951394,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 35,
+          "max_runtime_ms": 11794.821,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 2.529,
+            "p50": 0.86,
+            "p95": 1.163,
+            "p99": 1.889
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.gc_resume": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 38.879,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 38.879,
+            "p50": 38.879,
+            "p95": 38.879,
+            "p99": 38.879
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.json_decode": {
+          "submitted": 6389,
+          "completed": 6389,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 3,
+          "max_runtime_ms": 3202.605,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 156.578,
+            "p50": 0.578,
+            "p95": 7.386,
+            "p99": 65.21
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.json_encode": {
+          "submitted": 843,
+          "completed": 843,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 389.621,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 389.621,
+            "p50": 0.307,
+            "p95": 2.748,
+            "p99": 18.078
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.object_has": {
+          "submitted": 5868931,
+          "completed": 5868931,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 45,
+          "max_runtime_ms": 4124.37,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 1.815,
+            "p50": 0.22,
+            "p95": 0.314,
+            "p99": 0.364
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.object_ingest": {
+          "submitted": 836,
+          "completed": 641,
+          "active": 0,
+          "failed": 195,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 170.528,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 158.709,
+            "p50": 0.78,
+            "p95": 30.146,
+            "p99": 77.858
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.peer_http": {
+          "submitted": 7833,
+          "completed": 6389,
+          "active": 0,
+          "failed": 1444,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 11186.968,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 1141.219,
+            "p50": 18.992,
+            "p95": 70.023,
+            "p99": 896.742
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.reconcile_head": {
+          "submitted": 4910,
+          "completed": 4679,
+          "active": 0,
+          "failed": 231,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 4681,
+          "max_runtime_ms": 58771.791,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 58771.791,
+            "p50": 588.751,
+            "p95": 2084.099,
+            "p99": 30148.057
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.ref_read": {
+          "submitted": 235500,
+          "completed": 235500,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 29,
+          "max_runtime_ms": 5219.851,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 64.118,
+            "p50": 0.715,
+            "p95": 2.171,
+            "p99": 12.805
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.startup_reconcile": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 79.1,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 79.1,
+            "p50": 79.1,
+            "p95": 79.1,
+            "p99": 79.1
+          },
+          "sqlite_busy_failures": 0
+        },
+        "workspace.collect_garbage": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 54.924,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 54.924,
+            "p50": 54.924,
+            "p95": 54.924,
+            "p99": 54.924
+          },
+          "sqlite_busy_failures": 0
+        },
+        "workspace.reconcile_terminal_state": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 1,
+          "max_runtime_ms": 3585.384,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 3585.384,
+            "p50": 3585.384,
+            "p95": 3585.384,
+            "p99": 3585.384
+          },
+          "sqlite_busy_failures": 0
+        }
+      },
+      "route_groups": {
+        "/ready": {
+          "count": 96867,
+          "response_bytes": 13076245,
+          "latency_ms": {
+            "samples": 256,
+            "max": 83.474,
+            "p50": 5.105,
+            "p95": 8.363,
+            "p99": 63.734
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 135,
+            "p50": 135,
+            "p95": 135,
+            "p99": 135
+          }
+        },
+        "/sync/refs": {
+          "count": 4837,
+          "response_bytes": 1252783,
+          "latency_ms": {
+            "samples": 256,
+            "max": 9883.58,
+            "p50": 5.701,
+            "p95": 109.125,
+            "p99": 3157.954
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 259,
+            "p50": 259,
+            "p95": 259,
+            "p99": 259
+          }
+        },
+        "/pr-supervisor/replicas": {
+          "count": 761293,
+          "response_bytes": 4251324350,
+          "latency_ms": {
+            "samples": 256,
+            "max": 428.924,
+            "p50": 20.082,
+            "p95": 50.628,
+            "p99": 148.063
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 5904,
+            "p50": 5793,
+            "p95": 5805,
+            "p99": 5904
+          }
+        },
+        "/fleet/overview/local": {
+          "count": 95934,
+          "response_bytes": 496595609,
+          "latency_ms": {
+            "samples": 256,
+            "max": 175.969,
+            "p50": 13.991,
+            "p95": 62.003,
+            "p99": 137.144
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 69607,
+            "p50": 3796,
+            "p95": 3798,
+            "p99": 69606
+          }
+        },
+        "/sync/get": {
+          "count": 48,
+          "response_bytes": 163584,
+          "latency_ms": {
+            "samples": 48,
+            "max": 212.604,
+            "p50": 5.357,
+            "p95": 9.684,
+            "p99": 212.604
+          },
+          "response_size_bytes": {
+            "samples": 48,
+            "max": 8831,
+            "p50": 639,
+            "p95": 8831,
+            "p99": 8831
+          }
+        },
+        "/health-journal/gathered": {
+          "count": 13438,
+          "response_bytes": 1577959,
+          "latency_ms": {
+            "samples": 256,
+            "max": 181.686,
+            "p50": 53.899,
+            "p95": 101.284,
+            "p99": 151.642
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 119,
+            "p50": 119,
+            "p95": 119,
+            "p99": 119
+          }
+        },
+        "/status": {
+          "count": 95342,
+          "response_bytes": 212213387,
+          "latency_ms": {
+            "samples": 256,
+            "max": 1156.018,
+            "p50": 261.407,
+            "p95": 659.372,
+            "p99": 784.703
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 2248,
+            "p50": 2248,
+            "p95": 2248,
+            "p99": 2248
+          }
+        },
+        "/ui/assets": {
+          "count": 9281,
+          "response_bytes": 733199,
+          "latency_ms": {
+            "samples": 256,
+            "max": 330.305,
+            "p50": 5.946,
+            "p95": 14.604,
+            "p99": 32.351
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 79,
+            "p50": 79,
+            "p95": 79,
+            "p99": 79
+          }
+        },
+        "/notifications": {
+          "count": 9282,
+          "response_bytes": 696150,
+          "latency_ms": {
+            "samples": 256,
+            "max": 360.895,
+            "p50": 15.912,
+            "p95": 40.351,
+            "p99": 76.502
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 75,
+            "p50": 75,
+            "p95": 75,
+            "p99": 75
+          }
+        },
+        "/health-journal/outbox": {
+          "count": 2680,
+          "response_bytes": 1290199,
+          "latency_ms": {
+            "samples": 256,
+            "max": 389.363,
+            "p50": 10.864,
+            "p95": 29.438,
+            "p99": 79.561
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 14451,
+            "p50": 156,
+            "p95": 1969,
+            "p99": 14327
+          }
+        },
+        "/health": {
+          "count": 6,
+          "response_bytes": 90,
+          "latency_ms": {
+            "samples": 6,
+            "max": 6.355,
+            "p50": 5.446,
+            "p95": 6.355,
+            "p99": 6.355
+          },
+          "response_size_bytes": {
+            "samples": 6,
+            "max": 15,
+            "p50": 15,
+            "p95": 15,
+            "p99": 15
+          }
+        },
+        "/fleet/peer-update-check": {
+          "count": 13,
+          "response_bytes": 1664,
+          "latency_ms": {
+            "samples": 13,
+            "max": 4781.38,
+            "p50": 568.698,
+            "p95": 4781.38,
+            "p99": 4781.38
+          },
+          "response_size_bytes": {
+            "samples": 13,
+            "max": 128,
+            "p50": 128,
+            "p95": 128,
+            "p99": 128
+          }
+        },
+        "/agent/providers": {
+          "count": 18,
+          "response_bytes": 335172,
+          "latency_ms": {
+            "samples": 18,
+            "max": 5969.114,
+            "p50": 2713.648,
+            "p95": 5969.114,
+            "p99": 5969.114
+          },
+          "response_size_bytes": {
+            "samples": 18,
+            "max": 19723,
+            "p50": 19720,
+            "p95": 19723,
+            "p99": 19723
+          }
+        },
+        "/fleet/membership/apply": {
+          "count": 24,
+          "response_bytes": 3190,
+          "latency_ms": {
+            "samples": 24,
+            "max": 489.846,
+            "p50": 9.835,
+            "p95": 105.05,
+            "p99": 489.846
+          },
+          "response_size_bytes": {
+            "samples": 24,
+            "max": 133,
+            "p50": 133,
+            "p95": 133,
+            "p99": 133
+          }
+        },
+        "/pr-supervisor/retirements": {
+          "count": 58,
+          "response_bytes": 253345,
+          "latency_ms": {
+            "samples": 58,
+            "max": 409.53,
+            "p50": 25.505,
+            "p95": 109.025,
+            "p99": 409.53
+          },
+          "response_size_bytes": {
+            "samples": 58,
+            "max": 5707,
+            "p50": 5323,
+            "p95": 5401,
+            "p99": 5707
+          }
+        },
+        "/agent/providers/mcp-bootstrap": {
+          "count": 10,
+          "response_bytes": 600,
+          "latency_ms": {
+            "samples": 10,
+            "max": 16304.651,
+            "p50": 5740.06,
+            "p95": 16304.651,
+            "p99": 16304.651
+          },
+          "response_size_bytes": {
+            "samples": 10,
+            "max": 60,
+            "p50": 60,
+            "p95": 60,
+            "p99": 60
+          }
+        },
+        "/agent/sessions/{session_id}/cards": {
+          "count": 1,
+          "response_bytes": 30,
+          "latency_ms": {
+            "samples": 1,
+            "max": 15.846,
+            "p50": 15.846,
+            "p95": 15.846,
+            "p99": 15.846
+          },
+          "response_size_bytes": {
+            "samples": 1,
+            "max": 30,
+            "p50": 30,
+            "p95": 30,
+            "p99": 30
+          }
+        },
+        "/instance": {
+          "count": 4,
+          "response_bytes": 1640,
+          "latency_ms": {
+            "samples": 4,
+            "max": 8.798,
+            "p50": 5.757,
+            "p95": 8.798,
+            "p99": 8.798
+          },
+          "response_size_bytes": {
+            "samples": 4,
+            "max": 410,
+            "p50": 410,
+            "p95": 410,
+            "p99": 410
+          }
+        },
+        "/runtime": {
+          "count": 2,
+          "response_bytes": 308172,
+          "latency_ms": {
+            "samples": 2,
+            "max": 51.47,
+            "p50": 50.761,
+            "p95": 51.47,
+            "p99": 51.47
+          },
+          "response_size_bytes": {
+            "samples": 2,
+            "max": 156067,
+            "p50": 152105,
+            "p95": 156067,
+            "p99": 156067
+          }
+        },
+        "/fleet/instances": {
+          "count": 1,
+          "response_bytes": 2739,
+          "latency_ms": {
+            "samples": 1,
+            "max": 9.672,
+            "p50": 9.672,
+            "p95": 9.672,
+            "p99": 9.672
+          },
+          "response_size_bytes": {
+            "samples": 1,
+            "max": 2739,
+            "p50": 2739,
+            "p95": 2739,
+            "p99": 2739
+          }
+        },
+        "/fleet/overview": {
+          "count": 1,
+          "response_bytes": 2549015,
+          "latency_ms": {
+            "samples": 1,
+            "max": 151.823,
+            "p50": 151.823,
+            "p95": 151.823,
+            "p99": 151.823
+          },
+          "response_size_bytes": {
+            "samples": 1,
+            "max": 2549015,
+            "p50": 2549015,
+            "p95": 2549015,
+            "p99": 2549015
+          }
+        },
+        "/telemetry/query": {
+          "count": 1,
+          "response_bytes": 689207,
+          "latency_ms": {
+            "samples": 1,
+            "max": 3321.586,
+            "p50": 3321.586,
+            "p95": 3321.586,
+            "p99": 3321.586
+          },
+          "response_size_bytes": {
+            "samples": 1,
+            "max": 689207,
+            "p50": 689207,
+            "p95": 689207,
+            "p99": 689207
+          }
+        }
+      },
+      "operation_count": 66,
+      "route_count": 22,
+      "scope": "Lifetime counters and maxima from this peer process; runtime_ms percentiles are bounded windows. Read latencies are four one-off supported reads, not a representative distribution. Version-only Macmini response does not prove loaded revision. Route keys are retained exactly as emitted; no invented cross-build route parity."
+    },
+    {
+      "source": "http://100.100.186.43:8080",
+      "identity": {
+        "id": "2d22a9e1-a1a0-4900-8a8e-8284627aa6bf",
+        "name": "monica"
+      },
+      "status": {
+        "instance_id": "2d22a9e1-a1a0-4900-8a8e-8284627aa6bf",
+        "process_id": 89216,
+        "runtime_build": {
+          "loaded_module_version": "1.5.9",
+          "source_revision": "0d6638ccf355aeaf07627b5cc10d5c302c6b83e8",
+          "package_identity": "sha256:b573ed4ca90ee0695e89c83098ca055630faaa65156457fdc522c8f6a8d02036",
+          "pid": 89216,
+          "startup_id": "73281cc0-f305-493d-82a3-6bfb13a4ff59"
+        },
+        "version": "1.5.9"
+      },
+      "reads": [
+        {
+          "path": "/api/instance",
+          "started_at": "2026-10-25T20:21:47.596332+00:00",
+          "ok": true,
+          "status": 200,
+          "decoded_response_bytes": 436,
+          "correlation_id": "867229eb-35fc-4015-a0eb-5ac220979e2a",
+          "elapsed_ms": 15.405,
+          "finished_at": "2026-10-25T20:21:47.611767+00:00"
+        },
+        {
+          "path": "/api/ready",
+          "started_at": "2026-10-25T20:21:47.614870+00:00",
+          "ok": true,
+          "status": 200,
+          "decoded_response_bytes": 135,
+          "correlation_id": "aaa49f3a-3dae-414f-8ba1-67ea14d52ba1",
+          "readiness": {
+            "ready": null,
+            "status": "ready",
+            "state": null
+          },
+          "elapsed_ms": 7.256,
+          "finished_at": "2026-10-25T20:21:47.622139+00:00"
+        },
+        {
+          "path": "/api/status",
+          "started_at": "2026-10-25T20:21:47.625250+00:00",
+          "ok": true,
+          "status": 200,
+          "decoded_response_bytes": 2541,
+          "correlation_id": "01f5f9f9-23a7-47d7-a2a8-83aba763c6b2",
+          "elapsed_ms": 20.541,
+          "finished_at": "2026-10-25T20:21:47.645806+00:00"
+        },
+        {
+          "path": "/api/runtime",
+          "started_at": "2026-10-25T20:21:47.649651+00:00",
+          "ok": true,
+          "status": 200,
+          "decoded_response_bytes": 309451,
+          "correlation_id": "fd57912c-3a09-4888-a814-4f55337d7d39",
+          "elapsed_ms": 83.775,
+          "finished_at": "2026-10-25T20:21:47.733450+00:00"
+        }
+      ],
+      "operations": {
+        "agent.quiesce_snapshot_clear": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 13.792,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 13.792,
+            "p50": 13.792,
+            "p95": 13.792,
+            "p99": 13.792
+          },
+          "sqlite_busy_failures": 0
+        },
+        "agent.recovery_sessions": {
+          "submitted": 121438,
+          "completed": 121438,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 1,
+          "max_runtime_ms": 530.097,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 23.728,
+            "p50": 3.288,
+            "p95": 4.816,
+            "p99": 7.358
+          },
+          "sqlite_busy_failures": 0
+        },
+        "agent.startup_state_read": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 318.732,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 318.732,
+            "p50": 318.732,
+            "p95": 318.732,
+            "p99": 318.732
+          },
+          "sqlite_busy_failures": 0
+        },
+        "dispatch.completion_pending_read": {
+          "submitted": 596825,
+          "completed": 596825,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 16,
+          "max_runtime_ms": 1622.483,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 177.319,
+            "p50": 14.623,
+            "p95": 22.767,
+            "p99": 35.809
+          },
+          "sqlite_busy_failures": 0
+        },
+        "dispatch.followup_pending_read": {
+          "submitted": 596825,
+          "completed": 596825,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 62.985,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 16.004,
+            "p50": 0.306,
+            "p95": 0.56,
+            "p99": 1.391
+          },
+          "sqlite_busy_failures": 0
+        },
+        "dispatch.record_read": {
+          "submitted": 1124830,
+          "completed": 1124830,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 1,
+          "max_runtime_ms": 509.496,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 10.021,
+            "p50": 0.35,
+            "p95": 0.588,
+            "p99": 2.522
+          },
+          "sqlite_busy_failures": 0
+        },
+        "filesystem.github_credentials_read": {
+          "submitted": 117119,
+          "completed": 117119,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 190.279,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 49.76,
+            "p50": 1.418,
+            "p95": 2.158,
+            "p99": 13.216
+          },
+          "sqlite_busy_failures": 0
+        },
+        "filesystem.workspace_completion": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 4.058,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 4.058,
+            "p50": 4.058,
+            "p95": 4.058,
+            "p99": 4.058
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview.activity": {
+          "submitted": 8,
+          "completed": 8,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 6.78,
+          "runtime_ms": {
+            "samples": 8,
+            "max": 6.78,
+            "p50": 5.691,
+            "p95": 6.78,
+            "p99": 6.78
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview.mcp_bootstrap": {
+          "submitted": 5,
+          "completed": 5,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 5,
+          "max_runtime_ms": 1964.752,
+          "runtime_ms": {
+            "samples": 5,
+            "max": 1964.752,
+            "p50": 1895.714,
+            "p95": 1964.752,
+            "p99": 1964.752
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview.reachability": {
+          "submitted": 39083,
+          "completed": 39083,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 1,
+          "max_runtime_ms": 528.0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 13.909,
+            "p50": 4.335,
+            "p95": 8.869,
+            "p99": 10.9
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview.repositories": {
+          "submitted": 5,
+          "completed": 5,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 8.684,
+          "runtime_ms": {
+            "samples": 5,
+            "max": 8.684,
+            "p50": 4.447,
+            "p95": 8.684,
+            "p99": 8.684
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview.status": {
+          "submitted": 39083,
+          "completed": 39083,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 1,
+          "max_runtime_ms": 529.427,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 13.738,
+            "p50": 4.766,
+            "p95": 9.018,
+            "p99": 10.887
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview.supervisor": {
+          "submitted": 6,
+          "completed": 6,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 14.2,
+          "runtime_ms": {
+            "samples": 6,
+            "max": 14.2,
+            "p50": 3.489,
+            "p95": 14.2,
+            "p99": 14.2
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview.sync": {
+          "submitted": 82273,
+          "completed": 82273,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 20,
+          "max_runtime_ms": 572.124,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 65.247,
+            "p50": 4.518,
+            "p95": 34.15,
+            "p99": 53.962
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview_cache_read": {
+          "submitted": 1642452,
+          "completed": 1642452,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 10,
+          "max_runtime_ms": 557.127,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 58.679,
+            "p50": 1.591,
+            "p95": 9.54,
+            "p99": 33.228
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview_cache_write": {
+          "submitted": 512210,
+          "completed": 512210,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 301,
+          "max_runtime_ms": 1805.475,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 117.138,
+            "p50": 29.855,
+            "p95": 74.612,
+            "p99": 100.654
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview_response_json": {
+          "submitted": 264849,
+          "completed": 264849,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 6,
+          "max_runtime_ms": 550.534,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 46.156,
+            "p50": 12.331,
+            "p95": 36.276,
+            "p99": 41.044
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.update_check": {
+          "submitted": 6,
+          "completed": 6,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 1,
+          "max_runtime_ms": 647.196,
+          "runtime_ms": {
+            "samples": 6,
+            "max": 647.196,
+            "p50": 135.951,
+            "p95": 647.196,
+            "p99": 647.196
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.update_recovery": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 17.195,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 17.195,
+            "p50": 17.195,
+            "p95": 17.195,
+            "p99": 17.195
+          },
+          "sqlite_busy_failures": 0
+        },
+        "goal.dispatch_lifecycle_index": {
+          "submitted": 20243,
+          "completed": 20243,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 163.028,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 9.954,
+            "p50": 0.672,
+            "p95": 0.821,
+            "p99": 3.868
+          },
+          "sqlite_busy_failures": 0
+        },
+        "health.canonical_obligation": {
+          "submitted": 19609,
+          "completed": 19609,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 1,
+          "max_runtime_ms": 900.194,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 21.644,
+            "p50": 2.341,
+            "p95": 14.84,
+            "p99": 16.408
+          },
+          "sqlite_busy_failures": 0
+        },
+        "http.fleet_overview": {
+          "submitted": 351747,
+          "completed": 265516,
+          "active": 0,
+          "failed": 86231,
+          "timed_out": 86231,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 4532.66,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 377.993,
+            "p50": 72.652,
+            "p95": 304.187,
+            "p99": 357.076
+          },
+          "sqlite_busy_failures": 0
+        },
+        "http.github": {
+          "submitted": 4050,
+          "completed": 4050,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 2532.349,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 940.179,
+            "p50": 300.133,
+            "p95": 605.721,
+            "p99": 670.619
+          },
+          "sqlite_busy_failures": 0
+        },
+        "http.github_snapshot": {
+          "submitted": 483,
+          "completed": 483,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 7245.45,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 7245.45,
+            "p50": 2354.641,
+            "p95": 2743.099,
+            "p99": 3325.234
+          },
+          "sqlite_busy_failures": 0
+        },
+        "http.pr_supervisor_lease": {
+          "submitted": 845,
+          "completed": 697,
+          "active": 0,
+          "failed": 148,
+          "timed_out": 3,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 15002.039,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 5004.922,
+            "p50": 77.047,
+            "p95": 2583.864,
+            "p99": 5003.458
+          },
+          "sqlite_busy_failures": 0
+        },
+        "http.pr_supervisor_peer": {
+          "submitted": 1243288,
+          "completed": 1179587,
+          "active": 0,
+          "failed": 63701,
+          "timed_out": 673,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 15231.588,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 607.03,
+            "p50": 31.708,
+            "p95": 104.546,
+            "p99": 157.411
+          },
+          "sqlite_busy_failures": 0
+        },
+        "maintenance.run": {
+          "submitted": 8,
+          "completed": 8,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 1885.319,
+          "runtime_ms": {
+            "samples": 8,
+            "max": 1885.319,
+            "p50": 48.701,
+            "p95": 1885.319,
+            "p99": 1885.319
+          },
+          "sqlite_busy_failures": 0
+        },
+        "pr_supervisor.github_response_json": {
+          "submitted": 4050,
+          "completed": 4050,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 72.383,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 12.02,
+            "p50": 0.697,
+            "p95": 1.376,
+            "p99": 5.381
+          },
+          "sqlite_busy_failures": 0
+        },
+        "pr_supervisor.response_json": {
+          "submitted": 1180020,
+          "completed": 1180020,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 1,
+          "max_runtime_ms": 527.661,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 17.347,
+            "p50": 0.771,
+            "p95": 4.316,
+            "p99": 16.148
+          },
+          "sqlite_busy_failures": 0
+        },
+        "progress.pending_read": {
+          "submitted": 202439,
+          "completed": 202439,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 219.38,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 31.278,
+            "p50": 5.883,
+            "p95": 7.328,
+            "p99": 15.861
+          },
+          "sqlite_busy_failures": 0
+        },
+        "provider.status.codex": {
+          "submitted": 8,
+          "completed": 8,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 403.59,
+          "runtime_ms": {
+            "samples": 8,
+            "max": 403.59,
+            "p50": 297.04,
+            "p95": 403.59,
+            "p99": 403.59
+          },
+          "sqlite_busy_failures": 0
+        },
+        "provider.status.cursor": {
+          "submitted": 8,
+          "completed": 8,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 8,
+          "max_runtime_ms": 1422.332,
+          "runtime_ms": {
+            "samples": 8,
+            "max": 1422.332,
+            "p50": 1337.244,
+            "p95": 1422.332,
+            "p99": 1422.332
+          },
+          "sqlite_busy_failures": 0
+        },
+        "provider.status.openinterpreter": {
+          "submitted": 8,
+          "completed": 8,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 146.562,
+          "runtime_ms": {
+            "samples": 8,
+            "max": 146.562,
+            "p50": 36.957,
+            "p95": 146.562,
+            "p99": 146.562
+          },
+          "sqlite_busy_failures": 0
+        },
+        "reconciliation.dispatch_read": {
+          "submitted": 121440,
+          "completed": 121440,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 195.407,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 28.432,
+            "p50": 1.858,
+            "p95": 7.364,
+            "p99": 9.16
+          },
+          "sqlite_busy_failures": 0
+        },
+        "selection.catalog_enrichment": {
+          "submitted": 8,
+          "completed": 8,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 1.779,
+          "runtime_ms": {
+            "samples": 8,
+            "max": 1.779,
+            "p50": 1.003,
+            "p95": 1.779,
+            "p99": 1.779
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.agent_session_read": {
+          "submitted": 2,
+          "completed": 2,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 114.75,
+          "runtime_ms": {
+            "samples": 2,
+            "max": 114.75,
+            "p50": 114.575,
+            "p95": 114.75,
+            "p99": 114.75
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.card_read": {
+          "submitted": 1534868,
+          "completed": 1534868,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 1,
+          "max_runtime_ms": 1273.486,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 21.876,
+            "p50": 1.86,
+            "p95": 2.623,
+            "p99": 20.472
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.card_write": {
+          "submitted": 44,
+          "completed": 44,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 107.139,
+          "runtime_ms": {
+            "samples": 44,
+            "max": 107.139,
+            "p50": 48.159,
+            "p95": 70.493,
+            "p99": 107.139
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_capability_write": {
+          "submitted": 8852,
+          "completed": 8852,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 2,
+          "max_runtime_ms": 974.017,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 188.445,
+            "p50": 18.16,
+            "p95": 24.835,
+            "p99": 36.945
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_completion_due_read": {
+          "submitted": 117117,
+          "completed": 117117,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 3,
+          "max_runtime_ms": 1130.28,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 28.47,
+            "p50": 7.415,
+            "p95": 10.477,
+            "p99": 23.004
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_due_read": {
+          "submitted": 117117,
+          "completed": 117117,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 1,
+          "max_runtime_ms": 529.47,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 12.043,
+            "p50": 1.317,
+            "p95": 1.856,
+            "p99": 4.248
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_eligibility_recovery": {
+          "submitted": 638,
+          "completed": 638,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 46.882,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 41.599,
+            "p50": 14.893,
+            "p95": 25.583,
+            "p99": 40.202
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_event_write": {
+          "submitted": 412136,
+          "completed": 412136,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 216.593,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 29.296,
+            "p50": 2.005,
+            "p95": 25.635,
+            "p99": 28.872
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_metric": {
+          "submitted": 57529,
+          "completed": 57529,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 13,
+          "max_runtime_ms": 1815.243,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 38.531,
+            "p50": 14.578,
+            "p95": 18.713,
+            "p99": 28.453
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_observation_write": {
+          "submitted": 451,
+          "completed": 451,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 57.813,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 57.813,
+            "p50": 18.222,
+            "p95": 26.994,
+            "p99": 40.454
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_watch_read": {
+          "submitted": 428039,
+          "completed": 428039,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 205.135,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 35.694,
+            "p50": 10.763,
+            "p95": 14.845,
+            "p99": 25.409
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_watch_write": {
+          "submitted": 412075,
+          "completed": 412075,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 51,
+          "max_runtime_ms": 1400.014,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 41.345,
+            "p50": 16.882,
+            "p95": 27.869,
+            "p99": 34.965
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.project_read": {
+          "submitted": 1125796,
+          "completed": 1125796,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 2,
+          "max_runtime_ms": 1074.05,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 19.985,
+            "p50": 0.7,
+            "p95": 1.816,
+            "p99": 14.77
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.repository_read": {
+          "submitted": 1124844,
+          "completed": 1124844,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 200.71,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 7.105,
+            "p50": 0.661,
+            "p95": 1.65,
+            "p99": 4.976
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.restart_handoffs_pending": {
+          "submitted": 121439,
+          "completed": 121439,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 175.516,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 16.91,
+            "p50": 0.767,
+            "p95": 3.747,
+            "p99": 8.275
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.restart_handoffs_watchdog": {
+          "submitted": 121438,
+          "completed": 121438,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 184.791,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 20.63,
+            "p50": 2.341,
+            "p95": 7.581,
+            "p99": 15.257
+          },
+          "sqlite_busy_failures": 0
+        },
+        "startup.agent_manager": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 1.248,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 1.248,
+            "p50": 1.248,
+            "p95": 1.248,
+            "p99": 1.248
+          },
+          "sqlite_busy_failures": 0
+        },
+        "startup.async_backend_prepare": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 39.067,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 39.067,
+            "p50": 39.067,
+            "p95": 39.067,
+            "p99": 39.067
+          },
+          "sqlite_busy_failures": 0
+        },
+        "startup.openapi": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 1,
+          "max_runtime_ms": 1839.094,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 1839.094,
+            "p50": 1839.094,
+            "p95": 1839.094,
+            "p99": 1839.094
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.commit_read": {
+          "submitted": 2272177,
+          "completed": 2272177,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 1,
+          "max_runtime_ms": 528.066,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 3.31,
+            "p50": 0.123,
+            "p95": 0.22,
+            "p99": 0.682
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.gc_resume": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 2.813,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 2.813,
+            "p50": 2.813,
+            "p95": 2.813,
+            "p99": 2.813
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.json_decode": {
+          "submitted": 5167,
+          "completed": 5167,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 128.016,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 28.779,
+            "p50": 0.527,
+            "p95": 2.159,
+            "p99": 4.489
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.json_encode": {
+          "submitted": 471,
+          "completed": 471,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 47.534,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 3.067,
+            "p50": 0.283,
+            "p95": 0.595,
+            "p99": 1.731
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.object_has": {
+          "submitted": 4530677,
+          "completed": 4530677,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 1,
+          "max_runtime_ms": 522.574,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 0.178,
+            "p50": 0.074,
+            "p95": 0.129,
+            "p99": 0.139
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.object_ingest": {
+          "submitted": 468,
+          "completed": 468,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 423.594,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 58.716,
+            "p50": 15.759,
+            "p95": 34.452,
+            "p99": 46.329
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.peer_http": {
+          "submitted": 6507,
+          "completed": 5167,
+          "active": 0,
+          "failed": 1340,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 8815.984,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 8815.984,
+            "p50": 17.084,
+            "p95": 3004.06,
+            "p99": 3166.769
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.reconcile_head": {
+          "submitted": 4696,
+          "completed": 4696,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 476.4,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 353.423,
+            "p50": 156.507,
+            "p95": 184.981,
+            "p99": 335.325
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.ref_read": {
+          "submitted": 236872,
+          "completed": 236872,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 180.597,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 6.307,
+            "p50": 0.97,
+            "p95": 1.455,
+            "p99": 2.414
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.startup_reconcile": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 173.221,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 173.221,
+            "p50": 173.221,
+            "p95": 173.221,
+            "p99": 173.221
+          },
+          "sqlite_busy_failures": 0
+        },
+        "workspace.collect_garbage": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 1,
+          "max_runtime_ms": 1054.374,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 1054.374,
+            "p50": 1054.374,
+            "p95": 1054.374,
+            "p99": 1054.374
+          },
+          "sqlite_busy_failures": 0
+        },
+        "workspace.reconcile_terminal_state": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 123.622,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 123.622,
+            "p50": 123.622,
+            "p95": 123.622,
+            "p99": 123.622
+          },
+          "sqlite_busy_failures": 0
+        }
+      },
+      "route_groups": {
+        "/ready": {
+          "count": 96118,
+          "response_bytes": 12975850,
+          "latency_ms": {
+            "samples": 256,
+            "max": 12.976,
+            "p50": 4.312,
+            "p95": 4.588,
+            "p99": 4.804
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 135,
+            "p50": 135,
+            "p95": 135,
+            "p99": 135
+          }
+        },
+        "/status": {
+          "count": 96104,
+          "response_bytes": 244200264,
+          "latency_ms": {
+            "samples": 256,
+            "max": 544.19,
+            "p50": 15.284,
+            "p95": 19.739,
+            "p99": 31.666
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 2541,
+            "p50": 2541,
+            "p95": 2541,
+            "p99": 2541
+          }
+        },
+        "/fleet/membership/apply": {
+          "count": 12,
+          "response_bytes": 1595,
+          "latency_ms": {
+            "samples": 12,
+            "max": 63.164,
+            "p50": 14.745,
+            "p95": 63.164,
+            "p99": 63.164
+          },
+          "response_size_bytes": {
+            "samples": 12,
+            "max": 133,
+            "p50": 133,
+            "p95": 133,
+            "p99": 133
+          }
+        },
+        "/fleet/overview/local": {
+          "count": 96120,
+          "response_bytes": 758004163,
+          "latency_ms": {
+            "samples": 256,
+            "max": 43.252,
+            "p50": 4.757,
+            "p95": 23.316,
+            "p99": 33.284
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 220908,
+            "p50": 3773,
+            "p95": 3775,
+            "p99": 220908
+          }
+        },
+        "/pr-supervisor/replicas": {
+          "count": 1126398,
+          "response_bytes": 6293855540,
+          "latency_ms": {
+            "samples": 256,
+            "max": 532.628,
+            "p50": 28.831,
+            "p95": 32.553,
+            "p99": 58.619
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 6122,
+            "p50": 6004,
+            "p95": 6022,
+            "p99": 6122
+          }
+        },
+        "/pr-supervisor/instances/heartbeat": {
+          "count": 10136,
+          "response_bytes": 172312,
+          "latency_ms": {
+            "samples": 256,
+            "max": 518.627,
+            "p50": 22.353,
+            "p95": 26.358,
+            "p99": 39.988
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 17,
+            "p50": 17,
+            "p95": 17,
+            "p99": 17
+          }
+        },
+        "/health": {
+          "count": 4,
+          "response_bytes": 60,
+          "latency_ms": {
+            "samples": 4,
+            "max": 2.979,
+            "p50": 1.281,
+            "p95": 2.979,
+            "p99": 2.979
+          },
+          "response_size_bytes": {
+            "samples": 4,
+            "max": 15,
+            "p50": 15,
+            "p95": 15,
+            "p99": 15
+          }
+        },
+        "/configuration": {
+          "count": 1,
+          "response_bytes": 169714,
+          "latency_ms": {
+            "samples": 1,
+            "max": 15.234,
+            "p50": 15.234,
+            "p95": 15.234,
+            "p99": 15.234
+          },
+          "response_size_bytes": {
+            "samples": 1,
+            "max": 169714,
+            "p50": 169714,
+            "p95": 169714,
+            "p99": 169714
+          }
+        },
+        "/fleet/peer-update-check": {
+          "count": 6,
+          "response_bytes": 768,
+          "latency_ms": {
+            "samples": 6,
+            "max": 662.375,
+            "p50": 137.865,
+            "p95": 662.375,
+            "p99": 662.375
+          },
+          "response_size_bytes": {
+            "samples": 6,
+            "max": 128,
+            "p50": 128,
+            "p95": 128,
+            "p99": 128
+          }
+        },
+        "/agent/providers": {
+          "count": 8,
+          "response_bytes": 158134,
+          "latency_ms": {
+            "samples": 8,
+            "max": 1428.029,
+            "p50": 1343.484,
+            "p95": 1428.029,
+            "p99": 1428.029
+          },
+          "response_size_bytes": {
+            "samples": 8,
+            "max": 19767,
+            "p50": 19767,
+            "p95": 19767,
+            "p99": 19767
+          }
+        },
+        "/owner-ready": {
+          "count": 1,
+          "response_bytes": 71,
+          "latency_ms": {
+            "samples": 1,
+            "max": 1.688,
+            "p50": 1.688,
+            "p95": 1.688,
+            "p99": 1.688
+          },
+          "response_size_bytes": {
+            "samples": 1,
+            "max": 71,
+            "p50": 71,
+            "p95": 71,
+            "p99": 71
+          }
+        },
+        "/sync/refs": {
+          "count": 5023,
+          "response_bytes": 1300957,
+          "latency_ms": {
+            "samples": 256,
+            "max": 37.8,
+            "p50": 4.794,
+            "p95": 5.256,
+            "p99": 18.573
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 259,
+            "p50": 259,
+            "p95": 259,
+            "p99": 259
+          }
+        },
+        "/health-journal/gathered": {
+          "count": 158,
+          "response_bytes": 8058,
+          "latency_ms": {
+            "samples": 158,
+            "max": 33.754,
+            "p50": 8.167,
+            "p95": 26.23,
+            "p99": 31.701
+          },
+          "response_size_bytes": {
+            "samples": 158,
+            "max": 51,
+            "p50": 51,
+            "p95": 51,
+            "p99": 51
+          }
+        },
+        "/pr-supervisor/retirements": {
+          "count": 20,
+          "response_bytes": 101794,
+          "latency_ms": {
+            "samples": 20,
+            "max": 51.881,
+            "p50": 38.949,
+            "p95": 41.696,
+            "p99": 51.881
+          },
+          "response_size_bytes": {
+            "samples": 20,
+            "max": 5401,
+            "p50": 5324,
+            "p95": 5392,
+            "p99": 5401
+          }
+        },
+        "/agent/sessions/{session_id}/cards": {
+          "count": 1,
+          "response_bytes": 30,
+          "latency_ms": {
+            "samples": 1,
+            "max": 4.586,
+            "p50": 4.586,
+            "p95": 4.586,
+            "p99": 4.586
+          },
+          "response_size_bytes": {
+            "samples": 1,
+            "max": 30,
+            "p50": 30,
+            "p95": 30,
+            "p99": 30
+          }
+        },
+        "/sync/get": {
+          "count": 357,
+          "response_bytes": 4712349,
+          "latency_ms": {
+            "samples": 256,
+            "max": 109.949,
+            "p50": 4.387,
+            "p95": 8.008,
+            "p99": 25.771
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 55103,
+            "p50": 607,
+            "p95": 51739,
+            "p99": 55103
+          }
+        },
+        "/pr-supervisor/capabilities": {
+          "count": 1195,
+          "response_bytes": 2395975,
+          "latency_ms": {
+            "samples": 256,
+            "max": 59.051,
+            "p50": 6.535,
+            "p95": 8.795,
+            "p99": 25.277
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 2005,
+            "p50": 2005,
+            "p95": 2005,
+            "p99": 2005
+          }
+        },
+        "/agent/providers/mcp-bootstrap": {
+          "count": 5,
+          "response_bytes": 300,
+          "latency_ms": {
+            "samples": 5,
+            "max": 1995.918,
+            "p50": 1912.062,
+            "p95": 1995.918,
+            "p99": 1995.918
+          },
+          "response_size_bytes": {
+            "samples": 5,
+            "max": 60,
+            "p50": 60,
+            "p95": 60,
+            "p99": 60
+          }
+        },
+        "/instance": {
+          "count": 4,
+          "response_bytes": 1744,
+          "latency_ms": {
+            "samples": 4,
+            "max": 5.807,
+            "p50": 4.596,
+            "p95": 5.807,
+            "p99": 5.807
+          },
+          "response_size_bytes": {
+            "samples": 4,
+            "max": 436,
+            "p50": 436,
+            "p95": 436,
+            "p99": 436
+          }
+        },
+        "/runtime": {
+          "count": 2,
+          "response_bytes": 604879,
+          "latency_ms": {
+            "samples": 2,
+            "max": 34.216,
+            "p50": 30.37,
+            "p95": 34.216,
+            "p99": 34.216
+          },
+          "response_size_bytes": {
+            "samples": 2,
+            "max": 306793,
+            "p50": 298086,
+            "p95": 306793,
+            "p99": 306793
+          }
+        },
+        "/fleet/instances": {
+          "count": 1,
+          "response_bytes": 2739,
+          "latency_ms": {
+            "samples": 1,
+            "max": 5.158,
+            "p50": 5.158,
+            "p95": 5.158,
+            "p99": 5.158
+          },
+          "response_size_bytes": {
+            "samples": 1,
+            "max": 2739,
+            "p50": 2739,
+            "p95": 2739,
+            "p99": 2739
+          }
+        },
+        "/fleet/overview": {
+          "count": 1,
+          "response_bytes": 1925028,
+          "latency_ms": {
+            "samples": 1,
+            "max": 41.08,
+            "p50": 41.08,
+            "p95": 41.08,
+            "p99": 41.08
+          },
+          "response_size_bytes": {
+            "samples": 1,
+            "max": 1925028,
+            "p50": 1925028,
+            "p95": 1925028,
+            "p99": 1925028
+          }
+        },
+        "/telemetry/query": {
+          "count": 1,
+          "response_bytes": 1168200,
+          "latency_ms": {
+            "samples": 1,
+            "max": 205.875,
+            "p50": 205.875,
+            "p95": 205.875,
+            "p99": 205.875
+          },
+          "response_size_bytes": {
+            "samples": 1,
+            "max": 1168200,
+            "p50": 1168200,
+            "p95": 1168200,
+            "p99": 1168200
+          }
+        }
+      },
+      "operation_count": 67,
+      "route_count": 23,
+      "scope": "Lifetime counters and maxima from this peer process; runtime_ms percentiles are bounded windows. Read latencies are four one-off supported reads, not a representative distribution. Version-only Macmini response does not prove loaded revision. Route keys are retained exactly as emitted; no invented cross-build route parity."
+    },
+    {
+      "source": "http://100.113.226.91:8080",
+      "identity": {
+        "id": "f72a46d3-1ea0-4cab-bead-419333bb1089",
+        "name": "alex"
+      },
+      "status": {
+        "instance_id": "f72a46d3-1ea0-4cab-bead-419333bb1089",
+        "process_id": 3228613,
+        "runtime_build": {
+          "loaded_module_version": "1.5.9",
+          "source_revision": "0d6638ccf355aeaf07627b5cc10d5c302c6b83e8",
+          "package_identity": "sha256:b573ed4ca90ee0695e89c83098ca055630faaa65156457fdc522c8f6a8d02036",
+          "pid": 3228613,
+          "startup_id": "c92f08fb-50f0-485a-8536-1731279d20f0"
+        },
+        "version": "1.5.9"
+      },
+      "reads": [
+        {
+          "path": "/api/instance",
+          "started_at": "2026-10-25T20:21:47.748997+00:00",
+          "ok": true,
+          "status": 200,
+          "decoded_response_bytes": 378,
+          "correlation_id": "3ab38614-0ab2-4cb0-9014-772950313cb6",
+          "elapsed_ms": 13.691,
+          "finished_at": "2026-10-25T20:21:47.762718+00:00"
+        },
+        {
+          "path": "/api/ready",
+          "started_at": "2026-10-25T20:21:47.769306+00:00",
+          "ok": true,
+          "status": 200,
+          "decoded_response_bytes": 135,
+          "correlation_id": "f0aee876-bb73-4d73-a970-352c0bc2967c",
+          "readiness": {
+            "ready": null,
+            "status": "ready",
+            "state": null
+          },
+          "elapsed_ms": 7.01,
+          "finished_at": "2026-10-25T20:21:47.776336+00:00"
+        },
+        {
+          "path": "/api/status",
+          "started_at": "2026-10-25T20:21:47.782491+00:00",
+          "ok": true,
+          "status": 200,
+          "decoded_response_bytes": 2541,
+          "correlation_id": "57c18656-4624-4e91-a50d-ac93315030aa",
+          "elapsed_ms": 15.811,
+          "finished_at": "2026-10-25T20:21:47.798310+00:00"
+        },
+        {
+          "path": "/api/runtime",
+          "started_at": "2026-10-25T20:21:47.802135+00:00",
+          "ok": true,
+          "status": 200,
+          "decoded_response_bytes": 262928,
+          "correlation_id": "1a73f013-2e04-438a-872f-9989ede045e2",
+          "elapsed_ms": 66.403,
+          "finished_at": "2026-10-25T20:21:47.868548+00:00"
+        }
+      ],
+      "operations": {
+        "agent.quiesce_snapshot_clear": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 53.345,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 53.345,
+            "p50": 53.345,
+            "p95": 53.345,
+            "p99": 53.345
+          },
+          "sqlite_busy_failures": 0
+        },
+        "agent.recovery_sessions": {
+          "submitted": 121441,
+          "completed": 121441,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 101.067,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 2.306,
+            "p50": 0.711,
+            "p95": 1.083,
+            "p99": 1.635
+          },
+          "sqlite_busy_failures": 0
+        },
+        "agent.startup_state_read": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 16.497,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 16.497,
+            "p50": 16.497,
+            "p95": 16.497,
+            "p99": 16.497
+          },
+          "sqlite_busy_failures": 0
+        },
+        "dispatch.completion_pending_read": {
+          "submitted": 121442,
+          "completed": 121442,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 53.536,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 23.067,
+            "p50": 0.856,
+            "p95": 1.655,
+            "p99": 2.313
+          },
+          "sqlite_busy_failures": 0
+        },
+        "dispatch.followup_pending_read": {
+          "submitted": 121442,
+          "completed": 121442,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 28.677,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 21.092,
+            "p50": 0.354,
+            "p95": 1.023,
+            "p99": 1.361
+          },
+          "sqlite_busy_failures": 0
+        },
+        "dispatch.record_read": {
+          "submitted": 410423,
+          "completed": 410423,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 26.637,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 1.028,
+            "p50": 0.219,
+            "p95": 0.332,
+            "p99": 0.447
+          },
+          "sqlite_busy_failures": 0
+        },
+        "filesystem.github_credentials_read": {
+          "submitted": 292264,
+          "completed": 292264,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 165.606,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 2.885,
+            "p50": 0.711,
+            "p95": 1.005,
+            "p99": 1.138
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview.activity": {
+          "submitted": 8,
+          "completed": 8,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 1.101,
+          "runtime_ms": {
+            "samples": 8,
+            "max": 1.101,
+            "p50": 0.697,
+            "p95": 1.101,
+            "p99": 1.101
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview.mcp_bootstrap": {
+          "submitted": 5,
+          "completed": 5,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 5,
+          "max_runtime_ms": 1351.923,
+          "runtime_ms": {
+            "samples": 5,
+            "max": 1351.923,
+            "p50": 1344.798,
+            "p95": 1351.923,
+            "p99": 1351.923
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview.reachability": {
+          "submitted": 39122,
+          "completed": 39122,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 2,
+          "max_runtime_ms": 515.717,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 13.055,
+            "p50": 2.01,
+            "p95": 3.953,
+            "p99": 12.743
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview.repositories": {
+          "submitted": 5,
+          "completed": 5,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 16.969,
+          "runtime_ms": {
+            "samples": 5,
+            "max": 16.969,
+            "p50": 0.913,
+            "p95": 16.969,
+            "p99": 16.969
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview.status": {
+          "submitted": 39122,
+          "completed": 39122,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 3,
+          "max_runtime_ms": 519.522,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 13.093,
+            "p50": 1.92,
+            "p95": 4.108,
+            "p99": 11.173
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview.supervisor": {
+          "submitted": 6,
+          "completed": 6,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 2.809,
+          "runtime_ms": {
+            "samples": 6,
+            "max": 2.809,
+            "p50": 2.131,
+            "p95": 2.809,
+            "p99": 2.809
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview.sync": {
+          "submitted": 82355,
+          "completed": 82355,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 4,
+          "max_runtime_ms": 1017.805,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 16.959,
+            "p50": 2.56,
+            "p95": 9.812,
+            "p99": 14.663
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview_cache_read": {
+          "submitted": 1643761,
+          "completed": 1643761,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 18,
+          "max_runtime_ms": 525.82,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 24.425,
+            "p50": 0.855,
+            "p95": 5.646,
+            "p99": 21.584
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview_cache_write": {
+          "submitted": 512721,
+          "completed": 512721,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 719,
+          "max_runtime_ms": 1843.715,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 61.167,
+            "p50": 22.129,
+            "p95": 50.983,
+            "p99": 60.429
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.overview_response_json": {
+          "submitted": 265477,
+          "completed": 265477,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 4,
+          "max_runtime_ms": 957.569,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 32.546,
+            "p50": 2.017,
+            "p95": 23.161,
+            "p99": 30.496
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.update_check": {
+          "submitted": 6,
+          "completed": 6,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 1,
+          "max_runtime_ms": 2045.982,
+          "runtime_ms": {
+            "samples": 6,
+            "max": 2045.982,
+            "p50": 132.956,
+            "p95": 2045.982,
+            "p99": 2045.982
+          },
+          "sqlite_busy_failures": 0
+        },
+        "fleet.update_recovery": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 17.102,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 17.102,
+            "p50": 17.102,
+            "p95": 17.102,
+            "p99": 17.102
+          },
+          "sqlite_busy_failures": 0
+        },
+        "goal.dispatch_lifecycle_index": {
+          "submitted": 20273,
+          "completed": 20273,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 40.634,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 14.765,
+            "p50": 0.273,
+            "p95": 0.463,
+            "p99": 0.673
+          },
+          "sqlite_busy_failures": 0
+        },
+        "health.canonical_obligation": {
+          "submitted": 19793,
+          "completed": 19793,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 1,
+          "max_runtime_ms": 866.771,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 17.579,
+            "p50": 1.237,
+            "p95": 10.636,
+            "p99": 12.187
+          },
+          "sqlite_busy_failures": 0
+        },
+        "http.fleet_overview": {
+          "submitted": 352098,
+          "completed": 266140,
+          "active": 0,
+          "failed": 85958,
+          "timed_out": 85958,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 4379.453,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 922.859,
+            "p50": 61.668,
+            "p95": 330.469,
+            "p99": 781.359
+          },
+          "sqlite_busy_failures": 0
+        },
+        "http.pr_supervisor_peer": {
+          "submitted": 423138,
+          "completed": 423138,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 1730.032,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 204.82,
+            "p50": 32.76,
+            "p95": 37.849,
+            "p99": 79.481
+          },
+          "sqlite_busy_failures": 0
+        },
+        "maintenance.run": {
+          "submitted": 8,
+          "completed": 8,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 1255.146,
+          "runtime_ms": {
+            "samples": 8,
+            "max": 1255.146,
+            "p50": 27.655,
+            "p95": 1255.146,
+            "p99": 1255.146
+          },
+          "sqlite_busy_failures": 0
+        },
+        "pr_supervisor.response_json": {
+          "submitted": 423138,
+          "completed": 423138,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 46.321,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 0.597,
+            "p50": 0.408,
+            "p95": 0.501,
+            "p99": 0.568
+          },
+          "sqlite_busy_failures": 0
+        },
+        "progress.pending_read": {
+          "submitted": 202827,
+          "completed": 202827,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 69.892,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 1.592,
+            "p50": 0.599,
+            "p95": 0.729,
+            "p99": 0.962
+          },
+          "sqlite_busy_failures": 0
+        },
+        "provider.status.codex": {
+          "submitted": 8,
+          "completed": 8,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 204.149,
+          "runtime_ms": {
+            "samples": 8,
+            "max": 204.149,
+            "p50": 159.627,
+            "p95": 204.149,
+            "p99": 204.149
+          },
+          "sqlite_busy_failures": 0
+        },
+        "provider.status.cursor": {
+          "submitted": 8,
+          "completed": 8,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 8,
+          "max_runtime_ms": 1165.968,
+          "runtime_ms": {
+            "samples": 8,
+            "max": 1165.968,
+            "p50": 1140.667,
+            "p95": 1165.968,
+            "p99": 1165.968
+          },
+          "sqlite_busy_failures": 0
+        },
+        "provider.status.openinterpreter": {
+          "submitted": 8,
+          "completed": 8,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 63.361,
+          "runtime_ms": {
+            "samples": 8,
+            "max": 63.361,
+            "p50": 24.569,
+            "p95": 63.361,
+            "p99": 63.361
+          },
+          "sqlite_busy_failures": 0
+        },
+        "reconciliation.dispatch_read": {
+          "submitted": 121443,
+          "completed": 121443,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 53.596,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 23.004,
+            "p50": 0.915,
+            "p95": 1.865,
+            "p99": 2.693
+          },
+          "sqlite_busy_failures": 0
+        },
+        "selection.catalog_enrichment": {
+          "submitted": 8,
+          "completed": 8,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 1.103,
+          "runtime_ms": {
+            "samples": 8,
+            "max": 1.103,
+            "p50": 1.034,
+            "p95": 1.103,
+            "p99": 1.103
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.card_read": {
+          "submitted": 822232,
+          "completed": 822232,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 1,
+          "max_runtime_ms": 772.812,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 21.804,
+            "p50": 1.126,
+            "p95": 1.383,
+            "p99": 1.508
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.card_write": {
+          "submitted": 27,
+          "completed": 27,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 54.5,
+          "runtime_ms": {
+            "samples": 27,
+            "max": 54.5,
+            "p50": 41.401,
+            "p95": 53.107,
+            "p99": 54.5
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_capability_write": {
+          "submitted": 10135,
+          "completed": 10135,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 5,
+          "max_runtime_ms": 522.881,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 24.631,
+            "p50": 17.884,
+            "p95": 19.485,
+            "p99": 23.196
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_completion_due_read": {
+          "submitted": 292262,
+          "completed": 292262,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 1,
+          "max_runtime_ms": 525.246,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 15.057,
+            "p50": 3.946,
+            "p95": 4.563,
+            "p99": 6.239
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_due_read": {
+          "submitted": 292262,
+          "completed": 292262,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 47.087,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 3.666,
+            "p50": 1.04,
+            "p95": 1.339,
+            "p99": 1.501
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_eligibility_recovery": {
+          "submitted": 1342,
+          "completed": 1342,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 133.605,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 51.947,
+            "p50": 14.682,
+            "p95": 19.1,
+            "p99": 23.57
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_event_write": {
+          "submitted": 411808,
+          "completed": 411808,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 44.743,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 19.426,
+            "p50": 0.975,
+            "p95": 1.246,
+            "p99": 3.249
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_metric": {
+          "submitted": 676,
+          "completed": 676,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 29.954,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 29.954,
+            "p50": 13.159,
+            "p95": 14.777,
+            "p99": 26.403
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_watch_read": {
+          "submitted": 411132,
+          "completed": 411132,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 2,
+          "max_runtime_ms": 1075.0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 168.338,
+            "p50": 6.333,
+            "p95": 14.497,
+            "p99": 23.062
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.pr_supervisor_watch_write": {
+          "submitted": 411808,
+          "completed": 411808,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 41,
+          "max_runtime_ms": 1558.331,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 29.813,
+            "p50": 15.489,
+            "p95": 20.568,
+            "p99": 24.59
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.project_read": {
+          "submitted": 410423,
+          "completed": 410423,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 168.41,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 5.497,
+            "p50": 0.381,
+            "p95": 0.524,
+            "p99": 0.781
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.repository_read": {
+          "submitted": 410423,
+          "completed": 410423,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 60.505,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 1.208,
+            "p50": 0.518,
+            "p95": 0.732,
+            "p99": 1.025
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.restart_handoffs_pending": {
+          "submitted": 121442,
+          "completed": 121442,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 293.719,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 21.017,
+            "p50": 0.375,
+            "p95": 0.852,
+            "p99": 1.082
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sqlite.restart_handoffs_watchdog": {
+          "submitted": 121441,
+          "completed": 121441,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 70.649,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 22.957,
+            "p50": 1.23,
+            "p95": 2.089,
+            "p99": 2.423
+          },
+          "sqlite_busy_failures": 0
+        },
+        "startup.agent_manager": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 1.208,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 1.208,
+            "p50": 1.208,
+            "p95": 1.208,
+            "p99": 1.208
+          },
+          "sqlite_busy_failures": 0
+        },
+        "startup.async_backend_prepare": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 27.729,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 27.729,
+            "p50": 27.729,
+            "p95": 27.729,
+            "p99": 27.729
+          },
+          "sqlite_busy_failures": 0
+        },
+        "startup.openapi": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 1,
+          "max_runtime_ms": 1257.608,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 1257.608,
+            "p50": 1257.608,
+            "p95": 1257.608,
+            "p99": 1257.608
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.commit_read": {
+          "submitted": 2513141,
+          "completed": 2513141,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 2,
+          "max_runtime_ms": 930.404,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 0.698,
+            "p50": 0.277,
+            "p95": 0.376,
+            "p99": 0.604
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.gc_resume": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 1.752,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 1.752,
+            "p50": 1.752,
+            "p95": 1.752,
+            "p99": 1.752
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.json_decode": {
+          "submitted": 5191,
+          "completed": 5191,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 105.077,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 2.363,
+            "p50": 0.286,
+            "p95": 0.918,
+            "p99": 1.09
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.json_encode": {
+          "submitted": 512,
+          "completed": 512,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 26.54,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 1.084,
+            "p50": 0.158,
+            "p95": 0.341,
+            "p99": 0.682
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.object_has": {
+          "submitted": 5048521,
+          "completed": 5048521,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 2,
+          "max_runtime_ms": 930.028,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 0.099,
+            "p50": 0.071,
+            "p95": 0.091,
+            "p99": 0.096
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.object_ingest": {
+          "submitted": 511,
+          "completed": 511,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 387.1,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 33.34,
+            "p50": 13.712,
+            "p95": 22.616,
+            "p99": 27.019
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.peer_http": {
+          "submitted": 6557,
+          "completed": 5191,
+          "active": 0,
+          "failed": 1366,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 12008.228,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 3003.176,
+            "p50": 12.411,
+            "p95": 3001.893,
+            "p99": 3002.825
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.reconcile_head": {
+          "submitted": 4679,
+          "completed": 4679,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 386.709,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 339.663,
+            "p50": 127.192,
+            "p95": 144.11,
+            "p99": 162.374
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.ref_read": {
+          "submitted": 237222,
+          "completed": 237222,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 28.399,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 11.609,
+            "p50": 0.368,
+            "p95": 0.928,
+            "p99": 1.117
+          },
+          "sqlite_busy_failures": 0
+        },
+        "sync.startup_reconcile": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 6.317,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 6.317,
+            "p50": 6.317,
+            "p95": 6.317,
+            "p99": 6.317
+          },
+          "sqlite_busy_failures": 0
+        },
+        "workspace.collect_garbage": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 133.126,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 133.126,
+            "p50": 133.126,
+            "p95": 133.126,
+            "p99": 133.126
+          },
+          "sqlite_busy_failures": 0
+        },
+        "workspace.reconcile_terminal_state": {
+          "submitted": 1,
+          "completed": 1,
+          "active": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0,
+          "max_runtime_ms": 68.303,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 68.303,
+            "p50": 68.303,
+            "p95": 68.303,
+            "p99": 68.303
+          },
+          "sqlite_busy_failures": 0
+        }
+      },
+      "route_groups": {
+        "/ready": {
+          "count": 96054,
+          "response_bytes": 12967290,
+          "latency_ms": {
+            "samples": 256,
+            "max": 3.9,
+            "p50": 2.078,
+            "p95": 2.273,
+            "p99": 3.614
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 135,
+            "p50": 135,
+            "p95": 135,
+            "p99": 135
+          }
+        },
+        "/fleet/peer-update/{operation_id}": {
+          "count": 1,
+          "response_bytes": 868,
+          "latency_ms": {
+            "samples": 1,
+            "max": 45.665,
+            "p50": 45.665,
+            "p95": 45.665,
+            "p99": 45.665
+          },
+          "response_size_bytes": {
+            "samples": 1,
+            "max": 868,
+            "p50": 868,
+            "p95": 868,
+            "p99": 868
+          }
+        },
+        "/fleet/membership/apply": {
+          "count": 6,
+          "response_bytes": 798,
+          "latency_ms": {
+            "samples": 6,
+            "max": 75.437,
+            "p50": 10.183,
+            "p95": 75.437,
+            "p99": 75.437
+          },
+          "response_size_bytes": {
+            "samples": 6,
+            "max": 133,
+            "p50": 133,
+            "p95": 133,
+            "p99": 133
+          }
+        },
+        "/status": {
+          "count": 96042,
+          "response_bytes": 244042722,
+          "latency_ms": {
+            "samples": 256,
+            "max": 16.356,
+            "p50": 9.975,
+            "p95": 11.591,
+            "p99": 12.533
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 2541,
+            "p50": 2541,
+            "p95": 2541,
+            "p99": 2541
+          }
+        },
+        "/fleet/overview/local": {
+          "count": 96051,
+          "response_bytes": 753527732,
+          "latency_ms": {
+            "samples": 256,
+            "max": 23.222,
+            "p50": 3.281,
+            "p95": 17.961,
+            "p99": 21.284
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 211222,
+            "p50": 3773,
+            "p95": 211205,
+            "p99": 211222
+          }
+        },
+        "/pr-supervisor/replicas": {
+          "count": 410391,
+          "response_bytes": 2294349903,
+          "latency_ms": {
+            "samples": 256,
+            "max": 31.333,
+            "p50": 21.127,
+            "p95": 25.307,
+            "p99": 26.663
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 6122,
+            "p50": 5793,
+            "p95": 5904,
+            "p99": 6019
+          }
+        },
+        "/sync/refs": {
+          "count": 5005,
+          "response_bytes": 1296295,
+          "latency_ms": {
+            "samples": 256,
+            "max": 4.099,
+            "p50": 2.111,
+            "p95": 2.521,
+            "p99": 3.446
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 259,
+            "p50": 259,
+            "p95": 259,
+            "p99": 259
+          }
+        },
+        "/health": {
+          "count": 3,
+          "response_bytes": 45,
+          "latency_ms": {
+            "samples": 3,
+            "max": 1.183,
+            "p50": 1.029,
+            "p95": 1.183,
+            "p99": 1.183
+          },
+          "response_size_bytes": {
+            "samples": 3,
+            "max": 15,
+            "p50": 15,
+            "p95": 15,
+            "p99": 15
+          }
+        },
+        "/configuration": {
+          "count": 1,
+          "response_bytes": 169203,
+          "latency_ms": {
+            "samples": 1,
+            "max": 8.33,
+            "p50": 8.33,
+            "p95": 8.33,
+            "p99": 8.33
+          },
+          "response_size_bytes": {
+            "samples": 1,
+            "max": 169203,
+            "p50": 169203,
+            "p95": 169203,
+            "p99": 169203
+          }
+        },
+        "/fleet/peer-update-check": {
+          "count": 6,
+          "response_bytes": 768,
+          "latency_ms": {
+            "samples": 6,
+            "max": 2047.394,
+            "p50": 133.918,
+            "p95": 2047.394,
+            "p99": 2047.394
+          },
+          "response_size_bytes": {
+            "samples": 6,
+            "max": 128,
+            "p50": 128,
+            "p95": 128,
+            "p99": 128
+          }
+        },
+        "/agent/providers": {
+          "count": 8,
+          "response_bytes": 154389,
+          "latency_ms": {
+            "samples": 8,
+            "max": 1169.487,
+            "p50": 1145.347,
+            "p95": 1169.487,
+            "p99": 1169.487
+          },
+          "response_size_bytes": {
+            "samples": 8,
+            "max": 19307,
+            "p50": 19291,
+            "p95": 19307,
+            "p99": 19307
+          }
+        },
+        "/owner-ready": {
+          "count": 1,
+          "response_bytes": 71,
+          "latency_ms": {
+            "samples": 1,
+            "max": 1.328,
+            "p50": 1.328,
+            "p95": 1.328,
+            "p99": 1.328
+          },
+          "response_size_bytes": {
+            "samples": 1,
+            "max": 71,
+            "p50": 71,
+            "p95": 71,
+            "p99": 71
+          }
+        },
+        "/health-journal/gathered": {
+          "count": 128,
+          "response_bytes": 6528,
+          "latency_ms": {
+            "samples": 128,
+            "max": 35.77,
+            "p50": 4.691,
+            "p95": 5.62,
+            "p99": 30.883
+          },
+          "response_size_bytes": {
+            "samples": 128,
+            "max": 51,
+            "p50": 51,
+            "p95": 51,
+            "p99": 51
+          }
+        },
+        "/agent/sessions/{session_id}/cards": {
+          "count": 1,
+          "response_bytes": 30,
+          "latency_ms": {
+            "samples": 1,
+            "max": 3.775,
+            "p50": 3.775,
+            "p95": 3.775,
+            "p99": 3.775
+          },
+          "response_size_bytes": {
+            "samples": 1,
+            "max": 30,
+            "p50": 30,
+            "p95": 30,
+            "p99": 30
+          }
+        },
+        "/sync/get": {
+          "count": 160,
+          "response_bytes": 2279068,
+          "latency_ms": {
+            "samples": 160,
+            "max": 110.772,
+            "p50": 2.062,
+            "p95": 3.035,
+            "p99": 48.554
+          },
+          "response_size_bytes": {
+            "samples": 160,
+            "max": 41643,
+            "p50": 5571,
+            "p95": 39959,
+            "p99": 41643
+          }
+        },
+        "/pr-supervisor/retirements": {
+          "count": 32,
+          "response_bytes": 172236,
+          "latency_ms": {
+            "samples": 32,
+            "max": 37.886,
+            "p50": 32.887,
+            "p95": 37.737,
+            "p99": 37.886
+          },
+          "response_size_bytes": {
+            "samples": 32,
+            "max": 6021,
+            "p50": 5380,
+            "p95": 5498,
+            "p99": 6021
+          }
+        },
+        "/agent/providers/mcp-bootstrap": {
+          "count": 5,
+          "response_bytes": 300,
+          "latency_ms": {
+            "samples": 5,
+            "max": 1362.614,
+            "p50": 1354.745,
+            "p95": 1362.614,
+            "p99": 1362.614
+          },
+          "response_size_bytes": {
+            "samples": 5,
+            "max": 60,
+            "p50": 60,
+            "p95": 60,
+            "p99": 60
+          }
+        },
+        "/instance": {
+          "count": 4,
+          "response_bytes": 1512,
+          "latency_ms": {
+            "samples": 4,
+            "max": 4.784,
+            "p50": 2.881,
+            "p95": 4.784,
+            "p99": 4.784
+          },
+          "response_size_bytes": {
+            "samples": 4,
+            "max": 378,
+            "p50": 378,
+            "p95": 378,
+            "p99": 378
+          }
+        },
+        "/runtime": {
+          "count": 2,
+          "response_bytes": 524661,
+          "latency_ms": {
+            "samples": 2,
+            "max": 33.629,
+            "p50": 24.123,
+            "p95": 33.629,
+            "p99": 33.629
+          },
+          "response_size_bytes": {
+            "samples": 2,
+            "max": 262580,
+            "p50": 262081,
+            "p95": 262580,
+            "p99": 262580
+          }
+        },
+        "/fleet/instances": {
+          "count": 1,
+          "response_bytes": 2739,
+          "latency_ms": {
+            "samples": 1,
+            "max": 2.512,
+            "p50": 2.512,
+            "p95": 2.512,
+            "p99": 2.512
+          },
+          "response_size_bytes": {
+            "samples": 1,
+            "max": 2739,
+            "p50": 2739,
+            "p95": 2739,
+            "p99": 2739
+          }
+        },
+        "/fleet/overview": {
+          "count": 1,
+          "response_bytes": 82349,
+          "latency_ms": {
+            "samples": 1,
+            "max": 13.128,
+            "p50": 13.128,
+            "p95": 13.128,
+            "p99": 13.128
+          },
+          "response_size_bytes": {
+            "samples": 1,
+            "max": 82349,
+            "p50": 82349,
+            "p95": 82349,
+            "p99": 82349
+          }
+        },
+        "/telemetry/query": {
+          "count": 1,
+          "response_bytes": 1146687,
+          "latency_ms": {
+            "samples": 1,
+            "max": 137.388,
+            "p50": 137.388,
+            "p95": 137.388,
+            "p99": 137.388
+          },
+          "response_size_bytes": {
+            "samples": 1,
+            "max": 1146687,
+            "p50": 1146687,
+            "p95": 1146687,
+            "p99": 1146687
+          }
+        }
+      },
+      "operation_count": 60,
+      "route_count": 22,
+      "scope": "Lifetime counters and maxima from this peer process; runtime_ms percentiles are bounded windows. Read latencies are four one-off supported reads, not a representative distribution. Version-only Macmini response does not prove loaded revision. Route keys are retained exactly as emitted; no invented cross-build route parity."
+    }
+  ],
+  "raw": {
+    "path": "docs/benchmarks/systemic-exact585-peer-followup-20261025.raw.json.gz",
+    "sha256": "2a52df21e7332186efbdfa590d504a83924669672825c72855b887c74594a0d5",
+    "bytes": 66583
+  },
+  "scope": "Fresh local canonical catalog verified against known origins. One sequential identity/readiness/status/runtime read per peer,5sHTTPtimeout,no retries/redirects/probes beyond ordinary reads, no provider/MCP bootstrap/update/config/restart or peer logs. All returned numeric operation/route/loop counters/windows retained, never full prompts/user response bodies/credentials. Small samples/processmaxima are not a fleet acceptance distribution.",
+  "cause": "Unverified. Current bounded peer reads do not explain lifetime failures, native waits, network or scheduling. No remote logs or loaded-module/filesystem attestation.",
+  "acceptance": {
+    "revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+    "accepted": false,
+    "lane": "active",
+    "findings": 670,
+    "concerns": 136
+  }
+}
