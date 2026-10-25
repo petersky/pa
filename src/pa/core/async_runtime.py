@@ -96,6 +96,8 @@ class OperationMetrics:
     thread_cpu_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     sqlite_statement_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     sqlite_commit_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    sqlite_statement_thread_cpu_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    sqlite_commit_thread_cpu_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     sqlite_calls: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     sqlite_rows: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     sqlite_aggregate_items: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
@@ -491,6 +493,8 @@ class AsyncRuntime:
             metrics.outer_lock_release_ms.append(observation.outer_lock_release_ms)
             metrics.sqlite_statement_ms.append(observation.sqlite_statement_ms)
             metrics.sqlite_commit_ms.append(observation.sqlite_commit_ms)
+            metrics.sqlite_statement_thread_cpu_ms.append(observation.sqlite_statement_thread_cpu_ms)
+            metrics.sqlite_commit_thread_cpu_ms.append(observation.sqlite_commit_thread_cpu_ms)
             metrics.sqlite_calls.append(observation.sqlite_calls)
             metrics.sqlite_rows.append(observation.sqlite_rows)
             metrics.sqlite_aggregate_items.append(observation.sqlite_aggregate_items)
@@ -542,7 +546,7 @@ class AsyncRuntime:
                       "observed_at_monotonic": round(time.perf_counter(), 6)}
             if observation is not None:
                 for name in ("queue_wait_ms", "thread_cpu_ms", "python_lock_wait_ms", "python_lock_hold_ms", "python_lock_release_ms", "outer_lock_hold_ms", "outer_lock_release_ms",
-                             "sqlite_statement_ms", "sqlite_commit_ms", "sqlite_calls", "sqlite_rows",
+                             "sqlite_statement_ms", "sqlite_commit_ms", "sqlite_statement_thread_cpu_ms", "sqlite_commit_thread_cpu_ms", "sqlite_calls", "sqlite_rows",
                              "sqlite_aggregate_items", "sqlite_aggregate_bytes", "sqlite_busy_failures"):
                     phases[name] = round(getattr(observation, name), 3)
                 for name in FILESYSTEM_PHASES:
@@ -637,7 +641,7 @@ class AsyncRuntime:
             data["python_lock_wait_ms"] = distribution(list(metrics.python_lock_wait_ms))
             data["python_lock_hold_ms"] = distribution(list(metrics.python_lock_hold_ms))
             for phase in ("worker_service_ms", "executor_dispatch_ms", "completion_delivery_ms", "thread_cpu_ms", "outer_lock_hold_ms", "python_lock_release_ms", "outer_lock_release_ms",
-                          "sqlite_statement_ms", "sqlite_commit_ms", "sqlite_calls", "sqlite_rows",
+                          "sqlite_statement_ms", "sqlite_commit_ms", "sqlite_statement_thread_cpu_ms", "sqlite_commit_thread_cpu_ms", "sqlite_calls", "sqlite_rows",
                           "sqlite_aggregate_items", "sqlite_aggregate_bytes"):
                 data[phase] = distribution(list(getattr(metrics, phase)))
             for phase in FILESYSTEM_PHASES:
@@ -647,6 +651,7 @@ class AsyncRuntime:
             data["max_runtime_ms"] = round(data["max_runtime_ms"], 3)
             operations[name] = data
         return {
+            "sqlite_timing_scope": "Statement wall and thread CPU include execute and lazy fetch calls; commit is separate. Inclusive nested calls can overlap. Wall minus CPU is unclassified off-CPU time, not proof of lock wait or physical disk I/O. No SQL, parameters or result values retained.",
             "async_backend_initialization": dict(self._backend_initialization),
             "slow_operations": {"capacity": 64, "scope": "last completed slow worker invocations; queue time separate from elapsed",
                                 "lock_note": "measured lock sections are inclusive; nested hold intervals may overlap",
