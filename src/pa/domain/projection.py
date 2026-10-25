@@ -6472,10 +6472,15 @@ class CardProjection:
                 ).fetchall()
             # Avoid rescanning compatibility rows already represented in cold DB.
             pending = []
-            for row in rows:
-                if self.transcripts.list_range(row["session_id"], start_seq=int(row["seq"]), end_seq=int(row["seq"]), limit=1):
-                    continue
-                pending.append(self._row_to_transcript(row))
+            # Own one read handle for this batch. Each lookup still executes
+            # and fully hydrates independently; no read snapshot or result
+            # cache hides rows published between successive lookups.
+            if rows:
+                with self.transcripts._conn() as canonical:
+                    for row in rows:
+                        if self.transcripts.list_range(row["session_id"], start_seq=int(row["seq"]), end_seq=int(row["seq"]), limit=1, _connection=canonical):
+                            continue
+                        pending.append(self._row_to_transcript(row))
             if pending:
                 self.append_transcript_events(pending)
             next_cursor = json.dumps([rows[-1]["session_id"], int(rows[-1]["seq"])]) if rows else operation.get("cursor")

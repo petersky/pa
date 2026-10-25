@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-25T19:10:16.324890+00:00",
-  "completion": "OPEN: all 668 findings and 135 concerns. Exact 4b1ded17 activation and bounded retests verified; maintenance, peer/logging gaps and all independent acceptance requirements remain open.",
+  "as_of": "2026-10-25T19:37:47.198361+00:00",
+  "completion": "OPEN: all 669 findings and 136 concerns. Exact 8ca8d686 activation and bounded encoding/retests verified; maintenance, freshness, peer/logging gaps and full independent acceptance remain open.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -214487,6 +214487,27 @@
       "next_actor": "This card/session",
       "retested": "188 contracts and 47 subtests pass; archived app wiring fails integration regression. Synthetic and observer byte/CPU samples are separate. Source mixed retains 9,600 events but maintenance is 904.513 ms.",
       "next_action": "Complete protected PR/supervisor/head and main CI. After this continuation settles, exact package attestation/activation and declared retests. Continue underlying serialization, maintenance and every original acceptance obligation."
+    },
+    {
+      "id": "concern:legacy-migration-read-handle-amplification",
+      "kind": "concern",
+      "finding": "Per-row canonical read setup during legacy migration and projection construction",
+      "family": "transcript",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_unscoped_handle_amplification_scoped_impact_small",
+      "cause": "Migration opens/borrows a canonical connection scope for each of 500 already-canonical rows. Direct callers create 502 handles including metadata; worker-scoped callers reuse handles but still enter 502 scopes.",
+      "fix_or_existing_owner": "This systemic session; one batch-owned handle with fresh per-row SQL and hydration.",
+      "implemented": "Source repair; protected review/integration pending.",
+      "merged": [],
+      "deployed": "Not deployed; actual loaded source remains 8ca8d686.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-exact583-migration-read-scope-20261025.json",
+        "sha256": "63d1b3aa4ba9256817509e37def6be959599fbbb7e40648a54b569473b559a93"
+      },
+      "resolution": "open",
+      "next_actor": "This card/session",
+      "retested": "121 tests and three subtests pass; archived methods fail bounded setup. Direct/scoped/constructor timings retained separately; source mixed maintenance remains 874.281 ms.",
+      "next_action": "Complete protected PR/supervisor/head and main CI. After current continuation settles, exact activation/retest; continue native attribution, maintenance and every original acceptance requirement."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -309210,5 +309231,19 @@
     "loaded_source": "4b1ded17b56a43de6982e2eb4c62fd19ba797bb0",
     "new_source_repair_deployed": false,
     "interpretation": "Supersedes only current observed activation paths. Historical row labels and all failed/interrupted stages remain unchanged; every row stays open."
+  },
+  "exact583_activation_migration_read_scope_stage": {
+    "artifact": "docs/benchmarks/systemic-exact583-migration-read-scope-20261025.json",
+    "sha256": "63d1b3aa4ba9256817509e37def6be959599fbbb7e40648a54b569473b559a93",
+    "raw": {
+      "path": "docs/benchmarks/systemic-exact583-migration-read-scope-20261025.raw.json.gz",
+      "sha256": "3770df47c1373531ea71df23acf13c1b501acfff6a930778d5e09f2f58a35117",
+      "bytes": 489982
+    },
+    "all_prior_rows_unchanged": true,
+    "loaded_source": "8ca8d6860aa548d4babac02b0bbb646010e2f9ab",
+    "encoding_deployed_and_bounded_retested": true,
+    "new_migration_repair_deployed": false,
+    "interpretation": "Only current observed activation labels superseded. Every historical row and failed/interrupted stage unchanged; every row stays open, including unobserved branches."
   }
 }
