@@ -15,6 +15,8 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 
+from tests.deadline_evidence import DeadlineEvidence
+
 from pa.core.async_runtime import (
     AsyncRuntime,
     BlockingOperationTimeout,
@@ -116,24 +118,31 @@ class RequestPathResponsivenessTests(unittest.IsolatedAsyncioTestCase):
         await self.runtime.close()
 
     async def test_slow_sync_disk_read_does_not_stall_unrelated_surfaces(self) -> None:
-        slow = asyncio.create_task(self.client.get("/api/sync/status"))
-        await asyncio.to_thread(self.slow_started.wait, 1)
+        with DeadlineEvidence("sync-unrelated-surfaces") as evidence, patch.object(
+            _Context, "_slow_status", staticmethod(evidence.wrap(_Context._slow_status))
+        ):
+            slow = asyncio.create_task(self.client.get("/api/sync/status"))
+            await asyncio.to_thread(self.slow_started.wait, 1)
 
-        started = time.perf_counter()
-        responses = await asyncio.gather(
-            self.client.get("/health"),
-            self.client.get("/ui"),
-            self.client.get("/mcp-probe"),
-            self.client.get("/agent-probe"),
-            self.client.get("/events"),
-        )
-        unrelated_ms = (time.perf_counter() - started) * 1000
+            started = time.perf_counter()
+            evidence.begin(started)
+            try:
+                responses = await asyncio.gather(
+                    self.client.get("/health"),
+                    self.client.get("/ui"),
+                    self.client.get("/mcp-probe"),
+                    self.client.get("/agent-probe"),
+                    self.client.get("/events"),
+                )
+                unrelated_ms = (time.perf_counter() - started) * 1000
+            finally:
+                evidence.finish(time.perf_counter())
 
-        self.assertTrue(all(response.status_code == 200 for response in responses))
-        self.assertLess(unrelated_ms, 100)
-        self.assertEqual((await slow).status_code, 200)
-        metrics = self.runtime.snapshot()["operations"]["sync.status"]
-        self.assertGreaterEqual(metrics["max_runtime_ms"], 190)
+            self.assertTrue(all(response.status_code == 200 for response in responses))
+            self.assertLess(unrelated_ms, 100)
+            self.assertEqual((await slow).status_code, 200)
+            metrics = self.runtime.snapshot()["operations"]["sync.status"]
+            self.assertGreaterEqual(metrics["max_runtime_ms"], 190)
 
     async def test_slow_blocking_classes_share_bounded_workers_without_loop_lag(self) -> None:
         release = threading.Event()

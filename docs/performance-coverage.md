@@ -1,3 +1,17 @@
+# PR #590 first-attempt unrelated-request deadline
+
+The [complete follow-up evidence](benchmarks/systemic-pr590-unrelated-deadline-followup-20261025.json) and adjacent lossless raw bundle publish the full preceding integration history, including separate **105-operation / 49-route** and **108 / 49** runtime snapshots. **All 673 findings / 139 concerns remain open**: every prior 672 finding and field is preserved, plus the newly observed CI deadline failure.
+
+PR #590 is already merged as `84975be0`, with all five head jobs successful. Its **first main CI attempt failed**: four jobs passed; `test (3)` retains 1,042 passing tests, one failure and 135 passing subtests. Unrelated health, UI, MCP, agent and finite SSE requests take **207.338 ms against the unchanged 100 ms limit** while sync status deliberately sleeps off-loop. No CPU/GC evidence covers that failed span. There was no CI retry, and no cause is assigned to the lifecycle index, GC, interpreter, disk or worker by coincidence. Different passing snapshot/drain artifacts remain separate.
+
+The test-only follow-up wraps that missing span with the existing bounded numeric CPU/GC/worker observer and existing CI artifact upload. After removing only diagnostic context and begin/finish calls, the **entire original test body is AST identical**, including all four assertions, 100 ms request deadline, 190 ms worker lower bound, request order, waits and 0.2-second worker delay. The worker body and GC policy are unchanged. Publication occurs after assertions or on error; raw logs, prompts and backup history remain local/hash-only.
+
+Private macOS Python 3.14.9 probes verify all **439 application hashes** and imported source paths. Isolated request wall/loop CPU are **4.059 / 3.523 ms**; after collecting all **4,175 items**, **4.086 / 3.558 ms**. Each retains one off-loop worker near 210 ms, no retained long GC overlap and zero event drops. **24 scoped responsiveness/observer contracts pass.** These include observer cost and are neither Linux CI equivalence nor an explanation of the original failure.
+
+Actual loaded application remains `f789c0bb`; its declared activation/retests are complete and are not repeated. The prepared `84975be0` package is blocked from activation by failed main CI. Original handoff `36c5e7c8` is now positively `continuation_delivered` with effect complete. This settlement does not override validation. Mixed maintenance **816.726 ms**, natural maintenance **5,213.879 ms**, Macmini HTTP 500/build/log gaps, all full-path/provider/startup/concurrency and previous inventory concerns remain open. Backup/database original scopes stay accepted; fresh backup read retains nine archives, eight intact/one limited, no active capture/restore and the disclosed historical missing 2,842 bytes. No installation, restart, peer mutation, backup action, deadline/default/configuration/GC change or independent acceptance occurred.
+
+---
+
 # Exact PR #589 activation and lifecycle matching
 
 [Complete stage evidence](benchmarks/systemic-exact589-activation-watch-matching-20261025.json) and its adjacent lossless raw bundle preserve the full preceding installation/integration bundle, separate **85-operation / 22-route** and **85 / 34** runtime snapshots, every retest sample and every initial/corrected source stage. **All 672 findings / 138 concerns remain open**, with every prior row field and immutable artifact preserved.
