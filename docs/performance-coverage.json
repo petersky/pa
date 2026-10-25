@@ -1,7 +1,7 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-25T16:00:40.863594+00:00",
+  "as_of": "2026-10-25T16:13:29.020585+00:00",
   "completion": "OPEN: all findings retain unverified scope; no whole-PA acceptance.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
@@ -213467,14 +213467,130 @@
       "cause": "12511all-live coldobjects cross SQLite/Python boundary per sweep althoughonlypossibleunreferencedcandidates needfreshlockedrecheck;196SQLcalls/12511rows in mixedstage.",
       "implemented": "Bound128candidate JSONparameter andNOTEXISTSpositive-reference query returnonlyunreferencedhashes; finalfreshpublicationlock/referencequery/objectreaders/unlink behavior unchanged.",
       "merged": [],
-      "deployed": "Notinstalled; currentservice87e retainsoldGCquery.",
+      "deployed": false,
       "retested": "85contracts/3new, archivedbaseline2newfailures; final5alternatingpairs12511->0rows/allbytespreserved; exactcandidate mixed1009600ordered/0warnings/errors butmaintenance1098.053ms remains.",
       "resolution": "open",
       "artifact": "docs/benchmarks/systemic-loaded87e4-gc-prefilter-20261025.json",
       "artifact_sha256": "3c96463597afcfedc40f0c3caac500110ab4378e9cbb56b9b1dc690ea95df655",
       "next_actor": "This originalsystemic session, then normal17dindependentverifier",
       "next_action": "Integrate exactreviewedhead through stablegreen+independentchecks, then exactactivation/retest aftercurrentbbcontinuation settles. Continue residualhealth phases/fullinventory; no closurefromthissourcefix.",
-      "residual": "Source/microcases cannotestablishwholePA acceptance. Successfulbusy/GIL/scheduling/physicaldiskwriteamp remainunseparated; maintainfreshdurableorder/admission/receipt/CAS/sync/acceptance semantics."
+      "residual": "Source/microcases cannotestablishwholePA acceptance. Successfulbusy/GIL/scheduling/physicaldiskwriteamp remainunseparated; maintainfreshdurableorder/admission/receipt/CAS/sync/acceptance semantics.",
+      "stage_history": [
+        {
+          "as_of": "before_pr574_integration",
+          "values": {
+            "id": "concern:gc-speculative-live-row-hydration",
+            "kind": "concern",
+            "finding": "Speculative GC hydrates every retained livehash before filtering possible deletion candidates",
+            "family": "maintenance",
+            "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+            "cause_classification": "confirmed_row_materialization_amplification",
+            "cause": "12511all-live coldobjects cross SQLite/Python boundary per sweep althoughonlypossibleunreferencedcandidates needfreshlockedrecheck;196SQLcalls/12511rows in mixedstage.",
+            "implemented": "Bound128candidate JSONparameter andNOTEXISTSpositive-reference query returnonlyunreferencedhashes; finalfreshpublicationlock/referencequery/objectreaders/unlink behavior unchanged.",
+            "merged": [],
+            "deployed": "Notinstalled; currentservice87e retainsoldGCquery.",
+            "retested": "85contracts/3new, archivedbaseline2newfailures; final5alternatingpairs12511->0rows/allbytespreserved; exactcandidate mixed1009600ordered/0warnings/errors butmaintenance1098.053ms remains.",
+            "resolution": "open",
+            "artifact": "docs/benchmarks/systemic-loaded87e4-gc-prefilter-20261025.json",
+            "artifact_sha256": "3c96463597afcfedc40f0c3caac500110ab4378e9cbb56b9b1dc690ea95df655",
+            "next_actor": "This originalsystemic session, then normal17dindependentverifier",
+            "next_action": "Integrate exactreviewedhead through stablegreen+independentchecks, then exactactivation/retest aftercurrentbbcontinuation settles. Continue residualhealth phases/fullinventory; no closurefromthissourcefix.",
+            "residual": "Source/microcases cannotestablishwholePA acceptance. Successfulbusy/GIL/scheduling/physicaldiskwriteamp remainunseparated; maintainfreshdurableorder/admission/receipt/CAS/sync/acceptance semantics.",
+            "stage_history": []
+          }
+        }
+      ],
+      "pr574_integration_followup": {
+        "pr": 574,
+        "head": "45acb2c171029e89a011f2be6593c9b62f6193bc",
+        "merge": "d244274ba50a5c057040471403bfbb7dedade9f6",
+        "watch": "63fd4890-676d-49b5-b0bd-eba19426d352",
+        "head_ci": 40209902263,
+        "head_ci_status": "5first-attemptsuccess",
+        "supervisor": "stablegreen12observations; independentall5checks/noapprovalsrequired/nooutstandingreviewsorthreads/fullpagination/attributedcommit/CLEAN/protection revalidated",
+        "equal_source_merge_tree": "4a406091b5dfeccfe01c1d37f3c5149e40e53106",
+        "main_ci": 40210418655,
+        "main_ci_status": "pending at evidence assembly",
+        "deployed": false,
+        "main_ci_terminal_followup": {
+          "observed_at": "2026-10-25T16:14:07.606024+00:00",
+          "snapshot": {
+            "jobs": [
+              {
+                "conclusion": "success",
+                "head_sha": "d244274ba50a5c057040471403bfbb7dedade9f6",
+                "html_url": "https://github.com/petersky/pa/actions/runs/40210418655/job/121220260729",
+                "id": 121220260729,
+                "name": "smoke",
+                "status": "completed"
+              },
+              {
+                "conclusion": "success",
+                "head_sha": "d244274ba50a5c057040471403bfbb7dedade9f6",
+                "html_url": "https://github.com/petersky/pa/actions/runs/40210418655/job/121220260870",
+                "id": 121220260870,
+                "name": "test (2)",
+                "status": "completed"
+              },
+              {
+                "conclusion": "success",
+                "head_sha": "d244274ba50a5c057040471403bfbb7dedade9f6",
+                "html_url": "https://github.com/petersky/pa/actions/runs/40210418655/job/121220260923",
+                "id": 121220260923,
+                "name": "test (3)",
+                "status": "completed"
+              },
+              {
+                "conclusion": "success",
+                "head_sha": "d244274ba50a5c057040471403bfbb7dedade9f6",
+                "html_url": "https://github.com/petersky/pa/actions/runs/40210418655/job/121220260948",
+                "id": 121220260948,
+                "name": "test (0)",
+                "status": "completed"
+              },
+              {
+                "conclusion": "success",
+                "head_sha": "d244274ba50a5c057040471403bfbb7dedade9f6",
+                "html_url": "https://github.com/petersky/pa/actions/runs/40210418655/job/121220260956",
+                "id": 121220260956,
+                "name": "test (1)",
+                "status": "completed"
+              }
+            ],
+            "total_count": 5
+          },
+          "sha256": "489f1f6d75926df88a423503b1d5b8b1b2fe5276d7d530fd1313b668ae5b3ab6",
+          "notice": "All5firstattemptsuccess independently revalidated after original evidence assembly; previouspendingstate retained above."
+        }
+      }
+    },
+    {
+      "id": "concern:transcript-health-digest-validation",
+      "kind": "concern",
+      "finding": "Python character-loop CPU during fresh transcript hash validation",
+      "family": "transcript",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_leaf_cpu_cost_with_mixed_and_deployed_residuals",
+      "cause": "All-lowercase64-ASCII-hex validation performs up to800704 Python character iterations for12511 valid references on each fresh health call; compiled fullmatch preserves that exact language in native code. Both fresh health calls and nativequick_check remain distinct and uncached.",
+      "implemented": "Compiled ASCII64lowercasehex fullmatch; fresh references/nativeintegrity/case/searchpermissions/symlink/error/fallback/twohealthreads unchanged.",
+      "merged": [],
+      "deployed": false,
+      "retested": "86existing/expandedcontracts and fivealternating12511-object exactsource healthpairs; exactcandidatewheel mixed100/9600ordered/0warningsorfailures/one867.696msmaintenanceviolation.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-health-digest-validation-20261025.json",
+        "sha256": "360826b7358fdda79ddba2d4249494e01bb7183806b7aeb3d1b38c3d2d66dfbf",
+        "raw": "docs/benchmarks/systemic-health-digest-validation-20261025.raw.json.gz",
+        "source_base": "d244274ba50a5c057040471403bfbb7dedade9f6",
+        "findings_after": 663,
+        "concerns_after": 130,
+        "tests": 86,
+        "maintenance_ms": 867.696,
+        "deployed": false,
+        "whole_card_accepted": false
+      },
+      "resolution": "open",
+      "next_actor": "This same systemic session; PA scheduler owns final independent acceptance.",
+      "next_action": "Ready supervisedPR/exactheadCI/independentgreen/protectedmerge; after currentbbcontinuation settles safely activate exactmergedtarget and retest. Continue every residual; no blanketclosure."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -308059,6 +308175,18 @@
     "tested_contracts": 85,
     "findings_after": 662,
     "concerns_after": 129,
+    "whole_card_accepted": false
+  },
+  "health_digest_validation_stage": {
+    "artifact": "docs/benchmarks/systemic-health-digest-validation-20261025.json",
+    "sha256": "360826b7358fdda79ddba2d4249494e01bb7183806b7aeb3d1b38c3d2d66dfbf",
+    "raw": "docs/benchmarks/systemic-health-digest-validation-20261025.raw.json.gz",
+    "source_base": "d244274ba50a5c057040471403bfbb7dedade9f6",
+    "findings_after": 663,
+    "concerns_after": 130,
+    "tests": 86,
+    "maintenance_ms": 867.696,
+    "deployed": false,
     "whole_card_accepted": false
   }
 }

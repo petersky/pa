@@ -39,6 +39,7 @@ _SECRET_KEY = re.compile(
 )
 _BEARER = re.compile(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}")
 _TOKEN = re.compile(r"\b(?:sk|gh[oprsu]|xox[abprs])-[-A-Za-z0-9_]{8,}\b", re.I)
+_COLD_HASH = re.compile(r"[0-9a-f]{64}")
 _WIRE_KEYS = {"headers", "http_headers", "wire", "wire_envelope", "provider_envelope"}
 _AUDIT_TYPES = {
     "session_closed", "turn_completed", "turn_failed", "command_result",
@@ -595,7 +596,7 @@ class TranscriptStorage:
         directories: dict[str, set[str]] = defaultdict(set)
         missing = 0
         for digest in self.referenced_hashes():
-            if len(digest) == 64 and all(c in "0123456789abcdef" for c in digest):
+            if len(digest) == 64 and _COLD_HASH.fullmatch(digest) is not None:
                 directories[digest[:2]].add(f"{digest[2:]}.zlib")
             else:
                 # Preserve diagnostics for malformed event references, too.
