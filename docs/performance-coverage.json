@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-25T20:57:00.442159+00:00",
-  "completion": "OPEN: all 670 findings / 136 concerns. Original main CI deadline failure remains unclassified; bounded test-only evidence is not a performance repair or deployment acceptance.",
+  "as_of": "2026-10-25T21:26:03.548040+00:00",
+  "completion": "OPEN: all 670 findings / 136 concerns. Actual f4ba2d76 activation is proven; maintenance still exceeds 500 ms. The failure observer is not yet deployed and does not classify historical causes.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -185040,6 +185040,15 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
+      },
+      "exact587_activation_and_failure_observation_20261025": {
+        "artifact": "docs/benchmarks/systemic-exact587-activation-retest-20261025.json",
+        "sha256": "68ed96a0e400888b2183e500a6ef410b25944973336ecacace397e12e43026f8",
+        "actual_loaded": "f4ba2d7639b5d70800d7d6ab0ce52532b08de80c",
+        "resolution": "open",
+        "source_observer_deployment": "not yet",
+        "scope": "Complete prior numeric populations retained separately; scoped activation/retests do not satisfy whole-PA acceptance. Every prior field remains historical and unchanged.",
+        "next_action": "Protect and integrate bounded failure evidence through exact supervisor/head+main checks; continue maintenance/native wait and all peer/provider/full startup obligations. No subsequent install/restart before positive current-handoff settlement."
       }
     },
     {
@@ -205773,6 +205782,15 @@
         "stage": "Exact 24c85fc7 activation/retests verified; new type guard repair source only, integration/deployment/retest pending.",
         "resolution": "open",
         "next_action": "Protected ready PR, stable supervisor and independent exact head/main CI; current continuation settlement before installation; exact activation/retest, continue all remaining scope."
+      },
+      "exact587_activation_and_failure_observation_20261025": {
+        "artifact": "docs/benchmarks/systemic-exact587-activation-retest-20261025.json",
+        "sha256": "68ed96a0e400888b2183e500a6ef410b25944973336ecacace397e12e43026f8",
+        "actual_loaded": "f4ba2d7639b5d70800d7d6ab0ce52532b08de80c",
+        "resolution": "open",
+        "source_observer_deployment": "not yet",
+        "scope": "Complete prior numeric populations retained separately; scoped activation/retests do not satisfy whole-PA acceptance. Every prior field remains historical and unchanged.",
+        "next_action": "Protect and integrate bounded failure evidence through exact supervisor/head+main checks; continue maintenance/native wait and all peer/provider/full startup obligations. No subsequent install/restart before positive current-handoff settlement."
       }
     },
     {
@@ -211459,6 +211477,15 @@
         "resolution": "open",
         "cause": "Original snapshot loop CPU cause remains unverified; bounded in-CI worker/GC evidence now implemented, not a latency fix.",
         "next_action": "Protected ready PR and exact required CI/supervisor/independent signals. Inspect same-attempt bounded CI artifacts before any causal claim; preserve original failures and continue full scope."
+      },
+      "exact587_activation_and_failure_observation_20261025": {
+        "artifact": "docs/benchmarks/systemic-exact587-activation-retest-20261025.json",
+        "sha256": "68ed96a0e400888b2183e500a6ef410b25944973336ecacace397e12e43026f8",
+        "actual_loaded": "f4ba2d7639b5d70800d7d6ab0ce52532b08de80c",
+        "resolution": "open",
+        "source_observer_deployment": "not yet",
+        "scope": "Complete prior numeric populations retained separately; scoped activation/retests do not satisfy whole-PA acceptance. Every prior field remains historical and unchanged.",
+        "next_action": "Protect and integrate bounded failure evidence through exact supervisor/head+main checks; continue maintenance/native wait and all peer/provider/full startup obligations. No subsequent install/restart before positive current-handoff settlement."
       }
     },
     {
@@ -309401,6 +309428,17 @@
       "path": "docs/benchmarks/systemic-exact586-deadline-evidence-20261025.raw.json.gz",
       "sha256": "9b2ea248456063c566452d99f75cc79bbc6d71e69b20c6dd8d6ecf12c6b3cbc6",
       "bytes": 100279
+    },
+    "all_prior_fields_preserved": true
+  },
+  "exact587_activation_retest_stage": {
+    "artifact": "docs/benchmarks/systemic-exact587-activation-retest-20261025.json",
+    "sha256": "68ed96a0e400888b2183e500a6ef410b25944973336ecacace397e12e43026f8",
+    "raw": {
+      "path": "docs/benchmarks/systemic-exact587-activation-retest-20261025.raw.json.gz",
+      "sha256": "1b21fbcf946606341b510c0dd71a4a7263a48d97f79a097b0889c37320d9411e",
+      "bytes": 457900,
+      "original_local_bundle_sha256": "0a2a50aed847c7924664cbdfb6df7187e2cc104d376badb6c9ebc343febb6bde"
     },
     "all_prior_fields_preserved": true
   }

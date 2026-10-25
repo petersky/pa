@@ -13,11 +13,14 @@ import contextvars
 import functools
 import logging
 import math
+import sqlite3
 import time
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, fields
 from typing import Any, Awaitable, Callable, TypeVar
+
+from starlette.exceptions import HTTPException
 
 from pa.core.operation_budget import OperationBudget, OperationDeadline, current_operation
 from pa.core.sqlite_metrics import sqlite_connection_scope
@@ -64,6 +67,26 @@ class AsyncRuntimeClosed(RuntimeError):
     """New work was submitted after shutdown began."""
 
 
+def _failure_kind(error: BaseException) -> dict[str, Any]:
+    """Fixed categories only: never stringify errors or retain arbitrary codes."""
+    if isinstance(error, HTTPException):
+        # Do not inspect detail, headers, cause, traceback or custom properties.
+        status = vars(error).get("status_code")
+        return {"category": "http_error", "http_status": status
+                if type(status) is int and 400 <= status <= 599 else 0}
+    if isinstance(error, sqlite3.Error):
+        code = vars(error).get("sqlite_errorcode")
+        category = {sqlite3.SQLITE_BUSY: "sqlite_busy", sqlite3.SQLITE_LOCKED: "sqlite_locked"}.get(
+            (code & 255) if type(code) is int else None, "sqlite_error"
+        )
+        return {"category": category}
+    if isinstance(error, TimeoutError):
+        return {"category": "timeout_error"}
+    if isinstance(error, OSError):
+        return {"category": "os_error"}
+    return {"category": "exception" if isinstance(error, Exception) else "base_exception"}
+
+
 @dataclass
 class OperationMetrics:
     submitted: int = 0
@@ -84,6 +107,7 @@ class OperationMetrics:
     max_runtime_ms: float = 0.0
     slow_calls: int = 0
     runtime_samples_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    failed_runtime_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     queue_samples_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     python_lock_wait_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     python_lock_hold_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
@@ -175,6 +199,9 @@ class AsyncRuntime:
         self._request_max_ms = 0.0
         self._request_slow: deque[dict[str, Any]] = deque(maxlen=50)
         self._slow_operations: deque[dict[str, Any]] = deque(maxlen=64)
+        self._failed_operations: deque[dict[str, Any]] = deque(maxlen=64)
+        self._failed_requests: deque[dict[str, Any]] = deque(maxlen=64)
+        self._failed_request_count = 0
         self._slow_lock_timelines: deque[dict[str, Any]] = deque(maxlen=64)
         self._request_samples_ms: deque[float] = deque(maxlen=SAMPLE_LIMIT)
         self._request_bytes = 0
@@ -348,8 +375,8 @@ class AsyncRuntime:
         bound = functools.partial(context.run, invoke)
         try:
             future = loop.run_in_executor(self._executor, bound)
-        except BaseException:
-            self._finish_submission(operation, None, runtime_started_at)
+        except BaseException as error:
+            self._finish_submission(operation, None, runtime_started_at, submission_error=error)
             raise
         self._pending.add(future)
         if evidence:
@@ -454,15 +481,17 @@ class AsyncRuntime:
             else:
                 async with asyncio.timeout(timeout):
                     result = await awaitable
-        except TimeoutError:
+        except TimeoutError as error:
             metrics.timed_out += 1
             metrics.failed += 1
+            self._record_failure(operation, error, started, "native_async")
             raise
         except asyncio.CancelledError:
             metrics.cancelled += 1
             raise
-        except BaseException:
+        except BaseException as error:
             metrics.failed += 1
+            self._record_failure(operation, error, started, "native_async")
             raise
         else:
             metrics.completed += 1
@@ -474,6 +503,27 @@ class AsyncRuntime:
             metrics.max_runtime_ms = max(metrics.max_runtime_ms, elapsed_ms)
             metrics.runtime_samples_ms.append(elapsed_ms)
 
+    def _record_failure(
+        self, operation: str, error: BaseException, started_at: float, phase: str,
+        observation: OperationObservation | None = None,
+    ) -> None:
+        now = time.perf_counter()
+        elapsed_ms = (now - started_at) * 1000
+        self._operations[operation].failed_runtime_ms.append(elapsed_ms)
+        # Diagnosis must never replace the original exception, even for an
+        # unusual third-party subclass with broken attribute access.
+        try:
+            kind = _failure_kind(error)
+        except BaseException:
+            kind = {"category": "unclassified"}
+        item = {"operation": operation, "phase": phase, **kind,
+                "elapsed_ms": round(elapsed_ms, 3), "observed_at_monotonic": round(now, 6)}
+        if observation is not None and observation.worker_finished_at:
+            item.update(queue_wait_ms=round(observation.queue_wait_ms, 3),
+                        worker_service_ms=round((observation.worker_finished_at - observation.worker_started_at) * 1000, 3),
+                        thread_cpu_ms=round(observation.thread_cpu_ms, 3))
+        self._failed_operations.append(item)
+
     def _finish_submission(
         self,
         operation: str,
@@ -481,6 +531,7 @@ class AsyncRuntime:
         started_at: float,
         evidence: OperationDeadline | None = None,
         observation: OperationObservation | None = None,
+        submission_error: BaseException | None = None,
     ) -> None:
         metrics = self._operations[operation]
         if evidence:
@@ -527,6 +578,8 @@ class AsyncRuntime:
         metrics.runtime_samples_ms.append(elapsed_ms)
         if future is None:
             metrics.failed += 1
+            if submission_error is not None:
+                self._record_failure(operation, submission_error, started_at, "executor_submission")
             return
         if future.cancelled():
             # The waiting coroutine records cancellation. A caller cancelled
@@ -535,6 +588,7 @@ class AsyncRuntime:
             pass
         elif future.exception() is not None:
             metrics.failed += 1
+            self._record_failure(operation, future.exception(), started_at, "worker_completion", observation)
         else:
             metrics.completed += 1
         warning_seconds = _SLOW_OPERATION_SECONDS.get(
@@ -596,6 +650,13 @@ class AsyncRuntime:
         self, path: str, status: int, elapsed_ms: float, *,
         response_bytes: int = 0, streaming: bool = False,
     ) -> None:
+        # Keep failed SSE responses visible without including ordinary stream
+        # lifetimes in request latency distributions. Paths are route templates.
+        if type(status) is int and 400 <= status <= 599:
+            self._failed_request_count += 1
+            self._failed_requests.append({"path": path, "status": status,
+                "elapsed_ms": round(elapsed_ms, 3), "response_bytes": response_bytes,
+                "streaming": streaming, "observed_at_monotonic": round(time.perf_counter(), 6)})
         if streaming:
             self._stream_requests += 1
             return
@@ -637,6 +698,8 @@ class AsyncRuntime:
                     if not isinstance(getattr(metrics, item.name), deque)}
             data["filesystem_totals"] = dict(metrics.filesystem_totals)
             data["runtime_ms"] = distribution(list(metrics.runtime_samples_ms))
+            if metrics.failed_runtime_ms:
+                data["failed_runtime_ms"] = distribution(list(metrics.failed_runtime_ms))
             data["queue_ms"] = distribution(list(metrics.queue_samples_ms))
             data["python_lock_wait_ms"] = distribution(list(metrics.python_lock_wait_ms))
             data["python_lock_hold_ms"] = distribution(list(metrics.python_lock_hold_ms))
@@ -651,6 +714,12 @@ class AsyncRuntime:
             data["max_runtime_ms"] = round(data["max_runtime_ms"], 3)
             operations[name] = data
         return {
+            "failed_operations": {"capacity": 64,
+                "scope": "Last completed failed worker/native-async invocations and executor submission failures, including short failures. Worker caller timeouts/cancellations are not completion failures; their existing counters remain separate. Failed-only percentiles use the last 256 failures per operation and are omitted until a failure completes. Static categories are not root causes; no messages, arbitrary codes, exception names, arguments, SQL or payloads retained.",
+                "observations": [dict(item) for item in self._failed_operations]},
+            "failed_requests": {"capacity": 64, "count": self._failed_request_count,
+                "scope": "Last completed HTTP 4xx/5xx responses, including failed SSE responses; normal SSE lifetimes remain excluded. Route templates and numeric status only, no response bodies, error codes, IDs or query strings.",
+                "observations": [dict(item) for item in self._failed_requests]},
             "sqlite_timing_scope": "Statement wall and thread CPU include execute and lazy fetch calls; commit is separate. Inclusive nested calls can overlap. Wall minus CPU is unclassified off-CPU time, not proof of lock wait or physical disk I/O. No SQL, parameters or result values retained.",
             "async_backend_initialization": dict(self._backend_initialization),
             "slow_operations": {"capacity": 64, "scope": "last completed slow worker invocations; queue time separate from elapsed",
