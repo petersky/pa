@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-25T19:37:47.198361+00:00",
-  "completion": "OPEN: all 669 findings and 136 concerns. Exact 8ca8d686 activation and bounded encoding/retests verified; maintenance, freshness, peer/logging gaps and full independent acceptance remain open.",
+  "as_of": "2026-10-25T19:58:30.568991+00:00",
+  "completion": "OPEN: all 669 findings and 136 concerns. Exact 056b8e3e activation/retests verified; source SQLite CPU instrumentation is not deployed or a performance fix.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -205751,6 +205751,13 @@
           "thread_cpu_ms": 49.209875
         },
         "next_action": "Protectedintegration/exactactivation/livephaseattribution, then measuredsharedcause repair withsame backup/durability/freshness contracts."
+      },
+      "sqlite_call_cpu_followup_20261025": {
+        "artifact": "docs/benchmarks/systemic-exact584-sqlite-cpu-20261025.json",
+        "sha256": "d5c736f6f8d8afd384feee0f954b7edca5f34a58a8a424625443602c769d8575",
+        "stage": "Source implemented and tested; integration/deployment/retest pending.",
+        "resolution": "open",
+        "next_action": "Protected ready PR, stable supervisor, independent head/main CI, exact activation and new representative retests; use call CPU evidence to investigate successful waits without calling wall-minus-CPU disk or lock proof."
       }
     },
     {
@@ -309245,5 +309252,18 @@
     "encoding_deployed_and_bounded_retested": true,
     "new_migration_repair_deployed": false,
     "interpretation": "Only current observed activation labels superseded. Every historical row and failed/interrupted stage unchanged; every row stays open, including unobserved branches."
+  },
+  "exact584_activation_sqlite_cpu_stage": {
+    "artifact": "docs/benchmarks/systemic-exact584-sqlite-cpu-20261025.json",
+    "sha256": "d5c736f6f8d8afd384feee0f954b7edca5f34a58a8a424625443602c769d8575",
+    "raw": {
+      "path": "docs/benchmarks/systemic-exact584-sqlite-cpu-20261025.raw.json.gz",
+      "sha256": "059ac380b8917a4ec9bcf060b7f19dbf3132443c31167f22414799c93fd1a6e2",
+      "bytes": 478429
+    },
+    "all_prior_fields_preserved": true,
+    "existing_concern_reused": "concern:maintenance-native-sql-observability",
+    "actual_loaded": "056b8e3e8dd64cde0558ff6a4c7b96cbf359397a",
+    "instrumentation_deployed": false
   }
 }

@@ -1,0 +1,2921 @@
+{
+  "contract": "pa.exact584-activation-sqlite-cpu/v1",
+  "observed_at": "2026-10-25T19:58:30.568991+00:00",
+  "host": "macbook / 0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+  "actual_loaded": {
+    "loaded_module_version": "1.5.9",
+    "source_revision": "056b8e3e8dd64cde0558ff6a4c7b96cbf359397a",
+    "package_identity": "sha256:434688c0bda0fd50626d16ffb1f1ca007f74691eeb42117d944d31b765664bc8",
+    "pid": 20638,
+    "startup_id": "ddd7dd98-66ce-466e-ac85-1f7c9b71764e"
+  },
+  "activation": {
+    "source_files": 439,
+    "record_checksums": 440,
+    "templates": 38,
+    "unchanged_versions": 52,
+    "python": "3.14.2",
+    "native": {
+      "observed_at": "2026-10-25T19:52:45.310928+00:00",
+      "ps": "20638 20635 Sun Oct 25 12:51:56 2026      31  0 /Users/petersky/.local/share/uv/tools/pa/bin/python3",
+      "launchctl": [
+        "state = running",
+        "program = /Users/petersky/.local/share/uv/tools/pa/bin/pa",
+        "pid = 20635",
+        "state = active",
+        "state = active",
+        "spawn type = interactive (4)"
+      ],
+      "listener_pid": 20638,
+      "supervisor_pid": 20635,
+      "fresh_installed_source_and_52_versions_equal_before_restart": true,
+      "scope": "Read-only process identity and scheduling fields. No task policy or configuration change."
+    },
+    "configuration_revision": "86968d122a80e240ea560052f275872c5d22699a35b218618200da9e62fc1767",
+    "cache_sha256": "fcb9a8ee8099db2aebeebdf06e98412cb3cfa0bcaf71ad2c297553cf3d87acfb",
+    "lease": {
+      "id": "d24899f49011107365c237bbf09a300f63beb5a5c9658eac682770304ade52f2",
+      "repository_id": "5ce49cd8-f632-5f6d-a0d5-0b9eaf61f9cd",
+      "repository_url": "https://github.com/petersky/pa",
+      "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+      "project_id": "fdc04d91-1222-447b-859c-38e67bcab6eb",
+      "cache_path": "/Users/petersky/.pa-workspaces/repositories/5ce49cd8-f632-5f6d-a-b2354070266ade2c",
+      "worktree_path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c",
+      "branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+      "base_sha": "4697ed583f6a5eceead72217d07ba2ebaf4ccc83",
+      "fencing_token": 334,
+      "state": "ready",
+      "stage": "verified",
+      "error": null,
+      "dirty": false,
+      "untracked": 0,
+      "completed": true,
+      "merged": true,
+      "cleanup_decision": null,
+      "cleanup_evidence": {},
+      "created_at": "2026-10-16T05:42:31.516094Z",
+      "updated_at": "2026-10-25T19:52:08.957375Z",
+      "expires_at": "2026-10-26T19:52:08.957375Z"
+    },
+    "scope": "Supported actual build plus independently verified installed files, RECORD, template/cache/Python/version and native paths. Not proof every module/branch executed."
+  },
+  "integration": {
+    "pr": 584,
+    "head": "d436426b3e6882f367114ab63f1d0b3dabd20a23",
+    "merge": "056b8e3e8dd64cde0558ff6a4c7b96cbf359397a",
+    "watch": "2e7fa6ee-80e8-46a4-a58a-044d99cb2c13",
+    "head_ci": 40226976685,
+    "main_ci": 40227310600,
+    "checks": "5 first-attempt successful jobs each; exact protected independent checks and ten stable observations. Already merged; no repeat merge/install."
+  },
+  "ordinary_gets": {
+    "count": 95,
+    "max_ms": 102.662,
+    "failures": 0,
+    "violations": 0,
+    "routes": {
+      "/": {
+        "all_attempt_latency_ms": {
+          "max": 22.002,
+          "p50": 10.069,
+          "p95": 22.002,
+          "p99": 22.002,
+          "samples": 5
+        },
+        "decoded_response_bytes": {
+          "max": 25464,
+          "p50": 25464,
+          "p95": 25464,
+          "p99": 25464,
+          "samples": 5
+        },
+        "errors": 0,
+        "requested": 5,
+        "successes": 5,
+        "successful_latency_ms": {
+          "max": 22.002,
+          "p50": 10.069,
+          "p95": 22.002,
+          "p99": 22.002,
+          "samples": 5
+        },
+        "threshold_violations_all_attempts": 0
+      },
+      "/agent": {
+        "all_attempt_latency_ms": {
+          "max": 39.124,
+          "p50": 27.441,
+          "p95": 39.124,
+          "p99": 39.124,
+          "samples": 5
+        },
+        "decoded_response_bytes": {
+          "max": 116038,
+          "p50": 116038,
+          "p95": 116038,
+          "p99": 116038,
+          "samples": 5
+        },
+        "errors": 0,
+        "requested": 5,
+        "successes": 5,
+        "successful_latency_ms": {
+          "max": 39.124,
+          "p50": 27.441,
+          "p95": 39.124,
+          "p99": 39.124,
+          "samples": 5
+        },
+        "threshold_violations_all_attempts": 0
+      },
+      "/api/fleet/overview": {
+        "all_attempt_latency_ms": {
+          "max": 54.507,
+          "p50": 34.625,
+          "p95": 54.507,
+          "p99": 54.507,
+          "samples": 5
+        },
+        "decoded_response_bytes": {
+          "max": 985309,
+          "p50": 985309,
+          "p95": 985309,
+          "p99": 985309,
+          "samples": 5
+        },
+        "errors": 0,
+        "requested": 5,
+        "successes": 5,
+        "successful_latency_ms": {
+          "max": 54.507,
+          "p50": 34.625,
+          "p95": 54.507,
+          "p99": 54.507,
+          "samples": 5
+        },
+        "threshold_violations_all_attempts": 0
+      },
+      "/api/health": {
+        "all_attempt_latency_ms": {
+          "max": 19.123,
+          "p50": 8.543,
+          "p95": 18.379,
+          "p99": 19.123,
+          "samples": 20
+        },
+        "decoded_response_bytes": {
+          "max": 15,
+          "p50": 15,
+          "p95": 15,
+          "p99": 15,
+          "samples": 20
+        },
+        "errors": 0,
+        "requested": 20,
+        "successes": 20,
+        "successful_latency_ms": {
+          "max": 19.123,
+          "p50": 8.543,
+          "p95": 18.379,
+          "p99": 19.123,
+          "samples": 20
+        },
+        "threshold_violations_all_attempts": 0
+      },
+      "/api/runtime": {
+        "all_attempt_latency_ms": {
+          "max": 102.662,
+          "p50": 25.886,
+          "p95": 40.546,
+          "p99": 102.662,
+          "samples": 20
+        },
+        "decoded_response_bytes": {
+          "max": 282662,
+          "p50": 282655,
+          "p95": 282661,
+          "p99": 282662,
+          "samples": 20
+        },
+        "errors": 0,
+        "requested": 20,
+        "successes": 20,
+        "successful_latency_ms": {
+          "max": 102.662,
+          "p50": 25.886,
+          "p95": 40.546,
+          "p99": 102.662,
+          "samples": 20
+        },
+        "threshold_violations_all_attempts": 0
+      },
+      "/api/status": {
+        "all_attempt_latency_ms": {
+          "max": 39.108,
+          "p50": 23.167,
+          "p95": 36.616,
+          "p99": 39.108,
+          "samples": 20
+        },
+        "decoded_response_bytes": {
+          "max": 2824,
+          "p50": 2824,
+          "p95": 2824,
+          "p99": 2824,
+          "samples": 20
+        },
+        "errors": 0,
+        "requested": 20,
+        "successes": 20,
+        "successful_latency_ms": {
+          "max": 39.108,
+          "p50": 23.167,
+          "p95": 36.616,
+          "p99": 39.108,
+          "samples": 20
+        },
+        "threshold_violations_all_attempts": 0
+      },
+      "/fleet": {
+        "all_attempt_latency_ms": {
+          "max": 57.295,
+          "p50": 40.598,
+          "p95": 57.295,
+          "p99": 57.295,
+          "samples": 5
+        },
+        "decoded_response_bytes": {
+          "max": 1147613,
+          "p50": 1147613,
+          "p95": 1147613,
+          "p99": 1147613,
+          "samples": 5
+        },
+        "errors": 0,
+        "requested": 5,
+        "successes": 5,
+        "successful_latency_ms": {
+          "max": 57.295,
+          "p50": 40.598,
+          "p95": 57.295,
+          "p99": 57.295,
+          "samples": 5
+        },
+        "threshold_violations_all_attempts": 0
+      },
+      "/pull-requests": {
+        "all_attempt_latency_ms": {
+          "max": 17.784,
+          "p50": 16.355,
+          "p95": 17.784,
+          "p99": 17.784,
+          "samples": 5
+        },
+        "decoded_response_bytes": {
+          "max": 26012,
+          "p50": 26012,
+          "p95": 26012,
+          "p99": 26012,
+          "samples": 5
+        },
+        "errors": 0,
+        "requested": 5,
+        "successes": 5,
+        "successful_latency_ms": {
+          "max": 17.784,
+          "p50": 16.355,
+          "p95": 17.784,
+          "p99": 17.784,
+          "samples": 5
+        },
+        "threshold_violations_all_attempts": 0
+      },
+      "/settings?section=agent": {
+        "all_attempt_latency_ms": {
+          "max": 24.047,
+          "p50": 16.698,
+          "p95": 24.047,
+          "p99": 24.047,
+          "samples": 5
+        },
+        "decoded_response_bytes": {
+          "max": 101194,
+          "p50": 101194,
+          "p95": 101194,
+          "p99": 101194,
+          "samples": 5
+        },
+        "errors": 0,
+        "requested": 5,
+        "successes": 5,
+        "successful_latency_ms": {
+          "max": 24.047,
+          "p50": 16.698,
+          "p95": 24.047,
+          "p99": 24.047,
+          "samples": 5
+        },
+        "threshold_violations_all_attempts": 0
+      },
+      "/work": {
+        "all_attempt_latency_ms": {
+          "max": 24.269,
+          "p50": 20.124,
+          "p95": 24.269,
+          "p99": 24.269,
+          "samples": 5
+        },
+        "decoded_response_bytes": {
+          "max": 31323,
+          "p50": 31323,
+          "p95": 31323,
+          "p99": 31323,
+          "samples": 5
+        },
+        "errors": 0,
+        "requested": 5,
+        "successes": 5,
+        "successful_latency_ms": {
+          "max": 24.269,
+          "p50": 20.124,
+          "p95": 24.269,
+          "p99": 24.269,
+          "samples": 5
+        },
+        "threshold_violations_all_attempts": 0
+      }
+    }
+  },
+  "fleet": {
+    "counts": {
+      "fresh": 96
+    },
+    "samples": 8,
+    "clock_offset_delta_seconds": -0.00018358230590820312,
+    "scope": "Cached field observations over 37 seconds, not distinct incidents, forced probes or whole-peer acceptance."
+  },
+  "encoding": {
+    "/fleet": {
+      "identity": {
+        "encoded_body_bytes": [
+          1147611
+        ],
+        "decoded_body_bytes": [
+          1147611
+        ],
+        "latency_ms": {
+          "samples": 2,
+          "p50": 32.58866700343788,
+          "p95": 39.84395903535187,
+          "p99": 39.84395903535187,
+          "max": 39.84395903535187
+        },
+        "same_body_decoder_parity": true
+      },
+      "gzip": {
+        "encoded_body_bytes": [
+          208077,
+          208097
+        ],
+        "decoded_body_bytes": [
+          1147611
+        ],
+        "latency_ms": {
+          "samples": 2,
+          "p50": 35.995665937662125,
+          "p95": 92.25695789791644,
+          "p99": 92.25695789791644,
+          "max": 92.25695789791644
+        },
+        "same_body_decoder_parity": true
+      }
+    },
+    "/api/fleet/overview": {
+      "identity": {
+        "encoded_body_bytes": [
+          985309
+        ],
+        "decoded_body_bytes": [
+          985309
+        ],
+        "latency_ms": {
+          "samples": 2,
+          "p50": 21.512542036361992,
+          "p95": 23.729334003292024,
+          "p99": 23.729334003292024,
+          "max": 23.729334003292024
+        },
+        "same_body_decoder_parity": true
+      },
+      "gzip": {
+        "encoded_body_bytes": [
+          181386,
+          181388
+        ],
+        "decoded_body_bytes": [
+          985309
+        ],
+        "latency_ms": {
+          "samples": 2,
+          "p50": 25.39299998898059,
+          "p95": 25.55745793506503,
+          "p99": 25.55745793506503,
+          "max": 25.55745793506503
+        },
+        "same_body_decoder_parity": true
+      }
+    }
+  },
+  "installed_private_mixed": {
+    "maintenance": {
+      "samples": 1,
+      "max_ms": 768.853,
+      "p50_ms": 768.853,
+      "p95_ms": 768.853,
+      "p99_ms": 768.853
+    },
+    "warnings": {},
+    "violations": {
+      "maintenance.run": 1
+    },
+    "retained": 9600,
+    "validation": {
+      "started_monotonic": 716001.730090416,
+      "finished_monotonic": 716002.538821,
+      "duration_ms": 808.7305839871988,
+      "scope": "Durable order, retained cold content hashes, projection head and card checks; includes awaited validation observer persistence. Excluded from workload duration and captured counters."
+    }
+  },
+  "cold_fake_provider": {
+    "latency_ms": {
+      "samples": 10,
+      "p50": 23.96499994210899,
+      "p95": 65.10433298535645,
+      "p99": 65.10433298535645,
+      "max": 65.10433298535645
+    },
+    "samples": 10,
+    "scope": "Private ten fake-provider tool-free starts/drains, not full Kernel/provider/MCP/placement startup acceptance."
+  },
+  "late_migration": {
+    "contract": "pa.installed-late-migration-batch/v1",
+    "source": "056b8e3e8dd64cde0558ff6a4c7b96cbf359397a",
+    "module_path": "/Users/petersky/.local/share/uv/tools/pa/lib/python3.14/site-packages/pa/domain/projection.py",
+    "module_sha256": "cd55cd0c34e7f344fc079e8754a0a22c5d0116c0909dcf433ccfb1c1144fa300",
+    "started_at": "2026-10-25T19:54:24.052244+00:00",
+    "finished_at": "2026-10-25T19:54:25.408652+00:00",
+    "monotonic_seconds": 1.35636383399833,
+    "wall_minus_monotonic_before": 1792242045.437566,
+    "wall_minus_monotonic_after": 1792242045.4375594,
+    "samples": [
+      {
+        "wall_ms": 6.568583,
+        "thread_cpu_ms": 6.478334,
+        "examined": 500,
+        "changed": 0,
+        "ordered": true,
+        "compatibility_rows": 100000
+      },
+      {
+        "wall_ms": 6.845625,
+        "thread_cpu_ms": 6.752292,
+        "examined": 500,
+        "changed": 0,
+        "ordered": true,
+        "compatibility_rows": 100000
+      },
+      {
+        "wall_ms": 6.539542,
+        "thread_cpu_ms": 6.442666,
+        "examined": 500,
+        "changed": 0,
+        "ordered": true,
+        "compatibility_rows": 100000
+      },
+      {
+        "wall_ms": 6.426208,
+        "thread_cpu_ms": 6.347791,
+        "examined": 500,
+        "changed": 0,
+        "ordered": true,
+        "compatibility_rows": 100000
+      },
+      {
+        "wall_ms": 6.393916,
+        "thread_cpu_ms": 6.298,
+        "examined": 500,
+        "changed": 0,
+        "ordered": true,
+        "compatibility_rows": 100000
+      }
+    ],
+    "latency_ms": {
+      "samples": 5,
+      "p50": 6.539542,
+      "p95": 6.845625,
+      "p99": 6.845625,
+      "max": 6.845625
+    },
+    "violations_500ms": 0,
+    "failures": 0,
+    "scope": "Five independent private synthetic stores, 100,000 compatibility rows and 500 already-canonical selected rows each. Timed region is the unchanged native migration method only; seeding and assertions are outside. Small-sample quantiles, not production migration throughput, fresh health timing, statistical speedup or whole-PA acceptance. Both roots are private before PA imports; no live Store mutation or fault injection."
+  },
+  "live_maintenance": {
+    "contract": "pa.live-maintenance-snapshot/v1",
+    "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "source": "/api/instance/maintenance",
+    "started_at": "2026-10-25T19:55:10.551830+00:00",
+    "finished_at": "2026-10-25T19:55:10.610222+00:00",
+    "runtime_build": {
+      "loaded_module_version": "1.5.9",
+      "source_revision": "056b8e3e8dd64cde0558ff6a4c7b96cbf359397a",
+      "package_identity": "sha256:434688c0bda0fd50626d16ffb1f1ca007f74691eeb42117d944d31b765664bc8",
+      "pid": 20638,
+      "startup_id": "ddd7dd98-66ce-466e-ac85-1f7c9b71764e"
+    },
+    "observer_request_ms": 4.48425009381026,
+    "snapshot": {
+      "available": true,
+      "running": true,
+      "interval_seconds": 86400,
+      "transcript_retention_days": 14,
+      "mutation_operation_retention_days": 14,
+      "last_started_at": "2026-10-25T19:52:00.872876+00:00",
+      "last_finished_at": "2026-10-25T19:52:05.536962+00:00",
+      "last_result": {
+        "ran_at": "2026-10-25T19:52:00.876399+00:00",
+        "transcript_cutoff": "2026-10-11T19:52:00.876399+00:00",
+        "mutation_cutoff": "2026-10-11T19:52:00.876399+00:00",
+        "transcript_events_deleted": 0,
+        "mutation_operations_deleted": 0,
+        "dispatch_compact": {
+          "events": 0,
+          "receipts": 0
+        },
+        "sqlite": {
+          "compacted": true,
+          "status": "ok",
+          "phases": {
+            "connect": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 7.050708,
+              "thread_cpu_ms": 0.487875
+            },
+            "size_initial": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.608292,
+              "thread_cpu_ms": 0.459875
+            },
+            "integrity_before": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 271.249666,
+              "thread_cpu_ms": 213.206167
+            },
+            "optimize": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.2065,
+              "thread_cpu_ms": 0.114458
+            },
+            "checkpoint_before": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.059792,
+              "thread_cpu_ms": 0.033625
+            },
+            "size_pre_compact": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.019709,
+              "thread_cpu_ms": 0.019833
+            },
+            "disk_space": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.109958,
+              "thread_cpu_ms": 0.055583
+            },
+            "vacuum": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 1946.295208,
+              "thread_cpu_ms": 1088.562292
+            },
+            "integrity_after": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 190.740291,
+              "thread_cpu_ms": 189.743291
+            },
+            "checkpoint_after": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 17.157417,
+              "thread_cpu_ms": 14.88475
+            },
+            "size_final": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.596833,
+              "thread_cpu_ms": 0.116042
+            },
+            "close": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.151875,
+              "thread_cpu_ms": 0.151916
+            },
+            "total": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 2434.5215,
+              "thread_cpu_ms": 1508.082125
+            }
+          },
+          "before": {
+            "page_count": 107647,
+            "page_size": 4096,
+            "freelist_count": 79,
+            "bytes": 440922112,
+            "free_bytes": 323584
+          },
+          "after": {
+            "page_count": 106033,
+            "page_size": 4096,
+            "freelist_count": 11,
+            "bytes": 434311168,
+            "free_bytes": 45056
+          },
+          "page_count": 106033,
+          "page_size": 4096,
+          "freelist_count": 11,
+          "bytes": 434311168,
+          "free_bytes": 45056,
+          "quick_check": "ok",
+          "wal_busy": 0,
+          "wal_log": 0,
+          "wal_checkpointed": 0
+        },
+        "transcript_storage": {
+          "schema_version": 1,
+          "events": 840871,
+          "audit_evidence": 1052,
+          "objects": 23521,
+          "uncompressed_bytes": 380098922,
+          "compressed_bytes": 82171907,
+          "references": 23820,
+          "deduplicated_references": 299,
+          "missing_objects": 1,
+          "journal_mode": "wal",
+          "integrity": "ok",
+          "redaction_policy": "canonical-v1",
+          "hot_payload_limit": 2048,
+          "compatibility_rows": 862877,
+          "migration": "running",
+          "migration_examined": 230500,
+          "migration_changed": 84973,
+          "migration_error": null,
+          "measured_at": "2026-10-25T19:52:05.536377+00:00",
+          "measurement_state": "measured"
+        },
+        "phases": {
+          "retention_selection": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 87.974208,
+            "thread_cpu_ms": 10.879,
+            "sqlite_calls": 274,
+            "sqlite_rows": 271,
+            "sqlite_statement_ms": 74.38012608326972,
+            "sqlite_commit_ms": 0.0,
+            "sqlite_busy_failures": 0,
+            "python_lock_wait_ms": 0.0,
+            "python_lock_hold_ms": 0.0,
+            "outer_lock_hold_ms": 0.0
+          },
+          "retention_discovery": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.730125,
+            "thread_cpu_ms": 0.516125,
+            "sqlite_calls": 2,
+            "sqlite_rows": 0,
+            "sqlite_statement_ms": 0.6399160483852029,
+            "sqlite_commit_ms": 0.0,
+            "sqlite_busy_failures": 0,
+            "python_lock_wait_ms": 0.0,
+            "python_lock_hold_ms": 0.0,
+            "outer_lock_hold_ms": 0.0
+          },
+          "retention_transaction": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 13.300209,
+            "thread_cpu_ms": 2.466958,
+            "sqlite_calls": 5,
+            "sqlite_rows": 0,
+            "sqlite_statement_ms": 12.85874901805073,
+            "sqlite_commit_ms": 0.0071249669417738914,
+            "sqlite_busy_failures": 0,
+            "python_lock_wait_ms": 0.00024994369596242905,
+            "python_lock_hold_ms": 13.29062506556511,
+            "outer_lock_hold_ms": 13.29062506556511
+          },
+          "retention_object_collection": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 467.963958,
+            "thread_cpu_ms": 127.9575,
+            "sqlite_calls": 368,
+            "sqlite_rows": 0,
+            "sqlite_statement_ms": 63.160874880850315,
+            "sqlite_commit_ms": 0.0,
+            "sqlite_busy_failures": 0,
+            "python_lock_wait_ms": 0.0002080341801047325,
+            "python_lock_hold_ms": 0.0008330680429935455,
+            "outer_lock_hold_ms": 0.0008330680429935455
+          },
+          "retention_canonical": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 481.304541,
+            "thread_cpu_ms": 130.450667,
+            "sqlite_calls": 373,
+            "sqlite_rows": 0,
+            "sqlite_statement_ms": 76.01962389890105,
+            "sqlite_commit_ms": 0.0071249669417738914,
+            "sqlite_busy_failures": 0,
+            "python_lock_wait_ms": 0.00045797787606716156,
+            "python_lock_hold_ms": 13.291458133608103,
+            "outer_lock_hold_ms": 13.291458133608103
+          },
+          "retention_mirror": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.654959,
+            "thread_cpu_ms": 0.597875,
+            "sqlite_calls": 2,
+            "sqlite_rows": 0,
+            "sqlite_statement_ms": 0.5453339545056224,
+            "sqlite_commit_ms": 0.0,
+            "sqlite_busy_failures": 0,
+            "python_lock_wait_ms": 0.0,
+            "python_lock_hold_ms": 0.0,
+            "outer_lock_hold_ms": 0.0
+          },
+          "transcript_retention": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 569.992792,
+            "thread_cpu_ms": 141.995084
+          },
+          "mutation_retention": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.23875,
+            "thread_cpu_ms": 0.120166
+          },
+          "transcript_migration_and_health": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 948.149417,
+            "thread_cpu_ms": 371.986167
+          },
+          "dispatch_compact": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 122.882709,
+            "thread_cpu_ms": 97.541667
+          },
+          "projection_database": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 2434.535333,
+            "thread_cpu_ms": 1508.095875
+          },
+          "transcript_database": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 278.279042,
+            "thread_cpu_ms": 246.539958
+          },
+          "transcript_health_final": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 305.867833,
+            "thread_cpu_ms": 304.858167
+          },
+          "total": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 4660.040791,
+            "thread_cpu_ms": 2671.208666
+          }
+        },
+        "transcript_migration": {
+          "schema_version": 1,
+          "events": 840871,
+          "audit_evidence": 1052,
+          "objects": 23521,
+          "uncompressed_bytes": 380098922,
+          "compressed_bytes": 82171907,
+          "references": 23820,
+          "deduplicated_references": 299,
+          "missing_objects": 1,
+          "journal_mode": "wal",
+          "integrity": "ok",
+          "redaction_policy": "canonical-v1",
+          "hot_payload_limit": 2048,
+          "compatibility_rows": 862877,
+          "migration": "running",
+          "migration_examined": 230500,
+          "migration_changed": 84973,
+          "migration_error": null,
+          "measured_at": "2026-10-25T19:52:02.394749+00:00",
+          "measurement_state": "measured"
+        },
+        "transcript_sqlite": {
+          "compacted": false,
+          "status": "ok",
+          "phases": {
+            "connect": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.108167,
+              "thread_cpu_ms": 0.108375
+            },
+            "size_initial": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.120875,
+              "thread_cpu_ms": 0.121
+            },
+            "integrity_before": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 277.578417,
+              "thread_cpu_ms": 245.872416
+            },
+            "optimize": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.063708,
+              "thread_cpu_ms": 0.063875
+            },
+            "checkpoint_before": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.160125,
+              "thread_cpu_ms": 0.140791
+            },
+            "size_pre_compact": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.014875,
+              "thread_cpu_ms": 0.014958
+            },
+            "size_final": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.007875,
+              "thread_cpu_ms": 0.007875
+            },
+            "close": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.099584,
+              "thread_cpu_ms": 0.099708
+            },
+            "total": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 278.267291,
+              "thread_cpu_ms": 246.528292
+            }
+          },
+          "before": {
+            "page_count": 153261,
+            "page_size": 4096,
+            "freelist_count": 0,
+            "bytes": 627757056,
+            "free_bytes": 0
+          },
+          "after": {
+            "page_count": 153261,
+            "page_size": 4096,
+            "freelist_count": 0,
+            "bytes": 627757056,
+            "free_bytes": 0
+          },
+          "page_count": 153261,
+          "page_size": 4096,
+          "freelist_count": 0,
+          "bytes": 627757056,
+          "free_bytes": 0,
+          "quick_check": "ok",
+          "wal_busy": 0,
+          "wal_log": 0,
+          "wal_checkpointed": 0
+        }
+      },
+      "transcript_storage": {
+        "schema_version": 1,
+        "events": 840871,
+        "audit_evidence": 1052,
+        "objects": 23521,
+        "uncompressed_bytes": 380098922,
+        "compressed_bytes": 82171907,
+        "references": 23820,
+        "deduplicated_references": 299,
+        "missing_objects": 1,
+        "journal_mode": "wal",
+        "integrity": "ok",
+        "redaction_policy": "canonical-v1",
+        "hot_payload_limit": 2048,
+        "compatibility_rows": 862877,
+        "migration": "running",
+        "migration_examined": 230500,
+        "migration_changed": 84973,
+        "migration_error": null,
+        "measured_at": "2026-10-25T19:52:05.536377+00:00",
+        "measurement_state": "measured"
+      }
+    },
+    "last_error_present": false,
+    "scope": "Supported owner GET of a cached snapshot. No new maintenance, GC, retention, backup or fault workload was invoked. Last-run phases are inclusive wall/thread-CPU spans; process maxima, phase durations and observer latency are distinct. Native busy/GIL/scheduling/physical IO remain unseparated."
+  },
+  "runtime_summary": {
+    "operations": 84,
+    "route_groups": 33,
+    "tails_and_failures": {
+      "agent.startup_state_read": {
+        "submitted": 1,
+        "completed": 1,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "max_runtime_ms": 792.614,
+        "slow_calls": 1,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 792.614,
+          "p50": 792.614,
+          "p95": 792.614,
+          "p99": 792.614
+        }
+      },
+      "http.fleet_overview": {
+        "submitted": 981,
+        "completed": 979,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 2,
+        "max_runtime_ms": 982.877,
+        "slow_calls": 0,
+        "runtime_ms": {
+          "samples": 256,
+          "max": 773.455,
+          "p50": 18.199,
+          "p95": 268.301,
+          "p99": 380.53
+        }
+      },
+      "http.session_list": {
+        "submitted": 26,
+        "completed": 23,
+        "failed": 3,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "max_runtime_ms": 41.696,
+        "slow_calls": 0,
+        "runtime_ms": {
+          "samples": 26,
+          "max": 41.696,
+          "p50": 17.46,
+          "p95": 39.708,
+          "p99": 41.696
+        }
+      },
+      "maintenance.run": {
+        "submitted": 1,
+        "completed": 1,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "max_runtime_ms": 4664.027,
+        "slow_calls": 0,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 4664.027,
+          "p50": 4664.027,
+          "p95": 4664.027,
+          "p99": 4664.027
+        }
+      },
+      "sqlite.agent_session_save": {
+        "submitted": 56,
+        "completed": 56,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "max_runtime_ms": 1866.345,
+        "slow_calls": 2,
+        "runtime_ms": {
+          "samples": 56,
+          "max": 1866.345,
+          "p50": 3.06,
+          "p95": 32.632,
+          "p99": 1866.345
+        }
+      },
+      "sync.peer_http": {
+        "submitted": 15,
+        "completed": 15,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "max_runtime_ms": 709.927,
+        "slow_calls": 0,
+        "runtime_ms": {
+          "samples": 15,
+          "max": 709.927,
+          "p50": 22.048,
+          "p95": 709.927,
+          "p99": 709.927
+        }
+      },
+      "sync.reconcile_head": {
+        "submitted": 15,
+        "completed": 15,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "max_runtime_ms": 687.181,
+        "slow_calls": 2,
+        "runtime_ms": {
+          "samples": 15,
+          "max": 687.181,
+          "p50": 117.002,
+          "p95": 687.181,
+          "p99": 687.181
+        }
+      },
+      "workspace.collect_garbage": {
+        "submitted": 1,
+        "completed": 1,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "max_runtime_ms": 1955.514,
+        "slow_calls": 1,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 1955.514,
+          "p50": 1955.514,
+          "p95": 1955.514,
+          "p99": 1955.514
+        }
+      },
+      "workspace.project_provision": {
+        "submitted": 7,
+        "completed": 6,
+        "failed": 1,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "max_runtime_ms": 1291.907,
+        "slow_calls": 0,
+        "runtime_ms": {
+          "samples": 7,
+          "max": 1291.907,
+          "p50": 813.662,
+          "p95": 1291.907,
+          "p99": 1291.907
+        }
+      }
+    },
+    "scope": "All operation and route values in raw bundle; process maxima differ from bounded percentile windows. Do not pool or omit short failed calls."
+  },
+  "logging": {
+    "records": 10748,
+    "ranges": {
+      "stdout": [
+        "2026-10-25T19:40:00+00:00",
+        "2026-10-25T19:56:15+00:00"
+      ],
+      "structured": [
+        "2026-10-25T19:40:00.157256+00:00",
+        "2026-10-25T19:56:15.654125+00:00"
+      ],
+      "stderr": [
+        "2026-10-25T19:40:00+00:00",
+        "2026-10-25T19:56:16+00:00"
+      ]
+    },
+    "operations": {
+      "agent.startup_state_read": {
+        "structured": {
+          "count": 1,
+          "p50_ms": 792.6,
+          "p95_ms": 792.6,
+          "p99_ms": 792.6,
+          "max_ms": 792.6
+        },
+        "stderr": {
+          "count": 1,
+          "p50_ms": 792.6,
+          "p95_ms": 792.6,
+          "p99_ms": 792.6,
+          "max_ms": 792.6
+        }
+      },
+      "sqlite.agent_session_save": {
+        "structured": {
+          "count": 2,
+          "p50_ms": 1864.9,
+          "p95_ms": 1866.3,
+          "p99_ms": 1866.3,
+          "max_ms": 1866.3
+        },
+        "stderr": {
+          "count": 2,
+          "p50_ms": 1864.9,
+          "p95_ms": 1866.3,
+          "p99_ms": 1866.3,
+          "max_ms": 1866.3
+        }
+      },
+      "sync.reconcile_head": {
+        "structured": {
+          "count": 2,
+          "p50_ms": 620.0,
+          "p95_ms": 687.2,
+          "p99_ms": 687.2,
+          "max_ms": 687.2
+        },
+        "stderr": {
+          "count": 2,
+          "p50_ms": 620.0,
+          "p95_ms": 687.2,
+          "p99_ms": 687.2,
+          "max_ms": 687.2
+        }
+      },
+      "workspace.collect_garbage": {
+        "structured": {
+          "count": 1,
+          "p50_ms": 1955.5,
+          "p95_ms": 1955.5,
+          "p99_ms": 1955.5,
+          "max_ms": 1955.5
+        },
+        "stderr": {
+          "count": 1,
+          "p50_ms": 1955.5,
+          "p95_ms": 1955.5,
+          "p99_ms": 1955.5,
+          "max_ms": 1955.5
+        }
+      }
+    },
+    "raw_slow_emissions": 12,
+    "page_shells": {
+      "agent": {
+        "structured": {
+          "latency": {
+            "count": 5,
+            "p50_ms": 16.6,
+            "p95_ms": 25.3,
+            "p99_ms": 25.3,
+            "max_ms": 25.3
+          },
+          "response_bytes": {
+            "min": 116038,
+            "max": 116038
+          },
+          "numeric_samples": [
+            {
+              "total_ms": 25.3,
+              "response_bytes": 116038,
+              "timings_ms": {
+                "page_context": 17.5,
+                "shell": 2.0,
+                "template": 5.4
+              },
+              "thread_cpu_ms": {
+                "page_context": 17.4,
+                "shell": 1.9,
+                "template": 5.4
+              }
+            },
+            {
+              "total_ms": 17.1,
+              "response_bytes": 116038,
+              "timings_ms": {
+                "page_context": 13.7,
+                "shell": 1.2,
+                "template": 2.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 13.3,
+                "shell": 1.2,
+                "template": 2.0
+              }
+            },
+            {
+              "total_ms": 16.6,
+              "response_bytes": 116038,
+              "timings_ms": {
+                "page_context": 13.3,
+                "shell": 1.1,
+                "template": 1.9
+              },
+              "thread_cpu_ms": {
+                "page_context": 12.9,
+                "shell": 1.1,
+                "template": 1.9
+              }
+            },
+            {
+              "total_ms": 12.6,
+              "response_bytes": 116038,
+              "timings_ms": {
+                "page_context": 10.1,
+                "shell": 0.7,
+                "template": 1.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 9.7,
+                "shell": 0.7,
+                "template": 1.5
+              }
+            },
+            {
+              "total_ms": 13.9,
+              "response_bytes": 116038,
+              "timings_ms": {
+                "page_context": 11.1,
+                "shell": 0.8,
+                "template": 1.7
+              },
+              "thread_cpu_ms": {
+                "page_context": 10.7,
+                "shell": 0.8,
+                "template": 1.7
+              }
+            }
+          ]
+        },
+        "stderr": {
+          "latency": {
+            "count": 5,
+            "p50_ms": 16.6,
+            "p95_ms": 25.3,
+            "p99_ms": 25.3,
+            "max_ms": 25.3
+          },
+          "response_bytes": {
+            "min": 116038,
+            "max": 116038
+          },
+          "numeric_samples": [
+            {
+              "total_ms": 25.3,
+              "response_bytes": 116038,
+              "timings_ms": {
+                "page_context": 17.5,
+                "shell": 2.0,
+                "template": 5.4
+              },
+              "thread_cpu_ms": {
+                "page_context": 17.4,
+                "shell": 1.9,
+                "template": 5.4
+              }
+            },
+            {
+              "total_ms": 17.1,
+              "response_bytes": 116038,
+              "timings_ms": {
+                "page_context": 13.7,
+                "shell": 1.2,
+                "template": 2.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 13.3,
+                "shell": 1.2,
+                "template": 2.0
+              }
+            },
+            {
+              "total_ms": 16.6,
+              "response_bytes": 116038,
+              "timings_ms": {
+                "page_context": 13.3,
+                "shell": 1.1,
+                "template": 1.9
+              },
+              "thread_cpu_ms": {
+                "page_context": 12.9,
+                "shell": 1.1,
+                "template": 1.9
+              }
+            },
+            {
+              "total_ms": 12.6,
+              "response_bytes": 116038,
+              "timings_ms": {
+                "page_context": 10.1,
+                "shell": 0.7,
+                "template": 1.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 9.7,
+                "shell": 0.7,
+                "template": 1.5
+              }
+            },
+            {
+              "total_ms": 13.9,
+              "response_bytes": 116038,
+              "timings_ms": {
+                "page_context": 11.1,
+                "shell": 0.8,
+                "template": 1.7
+              },
+              "thread_cpu_ms": {
+                "page_context": 10.7,
+                "shell": 0.8,
+                "template": 1.7
+              }
+            }
+          ]
+        }
+      },
+      "fleet": {
+        "structured": {
+          "latency": {
+            "count": 9,
+            "p50_ms": 30.7,
+            "p95_ms": 83.4,
+            "p99_ms": 83.4,
+            "max_ms": 83.4
+          },
+          "response_bytes": {
+            "min": 1147611,
+            "max": 1147613
+          },
+          "numeric_samples": [
+            {
+              "total_ms": 43.9,
+              "response_bytes": 1147613,
+              "timings_ms": {
+                "page_context": 32.2,
+                "shell": 0.8,
+                "template": 9.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 31.4,
+                "shell": 0.8,
+                "template": 9.5
+              }
+            },
+            {
+              "total_ms": 33.2,
+              "response_bytes": 1147613,
+              "timings_ms": {
+                "page_context": 25.2,
+                "shell": 0.6,
+                "template": 6.3
+              },
+              "thread_cpu_ms": {
+                "page_context": 23.9,
+                "shell": 0.6,
+                "template": 6.3
+              }
+            },
+            {
+              "total_ms": 30.7,
+              "response_bytes": 1147613,
+              "timings_ms": {
+                "page_context": 22.8,
+                "shell": 0.6,
+                "template": 6.2
+              },
+              "thread_cpu_ms": {
+                "page_context": 22.4,
+                "shell": 0.6,
+                "template": 6.2
+              }
+            },
+            {
+              "total_ms": 30.1,
+              "response_bytes": 1147613,
+              "timings_ms": {
+                "page_context": 22.4,
+                "shell": 0.6,
+                "template": 6.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 21.9,
+                "shell": 0.6,
+                "template": 6.0
+              }
+            },
+            {
+              "total_ms": 29.8,
+              "response_bytes": 1147613,
+              "timings_ms": {
+                "page_context": 22.2,
+                "shell": 0.5,
+                "template": 6.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 21.8,
+                "shell": 0.5,
+                "template": 6.0
+              }
+            },
+            {
+              "total_ms": 34.3,
+              "response_bytes": 1147611,
+              "timings_ms": {
+                "page_context": 24.3,
+                "shell": 0.8,
+                "template": 8.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 23.3,
+                "shell": 0.7,
+                "template": 8.0
+              }
+            },
+            {
+              "total_ms": 83.4,
+              "response_bytes": 1147611,
+              "timings_ms": {
+                "page_context": 75.6,
+                "shell": 0.5,
+                "template": 6.2
+              },
+              "thread_cpu_ms": {
+                "page_context": 75.2,
+                "shell": 0.5,
+                "template": 6.2
+              }
+            },
+            {
+              "total_ms": 27.2,
+              "response_bytes": 1147611,
+              "timings_ms": {
+                "page_context": 19.5,
+                "shell": 0.5,
+                "template": 6.1
+              },
+              "thread_cpu_ms": {
+                "page_context": 19.3,
+                "shell": 0.5,
+                "template": 6.1
+              }
+            },
+            {
+              "total_ms": 27.5,
+              "response_bytes": 1147611,
+              "timings_ms": {
+                "page_context": 19.6,
+                "shell": 0.5,
+                "template": 6.2
+              },
+              "thread_cpu_ms": {
+                "page_context": 19.4,
+                "shell": 0.5,
+                "template": 6.2
+              }
+            }
+          ]
+        },
+        "stderr": {
+          "latency": {
+            "count": 9,
+            "p50_ms": 30.7,
+            "p95_ms": 83.4,
+            "p99_ms": 83.4,
+            "max_ms": 83.4
+          },
+          "response_bytes": {
+            "min": 1147611,
+            "max": 1147613
+          },
+          "numeric_samples": [
+            {
+              "total_ms": 43.9,
+              "response_bytes": 1147613,
+              "timings_ms": {
+                "page_context": 32.2,
+                "shell": 0.8,
+                "template": 9.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 31.4,
+                "shell": 0.8,
+                "template": 9.5
+              }
+            },
+            {
+              "total_ms": 33.2,
+              "response_bytes": 1147613,
+              "timings_ms": {
+                "page_context": 25.2,
+                "shell": 0.6,
+                "template": 6.3
+              },
+              "thread_cpu_ms": {
+                "page_context": 23.9,
+                "shell": 0.6,
+                "template": 6.3
+              }
+            },
+            {
+              "total_ms": 30.7,
+              "response_bytes": 1147613,
+              "timings_ms": {
+                "page_context": 22.8,
+                "shell": 0.6,
+                "template": 6.2
+              },
+              "thread_cpu_ms": {
+                "page_context": 22.4,
+                "shell": 0.6,
+                "template": 6.2
+              }
+            },
+            {
+              "total_ms": 30.1,
+              "response_bytes": 1147613,
+              "timings_ms": {
+                "page_context": 22.4,
+                "shell": 0.6,
+                "template": 6.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 21.9,
+                "shell": 0.6,
+                "template": 6.0
+              }
+            },
+            {
+              "total_ms": 29.8,
+              "response_bytes": 1147613,
+              "timings_ms": {
+                "page_context": 22.2,
+                "shell": 0.5,
+                "template": 6.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 21.8,
+                "shell": 0.5,
+                "template": 6.0
+              }
+            },
+            {
+              "total_ms": 34.3,
+              "response_bytes": 1147611,
+              "timings_ms": {
+                "page_context": 24.3,
+                "shell": 0.8,
+                "template": 8.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 23.3,
+                "shell": 0.7,
+                "template": 8.0
+              }
+            },
+            {
+              "total_ms": 83.4,
+              "response_bytes": 1147611,
+              "timings_ms": {
+                "page_context": 75.6,
+                "shell": 0.5,
+                "template": 6.2
+              },
+              "thread_cpu_ms": {
+                "page_context": 75.2,
+                "shell": 0.5,
+                "template": 6.2
+              }
+            },
+            {
+              "total_ms": 27.2,
+              "response_bytes": 1147611,
+              "timings_ms": {
+                "page_context": 19.5,
+                "shell": 0.5,
+                "template": 6.1
+              },
+              "thread_cpu_ms": {
+                "page_context": 19.3,
+                "shell": 0.5,
+                "template": 6.1
+              }
+            },
+            {
+              "total_ms": 27.5,
+              "response_bytes": 1147611,
+              "timings_ms": {
+                "page_context": 19.6,
+                "shell": 0.5,
+                "template": 6.2
+              },
+              "thread_cpu_ms": {
+                "page_context": 19.4,
+                "shell": 0.5,
+                "template": 6.2
+              }
+            }
+          ]
+        }
+      },
+      "home": {
+        "structured": {
+          "latency": {
+            "count": 5,
+            "p50_ms": 1.4,
+            "p95_ms": 2.4,
+            "p99_ms": 2.4,
+            "max_ms": 2.4
+          },
+          "response_bytes": {
+            "min": 25464,
+            "max": 25464
+          },
+          "numeric_samples": [
+            {
+              "total_ms": 2.4,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 1.9,
+                "template": 0.4
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 0.8,
+                "template": 0.4
+              }
+            },
+            {
+              "total_ms": 1.0,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 0.6,
+                "template": 0.4
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 0.6,
+                "template": 0.4
+              }
+            },
+            {
+              "total_ms": 1.3,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 0.7,
+                "template": 0.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 0.7,
+                "template": 0.5
+              }
+            },
+            {
+              "total_ms": 1.4,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 0.8,
+                "template": 0.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 0.8,
+                "template": 0.5
+              }
+            },
+            {
+              "total_ms": 2.3,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 1.3,
+                "template": 0.9
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 1.3,
+                "template": 0.9
+              }
+            }
+          ]
+        },
+        "stderr": {
+          "latency": {
+            "count": 5,
+            "p50_ms": 1.4,
+            "p95_ms": 2.4,
+            "p99_ms": 2.4,
+            "max_ms": 2.4
+          },
+          "response_bytes": {
+            "min": 25464,
+            "max": 25464
+          },
+          "numeric_samples": [
+            {
+              "total_ms": 2.4,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 1.9,
+                "template": 0.4
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 0.8,
+                "template": 0.4
+              }
+            },
+            {
+              "total_ms": 1.0,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 0.6,
+                "template": 0.4
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 0.6,
+                "template": 0.4
+              }
+            },
+            {
+              "total_ms": 1.3,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 0.7,
+                "template": 0.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 0.7,
+                "template": 0.5
+              }
+            },
+            {
+              "total_ms": 1.4,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 0.8,
+                "template": 0.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 0.8,
+                "template": 0.5
+              }
+            },
+            {
+              "total_ms": 2.3,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 1.3,
+                "template": 0.9
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 1.3,
+                "template": 0.9
+              }
+            }
+          ]
+        }
+      },
+      "work": {
+        "structured": {
+          "latency": {
+            "count": 5,
+            "p50_ms": 5.7,
+            "p95_ms": 6.2,
+            "p99_ms": 6.2,
+            "max_ms": 6.2
+          },
+          "response_bytes": {
+            "min": 31323,
+            "max": 31323
+          },
+          "numeric_samples": [
+            {
+              "total_ms": 5.9,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 2.7,
+                "shell": 1.5,
+                "template": 1.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 2.7,
+                "shell": 1.5,
+                "template": 1.5
+              }
+            },
+            {
+              "total_ms": 5.7,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 2.6,
+                "shell": 1.9,
+                "template": 1.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 2.6,
+                "shell": 1.9,
+                "template": 1.0
+              }
+            },
+            {
+              "total_ms": 5.7,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 2.7,
+                "shell": 1.8,
+                "template": 1.1
+              },
+              "thread_cpu_ms": {
+                "page_context": 2.7,
+                "shell": 1.8,
+                "template": 1.1
+              }
+            },
+            {
+              "total_ms": 6.2,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 2.9,
+                "shell": 2.0,
+                "template": 1.2
+              },
+              "thread_cpu_ms": {
+                "page_context": 2.9,
+                "shell": 2.0,
+                "template": 1.2
+              }
+            },
+            {
+              "total_ms": 5.4,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 2.7,
+                "shell": 1.7,
+                "template": 1.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 2.7,
+                "shell": 1.7,
+                "template": 1.0
+              }
+            }
+          ]
+        },
+        "stderr": {
+          "latency": {
+            "count": 5,
+            "p50_ms": 5.7,
+            "p95_ms": 6.2,
+            "p99_ms": 6.2,
+            "max_ms": 6.2
+          },
+          "response_bytes": {
+            "min": 31323,
+            "max": 31323
+          },
+          "numeric_samples": [
+            {
+              "total_ms": 5.9,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 2.7,
+                "shell": 1.5,
+                "template": 1.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 2.7,
+                "shell": 1.5,
+                "template": 1.5
+              }
+            },
+            {
+              "total_ms": 5.7,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 2.6,
+                "shell": 1.9,
+                "template": 1.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 2.6,
+                "shell": 1.9,
+                "template": 1.0
+              }
+            },
+            {
+              "total_ms": 5.7,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 2.7,
+                "shell": 1.8,
+                "template": 1.1
+              },
+              "thread_cpu_ms": {
+                "page_context": 2.7,
+                "shell": 1.8,
+                "template": 1.1
+              }
+            },
+            {
+              "total_ms": 6.2,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 2.9,
+                "shell": 2.0,
+                "template": 1.2
+              },
+              "thread_cpu_ms": {
+                "page_context": 2.9,
+                "shell": 2.0,
+                "template": 1.2
+              }
+            },
+            {
+              "total_ms": 5.4,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 2.7,
+                "shell": 1.7,
+                "template": 1.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 2.7,
+                "shell": 1.7,
+                "template": 1.0
+              }
+            }
+          ]
+        }
+      },
+      "pull-requests": {
+        "structured": {
+          "latency": {
+            "count": 5,
+            "p50_ms": 8.7,
+            "p95_ms": 8.7,
+            "p99_ms": 8.7,
+            "max_ms": 8.7
+          },
+          "response_bytes": {
+            "min": 26012,
+            "max": 26012
+          },
+          "numeric_samples": [
+            {
+              "total_ms": 6.1,
+              "response_bytes": 26012,
+              "timings_ms": {
+                "page_context": 4.6,
+                "shell": 0.6,
+                "template": 0.8
+              },
+              "thread_cpu_ms": {
+                "page_context": 4.5,
+                "shell": 0.6,
+                "template": 0.8
+              }
+            },
+            {
+              "total_ms": 7.4,
+              "response_bytes": 26012,
+              "timings_ms": {
+                "page_context": 6.1,
+                "shell": 0.7,
+                "template": 0.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 5.8,
+                "shell": 0.7,
+                "template": 0.5
+              }
+            },
+            {
+              "total_ms": 8.7,
+              "response_bytes": 26012,
+              "timings_ms": {
+                "page_context": 7.3,
+                "shell": 0.8,
+                "template": 0.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 6.4,
+                "shell": 0.8,
+                "template": 0.5
+              }
+            },
+            {
+              "total_ms": 8.7,
+              "response_bytes": 26012,
+              "timings_ms": {
+                "page_context": 7.1,
+                "shell": 0.9,
+                "template": 0.6
+              },
+              "thread_cpu_ms": {
+                "page_context": 7.0,
+                "shell": 0.9,
+                "template": 0.6
+              }
+            },
+            {
+              "total_ms": 8.7,
+              "response_bytes": 26012,
+              "timings_ms": {
+                "page_context": 7.0,
+                "shell": 1.0,
+                "template": 0.6
+              },
+              "thread_cpu_ms": {
+                "page_context": 6.9,
+                "shell": 1.0,
+                "template": 0.6
+              }
+            }
+          ]
+        },
+        "stderr": {
+          "latency": {
+            "count": 5,
+            "p50_ms": 8.7,
+            "p95_ms": 8.7,
+            "p99_ms": 8.7,
+            "max_ms": 8.7
+          },
+          "response_bytes": {
+            "min": 26012,
+            "max": 26012
+          },
+          "numeric_samples": [
+            {
+              "total_ms": 6.1,
+              "response_bytes": 26012,
+              "timings_ms": {
+                "page_context": 4.6,
+                "shell": 0.6,
+                "template": 0.8
+              },
+              "thread_cpu_ms": {
+                "page_context": 4.5,
+                "shell": 0.6,
+                "template": 0.8
+              }
+            },
+            {
+              "total_ms": 7.4,
+              "response_bytes": 26012,
+              "timings_ms": {
+                "page_context": 6.1,
+                "shell": 0.7,
+                "template": 0.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 5.8,
+                "shell": 0.7,
+                "template": 0.5
+              }
+            },
+            {
+              "total_ms": 8.7,
+              "response_bytes": 26012,
+              "timings_ms": {
+                "page_context": 7.3,
+                "shell": 0.8,
+                "template": 0.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 6.4,
+                "shell": 0.8,
+                "template": 0.5
+              }
+            },
+            {
+              "total_ms": 8.7,
+              "response_bytes": 26012,
+              "timings_ms": {
+                "page_context": 7.1,
+                "shell": 0.9,
+                "template": 0.6
+              },
+              "thread_cpu_ms": {
+                "page_context": 7.0,
+                "shell": 0.9,
+                "template": 0.6
+              }
+            },
+            {
+              "total_ms": 8.7,
+              "response_bytes": 26012,
+              "timings_ms": {
+                "page_context": 7.0,
+                "shell": 1.0,
+                "template": 0.6
+              },
+              "thread_cpu_ms": {
+                "page_context": 6.9,
+                "shell": 1.0,
+                "template": 0.6
+              }
+            }
+          ]
+        }
+      },
+      "settings": {
+        "structured": {
+          "latency": {
+            "count": 5,
+            "p50_ms": 5.1,
+            "p95_ms": 6.6,
+            "p99_ms": 6.6,
+            "max_ms": 6.6
+          },
+          "response_bytes": {
+            "min": 101194,
+            "max": 101194
+          },
+          "numeric_samples": [
+            {
+              "total_ms": 4.8,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 1.3,
+                "shell": 1.0,
+                "template": 2.4
+              },
+              "thread_cpu_ms": {
+                "settings-section": 1.3,
+                "shell": 1.0,
+                "template": 2.4
+              }
+            },
+            {
+              "total_ms": 4.4,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 1.7,
+                "shell": 1.1,
+                "template": 1.4
+              },
+              "thread_cpu_ms": {
+                "settings-section": 1.7,
+                "shell": 1.1,
+                "template": 1.4
+              }
+            },
+            {
+              "total_ms": 5.1,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 2.0,
+                "shell": 1.4,
+                "template": 1.5
+              },
+              "thread_cpu_ms": {
+                "settings-section": 2.0,
+                "shell": 1.4,
+                "template": 1.5
+              }
+            },
+            {
+              "total_ms": 6.0,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 2.0,
+                "shell": 1.9,
+                "template": 1.9
+              },
+              "thread_cpu_ms": {
+                "settings-section": 2.0,
+                "shell": 1.9,
+                "template": 1.9
+              }
+            },
+            {
+              "total_ms": 6.6,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 2.3,
+                "shell": 1.9,
+                "template": 2.2
+              },
+              "thread_cpu_ms": {
+                "settings-section": 2.3,
+                "shell": 1.9,
+                "template": 2.2
+              }
+            }
+          ]
+        },
+        "stderr": {
+          "latency": {
+            "count": 5,
+            "p50_ms": 5.1,
+            "p95_ms": 6.6,
+            "p99_ms": 6.6,
+            "max_ms": 6.6
+          },
+          "response_bytes": {
+            "min": 101194,
+            "max": 101194
+          },
+          "numeric_samples": [
+            {
+              "total_ms": 4.8,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 1.3,
+                "shell": 1.0,
+                "template": 2.4
+              },
+              "thread_cpu_ms": {
+                "settings-section": 1.3,
+                "shell": 1.0,
+                "template": 2.4
+              }
+            },
+            {
+              "total_ms": 4.4,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 1.7,
+                "shell": 1.1,
+                "template": 1.4
+              },
+              "thread_cpu_ms": {
+                "settings-section": 1.7,
+                "shell": 1.1,
+                "template": 1.4
+              }
+            },
+            {
+              "total_ms": 5.1,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 2.0,
+                "shell": 1.4,
+                "template": 1.5
+              },
+              "thread_cpu_ms": {
+                "settings-section": 2.0,
+                "shell": 1.4,
+                "template": 1.5
+              }
+            },
+            {
+              "total_ms": 6.0,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 2.0,
+                "shell": 1.9,
+                "template": 1.9
+              },
+              "thread_cpu_ms": {
+                "settings-section": 2.0,
+                "shell": 1.9,
+                "template": 1.9
+              }
+            },
+            {
+              "total_ms": 6.6,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 2.3,
+                "shell": 1.9,
+                "template": 2.2
+              },
+              "thread_cpu_ms": {
+                "settings-section": 2.3,
+                "shell": 1.9,
+                "template": 2.2
+              }
+            }
+          ]
+        }
+      }
+    },
+    "fresh_counters": {
+      "current_bytes": 23375664,
+      "total_bytes": 26085845,
+      "rotation_failures": 0,
+      "compression_failures": 0,
+      "prune_failures": 0,
+      "pump_failures": 0,
+      "status_failures": 2396,
+      "bootstrap_failures": 0,
+      "dropped_bytes": 5640760,
+      "free_bytes": 24083537920,
+      "minimum_free_bytes": 536870912,
+      "oldest_age_seconds": 461607.27540922165,
+      "last_error_none": true,
+      "scope": "Fresh supported CLI cumulative counters; not distinct incidents, cause, retention coverage or per-record build proof."
+    },
+    "scope": "Supported 19:40\u201319:56 local slice includes pre/post restart and host fixtures. Per-record build/production-vs-fixture provenance not established. Copies can duplicate emissions; not incident counts. Peer logs/builds, older retention and FD linkage remain open."
+  },
+  "sqlite_cpu_followup": {
+    "existing_concern": "concern:maintenance-native-sql-observability",
+    "cause": "Worker SQL totals include wall time but not call thread CPU, leaving native wait/CPU attribution unresolved even with zero busy exceptions.",
+    "implementation": "Two numeric CPU aggregates for execute/lazy fetch and commit, kept separate, bounded by existing operation windows and slow-call capacity. Retention phases retain numeric deltas; inactive observer reads no additional clocks. No SQL, parameters or values retained; existing deadlines and behavior unchanged.",
+    "tests": "61 passed; archived observer fails three evidence contracts, one inactive-clock case passes.",
+    "cost": {
+      "contract": "pa.sqlite-call-cpu-observation/v1",
+      "source_sha256": "3559ba8ecf681922f0daf26a779f9df7e9dee404fa2786757b5613f7140612ca",
+      "archived_source": "056b8e3e8dd64cde0558ff6a4c7b96cbf359397a",
+      "sqlite_version": "3.50.4",
+      "samples": [
+        {
+          "iteration": 0,
+          "mode": "archived",
+          "wall_ms": 4.958290955983102,
+          "thread_cpu_ms": 4.958499999999997,
+          "observation": {
+            "queue_wait_ms": 0.0,
+            "python_lock_wait_ms": 0.0,
+            "python_lock_hold_ms": 0.0,
+            "python_lock_release_ms": 0.0,
+            "outer_lock_hold_ms": 0.0,
+            "outer_lock_release_ms": 0.0,
+            "lock_depth": 0,
+            "lock_events_total": 0,
+            "lock_events": [],
+            "worker_started_at": 0.0,
+            "worker_finished_at": 0.0,
+            "thread_cpu_ms": 0.0,
+            "sqlite_statement_ms": 1.8822781275957823,
+            "sqlite_commit_ms": 0.0009589130058884621,
+            "sqlite_statement_thread_cpu_ms": 0.0,
+            "sqlite_commit_thread_cpu_ms": 0.0,
+            "sqlite_calls": 10001,
+            "sqlite_rows": 5000,
+            "sqlite_aggregate_items": 0,
+            "sqlite_aggregate_bytes": 0,
+            "sqlite_busy_failures": 0,
+            "file_lock_wait_ms": 0.0,
+            "file_lock_hold_ms": 0.0,
+            "file_lock_release_ms": 0.0,
+            "atomic_write_calls": 0,
+            "atomic_write_bytes": 0,
+            "file_fsync_calls": 0,
+            "file_fsync_ms": 0.0,
+            "directory_fsync_calls": 0,
+            "directory_fsync_ms": 0.0,
+            "fsync_failures": 0,
+            "atomic_replace_ms": 0.0,
+            "object_get_calls": 0,
+            "object_get_bytes": 0,
+            "object_get_ms": 0.0,
+            "object_put_files": 0,
+            "object_put_bytes": 0
+          }
+        },
+        {
+          "iteration": 0,
+          "mode": "candidate",
+          "wall_ms": 7.6542499009519815,
+          "thread_cpu_ms": 7.654125000000005,
+          "observation": {
+            "queue_wait_ms": 0.0,
+            "python_lock_wait_ms": 0.0,
+            "python_lock_hold_ms": 0.0,
+            "python_lock_release_ms": 0.0,
+            "outer_lock_hold_ms": 0.0,
+            "outer_lock_release_ms": 0.0,
+            "lock_depth": 0,
+            "lock_events_total": 0,
+            "lock_events": [],
+            "worker_started_at": 0.0,
+            "worker_finished_at": 0.0,
+            "thread_cpu_ms": 0.0,
+            "sqlite_statement_ms": 4.199487273581326,
+            "sqlite_commit_ms": 0.0010830117389559746,
+            "sqlite_statement_thread_cpu_ms": 2.786447999999967,
+            "sqlite_commit_thread_cpu_ms": 0.0009170000000030543,
+            "sqlite_calls": 10001,
+            "sqlite_rows": 5000,
+            "sqlite_aggregate_items": 0,
+            "sqlite_aggregate_bytes": 0,
+            "sqlite_busy_failures": 0,
+            "file_lock_wait_ms": 0.0,
+            "file_lock_hold_ms": 0.0,
+            "file_lock_release_ms": 0.0,
+            "atomic_write_calls": 0,
+            "atomic_write_bytes": 0,
+            "file_fsync_calls": 0,
+            "file_fsync_ms": 0.0,
+            "directory_fsync_calls": 0,
+            "directory_fsync_ms": 0.0,
+            "fsync_failures": 0,
+            "atomic_replace_ms": 0.0,
+            "object_get_calls": 0,
+            "object_get_bytes": 0,
+            "object_get_ms": 0.0,
+            "object_put_files": 0,
+            "object_put_bytes": 0
+          }
+        },
+        {
+          "iteration": 1,
+          "mode": "candidate",
+          "wall_ms": 7.810542010702193,
+          "thread_cpu_ms": 7.810375000000001,
+          "observation": {
+            "queue_wait_ms": 0.0,
+            "python_lock_wait_ms": 0.0,
+            "python_lock_hold_ms": 0.0,
+            "python_lock_release_ms": 0.0,
+            "outer_lock_hold_ms": 0.0,
+            "outer_lock_release_ms": 0.0,
+            "lock_depth": 0,
+            "lock_events_total": 0,
+            "lock_events": [],
+            "worker_started_at": 0.0,
+            "worker_finished_at": 0.0,
+            "thread_cpu_ms": 0.0,
+            "sqlite_statement_ms": 4.278144799172878,
+            "sqlite_commit_ms": 0.0009159557521343231,
+            "sqlite_statement_thread_cpu_ms": 2.8376090000000422,
+            "sqlite_commit_thread_cpu_ms": 0.0007499999999938112,
+            "sqlite_calls": 10001,
+            "sqlite_rows": 5000,
+            "sqlite_aggregate_items": 0,
+            "sqlite_aggregate_bytes": 0,
+            "sqlite_busy_failures": 0,
+            "file_lock_wait_ms": 0.0,
+            "file_lock_hold_ms": 0.0,
+            "file_lock_release_ms": 0.0,
+            "atomic_write_calls": 0,
+            "atomic_write_bytes": 0,
+            "file_fsync_calls": 0,
+            "file_fsync_ms": 0.0,
+            "directory_fsync_calls": 0,
+            "directory_fsync_ms": 0.0,
+            "fsync_failures": 0,
+            "atomic_replace_ms": 0.0,
+            "object_get_calls": 0,
+            "object_get_bytes": 0,
+            "object_get_ms": 0.0,
+            "object_put_files": 0,
+            "object_put_bytes": 0
+          }
+        },
+        {
+          "iteration": 1,
+          "mode": "archived",
+          "wall_ms": 5.243499996140599,
+          "thread_cpu_ms": 5.2434579999999995,
+          "observation": {
+            "queue_wait_ms": 0.0,
+            "python_lock_wait_ms": 0.0,
+            "python_lock_hold_ms": 0.0,
+            "python_lock_release_ms": 0.0,
+            "outer_lock_hold_ms": 0.0,
+            "outer_lock_release_ms": 0.0,
+            "lock_depth": 0,
+            "lock_events_total": 0,
+            "lock_events": [],
+            "worker_started_at": 0.0,
+            "worker_finished_at": 0.0,
+            "thread_cpu_ms": 0.0,
+            "sqlite_statement_ms": 2.0542971324175596,
+            "sqlite_commit_ms": 0.0006249174475669861,
+            "sqlite_statement_thread_cpu_ms": 0.0,
+            "sqlite_commit_thread_cpu_ms": 0.0,
+            "sqlite_calls": 10001,
+            "sqlite_rows": 5000,
+            "sqlite_aggregate_items": 0,
+            "sqlite_aggregate_bytes": 0,
+            "sqlite_busy_failures": 0,
+            "file_lock_wait_ms": 0.0,
+            "file_lock_hold_ms": 0.0,
+            "file_lock_release_ms": 0.0,
+            "atomic_write_calls": 0,
+            "atomic_write_bytes": 0,
+            "file_fsync_calls": 0,
+            "file_fsync_ms": 0.0,
+            "directory_fsync_calls": 0,
+            "directory_fsync_ms": 0.0,
+            "fsync_failures": 0,
+            "atomic_replace_ms": 0.0,
+            "object_get_calls": 0,
+            "object_get_bytes": 0,
+            "object_get_ms": 0.0,
+            "object_put_files": 0,
+            "object_put_bytes": 0
+          }
+        },
+        {
+          "iteration": 2,
+          "mode": "archived",
+          "wall_ms": 5.292417015880346,
+          "thread_cpu_ms": 5.292333000000003,
+          "observation": {
+            "queue_wait_ms": 0.0,
+            "python_lock_wait_ms": 0.0,
+            "python_lock_hold_ms": 0.0,
+            "python_lock_release_ms": 0.0,
+            "outer_lock_hold_ms": 0.0,
+            "outer_lock_release_ms": 0.0,
+            "lock_depth": 0,
+            "lock_events_total": 0,
+            "lock_events": [],
+            "worker_started_at": 0.0,
+            "worker_finished_at": 0.0,
+            "thread_cpu_ms": 0.0,
+            "sqlite_statement_ms": 2.051864634267986,
+            "sqlite_commit_ms": 0.0005420297384262085,
+            "sqlite_statement_thread_cpu_ms": 0.0,
+            "sqlite_commit_thread_cpu_ms": 0.0,
+            "sqlite_calls": 10001,
+            "sqlite_rows": 5000,
+            "sqlite_aggregate_items": 0,
+            "sqlite_aggregate_bytes": 0,
+            "sqlite_busy_failures": 0,
+            "file_lock_wait_ms": 0.0,
+            "file_lock_hold_ms": 0.0,
+            "file_lock_release_ms": 0.0,
+            "atomic_write_calls": 0,
+            "atomic_write_bytes": 0,
+            "file_fsync_calls": 0,
+            "file_fsync_ms": 0.0,
+            "directory_fsync_calls": 0,
+            "directory_fsync_ms": 0.0,
+            "fsync_failures": 0,
+            "atomic_replace_ms": 0.0,
+            "object_get_calls": 0,
+            "object_get_bytes": 0,
+            "object_get_ms": 0.0,
+            "object_put_files": 0,
+            "object_put_bytes": 0
+          }
+        },
+        {
+          "iteration": 2,
+          "mode": "candidate",
+          "wall_ms": 8.00258293747902,
+          "thread_cpu_ms": 8.002415999999998,
+          "observation": {
+            "queue_wait_ms": 0.0,
+            "python_lock_wait_ms": 0.0,
+            "python_lock_hold_ms": 0.0,
+            "python_lock_release_ms": 0.0,
+            "outer_lock_hold_ms": 0.0,
+            "outer_lock_release_ms": 0.0,
+            "lock_depth": 0,
+            "lock_events_total": 0,
+            "lock_events": [],
+            "worker_started_at": 0.0,
+            "worker_finished_at": 0.0,
+            "thread_cpu_ms": 0.0,
+            "sqlite_statement_ms": 4.422973259352148,
+            "sqlite_commit_ms": 0.0007920898497104645,
+            "sqlite_statement_thread_cpu_ms": 2.9441069999998106,
+            "sqlite_commit_thread_cpu_ms": 0.0006250000000040945,
+            "sqlite_calls": 10001,
+            "sqlite_rows": 5000,
+            "sqlite_aggregate_items": 0,
+            "sqlite_aggregate_bytes": 0,
+            "sqlite_busy_failures": 0,
+            "file_lock_wait_ms": 0.0,
+            "file_lock_hold_ms": 0.0,
+            "file_lock_release_ms": 0.0,
+            "atomic_write_calls": 0,
+            "atomic_write_bytes": 0,
+            "file_fsync_calls": 0,
+            "file_fsync_ms": 0.0,
+            "directory_fsync_calls": 0,
+            "directory_fsync_ms": 0.0,
+            "fsync_failures": 0,
+            "atomic_replace_ms": 0.0,
+            "object_get_calls": 0,
+            "object_get_bytes": 0,
+            "object_get_ms": 0.0,
+            "object_put_files": 0,
+            "object_put_bytes": 0
+          }
+        },
+        {
+          "iteration": 3,
+          "mode": "candidate",
+          "wall_ms": 8.035667007789016,
+          "thread_cpu_ms": 8.035541000000007,
+          "observation": {
+            "queue_wait_ms": 0.0,
+            "python_lock_wait_ms": 0.0,
+            "python_lock_hold_ms": 0.0,
+            "python_lock_release_ms": 0.0,
+            "outer_lock_hold_ms": 0.0,
+            "outer_lock_release_ms": 0.0,
+            "lock_depth": 0,
+            "lock_events_total": 0,
+            "lock_events": [],
+            "worker_started_at": 0.0,
+            "worker_finished_at": 0.0,
+            "thread_cpu_ms": 0.0,
+            "sqlite_statement_ms": 4.389260895550251,
+            "sqlite_commit_ms": 0.000708969309926033,
+            "sqlite_statement_thread_cpu_ms": 2.902983999999597,
+            "sqlite_commit_thread_cpu_ms": 0.0005829999999984459,
+            "sqlite_calls": 10001,
+            "sqlite_rows": 5000,
+            "sqlite_aggregate_items": 0,
+            "sqlite_aggregate_bytes": 0,
+            "sqlite_busy_failures": 0,
+            "file_lock_wait_ms": 0.0,
+            "file_lock_hold_ms": 0.0,
+            "file_lock_release_ms": 0.0,
+            "atomic_write_calls": 0,
+            "atomic_write_bytes": 0,
+            "file_fsync_calls": 0,
+            "file_fsync_ms": 0.0,
+            "directory_fsync_calls": 0,
+            "directory_fsync_ms": 0.0,
+            "fsync_failures": 0,
+            "atomic_replace_ms": 0.0,
+            "object_get_calls": 0,
+            "object_get_bytes": 0,
+            "object_get_ms": 0.0,
+            "object_put_files": 0,
+            "object_put_bytes": 0
+          }
+        },
+        {
+          "iteration": 3,
+          "mode": "archived",
+          "wall_ms": 5.293042049743235,
+          "thread_cpu_ms": 5.293083000000004,
+          "observation": {
+            "queue_wait_ms": 0.0,
+            "python_lock_wait_ms": 0.0,
+            "python_lock_hold_ms": 0.0,
+            "python_lock_release_ms": 0.0,
+            "outer_lock_hold_ms": 0.0,
+            "outer_lock_release_ms": 0.0,
+            "lock_depth": 0,
+            "lock_events_total": 0,
+            "lock_events": [],
+            "worker_started_at": 0.0,
+            "worker_finished_at": 0.0,
+            "thread_cpu_ms": 0.0,
+            "sqlite_statement_ms": 2.0844675600528717,
+            "sqlite_commit_ms": 0.0005409820005297661,
+            "sqlite_statement_thread_cpu_ms": 0.0,
+            "sqlite_commit_thread_cpu_ms": 0.0,
+            "sqlite_calls": 10001,
+            "sqlite_rows": 5000,
+            "sqlite_aggregate_items": 0,
+            "sqlite_aggregate_bytes": 0,
+            "sqlite_busy_failures": 0,
+            "file_lock_wait_ms": 0.0,
+            "file_lock_hold_ms": 0.0,
+            "file_lock_release_ms": 0.0,
+            "atomic_write_calls": 0,
+            "atomic_write_bytes": 0,
+            "file_fsync_calls": 0,
+            "file_fsync_ms": 0.0,
+            "directory_fsync_calls": 0,
+            "directory_fsync_ms": 0.0,
+            "fsync_failures": 0,
+            "atomic_replace_ms": 0.0,
+            "object_get_calls": 0,
+            "object_get_bytes": 0,
+            "object_get_ms": 0.0,
+            "object_put_files": 0,
+            "object_put_bytes": 0
+          }
+        },
+        {
+          "iteration": 4,
+          "mode": "archived",
+          "wall_ms": 5.3227090975269675,
+          "thread_cpu_ms": 5.325333000000001,
+          "observation": {
+            "queue_wait_ms": 0.0,
+            "python_lock_wait_ms": 0.0,
+            "python_lock_hold_ms": 0.0,
+            "python_lock_release_ms": 0.0,
+            "outer_lock_hold_ms": 0.0,
+            "outer_lock_release_ms": 0.0,
+            "lock_depth": 0,
+            "lock_events_total": 0,
+            "lock_events": [],
+            "worker_started_at": 0.0,
+            "worker_finished_at": 0.0,
+            "thread_cpu_ms": 0.0,
+            "sqlite_statement_ms": 2.068211091682315,
+            "sqlite_commit_ms": 0.000500003807246685,
+            "sqlite_statement_thread_cpu_ms": 0.0,
+            "sqlite_commit_thread_cpu_ms": 0.0,
+            "sqlite_calls": 10001,
+            "sqlite_rows": 5000,
+            "sqlite_aggregate_items": 0,
+            "sqlite_aggregate_bytes": 0,
+            "sqlite_busy_failures": 0,
+            "file_lock_wait_ms": 0.0,
+            "file_lock_hold_ms": 0.0,
+            "file_lock_release_ms": 0.0,
+            "atomic_write_calls": 0,
+            "atomic_write_bytes": 0,
+            "file_fsync_calls": 0,
+            "file_fsync_ms": 0.0,
+            "directory_fsync_calls": 0,
+            "directory_fsync_ms": 0.0,
+            "fsync_failures": 0,
+            "atomic_replace_ms": 0.0,
+            "object_get_calls": 0,
+            "object_get_bytes": 0,
+            "object_get_ms": 0.0,
+            "object_put_files": 0,
+            "object_put_bytes": 0
+          }
+        },
+        {
+          "iteration": 4,
+          "mode": "candidate",
+          "wall_ms": 8.017666987143457,
+          "thread_cpu_ms": 8.017583000000009,
+          "observation": {
+            "queue_wait_ms": 0.0,
+            "python_lock_wait_ms": 0.0,
+            "python_lock_hold_ms": 0.0,
+            "python_lock_release_ms": 0.0,
+            "outer_lock_hold_ms": 0.0,
+            "outer_lock_release_ms": 0.0,
+            "lock_depth": 0,
+            "lock_events_total": 0,
+            "lock_events": [],
+            "worker_started_at": 0.0,
+            "worker_finished_at": 0.0,
+            "thread_cpu_ms": 0.0,
+            "sqlite_statement_ms": 4.385357140563428,
+            "sqlite_commit_ms": 0.000750063918530941,
+            "sqlite_statement_thread_cpu_ms": 2.8806339999996347,
+            "sqlite_commit_thread_cpu_ms": 0.0006250000000040945,
+            "sqlite_calls": 10001,
+            "sqlite_rows": 5000,
+            "sqlite_aggregate_items": 0,
+            "sqlite_aggregate_bytes": 0,
+            "sqlite_busy_failures": 0,
+            "file_lock_wait_ms": 0.0,
+            "file_lock_hold_ms": 0.0,
+            "file_lock_release_ms": 0.0,
+            "atomic_write_calls": 0,
+            "atomic_write_bytes": 0,
+            "file_fsync_calls": 0,
+            "file_fsync_ms": 0.0,
+            "directory_fsync_calls": 0,
+            "directory_fsync_ms": 0.0,
+            "fsync_failures": 0,
+            "atomic_replace_ms": 0.0,
+            "object_get_calls": 0,
+            "object_get_bytes": 0,
+            "object_get_ms": 0.0,
+            "object_put_files": 0,
+            "object_put_bytes": 0
+          }
+        }
+      ],
+      "latency_ms": {
+        "archived": {
+          "samples": 5,
+          "max": 5.323,
+          "p50": 5.292,
+          "p95": 5.323,
+          "p99": 5.323
+        },
+        "candidate": {
+          "samples": 5,
+          "max": 8.036,
+          "p50": 8.003,
+          "p95": 8.036,
+          "p99": 8.036
+        }
+      },
+      "successful_private_writer_wait": {
+        "queue_wait_ms": 0.0,
+        "python_lock_wait_ms": 0.0,
+        "python_lock_hold_ms": 0.0,
+        "python_lock_release_ms": 0.0,
+        "outer_lock_hold_ms": 0.0,
+        "outer_lock_release_ms": 0.0,
+        "lock_depth": 0,
+        "lock_events_total": 0,
+        "lock_events": [],
+        "worker_started_at": 0.0,
+        "worker_finished_at": 0.0,
+        "thread_cpu_ms": 0.0,
+        "sqlite_statement_ms": 79.87400004640222,
+        "sqlite_commit_ms": 0.22775004617869854,
+        "sqlite_statement_thread_cpu_ms": 0.34916699999999745,
+        "sqlite_commit_thread_cpu_ms": 0.1743749999999905,
+        "sqlite_calls": 3,
+        "sqlite_rows": 1,
+        "sqlite_aggregate_items": 0,
+        "sqlite_aggregate_bytes": 0,
+        "sqlite_busy_failures": 0,
+        "file_lock_wait_ms": 0.0,
+        "file_lock_hold_ms": 0.0,
+        "file_lock_release_ms": 0.0,
+        "atomic_write_calls": 0,
+        "atomic_write_bytes": 0,
+        "file_fsync_calls": 0,
+        "file_fsync_ms": 0.0,
+        "directory_fsync_calls": 0,
+        "directory_fsync_ms": 0.0,
+        "fsync_failures": 0,
+        "atomic_replace_ms": 0.0,
+        "object_get_calls": 0,
+        "object_get_bytes": 0,
+        "object_get_ms": 0.0,
+        "object_put_files": 0,
+        "object_put_bytes": 0
+      },
+      "scope": "Five alternating pairs of 5000 in-memory reads plus one insert/commit each; exact values, 10001 statements/fetches and 5000 rows retained. Setup/assertion outside measured call loop except per-result parity assertions. One separately bounded 60 ms private writer release demonstrates a successful native wait with zero busy exceptions. All numbers include observer overhead. Wall minus thread CPU remains unclassified off-CPU time and is not a general lock/disk attribution. No SQL/parameters/results, live state, providers or credentials are retained; no production fault injection or whole-path speedup claim."
+    },
+    "source_mixed": {
+      "maintenance": {
+        "samples": 1,
+        "max_ms": 875.46,
+        "p50_ms": 875.46,
+        "p95_ms": 875.46,
+        "p99_ms": 875.46
+      },
+      "warnings": {},
+      "violations": {
+        "maintenance.run": 1
+      },
+      "retained": 9600
+    },
+    "stage": "Source only, not installed. Ready protected PR/supervisor/independent head+main CI/exact activation/retest required. This instrumentation is not a latency repair or native live-cause proof."
+  },
+  "acceptance": {
+    "revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+    "lane": "active",
+    "accepted": false,
+    "findings": 669,
+    "concerns": 136
+  },
+  "residuals": [
+    "All 669 findings remain open. Installed private maintenance 768.853 ms, source 875.460 ms and naturally scheduled live 4664.027 ms fail unchanged 500 ms observation. Prior failures and limits remain.",
+    "Three current session-list failures and one provision failure remain unclassified. Prior supervisor effect-prepare failure remains unpaired; bounded log search finds no effect_prepare/fencing token. Three traceback-only records lack class/error/correlation evidence and do not classify incidents.",
+    "No native busy/GIL/scheduling/CPU/GC/disk or physical holder blanket attribution; zero busy exceptions does not exclude successful waits. CPU difference only supports unclassified off-CPU time.",
+    "All real provider/MCP/placement/admission/receipt/lease/order/CAS/sync branches, full startup/drain/concurrency, decoded payloads, peers/logging/build/retention and independent whole-scope acceptance remain required.",
+    "Original backup and DB scopes stay independently accepted. Nine archives, eight intact/one limited, unpaused, no active capture/restore at read; next scheduled 21:29:14.512979 UTC. Historical one missing object/2842 bytes and unknown 555/0b79/f403/d448/413 effects unchanged."
+  ],
+  "raw": {
+    "path": "docs/benchmarks/systemic-exact584-sqlite-cpu-20261025.raw.json.gz",
+    "sha256": "059ac380b8917a4ec9bcf060b7f19dbf3132443c31167f22414799c93fd1a6e2",
+    "bytes": 478429
+  }
+}

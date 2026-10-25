@@ -46,6 +46,8 @@ class OperationObservation:
     thread_cpu_ms: float = 0.0
     sqlite_statement_ms: float = 0.0
     sqlite_commit_ms: float = 0.0
+    sqlite_statement_thread_cpu_ms: float = 0.0
+    sqlite_commit_thread_cpu_ms: float = 0.0
     sqlite_calls: int = 0
     sqlite_rows: int = 0
     sqlite_aggregate_items: int = 0
@@ -82,6 +84,7 @@ RETENTION_PHASES = frozenset({
 _retention_phases: ContextVar[dict | None] = ContextVar("pa_retention_phases", default=None)
 _RETENTION_COUNTERS = (
     "sqlite_calls", "sqlite_rows", "sqlite_statement_ms", "sqlite_commit_ms",
+    "sqlite_statement_thread_cpu_ms", "sqlite_commit_thread_cpu_ms",
     "sqlite_busy_failures", "python_lock_wait_ms", "python_lock_hold_ms",
     "outer_lock_hold_ms",
 )

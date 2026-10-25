@@ -101,6 +101,7 @@ class ObservedConnection(sqlite3.Connection):
         if observation is None:
             return call(*args)
         started = time.perf_counter()
+        cpu_started = time.thread_time()
         try:
             return call(*args)
         except sqlite3.OperationalError as exc:
@@ -108,11 +109,14 @@ class ObservedConnection(sqlite3.Connection):
                 observation.sqlite_busy_failures += 1
             raise
         finally:
+            cpu_elapsed = (time.thread_time() - cpu_started) * 1000
             elapsed = (time.perf_counter() - started) * 1000
             if commit:
                 observation.sqlite_commit_ms += elapsed
+                observation.sqlite_commit_thread_cpu_ms += cpu_elapsed
             else:
                 observation.sqlite_statement_ms += elapsed
+                observation.sqlite_statement_thread_cpu_ms += cpu_elapsed
                 observation.sqlite_calls += 1
 
     def execute(self, sql, parameters=(), /):
