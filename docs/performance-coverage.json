@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-25T19:58:30.568991+00:00",
-  "completion": "OPEN: all 669 findings and 136 concerns. Exact 056b8e3e activation/retests verified; source SQLite CPU instrumentation is not deployed or a performance fix.",
+  "as_of": "2026-10-25T20:19:47.751161+00:00",
+  "completion": "OPEN: all 669 findings / 136 concerns. Exact 24c85fc7 activation and retests verified; indexed type guard source repair is not deployed or whole-path acceptance.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -205758,6 +205758,13 @@
         "stage": "Source implemented and tested; integration/deployment/retest pending.",
         "resolution": "open",
         "next_action": "Protected ready PR, stable supervisor, independent head/main CI, exact activation and new representative retests; use call CPU evidence to investigate successful waits without calling wall-minus-CPU disk or lock proof."
+      },
+      "exact585_activation_followup_20261025": {
+        "artifact": "docs/benchmarks/systemic-exact585-reference-type-20261025.json",
+        "sha256": "6d3ae05f3011815104958af8276b8a32cf7097aa420f10674da24465b490c051",
+        "stage": "Exact 24c85fc7 activation/retests verified; new type guard repair source only, integration/deployment/retest pending.",
+        "resolution": "open",
+        "next_action": "Protected ready PR, stable supervisor and independent exact head/main CI; current continuation settlement before installation; exact activation/retest, continue all remaining scope."
       }
     },
     {
@@ -209621,7 +209628,14 @@
           },
           "stage": "Exact aa711 activation verified; GC allocation follow-up remains uninstalled and maintenance acceptance fails."
         }
-      ]
+      ],
+      "indexed_type_guard_followup_20261025": {
+        "artifact": "docs/benchmarks/systemic-exact585-reference-type-20261025.json",
+        "sha256": "6d3ae05f3011815104958af8276b8a32cf7097aa420f10674da24465b490c051",
+        "stage": "Exact 24c85fc7 activation/retests verified; new type guard repair source only, integration/deployment/retest pending.",
+        "resolution": "open",
+        "next_action": "Protected ready PR, stable supervisor and independent exact head/main CI; current continuation settlement before installation; exact activation/retest, continue all remaining scope."
+      }
     },
     {
       "id": "concern:pr537-concurrent-base-integration",
@@ -309265,5 +309279,17 @@
     "existing_concern_reused": "concern:maintenance-native-sql-observability",
     "actual_loaded": "056b8e3e8dd64cde0558ff6a4c7b96cbf359397a",
     "instrumentation_deployed": false
+  },
+  "exact585_reference_type_stage": {
+    "artifact": "docs/benchmarks/systemic-exact585-reference-type-20261025.json",
+    "sha256": "6d3ae05f3011815104958af8276b8a32cf7097aa420f10674da24465b490c051",
+    "raw": {
+      "path": "docs/benchmarks/systemic-exact585-reference-type-20261025.raw.json.gz",
+      "sha256": "77a72edcff8b60276150723d052a90cc65961a46d258b34ec4a4bfc39fd086a1",
+      "bytes": 500890
+    },
+    "all_prior_fields_preserved": true,
+    "actual_loaded": "24c85fc7546336efc52c6074d7c2853771e2ed48",
+    "new_repair_deployed": false
   }
 }
