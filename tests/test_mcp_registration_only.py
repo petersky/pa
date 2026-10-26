@@ -78,7 +78,8 @@ sys.addaudithook(audit)
         if assigned:
             assert names == ASSIGNED_SERVICE_TOOL_ALLOWLIST
         else:
-            assert {'instance_info', 'agent_providers_list', 'preview_agent_restart_handoff'} <= names
+            assert {'instance_info', 'agent_providers_list', 'preview_agent_restart_handoff',
+                    'get_instance_diagnostics', 'withdraw_operator_input'} <= names
             # Entry-point plugins may add tools; verify both merged contracts.
             assert len(names) == len(tools)
             assert {"record_card_acceptance", "report_pa_problem", "get_pa_problem_group"} <= names

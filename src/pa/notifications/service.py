@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import inspect
 import json
 import threading
@@ -26,6 +27,7 @@ from pa.domain.notifications import (
     NotificationCreate,
     NotificationVisibility,
     NotificationVersionConflict,
+    OperatorInputWithdrawalRequest,
 )
 from pa.execution.dispatch import TERMINAL_DISPATCH_STATES
 from pa.execution.progress import sanitize_text
@@ -276,6 +278,7 @@ class NotificationService:
         principal_id: str,
         idempotency_key: str,
         mutation: Callable[[Notification, datetime], None],
+        validate_replay: Callable[[Notification], None] | None = None,
     ) -> Notification:
         lock = self._mutation_locks.setdefault(notification.id, threading.RLock())
         with lock:
@@ -286,6 +289,8 @@ class NotificationService:
                 if not current:
                     raise KeyError(notification.id)
                 if idempotency_key in current.idempotency_keys:
+                    if validate_replay:
+                        validate_replay(current)
                     return current
                 now = datetime.now(UTC)
                 before = current.model_dump(mode="python")
@@ -375,6 +380,73 @@ class NotificationService:
             idempotency_key=idempotency_key,
             mutation=supersede_item,
         )
+
+    async def withdraw_operator_input(
+        self, notification: Notification, request: OperatorInputWithdrawalRequest,
+        *, principal_id: str,
+    ) -> Notification:
+        """Serialize with answers; CAS the original request and retain its audit receipt."""
+        # Use the existing supplemental body and event audit, so old peers can
+        # still apply the superseded state without a new notification schema.
+        identity = json.dumps({
+            "request": request.model_dump(), "actor_principal": principal_id,
+            "authority_instance_id": self.ctx.settings.instance_id,
+        }, sort_keys=True, separators=(",", ":"))
+        suffix = (
+            "\n\nRequester withdrew this question: " + request.reason
+            + "\nWithdrawal receipt SHA256: " + hashlib.sha256(identity.encode()).hexdigest()
+        )
+
+        def replay(item: Notification) -> None:
+            if not (
+                item.interaction and item.interaction.state == InteractionState.SUPERSEDED
+                and item.resolved_at is not None and item.body.endswith(suffix)
+            ):
+                raise NotificationConflict("idempotency_conflict", "Withdrawal key already used with different inputs")
+
+        def withdraw(item: Notification, now: datetime) -> None:
+            if item.version != request.expected_version:
+                raise NotificationConflict("notification_version_conflict", "Notification changed; inspect its current state")
+            interaction = item.interaction
+            if (
+                item.owner_instance_id != self.ctx.settings.instance_id
+                or item.source_instance_id != self.ctx.settings.instance_id
+                or item.principal_id != principal_id
+                or item.session_id != request.expected_session_id
+                or not interaction
+                or interaction.kind != InteractionKind.MCP_OPERATOR_INPUT
+                or interaction.protocol_method != "pa/report_dispatch_progress.operator_input"
+                or interaction.continuation_mode != "prompt"
+                or interaction.request_id != request.expected_request_id
+                or interaction.protocol_request_id != request.expected_request_id
+                or interaction.state != InteractionState.OUTSTANDING
+                or item.resolved_at is not None
+                or item.continuation_transfer is not None
+                or item.id in self._delivery_handlers
+                or interaction.response is not None
+                or interaction.responded_at is not None
+                or interaction.response_principal is not None
+                or interaction.delivery_attempts != 0
+                or interaction.continuation_prompt_id is not None
+                or interaction.delivered_at is not None
+            ):
+                raise NotificationConflict("operator_input_not_withdrawable", "Only the original local unanswered MCP operator request can be withdrawn")
+            if len(item.body) + len(suffix) > 128_000:
+                raise NotificationConflict("withdrawal_audit_too_large", "Withdrawal reason exceeds the existing notice body limit")
+            item.body += suffix
+            interaction.state = InteractionState.SUPERSEDED
+            item.resolved_at = now
+            try:
+                Notification.model_validate(item.model_dump(mode="python"))
+            except ValueError as exc:
+                raise NotificationConflict("withdrawal_audit_too_large", "Withdrawal audit exceeds existing notice bounds") from exc
+
+        async with self._locks.setdefault(notification.id, asyncio.Lock()):
+            return await asyncio.to_thread(
+                self._mutate, notification, principal_id=principal_id,
+                idempotency_key=request.idempotency_key, mutation=withdraw,
+                validate_replay=replay,
+            )
 
     async def expire_due(self, *, realm_id: str, limit: int = 200) -> int:
         now = datetime.now(UTC)

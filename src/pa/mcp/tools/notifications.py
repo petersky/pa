@@ -93,6 +93,30 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         )
 
     @mcp.tool()
+    def withdraw_operator_input(
+        notification_id: str, idempotency_key: str, expected_version: int,
+        expected_request_id: str, expected_session_id: str, reason: str,
+    ) -> dict:
+        """Withdraw an exact unanswered local MCP question; never answer or cancel for the user.
+
+        Retains the original request and an audited withdrawal reason. Rejects
+        native ACP requests, changed versions, recorded answers and delivery.
+        """
+        from uuid import UUID
+        from pa.domain.notifications import OperatorInputWithdrawalRequest
+
+        body = OperatorInputWithdrawalRequest(
+            idempotency_key=idempotency_key, expected_version=expected_version,
+            expected_request_id=expected_request_id,
+            expected_session_id=expected_session_id, reason=reason,
+        )
+        return request_local_pa(
+            ctx.settings, "POST",
+            f"/api/notifications/{UUID(notification_id)}/withdraw-operator-input",
+            json=body.model_dump(mode="json"),
+        )
+
+    @mcp.tool()
     def respond_notification(
         notification_id: str,
         idempotency_key: str,

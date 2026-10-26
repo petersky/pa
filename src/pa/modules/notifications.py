@@ -22,6 +22,7 @@ from pa.domain.notifications import (
     Notification,
     NotificationPriority,
     NotificationType,
+    OperatorInputWithdrawalRequest,
 )
 from pa.notifications import NotificationConflict, NotificationService
 
@@ -470,10 +471,7 @@ async def _proxy_response(
         ) from exc
 
 
-@router.post("/notifications/{notification_id}/transfer-continuation")
-async def transfer_notification_continuation(
-    request: Request, notification_id: str, body: ContinuationTransferRequest
-) -> dict[str, Any]:
+def _require_operator_credentials(request: Request) -> None:
     # Shared fleet credentials prove an instance, not the operator in an
     # acting-principal header. Reject them even when user login is disabled.
     # UI sessions and the user bearer used by the local MCP bridge still use
@@ -481,7 +479,7 @@ async def transfer_notification_continuation(
     if getattr(request.state, "instance_authenticated", False):
         raise HTTPException(status_code=403, detail={
             "code": "operator_identity_required",
-            "message": "Continuation transfer requires operator credentials, not a shared fleet credential",
+            "message": "This operation requires operator credentials, not a shared fleet credential",
         })
     scheme, _, bearer = request.headers.get("Authorization", "").partition(" ")
     if scheme.lower() == "bearer":
@@ -499,6 +497,28 @@ async def transfer_notification_continuation(
                 "code": "invalid_authentication",
                 "message": "The supplied operator bearer credential is invalid",
             })
+
+
+@router.post("/notifications/{notification_id}/withdraw-operator-input")
+async def withdraw_operator_input(
+    request: Request, notification_id: str, body: OperatorInputWithdrawalRequest
+) -> dict[str, Any]:
+    _require_operator_credentials(request)
+    item = await asyncio.to_thread(_authorized_notice, request, notification_id)
+    try:
+        result = await _service(request).withdraw_operator_input(
+            item, body, principal_id=_principal(request)
+        )
+    except NotificationConflict as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code, "message": str(exc)}) from exc
+    return await asyncio.to_thread(_public_notice, request, result)
+
+
+@router.post("/notifications/{notification_id}/transfer-continuation")
+async def transfer_notification_continuation(
+    request: Request, notification_id: str, body: ContinuationTransferRequest
+) -> dict[str, Any]:
+    _require_operator_credentials(request)
     item = _authorized_notice(request, notification_id)
     try:
         result = await _service(request).transfer_continuation(
