@@ -88,6 +88,22 @@ class _DispatchLinkIndex:
         return result
 
 
+class _LeaseLinkIndex:
+    """Group one sweep's fresh lease models without filtering states or order."""
+
+    def __init__(self, leases: list[Any]) -> None:
+        self._sessions: dict[str | None, list[Any]] = defaultdict(list)
+        for lease in leases:
+            self._sessions[lease.session_id].append(lease)
+
+    @classmethod
+    def read(cls, manager: Any) -> _LeaseLinkIndex:
+        return cls(manager.list())
+
+    def for_session(self, session: AgentSession) -> list[Any]:
+        return self._sessions.get(session.id, [])
+
+
 class SessionLifecyclePolicy:
     """Prove sessions safe to close, then use existing durable close semantics."""
 
@@ -171,7 +187,8 @@ class SessionLifecyclePolicy:
                 else _WatchLinkIndex([])
             )
             leases = await self._offload(
-                "session_lifecycle.leases", self.manager.workspace_manager.list
+                "session_lifecycle.leases", _LeaseLinkIndex.read,
+                self.manager.workspace_manager,
             )
             closed_ids: list[str] = []
             for session in sessions:
@@ -246,7 +263,8 @@ class SessionLifecyclePolicy:
                 self._attempt += 1
                 attempt = self._attempt
                 session_leases = [
-                    lease for lease in leases if lease.session_id == session.id
+                    lease for lease in leases.for_session(session)
+                    if lease.session_id == session.id
                 ]
                 detail: dict[str, Any] = {
                     "session_id": session.id,
@@ -339,7 +357,7 @@ class SessionLifecyclePolicy:
         sessions: list[AgentSession],
         dispatches: list[Any] | _DispatchLinkIndex,
         watches: list[Any] | _WatchLinkIndex,
-        leases: list[Any],
+        leases: list[Any] | _LeaseLinkIndex,
         now: datetime,
     ) -> tuple[str, str]:
         if session.status == "closed":
@@ -400,9 +418,12 @@ class SessionLifecyclePolicy:
         if any(watch.status in _ACTIVE_WATCH_STATUSES for watch in linked_watches):
             return "retained", "actionable_pr_watch"
 
+        lease_candidates = (
+            leases.for_session(session) if isinstance(leases, _LeaseLinkIndex) else leases
+        )
         session_leases = [
             lease
-            for lease in leases
+            for lease in lease_candidates
             if lease.session_id == session.id and lease.state != "cleaned"
         ]
         for lease in session_leases:

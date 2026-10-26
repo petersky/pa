@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-26T01:15:40.334051+00:00",
-  "completion": "OPEN: all 678 findings / 143 concerns. Exact592 activation and declared scoped retests verified; private maintenance 772.138 ms and natural maintenance over 5 s still fail unchanged observations. Dispatch matching source repair is not integrated/deployed; all broader criteria and independent acceptance remain.",
+  "as_of": "2026-10-26T01:36:30.018548+00:00",
+  "completion": "OPEN: all 680 findings / 144 concerns. Exact593 actual activation and scoped retests verified; live /work 603.818 ms, private maintenance 791.371 ms and natural maintenance 5201.372 ms remain. Lease matching source repair is not integrated/deployed; every broader criterion and independent acceptance remains.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -173140,6 +173140,88 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "exact593_work_outlier_20261026": {
+        "artifact": "docs/benchmarks/systemic-exact593-activation-lease-matching-20261026.json",
+        "measurement": {
+          "requested": 5,
+          "samples": [
+            {
+              "attempt": 0,
+              "observed_at": "2026-10-26T01:28:29.360846+00:00",
+              "ok": true,
+              "elapsed_ms": 23.570124999999997,
+              "status": 200,
+              "decoded_bytes": 31323,
+              "encoded_body_bytes": 31323,
+              "correlation_id": "54a43f4b-399f-4f8a-955f-ae9eaf43af27"
+            },
+            {
+              "attempt": 1,
+              "observed_at": "2026-10-26T01:28:29.438909+00:00",
+              "ok": true,
+              "elapsed_ms": 603.8178749999998,
+              "status": 200,
+              "decoded_bytes": 31323,
+              "encoded_body_bytes": 31323,
+              "correlation_id": "3381655d-5baf-4842-85b5-b47bad20ba27"
+            },
+            {
+              "attempt": 2,
+              "observed_at": "2026-10-26T01:28:30.096113+00:00",
+              "ok": true,
+              "elapsed_ms": 3.9443330000006327,
+              "status": 200,
+              "decoded_bytes": 31323,
+              "encoded_body_bytes": 31323,
+              "correlation_id": "9a37ed26-bb14-43b5-bf61-9b81f0b14ed9"
+            },
+            {
+              "attempt": 3,
+              "observed_at": "2026-10-26T01:28:30.160679+00:00",
+              "ok": true,
+              "elapsed_ms": 3.1159169999996905,
+              "status": 200,
+              "decoded_bytes": 31323,
+              "encoded_body_bytes": 31323,
+              "correlation_id": "46e38a18-0369-4b09-a006-542b77fd5f8c"
+            },
+            {
+              "attempt": 4,
+              "observed_at": "2026-10-26T01:28:30.224567+00:00",
+              "ok": true,
+              "elapsed_ms": 3.6284999999995904,
+              "status": 200,
+              "decoded_bytes": 31323,
+              "encoded_body_bytes": 31323,
+              "correlation_id": "91528a4d-4acc-4e79-a8fe-5b3a898a2b75"
+            }
+          ],
+          "latency_ms": {
+            "samples": 5,
+            "max": 603.818,
+            "p50": 3.944,
+            "p95": 603.818,
+            "p99": 603.818
+          },
+          "decoded_bytes": {
+            "samples": 5,
+            "max": 31323,
+            "p50": 31323,
+            "p95": 31323,
+            "p99": 31323
+          },
+          "failures": 0,
+          "violations_500ms": 1
+        },
+        "finding": {
+          "report": "c0eaf67c-d170-4fcb-95b6-94238db714d4",
+          "cause": "Unclassified. Server catch-all window independently retains max 600.496 ms but lacks correlation-specific attribution. Natural maintenance finished before the request; private mixed starts afterward. Native telemetry nearby samples at 01:28:14 and 01:28:45 do not cover its 01:28:29 span; disk latency is estimated. No CPU/GC/lock/disk cause inferred.",
+          "scope": "One of 95 live ordinary GETs; never replace this first outlier with later passes."
+        },
+        "resolution": "open",
+        "next_actor": "this same systemic session/card",
+        "next_action": "Collect correlation-specific bounded request/loop/CPU/wait/GC evidence; preserve first 603.818 ms client and separate 600.496 ms catch-all server observation. Do not infer a cause or repeat only to erase the failure."
       }
     },
     {
@@ -216335,7 +216417,269 @@
       "retested": "Private actual source decision comparison; 95 source regressions / 54 subtests. Not whole-path or deployed acceptance.",
       "resolution": "open",
       "next_actor": "this same systemic session/card",
-      "next_action": "Protected ready PR, stable supervisor/independent exact signals, head+main CI, then constrained exact activation and retest. Continue substantive maintenance and all remaining families."
+      "next_action": "Protected ready PR, stable supervisor/independent exact signals, head+main CI, then constrained exact activation and retest. Continue substantive maintenance and all remaining families.",
+      "exact593_installed_followup_20261026": {
+        "artifact": "docs/benchmarks/systemic-exact593-activation-lease-matching-20261026.json",
+        "integration": {
+          "pr": 593,
+          "url": "https://github.com/petersky/pa/pull/593",
+          "head": "59d7d8ee04bcf0cba9141026b18ffe74d9e565e9",
+          "merge": "c7ad81df0cad0ffeac004d4496930d8c3ac69af5",
+          "tree": "1ff0e104aa94724096f06dde73167f848e421bfe",
+          "watch": "4fbbfdc2-b16e-46a6-b371-1152eb7e5e4e",
+          "head_ci": 40253435357,
+          "main_ci": 40253761137,
+          "checks": "Five first-attempt successes each, no retry. Seven stable supervisor observations and fresh independent protection/approvals/reviews/threads/pagination/head/CLEAN signals preceded protected merge."
+        },
+        "contracts": {
+          "contract": "pa.installed-lifecycle-contracts/v1",
+          "source": "c7ad81df0cad0ffeac004d4496930d8c3ac69af5",
+          "started_at": "2026-10-26T01:29:54.523211+00:00",
+          "finished_at": "2026-10-26T01:29:54.750795+00:00",
+          "wall_ms": 227.59195801336318,
+          "tests": 25,
+          "passing_subtests": 54,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "modules": {
+            "pa.instance.session_lifecycle": {
+              "path": "/Users/petersky/.local/share/uv/tools/pa/lib/python3.14/site-packages/pa/instance/session_lifecycle.py",
+              "sha256": "ec69433587fddabdb084d0d242570dd4ed67e679668c6662d96c5fd46f509238"
+            },
+            "pa.pr_supervisor.store": {
+              "path": "/Users/petersky/.local/share/uv/tools/pa/lib/python3.14/site-packages/pa/pr_supervisor/store.py",
+              "sha256": "982287af988e4c50f193cee280b590331521aa2bc9b2f1d25cfc0898669104e2"
+            }
+          },
+          "test_sha256": "de950ced1bb98b59ac1777259b2724b9195f070856711d360ef72b750a6c51ce",
+          "log_sha256": "e051b0a75b0e0098bb2607ea22858ad0f239eadd8cfa0c49c399399f7d0ac0ed",
+          "scope": "Existing lifecycle obligation, retirement, closure and reserved-capacity/concurrency contracts against exact installed modules, both roots private before every PA import. No live closure/provider workload or whole-path performance acceptance."
+        },
+        "matching": {
+          "contract": "pa.lifecycle-dispatch-matching-benchmark/v1",
+          "observed_at": "2026-10-26T01:29:55.755706+00:00",
+          "sessions": 1000,
+          "dispatch_records": 1002,
+          "pairs": 5,
+          "samples": [
+            {
+              "pair": 0,
+              "variant": "scan",
+              "wall_ms": 160.31025,
+              "thread_cpu_ms": 160.310416
+            },
+            {
+              "pair": 0,
+              "variant": "index",
+              "wall_ms": 2.146333,
+              "thread_cpu_ms": 2.146792
+            },
+            {
+              "pair": 1,
+              "variant": "index",
+              "wall_ms": 2.108541,
+              "thread_cpu_ms": 2.10875
+            },
+            {
+              "pair": 1,
+              "variant": "scan",
+              "wall_ms": 117.401,
+              "thread_cpu_ms": 117.393833
+            },
+            {
+              "pair": 2,
+              "variant": "scan",
+              "wall_ms": 118.33625,
+              "thread_cpu_ms": 118.336959
+            },
+            {
+              "pair": 2,
+              "variant": "index",
+              "wall_ms": 2.232166,
+              "thread_cpu_ms": 2.232333
+            },
+            {
+              "pair": 3,
+              "variant": "index",
+              "wall_ms": 2.154542,
+              "thread_cpu_ms": 2.154667
+            },
+            {
+              "pair": 3,
+              "variant": "scan",
+              "wall_ms": 118.304416,
+              "thread_cpu_ms": 118.304875
+            },
+            {
+              "pair": 4,
+              "variant": "scan",
+              "wall_ms": 110.262167,
+              "thread_cpu_ms": 110.247291
+            },
+            {
+              "pair": 4,
+              "variant": "index",
+              "wall_ms": 2.142125,
+              "thread_cpu_ms": 2.142458
+            }
+          ],
+          "decisions_equal": true,
+          "ordered_occurrences_equal": true,
+          "source_module": "/Users/petersky/.local/share/uv/tools/pa/lib/python3.14/site-packages/pa/instance/session_lifecycle.py",
+          "source_sha256": "ec69433587fddabdb084d0d242570dd4ed67e679668c6662d96c5fd46f509238",
+          "scope": "Five alternating private sparse-link sweeps of the actual decision method. Index construction and lookup at the original guard point are included. Every decision and ordered OR occurrence matches, including both-key and equal distinct rows. No SQL, durable closure, real provider, service state or whole-sweep/historical cause/acceptance claim. Imported path/hash distinguishes source from installed code. Host load and normal GC remain uncontrolled."
+        },
+        "resolution": "open",
+        "limits": "Actual activation/scoped subset verified; full workload and independent acceptance remain open."
+      }
+    },
+    {
+      "id": "route-followup:/api/telemetry/export",
+      "kind": "http_route_followup",
+      "finding": "/api/telemetry/export",
+      "family": "http",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "newly_measured_supported_export_no_causal_closure",
+      "measurement": {
+        "count": 1,
+        "response_bytes": 310757,
+        "latency_ms": {
+          "samples": 1,
+          "max": 2058.103,
+          "p50": 2058.103,
+          "p95": 2058.103,
+          "p99": 2058.103
+        },
+        "response_size_bytes": {
+          "samples": 1,
+          "max": 310757,
+          "p50": 310757,
+          "p95": 310757,
+          "p99": 310757
+        }
+      },
+      "implemented": "Existing supported bounded redacted telemetry export, exercised read-only; no source repair or full-path acceptance inferred.",
+      "merged": [],
+      "deployed": "Actual c7ad81df owner read verified for this one request only.",
+      "retested": "One bounded native 15-minute export; all retained buckets and source-specific quality flags preserved. Not a sample of subsecond request CPU/wait/GC spans.",
+      "resolution": "open",
+      "next_actor": "this same systemic session/card",
+      "next_action": "Retain route cost and serialization/decoded payload measurements. Expand realistic export populations separately without treating sampled/estimated host telemetry as correlation-specific cause."
+    },
+    {
+      "id": "concern:session-lifecycle-lease-link-matching",
+      "kind": "concern",
+      "finding": "Per-session scan of every copied workspace lease during lifecycle checks",
+      "family": "session_lifecycle",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_repeated_python_lease_scan",
+      "cause": "Every eligible session scans the complete fresh ordered lease list; close diagnostics repeat matching. Fresh session-key grouping removes unrelated candidates while retaining original predicates and copied models.",
+      "measurement": {
+        "source_sha256": "f0c4f0b9cdebd667e6fcaa57466a36100f505a620f596392e9fbc185517d3ae8",
+        "benchmark": {
+          "contract": "pa.lifecycle-lease-matching-benchmark/v1",
+          "observed_at": "2026-10-26T01:34:06.521343+00:00",
+          "sessions": 1000,
+          "lease_records": 1002,
+          "pairs": 5,
+          "samples": [
+            {
+              "pair": 0,
+              "variant": "scan",
+              "wall_ms": 29.813958,
+              "thread_cpu_ms": 29.814208
+            },
+            {
+              "pair": 0,
+              "variant": "index",
+              "wall_ms": 1.152167,
+              "thread_cpu_ms": 1.152542
+            },
+            {
+              "pair": 1,
+              "variant": "index",
+              "wall_ms": 1.228458,
+              "thread_cpu_ms": 1.228667
+            },
+            {
+              "pair": 1,
+              "variant": "scan",
+              "wall_ms": 29.737583,
+              "thread_cpu_ms": 29.73775
+            },
+            {
+              "pair": 2,
+              "variant": "scan",
+              "wall_ms": 29.774791,
+              "thread_cpu_ms": 29.775
+            },
+            {
+              "pair": 2,
+              "variant": "index",
+              "wall_ms": 1.150958,
+              "thread_cpu_ms": 1.151083
+            },
+            {
+              "pair": 3,
+              "variant": "index",
+              "wall_ms": 1.152,
+              "thread_cpu_ms": 1.152083
+            },
+            {
+              "pair": 3,
+              "variant": "scan",
+              "wall_ms": 29.744542,
+              "thread_cpu_ms": 29.744708
+            },
+            {
+              "pair": 4,
+              "variant": "scan",
+              "wall_ms": 29.827875,
+              "thread_cpu_ms": 29.827959
+            },
+            {
+              "pair": 4,
+              "variant": "index",
+              "wall_ms": 1.146958,
+              "thread_cpu_ms": 1.147083
+            }
+          ],
+          "decisions_equal": true,
+          "ordered_occurrences_equal": true,
+          "source_module": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/instance/session_lifecycle.py",
+          "source_sha256": "f0c4f0b9cdebd667e6fcaa57466a36100f505a620f596392e9fbc185517d3ae8",
+          "scope": "Five alternating private sparse-link sweeps of the actual decision method. Index construction and lookup at the original guard point are included. Cleaned leases, ordered duplicates and every decision match. SQL enumeration, fresh model copying, git status probes, durable closure, real provider and service state are excluded. Not whole-sweep or historical cause/acceptance evidence. Imported path/hash identifies source versus installed code. Host load and normal GC remain uncontrolled."
+        },
+        "latency_ms": {
+          "scan": {
+            "samples": 5,
+            "p50": 29.775,
+            "p95": 29.828,
+            "p99": 29.828,
+            "max": 29.828
+          },
+          "index": {
+            "samples": 5,
+            "p50": 1.152,
+            "p95": 1.228,
+            "p99": 1.228,
+            "max": 1.228
+          }
+        },
+        "implemented": "Fresh lease grouping once per sweep on existing reserved worker after unchanged ordered list() read. Lookup at original workspace guard and close-diagnostic points; original state filtering, ordered git status/error handling and cleaned diagnostic states remain.",
+        "tests": "98 tests / 64 subtests pass, including fresh-worker reads, order/duplicates/current keys, guarded lookup, workspace statuses/errors and actual close diagnostics. First passing source stage retained separately from final diagnostics assertion.",
+        "merged": false,
+        "deployed": false,
+        "limits": "Sparse cleaned-lease matching only. SQL/model copying, git status probes, all other session/provider/workspace/queue amplification, substantive maintenance and full-path acceptance remain open."
+      },
+      "implemented": "Source grouping and guarded order/status/error/diagnostic regressions; protected integration/activation pending.",
+      "merged": [],
+      "deployed": false,
+      "retested": "Private source decision comparisons and 98 source regressions / 64 subtests; not deployed or full-path acceptance.",
+      "resolution": "open",
+      "next_actor": "this same systemic session/card",
+      "next_action": "Ready protected PR, stable supervisor and independent exact signals, head+main CI. Finish original continuation turn for handoff settlement; no further install/restart without positive original completion and future exact gates. Continue substantive maintenance and every remaining amplification/acceptance obligation."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -311208,6 +311552,16 @@
       "path": "docs/benchmarks/systemic-exact592-activation-dispatch-matching-20261026.raw.json.gz",
       "sha256": "8999508479701e2f957ba269cee84b851650aa83d4b29081014fb9fea5d491ce",
       "bytes": 1678275
+    },
+    "all_prior_fields_preserved": true
+  },
+  "exact593_activation_lease_stage": {
+    "artifact": "docs/benchmarks/systemic-exact593-activation-lease-matching-20261026.json",
+    "sha256": "4bdf49ff26517b14c60d252a17cbe82155d2cde688ce9f3181b717a173b37533",
+    "raw": {
+      "path": "docs/benchmarks/systemic-exact593-activation-lease-matching-20261026.raw.json.gz",
+      "sha256": "41a7851b7bd2751c685c59326105c16625045c660c6bc35d921faf2650492eb2",
+      "bytes": 2151903
     },
     "all_prior_fields_preserved": true
   }

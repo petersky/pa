@@ -1,0 +1,22 @@
+{
+  "contract": "pa.exact593-publication-validation/v1",
+  "first_validation": {
+    "script": ".dev/publish594_activation_lease_20261026.py",
+    "script_sha256": "58c5f17803296b755435efd97eb35beb940914cab70d0976fab5d871ffa81726",
+    "exit_code": 1,
+    "error": "Inventory validation found newly exercised /api/telemetry/export route absent from retained matrix; no output artifact or matrix mutation occurred. Corrected builder must append this route with actual evidence instead of relaxing validation."
+  },
+  "corrected_builder_sha256": "3cfa17ef0d7a0d2bd3439e7448e4bbef25928e33ba6809bebde6e266e8900108",
+  "matrix_rows_before": 678,
+  "matrix_rows_after": 680,
+  "all_previous_row_fields_preserved": true,
+  "new_rows": [
+    "route-followup:/api/telemetry/export",
+    "concern:session-lifecycle-lease-link-matching"
+  ],
+  "all_resolution": "open",
+  "previous_raw_preserved_losslessly": true,
+  "raw_sha256": "41a7851b7bd2751c685c59326105c16625045c660c6bc35d921faf2650492eb2",
+  "backup_filter_correction": "A local first summary accidentally classified terminal success runs as active captures. Corrected from declared BackupRun enum; no active captures/restores. Original local observation is retained hash-only in main raw manifest, corrected safe observation included. Agent analysis error, not a PA service defect.",
+  "scope": "Preserves the failed prepublication validation rather than relaxing inventory completeness or hiding it. No output artifact or matrix mutation occurred on that first assertion. Existing 678 row fields, every historical raw input and separate measurement populations remain unchanged."
+}
