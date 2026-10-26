@@ -1,0 +1,154 @@
+{
+  "contract": "pa.native-owner-diagnostics/v1",
+  "observed_at": "2026-10-26T00:32:46.908800+00:00",
+  "source_base": "153e5699440b762bbc6d41b1572dffeae2a608a8",
+  "host": "macbook / 0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+  "correction": "PA_LOCAL_API_TOKEN and PA_INSTANCE_ID are intentionally removed from general ACP providers after overrides. Dedicated MCP bridge credentials are separate. No user recovery procedure is needed; earlier lost-binding diagnosis is withdrawn as an inference.",
+  "correction_report": {
+    "report_id": "510b5d66-4cc1-4a33-a8cc-3252fb75b846",
+    "revision": 4,
+    "hash": "c048a70fbcc000c568cd4b059debe1ef1716d15fc5a271f762a324d59d38bd87",
+    "source_instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "incarnation": "01422ec3-8a75-4967-91d1-4819d0ac72d8",
+    "delivery": "pending",
+    "created_at": "2026-10-26T00:29:07.368332+00:00"
+  },
+  "original_report_revisions_preserved": true,
+  "owner_browser_observation": {
+    "contract": "pa.owner-browser-build-observation/v1",
+    "observation_time_precision": "Screenshot occurred after the first private run began and before the corrected run began; operation receipt has no endpoint timestamp. The original authoring file used an explicitly approximate display time, not a measured endpoint timestamp.",
+    "method": "Visual inspection of full ordinary GET /api/status screenshot through supported PA browser",
+    "operation_id": "systemic-owner-status-browser-fresh-20261026-v2",
+    "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "runtime_revision": "f789c0bb053ec3435132d519e4d0e93d5350bb6a",
+    "package_identity": "sha256:02e52ae8d31e3e3ff986e8beab8e46887f8204b1fb1c0749647bec0d9c5d9e9a",
+    "pid": 51822,
+    "startup_id": "a6c276ff-5d32-49aa-b9ff-f9f4e292870b",
+    "sync_consistent": true,
+    "provider_execution_environment_sanitized": true,
+    "private_variables_present": [],
+    "limits": "Text snapshot is truncated. No full runtime distribution, file hash attestation, performance acceptance, installation or restart inferred.",
+    "bounded_display_interval_utc": [
+      "2026-10-26T00:27:42.121406+00:00",
+      "2026-10-26T00:28:28.681960+00:00"
+    ],
+    "bounds_basis": "Sequential tool-call order; these are bounding private-run start timestamps, not request latency."
+  },
+  "native_control": {
+    "contract": "pa.native-control-observation/v1",
+    "recorded_at": "2026-10-26 00:31:51 UTC",
+    "configuration_revision": "86968d122a80e240ea560052f275872c5d22699a35b218618200da9e62fc1767",
+    "backup": {
+      "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+      "count": 9,
+      "verified": 8,
+      "limited": 1,
+      "state": "limited",
+      "paused": false,
+      "next": "2026-10-26T03:31:38.189124Z",
+      "active_runs": [],
+      "active_restores": []
+    },
+    "limits": "Independent native reads; recorded_at is authoring time, not a shared endpoint interval or percentile population. No configuration or backup action."
+  },
+  "source_change": "Fixed native status/runtime/maintenance GETs, 5-second transport and 2-MiB decoded complete-response limit, ordinary bridge authority unchanged. Original unanswered local MCP question withdrawal is CAS/idempotency/principal/request/session guarded, serialized with answers and never supplies or delivers a response. Reason/digest use existing supplemental body/event audit; notification/event schema unchanged. Notice read/presentation is off-loop.",
+  "withdrawal": {
+    "notification_id": "a99ee1db-df41-564e-910d-8c3f0be182d8",
+    "request_id": "systemic-pr591-owner-api-binding-recovery-20261025-v1",
+    "state": "Outstanding/unanswered at source preparation; withdrawal is NOT yet available on actual loaded owner",
+    "user_action_required": false
+  },
+  "tests": {
+    "final_passed": 135,
+    "passing_subtests": 3,
+    "python": "3.14.9 (main, Oct 21 2026, 17:47:42) [Clang 23.1.3 ]",
+    "source_files_attested": 439,
+    "changed_application_files": [
+      "pa/domain/notifications.py",
+      "pa/mcp/local_api.py",
+      "pa/mcp/tools/instance.py",
+      "pa/mcp/tools/notifications.py",
+      "pa/modules/notifications.py",
+      "pa/notifications/service.py"
+    ],
+    "stages": [
+      {
+        "path": ".dev/pr592-native-contracts-first-20261026.json",
+        "exit_code": 1,
+        "call_outcomes": {
+          "passed": 105,
+          "failed": 2,
+          "skipped": 0
+        }
+      },
+      {
+        "path": ".dev/pr592-native-contracts-corrected-20261026.json",
+        "exit_code": 0,
+        "call_outcomes": {
+          "passed": 107,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "path": ".dev/pr592-native-contracts-final-20261026.json",
+        "exit_code": 1,
+        "call_outcomes": {
+          "passed": 108,
+          "failed": 1,
+          "skipped": 0
+        }
+      },
+      {
+        "path": ".dev/pr592-native-contracts-source-final-20261026.json",
+        "exit_code": 0,
+        "call_outcomes": {
+          "passed": 114,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "path": ".dev/pr592-native-contracts-reviewed-final-20261026.json",
+        "exit_code": 0,
+        "call_outcomes": {
+          "passed": 138,
+          "failed": 0,
+          "skipped": 0
+        }
+      }
+    ],
+    "retained_failures": "First: missing test CSRF and a mock installed after function capture (102 passed/2 failed); corrected 104 passed. Added concurrency assertion initially expected a dictionary but actual freeform response is a scalar (105 passed/1 failed). Corrected 111 passed; final expanded 135 passed. All original logs/hashes retained locally. Initial private ASGI lifecycle also logged a psutil swap-memory OSError; no production cause inferred."
+  },
+  "bootstrap_procedure": "docs/native-owner-diagnostics.md; supported native identity/configuration/lease/backup and ordinary browser status before exact protected constrained installation, then existing managed handoff and actual native capability/build/retest verification. No shell credential fallback or invented user binding-owner step.",
+  "rollout": "SOURCE ONLY. No new installation or restart. Last freshly displayed loaded build is f789c0bb. Exact153 prepared only. A successor still requires ready protected PR, durable stable green, independently revalidated exact signals, head+main CI and fresh concrete constrained rollout gates.",
+  "pr591_integration": {
+    "head": "74256e05342483591c648cf266fea62484b48147",
+    "merge": "153e5699440b762bbc6d41b1572dffeae2a608a8",
+    "head_ci": 40242274776,
+    "main_ci": 40242632400,
+    "first_attempt_successes_each": 5,
+    "watch": "5985cb67-3906-4040-bced-012a10ccdabf"
+  },
+  "residuals": [
+    "Original PR590 main207.337641ms/100ms and all prior failures remain unclassified where span evidence is missing; passing later spans do not explain them.",
+    "All prior performance, natural5213.879ms/private816.726ms maintenance, full Kernel/real provider/MCP/placement/admission/startup/drain/concurrency and native CPU/disk/wait/payload/call amplification remain open.",
+    "Every peer build/log/runtime/failure/retention gap, Macmini status500, older Monica/Alex builds and cumulative2396status failures/5640760dropped bytes remains open.",
+    "Original backup/DB scopes remain independently accepted. Ten attachments and all original unknown mutation identities preserved; no resend/rearm/replacement."
+  ],
+  "acceptance": {
+    "findings": 675,
+    "concerns": 140,
+    "all_prior_673_source_rows_and_fields_preserved": true,
+    "all_resolution": "open",
+    "accepted": false,
+    "lane": "active",
+    "requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57"
+  },
+  "scope": "Full previous integration bundle retained losslessly, including all prior failures and the incorrect binding overlay as explicitly superseded history. Expected provider sanitization is not missing authentication. Fresh native tools work; the supported browser visibly proves current loaded owner build. Browser text is truncated; no complete runtime distribution or historical cause is inferred. Private macOS Python 3.14.9 source tests are separate from Linux CI and installed acceptance. No populations pooled. No secret lookup/copy/injection, user response, production state import, install/restart/default/permission/GC/deadline change. Native full prompts/raw logs remain local/hash-only.",
+  "raw": {
+    "path": "docs/benchmarks/systemic-native-owner-diagnostics-20261026.raw.json.gz",
+    "sha256": "f8a2bee8a4d955435e06b4dd061d8a14af0b272432f906d2e2cfde469f803e35",
+    "bytes": 1135348
+  }
+}

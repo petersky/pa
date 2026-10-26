@@ -220,6 +220,18 @@ class ContinuationTransfer(ContinuationTransferRequest):
     transferred_at: datetime
 
 
+class OperatorInputWithdrawalRequest(BaseModel):
+    """Withdraw an exact unanswered request, without supplying an operator answer."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    idempotency_key: str = Field(min_length=1, max_length=300)
+    expected_version: int = Field(ge=1)
+    expected_request_id: str = Field(min_length=1, max_length=300)
+    expected_session_id: str = Field(min_length=1, max_length=200)
+    reason: str = Field(min_length=1, max_length=1000)
+
+
 class NotificationVersionConflict(RuntimeError):
     """The authority projection changed before a compared write."""
 

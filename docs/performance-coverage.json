@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-25T22:53:01.367048+00:00",
-  "completion": "OPEN: all 673 findings / 139 concerns, including every prior 672 finding. PR590 is integrated but first main CI failed; no rollout. New test-only diagnostic evidence preserves all original deadlines. Actual loaded f789c0bb and all maintenance/peer/log/full-path residuals remain.",
+  "as_of": "2026-10-26T00:39:11.537486+00:00",
+  "completion": "OPEN: all676 findings/141 concerns. Expected provider sanitization correction retained; original PR592 head firstCI failed explicit new-tool inventory. Corrected schema fixture preserves all222 old contracts; no rollout/user answer or acceptance.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -215371,6 +215371,135 @@
       "resolution": "open",
       "next_actor": "this same card/session",
       "next_action": "Retain Linux exact-span artifact on first-attempt protected head/main CI; investigate any observed tail without altering 100 ms/190 ms assertions, worker delay, GC policy or provider defaults. Continue all 672 prior findings and independent acceptance."
+    },
+    {
+      "id": "concern:executor-bound-owner-api",
+      "kind": "concern",
+      "finding": "Expected provider sanitization and missing complete native owner diagnostics/request withdrawal surfaces",
+      "family": "observability",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "expected_provider_sanitization_confirmed_native_surface_gap",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-native-owner-diagnostics-20261026.json",
+        "owner_browser_observation": {
+          "contract": "pa.owner-browser-build-observation/v1",
+          "observation_time_precision": "Screenshot occurred after the first private run began and before the corrected run began; operation receipt has no endpoint timestamp. The original authoring file used an explicitly approximate display time, not a measured endpoint timestamp.",
+          "method": "Visual inspection of full ordinary GET /api/status screenshot through supported PA browser",
+          "operation_id": "systemic-owner-status-browser-fresh-20261026-v2",
+          "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+          "runtime_revision": "f789c0bb053ec3435132d519e4d0e93d5350bb6a",
+          "package_identity": "sha256:02e52ae8d31e3e3ff986e8beab8e46887f8204b1fb1c0749647bec0d9c5d9e9a",
+          "pid": 51822,
+          "startup_id": "a6c276ff-5d32-49aa-b9ff-f9f4e292870b",
+          "sync_consistent": true,
+          "provider_execution_environment_sanitized": true,
+          "private_variables_present": [],
+          "limits": "Text snapshot is truncated. No full runtime distribution, file hash attestation, performance acceptance, installation or restart inferred.",
+          "bounded_display_interval_utc": [
+            "2026-10-26T00:27:42.121406+00:00",
+            "2026-10-26T00:28:28.681960+00:00"
+          ],
+          "bounds_basis": "Sequential tool-call order; these are bounding private-run start timestamps, not request latency."
+        },
+        "native_control": {
+          "contract": "pa.native-control-observation/v1",
+          "recorded_at": "2026-10-26 00:31:51 UTC",
+          "configuration_revision": "86968d122a80e240ea560052f275872c5d22699a35b218618200da9e62fc1767",
+          "backup": {
+            "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+            "count": 9,
+            "verified": 8,
+            "limited": 1,
+            "state": "limited",
+            "paused": false,
+            "next": "2026-10-26T03:31:38.189124Z",
+            "active_runs": [],
+            "active_restores": []
+          },
+          "limits": "Independent native reads; recorded_at is authoring time, not a shared endpoint interval or percentile population. No configuration or backup action."
+        }
+      },
+      "implemented": "Fixed native status/runtime/maintenance GETs, 5-second transport and 2-MiB decoded complete-response limit, ordinary bridge authority unchanged. Original unanswered local MCP question withdrawal is CAS/idempotency/principal/request/session guarded, serialized with answers and never supplies or delivers a response. Reason/digest use existing supplemental body/event audit; notification/event schema unchanged. Notice read/presentation is off-loop.",
+      "merged": [],
+      "deployed": "SOURCE ONLY. No new installation or restart. Last freshly displayed loaded build is f789c0bb. Exact153 prepared only. A successor still requires ready protected PR, durable stable green, independently revalidated exact signals, head+main CI and fresh concrete constrained rollout gates.",
+      "retested": "135 private source tests / 3 passing subtests. Native tools and supported browser work; new methods not activated.",
+      "resolution": "open",
+      "report_id": "510b5d66-4cc1-4a33-a8cc-3252fb75b846",
+      "next_actor": "this same session/card through protected PR and supported constrained rollout",
+      "next_action": "Integrate exact green protected successor; revalidate actual source/runtime and all rollout gates, activate through supported constrained install/managed handoff, verify new native tools, then withdraw only the original still-unanswered exact request. Continue all performance and scheduler-owned acceptance obligations.",
+      "cause": "PA_LOCAL_API_TOKEN and PA_INSTANCE_ID are intentionally removed from general ACP providers after overrides. Dedicated MCP bridge credentials are separate. No user recovery procedure is needed; earlier lost-binding diagnosis is withdrawn as an inference.",
+      "historical_superseded_observation": {
+        "artifact": ".dev/pr591-binding-coverage-delta-20261025.json",
+        "sha256": "e704c4dc46192fbd18428d18c23921fa215df040a9cba7d130a9eac925bb0879",
+        "original": {
+          "id": "concern:executor-bound-owner-api",
+          "kind": "concern",
+          "finding": "Current continuation lacks bound owner API access needed for fresh runtime and rollout evidence",
+          "family": "observability",
+          "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+          "cause_classification": "confirmed_missing_binding_upstream_cause_unverified",
+          "measurement": "Presence-only checks: PA_LOCAL_API_TOKEN and PA_INSTANCE_ID absent. No secret value, fallback credential lookup or owner HTTP request. Native MCP reads remain available but exposed tools do not supply complete runtime/build proof.",
+          "implemented": false,
+          "merged": [],
+          "deployed": "No new installation or restart. Last verified loaded application remains f789c0bb.",
+          "retested": "Native instance identity, PR watch, lease and backup reads succeed. Exact 153e5699 head/main CI each pass five first-attempt jobs. These do not substitute for live loaded-build proofs.",
+          "resolution": "open",
+          "report_id": "510b5d66-4cc1-4a33-a8cc-3252fb75b846",
+          "next_actor": "PA execution binding owner, then this same session",
+          "next_action": "Restore supported bound API access for this same recoverable session or equivalent native runtime/build reads without exposing secrets, changing defaults/permissions or creating another worker. Revalidate actual state before any concrete approved rollout."
+        }
+      },
+      "corrected_report_revision": 4,
+      "corrected_report_hash": "c048a70fbcc000c568cd4b059debe1ef1716d15fc5a271f762a324d59d38bd87"
+    },
+    {
+      "id": "route-followup:/api/notifications/{notification_id}/withdraw-operator-input",
+      "kind": "http_route_followup",
+      "finding": "POST /api/notifications/{notification_id}/withdraw-operator-input",
+      "family": "notifications",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "new_bounded_guarded_capability_source_only",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-native-owner-diagnostics-20261026.json",
+        "functional_http_statuses": [
+          401,
+          409,
+          200
+        ],
+        "performance_distribution": "Not measured; functional tests are not a latency population."
+      },
+      "implemented": "Fixed native status/runtime/maintenance GETs, 5-second transport and 2-MiB decoded complete-response limit, ordinary bridge authority unchanged. Original unanswered local MCP question withdrawal is CAS/idempotency/principal/request/session guarded, serialized with answers and never supplies or delivers a response. Reason/digest use existing supplemental body/event audit; notification/event schema unchanged. Notice read/presentation is off-loop.",
+      "merged": [],
+      "deployed": "Not activated",
+      "retested": "Private original-request/CAS/concurrent-answer/auth/byte-bound contracts only",
+      "resolution": "open",
+      "next_actor": "this same session/card",
+      "next_action": "Validate exact protected head/main CI and actual activation, then original-request withdrawal receipt and broad concurrency/performance acceptance."
+    },
+    {
+      "id": "concern:owner-diagnostics-mcp-schema-ci-fixture",
+      "kind": "concern",
+      "finding": "PR592 first-attempt MCP strict schema declaration omission",
+      "family": "validation",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_new_tool_fixture_declaration_omission",
+      "cause": "Confirmed fixture-declaration omission:222 existing schema hashes match; exactly two newly reviewed tools are additional. No deadline failure in this job.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-native-owner-schema-followup-20261026.json",
+        "run": 40249924834,
+        "attempt": 1,
+        "job": 121339383273,
+        "passed": 1048,
+        "failed": 1,
+        "passing_subtests": 180
+      },
+      "implemented": "Add separate explicit hashes for get_instance_diagnostics and withdraw_operator_input to strict complete-schema equality. All222 existing signatures, product code and authority constraints unchanged.",
+      "merged": [],
+      "deployed": "UNMERGED/UNINSTALLED: correct exact ready PR592, wait for fresh supervisor stable green and independent signals, then mainCI and every constrained activation/retest gate. Actual loaded remains f789c0bb; erroneous original request is still unanswered, no user recovery needed.",
+      "retested": "136private source tests/3subtests including complete legacy equality and the two explicitly reviewed new schemas; corrected Linux CI pending.",
+      "resolution": "open",
+      "next_actor": "this same session/card",
+      "next_action": "Revalidate corrected protected head+main CI and actual supported activation/withdrawal, preserve original failed attempt and continue every performance/independent acceptance obligation."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -310213,6 +310342,26 @@
       "path": "docs/benchmarks/systemic-pr590-unrelated-deadline-followup-20261025.raw.json.gz",
       "sha256": "ed1f91f565dff9bbae5c25ed8edad6d01a64dc5c827eb9674652a6e1c7bd9d8e",
       "bytes": 942509
+    },
+    "all_prior_fields_preserved": true
+  },
+  "native_owner_diagnostics_stage": {
+    "artifact": "docs/benchmarks/systemic-native-owner-diagnostics-20261026.json",
+    "sha256": "b070e61a5e3f0699530664730ded69533bf7b195df81dd0048ecd13146ebfc57",
+    "raw": {
+      "path": "docs/benchmarks/systemic-native-owner-diagnostics-20261026.raw.json.gz",
+      "sha256": "f8a2bee8a4d955435e06b4dd061d8a14af0b272432f906d2e2cfde469f803e35",
+      "bytes": 1135348
+    },
+    "all_prior_fields_preserved": true
+  },
+  "native_owner_schema_followup_stage": {
+    "artifact": "docs/benchmarks/systemic-native-owner-schema-followup-20261026.json",
+    "sha256": "b6c0d34fde1fbc80f087dc4e3572bef40d5abe582c62eeb0a79c941a55bd5f1d",
+    "raw": {
+      "path": "docs/benchmarks/systemic-native-owner-schema-followup-20261026.raw.json.gz",
+      "sha256": "f7fdd62d97df9f440e70ef7f7d5748e6440ae21ed6343ec307145436e778b107",
+      "bytes": 1181054
     },
     "all_prior_fields_preserved": true
   }

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 from pa.core.context import AppContext
 from pa.fleet.capacity import DEFAULT_DISPATCH_QUEUE_CAPACITY
 
@@ -16,6 +16,27 @@ def register_mcp(mcp, ctx: AppContext) -> None:
     def instance_info() -> dict:
         """Return information about this PA instance."""
         return request_local_pa(settings, "GET", "/api/instance")
+
+    @mcp.tool()
+    def get_instance_diagnostics(section: Literal["status", "runtime", "maintenance"]) -> dict:
+        """Read a complete owner status/build, runtime or maintenance snapshot.
+
+        Uses the dedicated authenticated bridge, not provider shell credentials.
+        Fixed read-only routes; fails explicitly above 2 MiB decoded JSON.
+        Status distinguishes installed metadata from startup-captured loaded build.
+        Runtime windows and lifetime maxima are different populations. This read
+        does not run maintenance, restart, install or certify performance.
+        """
+        paths = {
+            "status": "/api/status", "runtime": "/api/runtime",
+            "maintenance": "/api/instance/maintenance",
+        }
+        if section not in paths:
+            raise ValueError("Unknown instance diagnostics section")
+        return request_local_pa(
+            settings, "GET", paths[section], timeout_seconds=5.0,
+            max_response_bytes=2 * 1024 * 1024,
+        )
 
     @mcp.tool()
     def get_dispatch_capacity() -> dict:

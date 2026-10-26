@@ -306,8 +306,13 @@ def request_local_pa(
     allow_not_found: bool = False,
     timeout_seconds: float = 10.0,
     bound_completion: bool = False,
+    max_response_bytes: int | None = None,
 ):
     method = method.upper()
+    if max_response_bytes is not None and (
+        method != "GET" or not 1 <= max_response_bytes <= 2 * 1024 * 1024
+    ):
+        raise ValueError("Bounded responses require GET and a limit of at most 2 MiB")
     from pa.mcp.server import assigned_service_mcp_mode
 
     try:
@@ -440,7 +445,30 @@ def request_local_pa(
                 "headers": request_headers,
                 "timeout": max(0.1, deadline - time.monotonic()),
             }
-            if socket_path:
+            if max_response_bytes is not None:
+                # The native diagnostics tools need complete JSON, never a
+                # silently truncated snapshot. Bound decoded bytes, including
+                # compressed/chunked responses, before JSON hydration.
+                transport = httpx.HTTPTransport(uds=socket_path) if socket_path else None
+                with httpx.Client(transport=transport) as client:
+                    with client.stream(method, f"{request_base_url}{path}", **request_args) as streamed:
+                        payload = bytearray()
+                        for chunk in streamed.iter_bytes(chunk_size=64 * 1024):
+                            if len(payload) + len(chunk) > max_response_bytes:
+                                raise LocalPARequestError(
+                                    "Owner diagnostics exceed the complete-response byte limit",
+                                    operation=method, endpoint=path, status=streamed.status_code,
+                                    correlation_id=streamed.headers.get("X-Request-ID") or correlation_id,
+                                    detail={"code": "diagnostics_response_too_large", "limit_bytes": max_response_bytes},
+                                )
+                            payload.extend(chunk)
+                        response = httpx.Response(
+                            streamed.status_code, headers={
+                                key: value for key, value in streamed.headers.items()
+                                if key.lower() not in {"content-encoding", "content-length", "transfer-encoding"}
+                            }, content=bytes(payload), request=streamed.request,
+                        )
+            elif socket_path:
                 with httpx.Client(
                     transport=httpx.HTTPTransport(uds=socket_path)
                 ) as client:
