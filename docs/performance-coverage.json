@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-26T00:39:11.537486+00:00",
-  "completion": "OPEN: all676 findings/141 concerns. Expected provider sanitization correction retained; original PR592 head firstCI failed explicit new-tool inventory. Corrected schema fixture preserves all222 old contracts; no rollout/user answer or acceptance.",
+  "as_of": "2026-10-26T01:15:40.334051+00:00",
+  "completion": "OPEN: all 678 findings / 143 concerns. Exact592 activation and declared scoped retests verified; private maintenance 772.138 ms and natural maintenance over 5 s still fail unchanged observations. Dispatch matching source repair is not integrated/deployed; all broader criteria and independent acceptance remain.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -215307,6 +215307,621 @@
         },
         "deployed_previous_repair": "PR #589 / actual loaded f789c0bb proven by exact files, records, native identity and declared scoped retests; full lifecycle acceptance remains open.",
         "resolution": "open"
+      },
+      "exact592_installed_followup_20261026": {
+        "artifact": "docs/benchmarks/systemic-exact592-activation-dispatch-matching-20261026.json",
+        "contracts": {
+          "contract": "pa.installed-lifecycle-contracts/v1",
+          "source": "8ef9f9b4be8fce6e7f37a3a7480fa2d0ec0f88c2",
+          "started_at": "2026-10-26T01:11:53.373360+00:00",
+          "finished_at": "2026-10-26T01:11:53.598641+00:00",
+          "wall_ms": 225.29004095122218,
+          "tests": 21,
+          "passing_subtests": 22,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "modules": {
+            "pa.instance.session_lifecycle": {
+              "path": "/Users/petersky/.local/share/uv/tools/pa/lib/python3.14/site-packages/pa/instance/session_lifecycle.py",
+              "sha256": "8fe2874743747b699a40ba999095582a54de11c41c4667717c124590f3bbe66a"
+            },
+            "pa.pr_supervisor.store": {
+              "path": "/Users/petersky/.local/share/uv/tools/pa/lib/python3.14/site-packages/pa/pr_supervisor/store.py",
+              "sha256": "982287af988e4c50f193cee280b590331521aa2bc9b2f1d25cfc0898669104e2"
+            }
+          },
+          "test_sha256": "a2811be65cc9a450f153850f416d54ff36aa89cf265c6ee6e31fa52e0385e5b5",
+          "log_sha256": "531de74f9ffebcfbddee0027e100b1ab1ed7aae28f76f64197343868b16f3faf",
+          "scope": "Existing lifecycle obligation, retirement, closure and reserved-capacity/concurrency contracts against exact installed modules, both roots private before every PA import. No live closure/provider workload or whole-path performance acceptance."
+        },
+        "matching": {
+          "contract": "pa.lifecycle-watch-matching-benchmark/v1",
+          "observed_at": "2026-10-26T01:11:54.277467+00:00",
+          "sessions": 1000,
+          "watches": 1000,
+          "pairs": 5,
+          "samples": [
+            {
+              "pair": 0,
+              "variant": "full",
+              "wall_ms": 66.896625,
+              "thread_cpu_ms": 66.897084
+            },
+            {
+              "pair": 0,
+              "variant": "index",
+              "wall_ms": 2.074041,
+              "thread_cpu_ms": 2.074958
+            },
+            {
+              "pair": 1,
+              "variant": "index",
+              "wall_ms": 2.009083,
+              "thread_cpu_ms": 2.009167
+            },
+            {
+              "pair": 1,
+              "variant": "full",
+              "wall_ms": 68.221959,
+              "thread_cpu_ms": 68.222708
+            },
+            {
+              "pair": 2,
+              "variant": "full",
+              "wall_ms": 67.6785,
+              "thread_cpu_ms": 67.679125
+            },
+            {
+              "pair": 2,
+              "variant": "index",
+              "wall_ms": 2.05025,
+              "thread_cpu_ms": 2.052792
+            },
+            {
+              "pair": 3,
+              "variant": "index",
+              "wall_ms": 6.2295,
+              "thread_cpu_ms": 6.230334
+            },
+            {
+              "pair": 3,
+              "variant": "full",
+              "wall_ms": 67.586,
+              "thread_cpu_ms": 67.588042
+            },
+            {
+              "pair": 4,
+              "variant": "full",
+              "wall_ms": 68.154208,
+              "thread_cpu_ms": 68.15075
+            },
+            {
+              "pair": 4,
+              "variant": "index",
+              "wall_ms": 1.997209,
+              "thread_cpu_ms": 2.000083
+            }
+          ],
+          "decisions_equal": true,
+          "source_module": "/Users/petersky/.local/share/uv/tools/pa/lib/python3.14/site-packages/pa/instance/session_lifecycle.py",
+          "source_sha256": "8fe2874743747b699a40ba999095582a54de11c41c4667717c124590f3bbe66a",
+          "scope": "Private sparse-link comparison: five alternating actual decision sweeps, sparse immutable metadata links, candidate index construction included. No durable close, SQL, provider, service policy or PA store mutation. Does not measure the whole lifecycle sweep or establish historical cause. Uses the actual imported candidate index and actual decision method. Source or installed module path/hash is retained; the caller must distinguish these scopes."
+        },
+        "read": {
+          "contract": "pa.lifecycle-watch-links-benchmark/v1",
+          "started_at": "2026-10-26T01:12:32.919988+00:00",
+          "samples": [
+            {
+              "pair": 0,
+              "variant": "full",
+              "wall_ms": 14.334208,
+              "thread_cpu_ms": 13.57275,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 0,
+              "variant": "links",
+              "wall_ms": 1.269083,
+              "thread_cpu_ms": 1.248083,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 1,
+              "variant": "links",
+              "wall_ms": 1.084542,
+              "thread_cpu_ms": 1.059291,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 1,
+              "variant": "full",
+              "wall_ms": 14.187125,
+              "thread_cpu_ms": 13.626583,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 2,
+              "variant": "full",
+              "wall_ms": 14.2475,
+              "thread_cpu_ms": 13.677041,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 2,
+              "variant": "links",
+              "wall_ms": 1.21325,
+              "thread_cpu_ms": 1.187584,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 3,
+              "variant": "links",
+              "wall_ms": 1.12275,
+              "thread_cpu_ms": 1.101125,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 3,
+              "variant": "full",
+              "wall_ms": 14.832916,
+              "thread_cpu_ms": 14.002125,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 4,
+              "variant": "full",
+              "wall_ms": 14.235792,
+              "thread_cpu_ms": 13.642917,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 4,
+              "variant": "links",
+              "wall_ms": 1.201709,
+              "thread_cpu_ms": 1.175208,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 5,
+              "variant": "links",
+              "wall_ms": 1.11275,
+              "thread_cpu_ms": 1.088208,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 5,
+              "variant": "full",
+              "wall_ms": 14.347916,
+              "thread_cpu_ms": 13.734416,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 6,
+              "variant": "full",
+              "wall_ms": 14.401334,
+              "thread_cpu_ms": 13.582709,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 6,
+              "variant": "links",
+              "wall_ms": 1.207,
+              "thread_cpu_ms": 1.181916,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 7,
+              "variant": "links",
+              "wall_ms": 1.103333,
+              "thread_cpu_ms": 1.078583,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 7,
+              "variant": "full",
+              "wall_ms": 14.343084,
+              "thread_cpu_ms": 13.715292,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 8,
+              "variant": "full",
+              "wall_ms": 14.337042,
+              "thread_cpu_ms": 13.883583,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 8,
+              "variant": "links",
+              "wall_ms": 1.328125,
+              "thread_cpu_ms": 1.305375,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 9,
+              "variant": "links",
+              "wall_ms": 1.070875,
+              "thread_cpu_ms": 1.050459,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 9,
+              "variant": "full",
+              "wall_ms": 14.241833,
+              "thread_cpu_ms": 13.51975,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 10,
+              "variant": "full",
+              "wall_ms": 14.197625,
+              "thread_cpu_ms": 13.601958,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 10,
+              "variant": "links",
+              "wall_ms": 1.159042,
+              "thread_cpu_ms": 1.144292,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 11,
+              "variant": "links",
+              "wall_ms": 1.055209,
+              "thread_cpu_ms": 1.0365,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 11,
+              "variant": "full",
+              "wall_ms": 13.959917,
+              "thread_cpu_ms": 13.292625,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 12,
+              "variant": "full",
+              "wall_ms": 14.533417,
+              "thread_cpu_ms": 13.720417,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 12,
+              "variant": "links",
+              "wall_ms": 1.20075,
+              "thread_cpu_ms": 1.186042,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 13,
+              "variant": "links",
+              "wall_ms": 1.099042,
+              "thread_cpu_ms": 1.083083,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 13,
+              "variant": "full",
+              "wall_ms": 14.25575,
+              "thread_cpu_ms": 13.666542,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 14,
+              "variant": "full",
+              "wall_ms": 14.295875,
+              "thread_cpu_ms": 13.67475,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 14,
+              "variant": "links",
+              "wall_ms": 1.171458,
+              "thread_cpu_ms": 1.154667,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 15,
+              "variant": "links",
+              "wall_ms": 1.103125,
+              "thread_cpu_ms": 1.080083,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 15,
+              "variant": "full",
+              "wall_ms": 14.35975,
+              "thread_cpu_ms": 13.737709,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 16,
+              "variant": "full",
+              "wall_ms": 14.139792,
+              "thread_cpu_ms": 13.51775,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 16,
+              "variant": "links",
+              "wall_ms": 1.173708,
+              "thread_cpu_ms": 1.156917,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 17,
+              "variant": "links",
+              "wall_ms": 1.080625,
+              "thread_cpu_ms": 1.061792,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 17,
+              "variant": "full",
+              "wall_ms": 14.551167,
+              "thread_cpu_ms": 13.730875,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 18,
+              "variant": "full",
+              "wall_ms": 16.53625,
+              "thread_cpu_ms": 16.030167,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 18,
+              "variant": "links",
+              "wall_ms": 1.294042,
+              "thread_cpu_ms": 1.270791,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 19,
+              "variant": "links",
+              "wall_ms": 1.081208,
+              "thread_cpu_ms": 1.060833,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 19,
+              "variant": "full",
+              "wall_ms": 14.290084,
+              "thread_cpu_ms": 13.687458,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 20,
+              "variant": "full",
+              "wall_ms": 13.917334,
+              "thread_cpu_ms": 13.294,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 20,
+              "variant": "links",
+              "wall_ms": 1.197333,
+              "thread_cpu_ms": 1.172792,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 21,
+              "variant": "links",
+              "wall_ms": 1.06475,
+              "thread_cpu_ms": 1.04475,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 21,
+              "variant": "full",
+              "wall_ms": 19.007208,
+              "thread_cpu_ms": 13.606542,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 22,
+              "variant": "full",
+              "wall_ms": 14.645542,
+              "thread_cpu_ms": 13.883958,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 22,
+              "variant": "links",
+              "wall_ms": 1.168542,
+              "thread_cpu_ms": 1.148042,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 23,
+              "variant": "links",
+              "wall_ms": 1.097875,
+              "thread_cpu_ms": 1.074584,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 23,
+              "variant": "full",
+              "wall_ms": 14.406792,
+              "thread_cpu_ms": 13.813208,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 24,
+              "variant": "full",
+              "wall_ms": 14.356167,
+              "thread_cpu_ms": 13.790709,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 24,
+              "variant": "links",
+              "wall_ms": 1.207916,
+              "thread_cpu_ms": 1.1925,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 25,
+              "variant": "links",
+              "wall_ms": 1.07375,
+              "thread_cpu_ms": 1.059292,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 25,
+              "variant": "full",
+              "wall_ms": 13.627333,
+              "thread_cpu_ms": 13.038959,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 26,
+              "variant": "full",
+              "wall_ms": 13.900584,
+              "thread_cpu_ms": 13.350166,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 26,
+              "variant": "links",
+              "wall_ms": 1.198541,
+              "thread_cpu_ms": 1.18225,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 27,
+              "variant": "links",
+              "wall_ms": 1.032,
+              "thread_cpu_ms": 1.0095,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 27,
+              "variant": "full",
+              "wall_ms": 13.947542,
+              "thread_cpu_ms": 13.4225,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 28,
+              "variant": "full",
+              "wall_ms": 33.767584,
+              "thread_cpu_ms": 17.566,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            },
+            {
+              "pair": 28,
+              "variant": "links",
+              "wall_ms": 1.215584,
+              "thread_cpu_ms": 1.2,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 29,
+              "variant": "links",
+              "wall_ms": 1.064541,
+              "thread_cpu_ms": 1.047917,
+              "hydrated_models": 0,
+              "materialized_json_bytes": 0
+            },
+            {
+              "pair": 29,
+              "variant": "full",
+              "wall_ms": 23.715208,
+              "thread_cpu_ms": 13.838209,
+              "hydrated_models": 100,
+              "materialized_json_bytes": 6587000
+            }
+          ],
+          "complete": true,
+          "module_path": "/Users/petersky/.local/share/uv/tools/pa/lib/python3.14/site-packages/pa/pr_supervisor/store.py",
+          "module_sha256": "982287af988e4c50f193cee280b590331521aa2bc9b2f1d25cfc0898669104e2",
+          "watches": 100,
+          "pairs": 30,
+          "proof_bytes_each": 65536,
+          "decision_fields_equal": true,
+          "latency_ms": {
+            "full": {
+              "samples": 30,
+              "p50": 14.334208,
+              "p95": 23.715208,
+              "p99": 33.767584,
+              "max": 33.767584
+            },
+            "links": {
+              "samples": 30,
+              "p50": 1.12275,
+              "p95": 1.294042,
+              "p99": 1.328125,
+              "max": 1.328125
+            }
+          },
+          "finished_at": "2026-10-26T01:12:33.619904+00:00",
+          "clock_offset_before": 1792242045.3393748,
+          "clock_offset_after": 1792242045.3393605,
+          "scope": "Thirty alternating pairs in one private synthetic store. Every status, realm and retired/terminal link is retained. Timers cover only the read, excluding comparison and observer persistence. Materialized JSON bytes are application copy work, not physical disk traffic. No provider closure, production workload, cadence/threshold change or whole-path speedup/acceptance is inferred. Both roots are private before PA imports."
+        },
+        "resolution": "open"
       }
     },
     {
@@ -215450,7 +216065,83 @@
         }
       },
       "corrected_report_revision": 4,
-      "corrected_report_hash": "c048a70fbcc000c568cd4b059debe1ef1716d15fc5a271f762a324d59d38bd87"
+      "corrected_report_hash": "c048a70fbcc000c568cd4b059debe1ef1716d15fc5a271f762a324d59d38bd87",
+      "exact592_access_and_terminal_request_correction_20261026": {
+        "overlays": [
+          {
+            "row_id": "concern:executor-bound-owner-api",
+            "followup": {
+              "report": {
+                "report_id": "510b5d66-4cc1-4a33-a8cc-3252fb75b846",
+                "revision": 6,
+                "hash": "bba5634abf9ed4162583bd500c78df46ed04ef61d73f7ad12bcbf654b3d9ff96",
+                "source_instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+                "incarnation": "01422ec3-8a75-4967-91d1-4819d0ac72d8",
+                "delivery": "pending",
+                "created_at": "2026-10-26T00:57:00.926551+00:00"
+              },
+              "classification": "Expected provider sanitization; all supported complete ordinary owner-web reads already available, with authenticated native corroboration. No user restoration required.",
+              "terminal_request": {
+                "contract": "pa.operator-request-terminal-observation/v1",
+                "recorded_at": "2026-10-26 00:55:59 UTC",
+                "id": "a99ee1db-df41-564e-910d-8c3f0be182d8",
+                "version": 4,
+                "request_id": "systemic-pr591-owner-api-binding-recovery-20261025-v1",
+                "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+                "state": "delivered",
+                "response_recorded": true,
+                "delivery_attempts": 1,
+                "responded_at": "2026-10-26T00:23:18.603363Z",
+                "delivered_at": "2026-10-26T00:23:18.733170Z",
+                "continuation_prompt_id": "notification-response:a99ee1db-df41-564e-910d-8c3f0be182d8:systemic-pr591-owner-api-binding-recovery-20261025-v1",
+                "resolved_at": "2026-10-26T00:23:18.733170Z",
+                "updated_at": "2026-10-26T00:23:18.733170Z",
+                "audit": [
+                  {
+                    "id": "100aa716-c953-4ef4-a4b6-61c93e3069f0",
+                    "action": "interaction.delivered",
+                    "actor": "system:delivery",
+                    "version": 4,
+                    "created_at": "2026-10-26T00:23:18.733388+00:00"
+                  },
+                  {
+                    "id": "2a5ca4b2-be8a-477d-a002-15e71cc31ce8",
+                    "action": "interaction.delivery_pending",
+                    "actor": "system:delivery",
+                    "version": 3,
+                    "created_at": "2026-10-26T00:23:18.624833+00:00"
+                  },
+                  {
+                    "id": "2c131615-a4c1-4356-b47d-623042ed0b7e",
+                    "action": "interaction.answered",
+                    "actor": "user:local",
+                    "version": 2,
+                    "created_at": "2026-10-26T00:23:18.604065+00:00"
+                  },
+                  {
+                    "id": "b78b029d-9079-42e2-8bcc-d2a2da4d2ade",
+                    "action": "created",
+                    "actor": "user:local",
+                    "version": 1,
+                    "created_at": "2026-10-25T23:03:08.001997+00:00"
+                  }
+                ],
+                "scope": "Fresh terminal observation only; no response value or private prompt recorded. No withdrawal attempted and no consent inferred. Preserve the user's delivered response and ordering."
+              },
+              "source_integration": "8ef9f9b4be8fce6e7f37a3a7480fa2d0ec0f88c2",
+              "installed_package": "sha256:fb7dfb78de4dd4afa37547143079fa22e35804e6b89d1d2ac318eb7ca60bad57",
+              "activation": "Pending exact managed restart and retests; listener still f789c0bb.",
+              "reporting_freshness_correction": "Pending-status prose after 00:23:18 UTC was based on the stale 00:21 snapshot. The original user response is already delivered/resolved, preserved, never quoted or interpreted as approval. Do not withdraw or rearm it."
+            },
+            "resolution": "open",
+            "next_actor": "this same session; no operator recovery action",
+            "next_action": "Verify exact native capabilities after managed activation, preserve the terminal user interaction and continue every performance/acceptance obligation."
+          }
+        ],
+        "current": "Exact target activated; all three native diagnostics work and ordinary complete GETs work. No user recovery needed. Preserve terminal real user response; no mutation or consent inferred.",
+        "artifact": "docs/benchmarks/systemic-exact592-activation-dispatch-matching-20261026.json",
+        "resolution": "open"
+      }
     },
     {
       "id": "route-followup:/api/notifications/{notification_id}/withdraw-operator-input",
@@ -215500,6 +216191,151 @@
       "resolution": "open",
       "next_actor": "this same session/card",
       "next_action": "Revalidate corrected protected head+main CI and actual supported activation/withdrawal, preserve original failed attempt and continue every performance/independent acceptance obligation."
+    },
+    {
+      "id": "concern:owner-card-browser-screenshot-http500",
+      "kind": "concern",
+      "finding": "Supported owner-card browser screenshot returns HTTP 500; generic receipt not covered by browser screenshot ledger",
+      "family": "browser",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "observed_http500_root_unverified_and_receipt_scope_gap",
+      "cause": "One native screenshot failed after ordinary current-card GET and Control+End. Underlying server/CDP failure is uninspected. Screenshot source does not pass/register the generic MCP HTTP operation ID, so browser-manager not_started is not evidence of screenshot absence.",
+      "measurement": {
+        "status": 500,
+        "correlation_id": "ce011343-754d-4c84-8450-b1c25afbba9e",
+        "generic_operation_id": "76212161-0046-418f-8369-fbef1dfe7734",
+        "report": {
+          "report_id": "088d98b6-ca15-4882-8cc2-f8b236136c16",
+          "revision": 1,
+          "hash": "21e84794bbe0a5c632c2592e20918c5a368ac025fff7c7b1052ef4bc95d9db41",
+          "source_instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+          "incarnation": "01422ec3-8a75-4967-91d1-4819d0ac72d8",
+          "delivery": "pending",
+          "created_at": "2026-10-26T00:41:16.448667+00:00"
+        },
+        "screenshot_retry_issued": false
+      },
+      "implemented": false,
+      "merged": [],
+      "deployed": "Actual failure observed on loaded f789c0bb; successor 8ef9f9b4 is installed but not yet activated.",
+      "retested": "Passive manager-ledger lookup only; ordinary owner-web complete GETs succeed separately. No screenshot retry or causal inference.",
+      "resolution": "open",
+      "next_actor": "this same systemic session/card",
+      "next_action": "Retain exact original error and ledger scope; inspect supported bounded redacted server/CDP evidence without production faults or generic POST replay. Continue broader browser/owner responsiveness coverage."
+    },
+    {
+      "id": "concern:session-lifecycle-dispatch-link-matching",
+      "kind": "concern",
+      "finding": "Per-session scan of every lifecycle dispatch snapshot",
+      "family": "session_lifecycle",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_repeated_python_link_scan",
+      "cause": "Each eligible decision scans up to 10,000 copied dispatch rows; a fresh sweep-scoped index preserves the same ordered OR union at the original guard point.",
+      "measurement": {
+        "source_sha256": "ec69433587fddabdb084d0d242570dd4ed67e679668c6662d96c5fd46f509238",
+        "benchmark": {
+          "contract": "pa.lifecycle-dispatch-matching-benchmark/v1",
+          "observed_at": "2026-10-26T01:13:28.975495+00:00",
+          "sessions": 1000,
+          "dispatch_records": 1002,
+          "pairs": 5,
+          "samples": [
+            {
+              "pair": 0,
+              "variant": "scan",
+              "wall_ms": 151.137333,
+              "thread_cpu_ms": 146.333166
+            },
+            {
+              "pair": 0,
+              "variant": "index",
+              "wall_ms": 2.075083,
+              "thread_cpu_ms": 2.075708
+            },
+            {
+              "pair": 1,
+              "variant": "index",
+              "wall_ms": 2.038792,
+              "thread_cpu_ms": 2.039041
+            },
+            {
+              "pair": 1,
+              "variant": "scan",
+              "wall_ms": 105.62875,
+              "thread_cpu_ms": 105.622
+            },
+            {
+              "pair": 2,
+              "variant": "scan",
+              "wall_ms": 108.424584,
+              "thread_cpu_ms": 108.425041
+            },
+            {
+              "pair": 2,
+              "variant": "index",
+              "wall_ms": 2.228334,
+              "thread_cpu_ms": 2.231166
+            },
+            {
+              "pair": 3,
+              "variant": "index",
+              "wall_ms": 2.146,
+              "thread_cpu_ms": 2.146083
+            },
+            {
+              "pair": 3,
+              "variant": "scan",
+              "wall_ms": 107.052792,
+              "thread_cpu_ms": 107.045209
+            },
+            {
+              "pair": 4,
+              "variant": "scan",
+              "wall_ms": 106.247208,
+              "thread_cpu_ms": 106.240666
+            },
+            {
+              "pair": 4,
+              "variant": "index",
+              "wall_ms": 1.999417,
+              "thread_cpu_ms": 1.999667
+            }
+          ],
+          "decisions_equal": true,
+          "ordered_occurrences_equal": true,
+          "source_module": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/instance/session_lifecycle.py",
+          "source_sha256": "ec69433587fddabdb084d0d242570dd4ed67e679668c6662d96c5fd46f509238",
+          "scope": "Five alternating private sparse-link sweeps of the actual decision method. Index construction and lookup at the original guard point are included. Every decision and ordered OR occurrence matches, including both-key and equal distinct rows. No SQL, durable closure, real provider, service state or whole-sweep/historical cause/acceptance claim. Imported path/hash distinguishes source from installed code. Host load and normal GC remain uncontrolled."
+        },
+        "latency_ms": {
+          "scan": {
+            "samples": 5,
+            "p50": 107.053,
+            "p95": 151.137,
+            "p99": 151.137,
+            "max": 151.137
+          },
+          "index": {
+            "samples": 5,
+            "p50": 2.075,
+            "p95": 2.228,
+            "p99": 2.228,
+            "max": 2.228
+          }
+        },
+        "implemented": "Fresh copied-row index once per sweep on existing reserved worker; actual lookup at original guard point. Same limit=10000/deep=False read, OR link/order/equal-distinct/both-key semantics and raw-list fallback.",
+        "tests": "95 tests / 54 subtests pass after correcting a new terminal-order fixture to explicitly disable default recoverability. Initial 94-pass/one-failure stage and sandbox cache denial remain retained; no product guard changed.",
+        "merged": false,
+        "deployed": false,
+        "limits": "Sparse matching CPU evidence only. All dispatch enumeration/copying, shared-link worst cases, session/newer/lease/provider/workspace/queue amplification, durability/closure/concurrency and full-path acceptance remain open."
+      },
+      "implemented": "Source index and guarded regression coverage; protected integration/activation pending.",
+      "merged": [],
+      "deployed": false,
+      "retested": "Private actual source decision comparison; 95 source regressions / 54 subtests. Not whole-path or deployed acceptance.",
+      "resolution": "open",
+      "next_actor": "this same systemic session/card",
+      "next_action": "Protected ready PR, stable supervisor/independent exact signals, head+main CI, then constrained exact activation and retest. Continue substantive maintenance and all remaining families."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -310362,6 +311198,16 @@
       "path": "docs/benchmarks/systemic-native-owner-schema-followup-20261026.raw.json.gz",
       "sha256": "f7fdd62d97df9f440e70ef7f7d5748e6440ae21ed6343ec307145436e778b107",
       "bytes": 1181054
+    },
+    "all_prior_fields_preserved": true
+  },
+  "exact592_activation_dispatch_stage": {
+    "artifact": "docs/benchmarks/systemic-exact592-activation-dispatch-matching-20261026.json",
+    "sha256": "3d263596139afe5de2045e87fb48afcd73deb96ff9d85c99927541545ba6f9b4",
+    "raw": {
+      "path": "docs/benchmarks/systemic-exact592-activation-dispatch-matching-20261026.raw.json.gz",
+      "sha256": "8999508479701e2f957ba269cee84b851650aa83d4b29081014fb9fea5d491ce",
+      "bytes": 1678275
     },
     "all_prior_fields_preserved": true
   }

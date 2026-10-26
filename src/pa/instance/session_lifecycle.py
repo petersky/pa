@@ -58,6 +58,36 @@ class _WatchLinkIndex:
         return result
 
 
+class _DispatchLinkIndex:
+    """Keep one sweep's copied dispatch rows in their original OR-link order."""
+
+    def __init__(self, dispatches: list[Any]) -> None:
+        self._sessions: dict[str | None, list[tuple[int, Any]]] = defaultdict(list)
+        self._dispatches: dict[str | None, list[tuple[int, Any]]] = defaultdict(list)
+        for position, dispatch in enumerate(dispatches):
+            row = (position, dispatch)
+            self._sessions[dispatch.session_id].append(row)
+            self._dispatches[dispatch.dispatch_id].append(row)
+
+    @classmethod
+    def read(cls, store: Any) -> _DispatchLinkIndex:
+        return cls(store.list(limit=10000, deep=False))
+
+    def for_session(self, session: AgentSession) -> list[Any]:
+        rows = heapq.merge(
+            self._sessions.get(session.id, ()),
+            self._dispatches.get(session.dispatch_id, ()) if session.dispatch_id else (),
+            key=lambda row: row[0],
+        )
+        result = []
+        previous = -1
+        for position, dispatch in rows:
+            if position != previous:
+                result.append(dispatch)
+            previous = position
+        return result
+
+
 class SessionLifecyclePolicy:
     """Prove sessions safe to close, then use existing durable close semantics."""
 
@@ -124,12 +154,11 @@ class SessionLifecyclePolicy:
             dispatches = (
                 await self._offload(
                     "session_lifecycle.dispatches",
-                    dispatch_store.list,
-                    limit=10000,
-                    deep=False,
+                    _DispatchLinkIndex.read,
+                    dispatch_store,
                 )
                 if dispatch_store
-                else []
+                else _DispatchLinkIndex([])
             )
             supervisor = self.services.get("pr_supervisor")
             watches = (
@@ -308,7 +337,7 @@ class SessionLifecyclePolicy:
         session: AgentSession,
         *,
         sessions: list[AgentSession],
-        dispatches: list[Any],
+        dispatches: list[Any] | _DispatchLinkIndex,
         watches: list[Any] | _WatchLinkIndex,
         leases: list[Any],
         now: datetime,
@@ -333,9 +362,13 @@ class SessionLifecyclePolicy:
         if durable.get("pending_interaction"):
             return "retained", "requested_input_pending"
 
+        dispatch_candidates = (
+            dispatches.for_session(session)
+            if isinstance(dispatches, _DispatchLinkIndex) else dispatches
+        )
         linked_dispatches = [
             item
-            for item in dispatches
+            for item in dispatch_candidates
             if item.session_id == session.id
             or (session.dispatch_id and item.dispatch_id == session.dispatch_id)
         ]

@@ -14,7 +14,7 @@ from pa.domain.models import AgentSession, CardLane
 from pa.core.async_runtime import AsyncRuntime
 from pa.domain.projection import CardProjection
 from pa.execution.dispatch import DispatchRecord
-from pa.instance.session_lifecycle import SessionLifecyclePolicy, _WatchLinkIndex
+from pa.instance.session_lifecycle import SessionLifecyclePolicy, _DispatchLinkIndex, _WatchLinkIndex
 from pa.pr_supervisor.models import PRWatch, PRWatchStatus
 from pa.pr_supervisor.store import PRSupervisorStore
 
@@ -81,6 +81,112 @@ def _dispatch(**values):
 
 
 class SessionLifecycleDecisionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_dispatch_index_preserves_or_order_and_equal_distinct_rows(self):
+        records = [_dispatch(session_id="other", dispatch_id="shared"),
+                   _dispatch(session_id="session-1", dispatch_id="other"),
+                   _dispatch(session_id="session-1", dispatch_id="shared"),
+                   _dispatch(session_id="session-1", dispatch_id="shared"),
+                   _dispatch(session_id=None, dispatch_id=""),
+                   _dispatch(session_id="", dispatch_id="unrelated")]
+        index = _DispatchLinkIndex(records)
+        for session_id in ("session-1", "other", "", "unrelated"):
+            for dispatch_id in ("shared", "other", "", None):
+                with self.subTest(session_id=session_id, dispatch_id=dispatch_id):
+                    session = _session(id=session_id, dispatch_id=dispatch_id)
+                    expected = [r for r in records if r.session_id == session.id
+                                or (session.dispatch_id and r.dispatch_id == session.dispatch_id)]
+                    self.assertEqual([id(r) for r in index.for_session(session)],
+                                     [id(r) for r in expected])
+        session = _session(dispatch_id="shared")
+        session.dispatch_id = "other"
+        self.assertEqual([id(r) for r in index.for_session(session)],
+                         [id(r) for r in records[1:4]])
+
+    async def test_sweep_reads_fresh_dispatch_index_once_on_reserved_worker(self):
+        records = [_dispatch()]
+        calls = []
+        loop_thread = threading.get_ident()
+
+        def read(**kwargs):
+            self.assertNotEqual(threading.get_ident(), loop_thread)
+            calls.append(kwargs)
+            return list(records)
+
+        manager = _Manager()
+        manager.store.list_sessions = lambda **kwargs: [_session(), _session(id="other")]
+        manager.workspace_manager.list = lambda: []
+        policy = SessionLifecyclePolicy(manager, {"dispatch_store": SimpleNamespace(list=read)})
+        decision = AsyncMock(return_value=("retained", "fixture"))
+        try:
+            with patch.object(policy, "_decision", decision):
+                await policy.run_once()
+                self.assertEqual([c.kwargs["dispatches"].for_session(c.args[0])
+                                  for c in decision.call_args_list], [[records[0]], []])
+                records.clear()
+                decision.reset_mock()
+                await policy.run_once()
+                self.assertEqual([c.kwargs["dispatches"].for_session(c.args[0])
+                                  for c in decision.call_args_list], [[], []])
+            self.assertEqual(calls, [{"limit": 10000, "deep": False}] * 2)
+        finally:
+            await policy.close()
+
+    async def test_dispatch_index_lookup_stays_after_early_durable_guards(self):
+        cases = [(_session(status="closed"), None, ("skipped", "already_closed")),
+                 (_session(), SimpleNamespace(prompting=True, _queue=[]), ("retained", "prompt_pending")),
+                 (_session(), SimpleNamespace(prompting=False, _queue=[], _pending_permissions=[True]),
+                  ("retained", "permission_pending")),
+                 (_session(), SimpleNamespace(prompting=False, _queue=[], _pending_permissions=[],
+                                              _pending_elicitations=[True]), ("retained", "elicitation_pending")),
+                 (_session(), SimpleNamespace(prompting=False, _queue=[], _pending_permissions=[],
+                                              _transcript_buffer=[True]), ("deferred", "transcript_delivery_pending"))]
+        for durable, reason in [({"in_flight": True}, "durable_prompt_pending"),
+                                ({"queued_prompts": ["fixture"]}, "durable_prompt_pending"),
+                                ({"pending_permissions": ["fixture"]}, "durable_interaction_pending"),
+                                ({"pending_elicitations": ["fixture"]}, "durable_interaction_pending"),
+                                ({"pending_interaction": {"id": "fixture"}}, "requested_input_pending")]:
+            cases.append((_session(config_json={"durable_runtime": durable}), None, ("retained", reason)))
+        for session, runtime, expected in cases:
+            with self.subTest(reason=expected[1]):
+                policy = SessionLifecyclePolicy(_Manager(runtime=runtime), {})
+                index = _DispatchLinkIndex([])
+                try:
+                    with patch.object(index, "for_session", side_effect=AssertionError("early dispatch work")):
+                        self.assertEqual(await policy._decision(session, sessions=[], dispatches=index,
+                            watches=[], leases=[], now=datetime.now(UTC)), expected)
+                finally:
+                    await policy.close()
+
+    async def test_indexed_dispatches_preserve_obligations_and_terminal_order(self):
+        cases = [({"state": "running"}, ("retained", "dispatch_active")),
+                 ({"followup_turns": [{"state": "running"}]}, ("retained", "followup_pending")),
+                 ({"acknowledged_at": None}, ("deferred", "completion_delivery_pending")),
+                 ({"reconciliation_state": "not_requested"}, ("retained", "reconciliation_active")),
+                 ({"state": "failed", "recoverable": True}, ("retained", "dispatch_recoverable")),
+                 ({"state": "cancelled", "recoverable": True}, ("retained", "dispatch_recoverable"))]
+        for values, expected in cases:
+            with self.subTest(values=values):
+                records = [_dispatch(session_id="unrelated", dispatch_id="d-unrelated", state="running"),
+                           _dispatch(**values)]
+                session = _session(purpose="automated_run", dispatch_id="dispatch-1")
+                policy = SessionLifecyclePolicy(_Manager(), {})
+                try:
+                    for dispatches in (records, _DispatchLinkIndex(records)):
+                        self.assertEqual(await policy._decision(session, sessions=[], dispatches=dispatches,
+                            watches=[], leases=[], now=datetime.now(UTC)), expected)
+                finally:
+                    await policy.close()
+        # The last linked terminal outcome is significant; do not group/sort by state.
+        records = [_dispatch(state="cancelled", recoverable=False),
+                   _dispatch(state="failed", recoverable=False)]
+        policy = SessionLifecyclePolicy(_Manager(), {})
+        try:
+            for dispatches in (records, _DispatchLinkIndex(records)):
+                self.assertEqual(await policy._decision(_session(purpose="automated_run"), sessions=[],
+                    dispatches=dispatches, watches=[], leases=[], now=datetime.now(UTC)), ("close", "dispatch_failed"))
+        finally:
+            await policy.close()
+
     async def test_watch_index_preserves_or_order_and_distinct_equal_rows(self):
         def link(session_id, card_id):
             return SimpleNamespace(originating_session_id=session_id, card_id=card_id,
