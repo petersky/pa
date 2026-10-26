@@ -1,3 +1,15 @@
+# PR #592 strict schema inventory correction
+
+The [immutable follow-up](benchmarks/systemic-native-owner-schema-followup-20261026.json) and adjacent full raw bundle retain the original first-attempt PR #592 failure, all five job outcomes, Linux numeric deadline artifacts and the complete preceding integration history. **All 676 findings / 141 concerns remain open**, preserving every prior 675 row/field.
+
+First head CI `40249924834` has four successful jobs and one failure: `test (2)` retains **1,048 passing tests, one failure and 180 passing subtests**. The strict MCP schema assertion confirms **all 222 existing schemas are identical** and rejects exactly the two newly reviewed capabilities because their fixture declarations were omitted. The correction declares their explicit hashes in a separate fixture and keeps complete `actual == baseline` equality. Product code, existing signatures, authority constraints and every deadline remain unchanged. **136 private source tests and 3 subtests pass**, including that full schema contract. No CI retry was issued.
+
+Original passing Linux spans remain separate: snapshot **4.197 ms** includes a retained **2.545 ms** GC overlap; unrelated requests **6.027 ms / 6.046 ms loop CPU** and their **200.073 ms** delayed worker are another span. Inclusive phases overlap and must not be added. These observations do not explain the original PR #590 **207.338 ms / 100 ms** failure or any older deadline failure. Corrected head/main CI, protected integration, actual native diagnostic/withdrawal activation and full performance acceptance remain pending. The mistaken request is still unanswered and requires no user token/login recovery. Actual loaded build remains `f789c0bb`.
+
+A separate private next-repair probe over **1,000 sessions / 1,002 dispatch records**, five alternating pairs, preserves every decision and ordered OR-link occurrence. Scan/candidate medians are **110.279 / 2.096 ms**, maxima **159.732 / 2.213 ms**, including index construction. This is an uncommitted diagnostic candidate with pre-method lookup, not a production repair, full sweep or historical-cause claim. Its initial incorrect terminal-state fixture assumption is retained; the corrected fixture uses the existing source terminal state. All maintenance, full startup/drain/provider/MCP/placement/workspace/queue/admission/lease/receipt/order/CAS/sync/concurrency, native CPU/disk/wait/payload/call/write amplification, peer/log/build/retention and scheduler-owned independent acceptance obligations remain open.
+
+---
+
 # Expected provider sanitization and native diagnostic capability
 
 The [complete correction and source evidence](benchmarks/systemic-native-owner-diagnostics-20261026.json), adjacent lossless raw bundle and [supported procedure](native-owner-diagnostics.md) retain every preceding integration input and failure. **All 675 findings / 140 concerns remain open**: every prior 673 source row/field, the corrected 674th overlay finding, and the new withdrawal route. The earlier overlay's missing-binding inference is explicitly superseded, with its original bytes and report history retained.

@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-26T00:32:46.908800+00:00",
-  "completion": "OPEN: all 675 findings / 140 concerns. Prior binding inference corrected: provider sanitization is expected; no user recovery required. New native diagnostic/withdrawal source is not activated. Every original failure and acceptance residual remains.",
+  "as_of": "2026-10-26T00:39:11.537486+00:00",
+  "completion": "OPEN: all676 findings/141 concerns. Expected provider sanitization correction retained; original PR592 head firstCI failed explicit new-tool inventory. Corrected schema fixture preserves all222 old contracts; no rollout/user answer or acceptance.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -215475,6 +215475,31 @@
       "resolution": "open",
       "next_actor": "this same session/card",
       "next_action": "Validate exact protected head/main CI and actual activation, then original-request withdrawal receipt and broad concurrency/performance acceptance."
+    },
+    {
+      "id": "concern:owner-diagnostics-mcp-schema-ci-fixture",
+      "kind": "concern",
+      "finding": "PR592 first-attempt MCP strict schema declaration omission",
+      "family": "validation",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_new_tool_fixture_declaration_omission",
+      "cause": "Confirmed fixture-declaration omission:222 existing schema hashes match; exactly two newly reviewed tools are additional. No deadline failure in this job.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-native-owner-schema-followup-20261026.json",
+        "run": 40249924834,
+        "attempt": 1,
+        "job": 121339383273,
+        "passed": 1048,
+        "failed": 1,
+        "passing_subtests": 180
+      },
+      "implemented": "Add separate explicit hashes for get_instance_diagnostics and withdraw_operator_input to strict complete-schema equality. All222 existing signatures, product code and authority constraints unchanged.",
+      "merged": [],
+      "deployed": "UNMERGED/UNINSTALLED: correct exact ready PR592, wait for fresh supervisor stable green and independent signals, then mainCI and every constrained activation/retest gate. Actual loaded remains f789c0bb; erroneous original request is still unanswered, no user recovery needed.",
+      "retested": "136private source tests/3subtests including complete legacy equality and the two explicitly reviewed new schemas; corrected Linux CI pending.",
+      "resolution": "open",
+      "next_actor": "this same session/card",
+      "next_action": "Revalidate corrected protected head+main CI and actual supported activation/withdrawal, preserve original failed attempt and continue every performance/independent acceptance obligation."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -310327,6 +310352,16 @@
       "path": "docs/benchmarks/systemic-native-owner-diagnostics-20261026.raw.json.gz",
       "sha256": "f8a2bee8a4d955435e06b4dd061d8a14af0b272432f906d2e2cfde469f803e35",
       "bytes": 1135348
+    },
+    "all_prior_fields_preserved": true
+  },
+  "native_owner_schema_followup_stage": {
+    "artifact": "docs/benchmarks/systemic-native-owner-schema-followup-20261026.json",
+    "sha256": "b6c0d34fde1fbc80f087dc4e3572bef40d5abe582c62eeb0a79c941a55bd5f1d",
+    "raw": {
+      "path": "docs/benchmarks/systemic-native-owner-schema-followup-20261026.raw.json.gz",
+      "sha256": "f7fdd62d97df9f440e70ef7f7d5748e6440ae21ed6343ec307145436e778b107",
+      "bytes": 1181054
     },
     "all_prior_fields_preserved": true
   }

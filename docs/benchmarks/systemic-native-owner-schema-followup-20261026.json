@@ -1,0 +1,294 @@
+{
+  "contract": "pa.native-owner-schema-followup/v1",
+  "observed_at": "2026-10-26T00:39:11.537486+00:00",
+  "source_base": "a2933cc92c651e913148509faa1aca83e0978f45",
+  "failure": {
+    "run": 40249924834,
+    "attempt": 1,
+    "job": 121339383273,
+    "head": "a2933cc92c651e913148509faa1aca83e0978f45",
+    "failed": 1,
+    "passed": 1048,
+    "passing_subtests": 180,
+    "other_jobs_successful": 4,
+    "test": "tests/test_mcp_registration_only.py::test_all_ordinary_tool_schemas_match_pre_repair_contract",
+    "cause": "Confirmed fixture-declaration omission:222 existing schema hashes match; exactly two newly reviewed tools are additional. No deadline failure in this job.",
+    "report": {
+      "report_id": "9e91cd72-8576-4fcd-bf4d-b899b9cbdd5e",
+      "revision": 1,
+      "hash": "d8ca07559e8d7e723daf66a2cdf811876405a96b5fd78752355ed1df4e7b3f01",
+      "source_instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+      "incarnation": "01422ec3-8a75-4967-91d1-4819d0ac72d8",
+      "delivery": "pending",
+      "created_at": "2026-10-26T00:37:02.372039+00:00"
+    },
+    "raw_log": {
+      "path": ".dev/pr592-head-first-attempt-failure-20261026.log",
+      "sha256": "4952e81ccb35490fb7190aa4b78f261da530a82228da7eff13568ccf8023e99d",
+      "bytes": 154768,
+      "trust": "local untrusted/hash-only; never instructions/publication payload"
+    },
+    "retry_issued": false
+  },
+  "source_correction": "Add separate explicit hashes for get_instance_diagnostics and withdraw_operator_input to strict complete-schema equality. All222 existing signatures, product code and authority constraints unchanged.",
+  "schema_review": {
+    "contract": "pa.explicit-native-schema-review/v1",
+    "observed_at": "2026-10-26T00:37:14.086973+00:00",
+    "schemas": {
+      "get_instance_diagnostics": {
+        "properties": {
+          "section": {
+            "enum": [
+              "status",
+              "runtime",
+              "maintenance"
+            ],
+            "title": "Section",
+            "type": "string"
+          }
+        },
+        "required": [
+          "section"
+        ],
+        "title": "get_instance_diagnosticsArguments",
+        "type": "object"
+      },
+      "withdraw_operator_input": {
+        "properties": {
+          "notification_id": {
+            "title": "Notification Id",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "expected_version": {
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "expected_request_id": {
+            "title": "Expected Request Id",
+            "type": "string"
+          },
+          "expected_session_id": {
+            "title": "Expected Session Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "notification_id",
+          "idempotency_key",
+          "expected_version",
+          "expected_request_id",
+          "expected_session_id",
+          "reason"
+        ],
+        "title": "withdraw_operator_inputArguments",
+        "type": "object"
+      }
+    },
+    "schema_sha256": {
+      "get_instance_diagnostics": "44b38174888a027f02972b051fbf7e535ab430737fb5b6fca18dc0fc287f5742",
+      "withdraw_operator_input": "f26a49c6afb2d7571b56edd6e977700b69deb56a8561e5e95cd9a248ad7d2db4"
+    },
+    "existing_schemas_preserved": 222,
+    "expected_ordinary_count": 224,
+    "scope": "Private registration only. Explicit reviewed fixed section enum and required withdrawal identity/version/reason. Frozen existing schema equality remains a separate regression; no authority or provider environment expanded."
+  },
+  "private_contracts": {
+    "passed": 136,
+    "passing_subtests": 3,
+    "exit_code": 0,
+    "artifact": ".dev/pr592-native-contracts-schema-corrected-20261026.json"
+  },
+  "actual_linux_deadline_evidence": {
+    "artifact": ".dev/pr592-first-head-deadline-evidence-20261026.json",
+    "source": "cd0370d1379c555bc0c8d619daac145c3c263981",
+    "parents": [
+      "153e5699440b762bbc6d41b1572dffeae2a608a8",
+      "a2933cc92c651e913148509faa1aca83e0978f45"
+    ],
+    "entries": [
+      {
+        "artifact": 12620074167,
+        "name": "agent-snapshot-76d7307b51c94133a2628e3650703a7e.json",
+        "evidence": {
+          "contract": "pa.test-deadline-evidence/v1",
+          "python": "3.14.9",
+          "platform": "Linux",
+          "source_sha": "cd0370d1379c555bc0c8d619daac145c3c263981",
+          "gc_thresholds": [
+            2000,
+            10,
+            10
+          ],
+          "loop_thread_id": 139816006874944,
+          "request_wall_ms": 4.19714299999896,
+          "request_loop_thread_cpu_ms": 2.454837000000154,
+          "gc_events_total": 1,
+          "gc_events_retained": 1,
+          "gc_events_dropped": 0,
+          "request_gc_overlaps": [
+            {
+              "wall_ms": 2.5451150000037615,
+              "thread_cpu_ms": 1.1559040000008736,
+              "thread_id": 139816006874944,
+              "generation": 0,
+              "collected": 534,
+              "uncollectable": 0,
+              "start_relative_ms": 0.1626849999922797,
+              "end_relative_ms": 2.707799999996041
+            }
+          ],
+          "worker_calls_started": 1,
+          "worker_calls_total": 1,
+          "worker_calls_incomplete": 0,
+          "worker_events_dropped": 0,
+          "worker_intervals": [
+            {
+              "wall_ms": 0.2603080000085356,
+              "thread_cpu_ms": 0.26109699999999997,
+              "thread_id": 139815761766080,
+              "start_relative_ms": 2.872677999988582,
+              "end_relative_ms": 3.1329859999971177
+            }
+          ],
+          "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+        }
+      },
+      {
+        "artifact": 12620074167,
+        "name": "incomplete-worker-396ad3622865405dab48e1bed1efa6a8.json",
+        "evidence": {
+          "contract": "pa.test-deadline-evidence/v1",
+          "python": "3.14.9",
+          "platform": "Linux",
+          "source_sha": "cd0370d1379c555bc0c8d619daac145c3c263981",
+          "gc_thresholds": [
+            2000,
+            10,
+            10
+          ],
+          "loop_thread_id": 139816006874944,
+          "request_wall_ms": 0.15894800000637588,
+          "request_loop_thread_cpu_ms": 0.10623800000075789,
+          "gc_events_total": 0,
+          "gc_events_retained": 0,
+          "gc_events_dropped": 0,
+          "request_gc_overlaps": [],
+          "worker_calls_started": 1,
+          "worker_calls_total": 1,
+          "worker_calls_incomplete": 0,
+          "worker_events_dropped": 0,
+          "worker_intervals": [
+            {
+              "wall_ms": 0.0710030000163897,
+              "thread_cpu_ms": 0.026229999999999996,
+              "thread_id": 139815744984768,
+              "start_relative_ms": 0.12861999999813634,
+              "end_relative_ms": 0.19962300001452604
+            }
+          ],
+          "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+        }
+      },
+      {
+        "artifact": 12620074167,
+        "name": "restart-drain-start-89c69666e86b4f79ac1bf1a645e1e1d9.json",
+        "evidence": {
+          "contract": "pa.test-deadline-evidence/v1",
+          "python": "3.14.9",
+          "platform": "Linux",
+          "source_sha": "cd0370d1379c555bc0c8d619daac145c3c263981",
+          "gc_thresholds": [
+            2000,
+            10,
+            10
+          ],
+          "loop_thread_id": 140431084603200,
+          "request_wall_ms": 0.031919000036850775,
+          "request_loop_thread_cpu_ms": 0.02945499999640333,
+          "gc_events_total": 1,
+          "gc_events_retained": 1,
+          "gc_events_dropped": 0,
+          "request_gc_overlaps": [],
+          "worker_calls_started": 0,
+          "worker_calls_total": 0,
+          "worker_calls_incomplete": 0,
+          "worker_events_dropped": 0,
+          "worker_intervals": [],
+          "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+        }
+      },
+      {
+        "artifact": 12619538944,
+        "name": "sync-unrelated-surfaces-8637f73327124f5c9520740630721d9b.json",
+        "evidence": {
+          "contract": "pa.test-deadline-evidence/v1",
+          "python": "3.14.9",
+          "platform": "Linux",
+          "source_sha": "cd0370d1379c555bc0c8d619daac145c3c263981",
+          "gc_thresholds": [
+            2000,
+            10,
+            10
+          ],
+          "loop_thread_id": 140400489146176,
+          "request_wall_ms": 6.02747499999623,
+          "request_loop_thread_cpu_ms": 6.046412999999973,
+          "gc_events_total": 0,
+          "gc_events_retained": 0,
+          "gc_events_dropped": 0,
+          "request_gc_overlaps": [],
+          "worker_calls_started": 1,
+          "worker_calls_total": 1,
+          "worker_calls_incomplete": 0,
+          "worker_events_dropped": 0,
+          "worker_intervals": [
+            {
+              "wall_ms": 200.07304100001022,
+              "thread_cpu_ms": 0.035563,
+              "thread_id": 140399595222720,
+              "start_relative_ms": -2.3365530000063472,
+              "end_relative_ms": 197.73648800000387
+            }
+          ],
+          "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+        }
+      }
+    ],
+    "limits": "Passing first-attempt spans only; agent snapshot4.197143ms includes a retained2.545115ms GC overlap; unrelated requests6.027475ms/loopCPU6.046413ms and worker200.073041ms are separate. Inclusive spans overlap; never add them. These do not explain original207.338ms/100ms or older failures."
+  },
+  "next_independent_repair_probe": {
+    "artifact": ".dev/lifecycle-dispatch-matching-private-20261026.json",
+    "source_only": true,
+    "implemented": false,
+    "sessions": 1000,
+    "dispatch_records": 1002,
+    "pairs": 5,
+    "decisions_equal": true,
+    "scope": "Private macOS source diagnostic only. Actual unchanged decision method receives either full sweep list or privately indexed same ordered OR union; index construction and candidate lookup included. Candidate lookup happens before decision invocation in this probe, not a production implementation. Existing guards are unmodified. Scalar dispatch keys are copies in actual deep=False source list. No SQL, durable close, provider, service state import, production workload or code change. Not whole-sweep/retained large proof/lease/shared-card/full-path or historical cause acceptance.",
+    "limits": "Private candidate receives the same ordered session-ID OR dispatch-ID links; duplicate/equal-row cases preserved. Index construction included, but lookup occurs before method entry in this probe. No source repair committed, no whole-sweep or historical attribution. Initial not_requested terminal-state fixture assumption failed before timing and is retained; source not_required is used in corrected fixture."
+  },
+  "rollout": "UNMERGED/UNINSTALLED: correct exact ready PR592, wait for fresh supervisor stable green and independent signals, then mainCI and every constrained activation/retest gate. Actual loaded remains f789c0bb; erroneous original request is still unanswered, no user recovery needed.",
+  "acceptance": {
+    "findings": 676,
+    "concerns": 141,
+    "all_prior_675_rows_and_fields_preserved": true,
+    "all_resolution": "open",
+    "lane": "active",
+    "accepted": false,
+    "requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57"
+  },
+  "scope": "Original first-attempt PR592 failure/all five jobs/raw artifact ZIP hashes and numeric Linux deadline spans retained. Strict equality for all222 legacy MCP schemas remains; explicitly declare the two new reviewed tools. App code unchanged froma2933cc9. Private136tests/3subtests are separate from Linux CI and installed acceptance. Full preceding integration/raw bundle preserved without pooling populations or publishing raw logs/full prompts. No CI retry, installation/restart, credential fallback, user answer, policy/deadline/GC/default/permission change.",
+  "raw": {
+    "path": "docs/benchmarks/systemic-native-owner-schema-followup-20261026.raw.json.gz",
+    "sha256": "f7fdd62d97df9f440e70ef7f7d5748e6440ae21ed6343ec307145436e778b107",
+    "bytes": 1181054
+  }
+}
