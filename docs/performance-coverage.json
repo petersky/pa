@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-26T01:15:40.334051+00:00",
-  "completion": "OPEN: all 678 findings / 143 concerns. Exact592 activation and declared scoped retests verified; private maintenance 772.138 ms and natural maintenance over 5 s still fail unchanged observations. Dispatch matching source repair is not integrated/deployed; all broader criteria and independent acceptance remain.",
+  "as_of": "2026-10-26T01:44:55.905457+00:00",
+  "completion": "OPEN: all 681 findings / 145 concerns. PR594 original first CI EOF preserved; fresh auxiliary authority-read correction passes scoped real-browser test. Original cause remains unconfirmed; new-head CI/integration/activation and every broader acceptance criterion remain open.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -173140,6 +173140,88 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "exact593_work_outlier_20261026": {
+        "artifact": "docs/benchmarks/systemic-exact593-activation-lease-matching-20261026.json",
+        "measurement": {
+          "requested": 5,
+          "samples": [
+            {
+              "attempt": 0,
+              "observed_at": "2026-10-26T01:28:29.360846+00:00",
+              "ok": true,
+              "elapsed_ms": 23.570124999999997,
+              "status": 200,
+              "decoded_bytes": 31323,
+              "encoded_body_bytes": 31323,
+              "correlation_id": "54a43f4b-399f-4f8a-955f-ae9eaf43af27"
+            },
+            {
+              "attempt": 1,
+              "observed_at": "2026-10-26T01:28:29.438909+00:00",
+              "ok": true,
+              "elapsed_ms": 603.8178749999998,
+              "status": 200,
+              "decoded_bytes": 31323,
+              "encoded_body_bytes": 31323,
+              "correlation_id": "3381655d-5baf-4842-85b5-b47bad20ba27"
+            },
+            {
+              "attempt": 2,
+              "observed_at": "2026-10-26T01:28:30.096113+00:00",
+              "ok": true,
+              "elapsed_ms": 3.9443330000006327,
+              "status": 200,
+              "decoded_bytes": 31323,
+              "encoded_body_bytes": 31323,
+              "correlation_id": "9a37ed26-bb14-43b5-bf61-9b81f0b14ed9"
+            },
+            {
+              "attempt": 3,
+              "observed_at": "2026-10-26T01:28:30.160679+00:00",
+              "ok": true,
+              "elapsed_ms": 3.1159169999996905,
+              "status": 200,
+              "decoded_bytes": 31323,
+              "encoded_body_bytes": 31323,
+              "correlation_id": "46e38a18-0369-4b09-a006-542b77fd5f8c"
+            },
+            {
+              "attempt": 4,
+              "observed_at": "2026-10-26T01:28:30.224567+00:00",
+              "ok": true,
+              "elapsed_ms": 3.6284999999995904,
+              "status": 200,
+              "decoded_bytes": 31323,
+              "encoded_body_bytes": 31323,
+              "correlation_id": "91528a4d-4acc-4e79-a8fe-5b3a898a2b75"
+            }
+          ],
+          "latency_ms": {
+            "samples": 5,
+            "max": 603.818,
+            "p50": 3.944,
+            "p95": 603.818,
+            "p99": 603.818
+          },
+          "decoded_bytes": {
+            "samples": 5,
+            "max": 31323,
+            "p50": 31323,
+            "p95": 31323,
+            "p99": 31323
+          },
+          "failures": 0,
+          "violations_500ms": 1
+        },
+        "finding": {
+          "report": "c0eaf67c-d170-4fcb-95b6-94238db714d4",
+          "cause": "Unclassified. Server catch-all window independently retains max 600.496 ms but lacks correlation-specific attribution. Natural maintenance finished before the request; private mixed starts afterward. Native telemetry nearby samples at 01:28:14 and 01:28:45 do not cover its 01:28:29 span; disk latency is estimated. No CPU/GC/lock/disk cause inferred.",
+          "scope": "One of 95 live ordinary GETs; never replace this first outlier with later passes."
+        },
+        "resolution": "open",
+        "next_actor": "this same systemic session/card",
+        "next_action": "Collect correlation-specific bounded request/loop/CPU/wait/GC evidence; preserve first 603.818 ms client and separate 600.496 ms catch-all server observation. Do not infer a cause or repeat only to erase the failure."
       }
     },
     {
@@ -216335,7 +216417,514 @@
       "retested": "Private actual source decision comparison; 95 source regressions / 54 subtests. Not whole-path or deployed acceptance.",
       "resolution": "open",
       "next_actor": "this same systemic session/card",
-      "next_action": "Protected ready PR, stable supervisor/independent exact signals, head+main CI, then constrained exact activation and retest. Continue substantive maintenance and all remaining families."
+      "next_action": "Protected ready PR, stable supervisor/independent exact signals, head+main CI, then constrained exact activation and retest. Continue substantive maintenance and all remaining families.",
+      "exact593_installed_followup_20261026": {
+        "artifact": "docs/benchmarks/systemic-exact593-activation-lease-matching-20261026.json",
+        "integration": {
+          "pr": 593,
+          "url": "https://github.com/petersky/pa/pull/593",
+          "head": "59d7d8ee04bcf0cba9141026b18ffe74d9e565e9",
+          "merge": "c7ad81df0cad0ffeac004d4496930d8c3ac69af5",
+          "tree": "1ff0e104aa94724096f06dde73167f848e421bfe",
+          "watch": "4fbbfdc2-b16e-46a6-b371-1152eb7e5e4e",
+          "head_ci": 40253435357,
+          "main_ci": 40253761137,
+          "checks": "Five first-attempt successes each, no retry. Seven stable supervisor observations and fresh independent protection/approvals/reviews/threads/pagination/head/CLEAN signals preceded protected merge."
+        },
+        "contracts": {
+          "contract": "pa.installed-lifecycle-contracts/v1",
+          "source": "c7ad81df0cad0ffeac004d4496930d8c3ac69af5",
+          "started_at": "2026-10-26T01:29:54.523211+00:00",
+          "finished_at": "2026-10-26T01:29:54.750795+00:00",
+          "wall_ms": 227.59195801336318,
+          "tests": 25,
+          "passing_subtests": 54,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "modules": {
+            "pa.instance.session_lifecycle": {
+              "path": "/Users/petersky/.local/share/uv/tools/pa/lib/python3.14/site-packages/pa/instance/session_lifecycle.py",
+              "sha256": "ec69433587fddabdb084d0d242570dd4ed67e679668c6662d96c5fd46f509238"
+            },
+            "pa.pr_supervisor.store": {
+              "path": "/Users/petersky/.local/share/uv/tools/pa/lib/python3.14/site-packages/pa/pr_supervisor/store.py",
+              "sha256": "982287af988e4c50f193cee280b590331521aa2bc9b2f1d25cfc0898669104e2"
+            }
+          },
+          "test_sha256": "de950ced1bb98b59ac1777259b2724b9195f070856711d360ef72b750a6c51ce",
+          "log_sha256": "e051b0a75b0e0098bb2607ea22858ad0f239eadd8cfa0c49c399399f7d0ac0ed",
+          "scope": "Existing lifecycle obligation, retirement, closure and reserved-capacity/concurrency contracts against exact installed modules, both roots private before every PA import. No live closure/provider workload or whole-path performance acceptance."
+        },
+        "matching": {
+          "contract": "pa.lifecycle-dispatch-matching-benchmark/v1",
+          "observed_at": "2026-10-26T01:29:55.755706+00:00",
+          "sessions": 1000,
+          "dispatch_records": 1002,
+          "pairs": 5,
+          "samples": [
+            {
+              "pair": 0,
+              "variant": "scan",
+              "wall_ms": 160.31025,
+              "thread_cpu_ms": 160.310416
+            },
+            {
+              "pair": 0,
+              "variant": "index",
+              "wall_ms": 2.146333,
+              "thread_cpu_ms": 2.146792
+            },
+            {
+              "pair": 1,
+              "variant": "index",
+              "wall_ms": 2.108541,
+              "thread_cpu_ms": 2.10875
+            },
+            {
+              "pair": 1,
+              "variant": "scan",
+              "wall_ms": 117.401,
+              "thread_cpu_ms": 117.393833
+            },
+            {
+              "pair": 2,
+              "variant": "scan",
+              "wall_ms": 118.33625,
+              "thread_cpu_ms": 118.336959
+            },
+            {
+              "pair": 2,
+              "variant": "index",
+              "wall_ms": 2.232166,
+              "thread_cpu_ms": 2.232333
+            },
+            {
+              "pair": 3,
+              "variant": "index",
+              "wall_ms": 2.154542,
+              "thread_cpu_ms": 2.154667
+            },
+            {
+              "pair": 3,
+              "variant": "scan",
+              "wall_ms": 118.304416,
+              "thread_cpu_ms": 118.304875
+            },
+            {
+              "pair": 4,
+              "variant": "scan",
+              "wall_ms": 110.262167,
+              "thread_cpu_ms": 110.247291
+            },
+            {
+              "pair": 4,
+              "variant": "index",
+              "wall_ms": 2.142125,
+              "thread_cpu_ms": 2.142458
+            }
+          ],
+          "decisions_equal": true,
+          "ordered_occurrences_equal": true,
+          "source_module": "/Users/petersky/.local/share/uv/tools/pa/lib/python3.14/site-packages/pa/instance/session_lifecycle.py",
+          "source_sha256": "ec69433587fddabdb084d0d242570dd4ed67e679668c6662d96c5fd46f509238",
+          "scope": "Five alternating private sparse-link sweeps of the actual decision method. Index construction and lookup at the original guard point are included. Every decision and ordered OR occurrence matches, including both-key and equal distinct rows. No SQL, durable closure, real provider, service state or whole-sweep/historical cause/acceptance claim. Imported path/hash distinguishes source from installed code. Host load and normal GC remain uncontrolled."
+        },
+        "resolution": "open",
+        "limits": "Actual activation/scoped subset verified; full workload and independent acceptance remain open."
+      }
+    },
+    {
+      "id": "route-followup:/api/telemetry/export",
+      "kind": "http_route_followup",
+      "finding": "/api/telemetry/export",
+      "family": "http",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "newly_measured_supported_export_no_causal_closure",
+      "measurement": {
+        "count": 1,
+        "response_bytes": 310757,
+        "latency_ms": {
+          "samples": 1,
+          "max": 2058.103,
+          "p50": 2058.103,
+          "p95": 2058.103,
+          "p99": 2058.103
+        },
+        "response_size_bytes": {
+          "samples": 1,
+          "max": 310757,
+          "p50": 310757,
+          "p95": 310757,
+          "p99": 310757
+        }
+      },
+      "implemented": "Existing supported bounded redacted telemetry export, exercised read-only; no source repair or full-path acceptance inferred.",
+      "merged": [],
+      "deployed": "Actual c7ad81df owner read verified for this one request only.",
+      "retested": "One bounded native 15-minute export; all retained buckets and source-specific quality flags preserved. Not a sample of subsecond request CPU/wait/GC spans.",
+      "resolution": "open",
+      "next_actor": "this same systemic session/card",
+      "next_action": "Retain route cost and serialization/decoded payload measurements. Expand realistic export populations separately without treating sampled/estimated host telemetry as correlation-specific cause."
+    },
+    {
+      "id": "concern:session-lifecycle-lease-link-matching",
+      "kind": "concern",
+      "finding": "Per-session scan of every copied workspace lease during lifecycle checks",
+      "family": "session_lifecycle",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_repeated_python_lease_scan",
+      "cause": "Every eligible session scans the complete fresh ordered lease list; close diagnostics repeat matching. Fresh session-key grouping removes unrelated candidates while retaining original predicates and copied models.",
+      "measurement": {
+        "source_sha256": "f0c4f0b9cdebd667e6fcaa57466a36100f505a620f596392e9fbc185517d3ae8",
+        "benchmark": {
+          "contract": "pa.lifecycle-lease-matching-benchmark/v1",
+          "observed_at": "2026-10-26T01:34:06.521343+00:00",
+          "sessions": 1000,
+          "lease_records": 1002,
+          "pairs": 5,
+          "samples": [
+            {
+              "pair": 0,
+              "variant": "scan",
+              "wall_ms": 29.813958,
+              "thread_cpu_ms": 29.814208
+            },
+            {
+              "pair": 0,
+              "variant": "index",
+              "wall_ms": 1.152167,
+              "thread_cpu_ms": 1.152542
+            },
+            {
+              "pair": 1,
+              "variant": "index",
+              "wall_ms": 1.228458,
+              "thread_cpu_ms": 1.228667
+            },
+            {
+              "pair": 1,
+              "variant": "scan",
+              "wall_ms": 29.737583,
+              "thread_cpu_ms": 29.73775
+            },
+            {
+              "pair": 2,
+              "variant": "scan",
+              "wall_ms": 29.774791,
+              "thread_cpu_ms": 29.775
+            },
+            {
+              "pair": 2,
+              "variant": "index",
+              "wall_ms": 1.150958,
+              "thread_cpu_ms": 1.151083
+            },
+            {
+              "pair": 3,
+              "variant": "index",
+              "wall_ms": 1.152,
+              "thread_cpu_ms": 1.152083
+            },
+            {
+              "pair": 3,
+              "variant": "scan",
+              "wall_ms": 29.744542,
+              "thread_cpu_ms": 29.744708
+            },
+            {
+              "pair": 4,
+              "variant": "scan",
+              "wall_ms": 29.827875,
+              "thread_cpu_ms": 29.827959
+            },
+            {
+              "pair": 4,
+              "variant": "index",
+              "wall_ms": 1.146958,
+              "thread_cpu_ms": 1.147083
+            }
+          ],
+          "decisions_equal": true,
+          "ordered_occurrences_equal": true,
+          "source_module": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/instance/session_lifecycle.py",
+          "source_sha256": "f0c4f0b9cdebd667e6fcaa57466a36100f505a620f596392e9fbc185517d3ae8",
+          "scope": "Five alternating private sparse-link sweeps of the actual decision method. Index construction and lookup at the original guard point are included. Cleaned leases, ordered duplicates and every decision match. SQL enumeration, fresh model copying, git status probes, durable closure, real provider and service state are excluded. Not whole-sweep or historical cause/acceptance evidence. Imported path/hash identifies source versus installed code. Host load and normal GC remain uncontrolled."
+        },
+        "latency_ms": {
+          "scan": {
+            "samples": 5,
+            "p50": 29.775,
+            "p95": 29.828,
+            "p99": 29.828,
+            "max": 29.828
+          },
+          "index": {
+            "samples": 5,
+            "p50": 1.152,
+            "p95": 1.228,
+            "p99": 1.228,
+            "max": 1.228
+          }
+        },
+        "implemented": "Fresh lease grouping once per sweep on existing reserved worker after unchanged ordered list() read. Lookup at original workspace guard and close-diagnostic points; original state filtering, ordered git status/error handling and cleaned diagnostic states remain.",
+        "tests": "98 tests / 64 subtests pass, including fresh-worker reads, order/duplicates/current keys, guarded lookup, workspace statuses/errors and actual close diagnostics. First passing source stage retained separately from final diagnostics assertion.",
+        "merged": false,
+        "deployed": false,
+        "limits": "Sparse cleaned-lease matching only. SQL/model copying, git status probes, all other session/provider/workspace/queue amplification, substantive maintenance and full-path acceptance remain open."
+      },
+      "implemented": "Source grouping and guarded order/status/error/diagnostic regressions; protected integration/activation pending.",
+      "merged": [],
+      "deployed": false,
+      "retested": "Private source decision comparisons and 98 source regressions / 64 subtests; not deployed or full-path acceptance.",
+      "resolution": "open",
+      "next_actor": "this same systemic session/card",
+      "next_action": "Ready protected PR, stable supervisor and independent exact signals, head+main CI. Finish original continuation turn for handoff settlement; no further install/restart without positive original completion and future exact gates. Continue substantive maintenance and every remaining amplification/acceptance obligation."
+    },
+    {
+      "id": "concern:ci-browser-authority-read-eof",
+      "kind": "concern",
+      "finding": "First-attempt real browser authority read disconnected before response headers",
+      "family": "ci.browser",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "observed_eof_idle_close_hypothesis_unconfirmed",
+      "cause": "Observed connection EOF; equal default five-second HTTPX/Uvicorn idle policies and a long browser journey make an idle-close race plausible. No original CI server-close interval was captured, so the historical cause is unconfirmed.",
+      "measurement": {
+        "run": 40255113352,
+        "attempt": 1,
+        "head": "64422fea0e899f9ec8f55930252b464db00821f9",
+        "conclusion": "failure",
+        "jobs": [
+          {
+            "id": 121355176829,
+            "name": "test (2)",
+            "status": "completed",
+            "conclusion": "failure"
+          },
+          {
+            "id": 121355177043,
+            "name": "smoke",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "id": 121355177132,
+            "name": "test (0)",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "id": 121355177146,
+            "name": "test (1)",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "id": 121355177168,
+            "name": "test (3)",
+            "status": "completed",
+            "conclusion": "success"
+          }
+        ],
+        "test_merge": "856fc07166a065d7344e82552c13566c1301227e",
+        "independently_verified_parents": [
+          "c7ad81df0cad0ffeac004d4496930d8c3ac69af5",
+          "64422fea0e899f9ec8f55930252b464db00821f9"
+        ],
+        "tree": "a4c1b096b9a826960ca946140e1aa8a77d4fff25",
+        "failed_test": "tests/test_conversation_chrome_browser.py::test_real_pa_initial_closed_issues_reload_and_recovery",
+        "passed": 1050,
+        "passing_subtests": 194,
+        "error": "httpx.RemoteProtocolError: Server disconnected without sending a response.",
+        "point": "Final auxiliary authority GET on the setup HTTP11 connection, request count 6, after preceding browser UI assertions passed.",
+        "separate_teardown_warning": {
+          "operation": "acp.pa_mcp_owner_probe",
+          "elapsed_ms": 4800.6,
+          "cause": "Unclassified; no causal link to EOF inferred."
+        },
+        "raw_log_custody": {
+          ".dev/pr594-first-head-complete-logs-20261026.zip": {
+            "sha256": "06716df36132dad86b57839c5207837c1d035f9ad0a1f0709ded751de3705360",
+            "bytes": 111589
+          },
+          ".dev/pr594-first-failed-shard2-20261026.log": {
+            "sha256": "cf8ad82e2680dfb902a24dc9556710cf1c648c7a5f56189166e11e149ad9ab3e",
+            "bytes": 53396
+          },
+          ".dev/pr594-first-deadline-evidence-12622003303-20261026.zip": {
+            "sha256": "ef5379041bbb7179ccf75ca4fba8232351c152a9e55a8c91a470d9e72188d9ec",
+            "bytes": 2236
+          },
+          ".dev/pr594-first-deadline-evidence-12621714173-20261026.zip": {
+            "sha256": "638b71f0bd57c6b9656bfbfa9ce5f92fc646dd13234d8828b69e5cf3eb1944e5",
+            "bytes": 804
+          }
+        },
+        "numeric_deadline_entries": [
+          {
+            "artifact": 12622003303,
+            "name": "incomplete-worker-e802a9ba63d64bcf9273439cb4dc8230.json",
+            "evidence": {
+              "contract": "pa.test-deadline-evidence/v1",
+              "python": "3.14.9",
+              "platform": "Linux",
+              "source_sha": "856fc07166a065d7344e82552c13566c1301227e",
+              "gc_thresholds": [
+                2000,
+                10,
+                10
+              ],
+              "loop_thread_id": 140559693059904,
+              "request_wall_ms": 0.14517099999977745,
+              "request_loop_thread_cpu_ms": 0.10017700000020113,
+              "gc_events_total": 0,
+              "gc_events_retained": 0,
+              "gc_events_dropped": 0,
+              "request_gc_overlaps": [],
+              "worker_calls_started": 1,
+              "worker_calls_total": 1,
+              "worker_calls_incomplete": 0,
+              "worker_events_dropped": 0,
+              "worker_intervals": [
+                {
+                  "wall_ms": 0.08256399999595487,
+                  "thread_cpu_ms": 0.021851000000000006,
+                  "thread_id": 140559430923968,
+                  "start_relative_ms": 0.11590100000091752,
+                  "end_relative_ms": 0.1984649999968724
+                }
+              ],
+              "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+            }
+          },
+          {
+            "artifact": 12622003303,
+            "name": "agent-snapshot-eec6da03891c4a1f89068ec7eb4e2957.json",
+            "evidence": {
+              "contract": "pa.test-deadline-evidence/v1",
+              "python": "3.14.9",
+              "platform": "Linux",
+              "source_sha": "856fc07166a065d7344e82552c13566c1301227e",
+              "gc_thresholds": [
+                2000,
+                10,
+                10
+              ],
+              "loop_thread_id": 140559693059904,
+              "request_wall_ms": 1.4995000000084246,
+              "request_loop_thread_cpu_ms": 1.151109000000261,
+              "gc_events_total": 0,
+              "gc_events_retained": 0,
+              "gc_events_dropped": 0,
+              "request_gc_overlaps": [],
+              "worker_calls_started": 1,
+              "worker_calls_total": 1,
+              "worker_calls_incomplete": 0,
+              "worker_events_dropped": 0,
+              "worker_intervals": [
+                {
+                  "wall_ms": 0.2812049999931787,
+                  "thread_cpu_ms": 0.282167,
+                  "thread_id": 140559403890368,
+                  "start_relative_ms": 0.28108700000473164,
+                  "end_relative_ms": 0.5622919999979104
+                }
+              ],
+              "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+            }
+          },
+          {
+            "artifact": 12622003303,
+            "name": "restart-drain-start-fd9643834af147bdb2c69340e9da14b7.json",
+            "evidence": {
+              "contract": "pa.test-deadline-evidence/v1",
+              "python": "3.14.9",
+              "platform": "Linux",
+              "source_sha": "856fc07166a065d7344e82552c13566c1301227e",
+              "gc_thresholds": [
+                2000,
+                10,
+                10
+              ],
+              "loop_thread_id": 139986030520128,
+              "request_wall_ms": 0.024375000009513315,
+              "request_loop_thread_cpu_ms": 0.022531999995578644,
+              "gc_events_total": 0,
+              "gc_events_retained": 0,
+              "gc_events_dropped": 0,
+              "request_gc_overlaps": [],
+              "worker_calls_started": 0,
+              "worker_calls_total": 0,
+              "worker_calls_incomplete": 0,
+              "worker_events_dropped": 0,
+              "worker_intervals": [],
+              "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+            }
+          },
+          {
+            "artifact": 12621714173,
+            "name": "sync-unrelated-surfaces-fe5ddebf6e6b46d982eb5c6c8b914b75.json",
+            "evidence": {
+              "contract": "pa.test-deadline-evidence/v1",
+              "python": "3.14.9",
+              "platform": "Linux",
+              "source_sha": "856fc07166a065d7344e82552c13566c1301227e",
+              "gc_thresholds": [
+                2000,
+                10,
+                10
+              ],
+              "loop_thread_id": 140086130997056,
+              "request_wall_ms": 7.08920000001001,
+              "request_loop_thread_cpu_ms": 7.087768999999966,
+              "gc_events_total": 0,
+              "gc_events_retained": 0,
+              "gc_events_dropped": 0,
+              "request_gc_overlaps": [],
+              "worker_calls_started": 1,
+              "worker_calls_total": 1,
+              "worker_calls_incomplete": 0,
+              "worker_events_dropped": 0,
+              "worker_intervals": [
+                {
+                  "wall_ms": 200.10442199999545,
+                  "thread_cpu_ms": 0.05160999999999999,
+                  "thread_id": 140085307631296,
+                  "start_relative_ms": -2.4869079999945143,
+                  "end_relative_ms": 197.61751400000094
+                }
+              ],
+              "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+            }
+          }
+        ]
+      },
+      "fix_or_existing_owner": "This same systemic session; test final authority read uses one fresh connection with identical cookies/default deadline and stronger explicit HTTP 200 assertion.",
+      "implemented": "Use one fresh auxiliary authority client with the same cookies for the final GET; explicitly assert HTTP 200 and the existing empty requests invariant. Every browser assertion, default deadline, wait/delay, cancellation and cleanup remains. No transport retry, application transport/configuration or source lease semantics changed.",
+      "merged": [],
+      "deployed": false,
+      "retested": {
+        "original": {
+          "tests": 1,
+          "failures": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "source_test_sha256": "b0392a51bfa56bd660773dca1cd0135608be4ab1a36f6c85fbf11506d25b367e"
+        },
+        "corrected": {
+          "tests": 1,
+          "failures": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "source_test_sha256": "ca07c5f2346b1727105df0ef25210e2178aabe57ea6e9678f5f55db3b9ea8cec",
+          "fresh_client_and_stream_proven": true,
+          "provider_launch_attempts": 0
+        },
+        "scope": "One unchanged and one corrected private real PA/Chromium sample on macOS/Python 3.14.2, both roots private before all PA imports, real provider launches fenced. Original passing sample does not erase Linux failure; corrected pass does not establish Linux/new-head CI or whole-card acceptance."
+      },
+      "resolution": "open",
+      "next_actor": "this same systemic session/card",
+      "next_action": "Push scoped fix to existing ready PR594, preserve first CI failure without rerun, require new-head CI and stable supervisor plus independent exact signals. Retain original Linux cause/teardown owner-probe gap and all broader acceptance obligations."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -311208,6 +311797,26 @@
       "path": "docs/benchmarks/systemic-exact592-activation-dispatch-matching-20261026.raw.json.gz",
       "sha256": "8999508479701e2f957ba269cee84b851650aa83d4b29081014fb9fea5d491ce",
       "bytes": 1678275
+    },
+    "all_prior_fields_preserved": true
+  },
+  "exact593_activation_lease_stage": {
+    "artifact": "docs/benchmarks/systemic-exact593-activation-lease-matching-20261026.json",
+    "sha256": "4bdf49ff26517b14c60d252a17cbe82155d2cde688ce9f3181b717a173b37533",
+    "raw": {
+      "path": "docs/benchmarks/systemic-exact593-activation-lease-matching-20261026.raw.json.gz",
+      "sha256": "41a7851b7bd2751c685c59326105c16625045c660c6bc35d921faf2650492eb2",
+      "bytes": 2151903
+    },
+    "all_prior_fields_preserved": true
+  },
+  "pr594_first_ci_followup": {
+    "artifact": "docs/benchmarks/systemic-pr594-first-ci-browser-followup-20261026.json",
+    "sha256": "6d96f3be7844e20177fd59a010bdd12e1d91ab8756d431e4cfaa56a2b8e26805",
+    "raw": {
+      "path": "docs/benchmarks/systemic-pr594-first-ci-browser-followup-20261026.raw.json.gz",
+      "sha256": "3f4ec93ef562803aa55a056145cfc12c3af56647ddfee9790eef865e69750194",
+      "bytes": 2206161
     },
     "all_prior_fields_preserved": true
   }

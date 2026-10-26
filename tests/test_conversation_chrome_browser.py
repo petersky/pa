@@ -68,7 +68,13 @@ async def test_real_pa_initial_closed_issues_reload_and_recovery(operator_server
             await manager.click(scope, selector="[role=tab]:nth-child(3)")
             assert await page.evaluate("document.querySelector('[data-issues-count]').textContent") == "(3)"
             assert await page.evaluate("document.querySelectorAll('[data-issues-list] li').length") == 3
-            assert (await client.get(url)).json()["requests"] == [], "discovery never starts work"
+            # Browser interaction can outlive the setup client's idle socket.
+            # Verify the persisted authority with a fresh connection, retaining
+            # the same cookies and a single request with the default deadline.
+            async with httpx.AsyncClient(base_url=base, cookies=client.cookies) as authority:
+                response = await authority.get(url)
+                assert response.status_code == 200, response.text
+                assert response.json()["requests"] == [], "discovery never starts work"
         finally:
             await manager.close()
             await browser.close()

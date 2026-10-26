@@ -14,7 +14,7 @@ from pa.domain.models import AgentSession, CardLane
 from pa.core.async_runtime import AsyncRuntime
 from pa.domain.projection import CardProjection
 from pa.execution.dispatch import DispatchRecord
-from pa.instance.session_lifecycle import SessionLifecyclePolicy, _DispatchLinkIndex, _WatchLinkIndex
+from pa.instance.session_lifecycle import SessionLifecyclePolicy, _DispatchLinkIndex, _LeaseLinkIndex, _WatchLinkIndex
 from pa.pr_supervisor.models import PRWatch, PRWatchStatus
 from pa.pr_supervisor.store import PRSupervisorStore
 
@@ -81,6 +81,88 @@ def _dispatch(**values):
 
 
 class SessionLifecycleDecisionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_lease_index_preserves_order_duplicates_cleaned_and_current_key(self):
+        leases = [SimpleNamespace(session_id="other", state="ready"),
+                  SimpleNamespace(session_id="session-1", state="cleaned"),
+                  SimpleNamespace(session_id="session-1", state="ready"),
+                  SimpleNamespace(session_id="session-1", state="ready"),
+                  SimpleNamespace(session_id=None, state="cleanup_blocked")]
+        index = _LeaseLinkIndex(leases)
+        session = _session()
+        self.assertEqual([id(r) for r in index.for_session(session)],
+                         [id(r) for r in leases[1:4]])
+        session.id = "other"
+        self.assertEqual(index.for_session(session), [leases[0]])
+        session.id = "absent"
+        self.assertEqual(index.for_session(session), [])
+
+    async def test_sweep_reads_fresh_lease_index_once_on_reserved_worker(self):
+        leases = [SimpleNamespace(session_id="session-1", state="cleaned")]
+        calls = []
+        loop_thread = threading.get_ident()
+
+        def read():
+            self.assertNotEqual(threading.get_ident(), loop_thread)
+            calls.append(True)
+            return list(leases)
+
+        manager = _Manager()
+        manager.store.list_sessions = lambda **kwargs: [_session(), _session(id="other")]
+        manager.workspace_manager.list = read
+        policy = SessionLifecyclePolicy(manager, {})
+        decision = AsyncMock(return_value=("retained", "fixture"))
+        try:
+            with patch.object(policy, "_decision", decision):
+                await policy.run_once()
+                self.assertEqual([c.kwargs["leases"].for_session(c.args[0])
+                                  for c in decision.call_args_list], [[leases[0]], []])
+                leases.clear()
+                decision.reset_mock()
+                await policy.run_once()
+                self.assertEqual([c.kwargs["leases"].for_session(c.args[0])
+                                  for c in decision.call_args_list], [[], []])
+            self.assertEqual(len(calls), 2)
+        finally:
+            await policy.close()
+
+    async def test_lease_index_preserves_guard_and_workspace_status_order(self):
+        session = _session(purpose="chat")
+        policy = SessionLifecyclePolicy(_Manager(), {})
+        index = _LeaseLinkIndex([])
+        try:
+            with patch.object(index, "for_session", side_effect=AssertionError("early lease work")):
+                self.assertEqual(await policy._decision(session, sessions=[],
+                    dispatches=[_dispatch(state="running")], watches=[], leases=index,
+                    now=datetime.now(UTC)), ("retained", "dispatch_active"))
+            for state, status, expected in [
+                ("ready", (False, False), ("retained", "conversation_available")),
+                ("ready", (True, False), ("retained", "workspace_uncommitted")),
+                ("ready", (False, True), ("retained", "workspace_uncommitted")),
+                ("provisioning", (False, False), ("retained", "workspace_obligation")),
+                ("cleanup_blocked", (False, False), ("retained", "workspace_obligation")),
+            ]:
+                rows = [SimpleNamespace(session_id="session-1", state="cleaned", worktree_path="skip"),
+                        SimpleNamespace(session_id="other", state="ready", worktree_path="other"),
+                        SimpleNamespace(session_id="session-1", state=state, worktree_path="first"),
+                        SimpleNamespace(session_id="session-1", state="ready", worktree_path="last")]
+                for leases in (rows, _LeaseLinkIndex(rows)):
+                    with self.subTest(state=state, status=status, indexed=isinstance(leases, _LeaseLinkIndex)):
+                        visited = []
+                        def check(path):
+                            visited.append(path)
+                            return status
+                        with patch.object(policy.manager.workspace_manager, "_status", check):
+                            self.assertEqual(await policy._decision(session, sessions=[], dispatches=[],
+                                watches=[], leases=leases, now=datetime.now(UTC)), expected)
+                        self.assertEqual(visited, ["first", "last"] if expected[1] == "conversation_available" else ["first"])
+            rows = [SimpleNamespace(session_id="session-1", state="ready", worktree_path="first")]
+            for leases in (rows, _LeaseLinkIndex(rows)):
+                with patch.object(policy.manager.workspace_manager, "_status", side_effect=OSError("fixture")):
+                    self.assertEqual(await policy._decision(session, sessions=[], dispatches=[], watches=[],
+                        leases=leases, now=datetime.now(UTC)), ("retained", "workspace_status_unknown"))
+        finally:
+            await policy.close()
+
     async def test_dispatch_index_preserves_or_order_and_equal_distinct_rows(self):
         records = [_dispatch(session_id="other", dispatch_id="shared"),
                    _dispatch(session_id="session-1", dispatch_id="other"),
@@ -619,7 +701,11 @@ class SessionLifecycleDecisionTests(unittest.IsolatedAsyncioTestCase):
 
         manager = _Manager()
         manager.store = _ClosingStore()
-        manager.workspace_manager.list = lambda: []
+        manager.workspace_manager.list = lambda: [
+            SimpleNamespace(session_id=expired.id, state="cleaned", worktree_path="skip"),
+            SimpleNamespace(session_id="unrelated", state="ready", worktree_path="other"),
+            SimpleNamespace(session_id=expired.id, state="ready", worktree_path="ready"),
+        ]
         policy = SessionLifecyclePolicy(manager, {})
         try:
             before = time.monotonic()
@@ -628,6 +714,7 @@ class SessionLifecycleDecisionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(metrics["auto_closed"], 1)
             attempt = policy.snapshot()["attempts"][0]
             self.assertEqual(attempt["terminal_result"], "closed")
+            self.assertEqual(attempt["lease_state"], "cleaned,ready")
             self.assertTrue(attempt["worker_owner"].startswith("pa-session-lifecycle"))
             self.assertEqual(shared.snapshot()["executor"]["active"], 1)
         finally:
