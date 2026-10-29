@@ -10,6 +10,9 @@ from pathlib import Path
 from threading import RLock
 from typing import Any
 
+from pa.core.operation_budget import measured_lock
+from pa.core.sqlite_metrics import ObservedConnection
+
 from pa.collaboration.models import (
     CollaborationPolicy,
     CommandCatalog,
@@ -47,8 +50,17 @@ class CollaborationStore:
         self._ensure_schema()
 
     @contextmanager
+    def _observed_lock(self) -> Iterator[None]:
+        # These locks previously did not select an operation's lock budget.
+        # Add bounded diagnostics without changing that deadline contract.
+        with measured_lock(
+            self._lock, name="collaboration.store", track_deadline=False
+        ):
+            yield
+
+    @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.path, timeout=30)
+        conn = sqlite3.connect(self.path, timeout=30, factory=ObservedConnection)
         try:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA journal_mode=WAL")
@@ -59,7 +71,7 @@ class CollaborationStore:
             conn.close()
 
     def _ensure_schema(self) -> None:
-        with self._lock, self._conn() as conn:
+        with self._observed_lock(), self._conn() as conn:
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS collaboration_policies (
@@ -132,14 +144,14 @@ class CollaborationStore:
             )
 
     def list_policies(self) -> list[CollaborationPolicy]:
-        with self._lock, self._conn() as conn:
+        with self._observed_lock(), self._conn() as conn:
             rows = conn.execute(
                 "SELECT payload FROM collaboration_policies ORDER BY updated_at DESC, id"
             ).fetchall()
         return [CollaborationPolicy.model_validate_json(row["payload"]) for row in rows]
 
     def get_policy(self, policy_id: str) -> CollaborationPolicy | None:
-        with self._lock, self._conn() as conn:
+        with self._observed_lock(), self._conn() as conn:
             row = conn.execute(
                 "SELECT payload FROM collaboration_policies WHERE id=?", (policy_id,)
             ).fetchone()
@@ -148,7 +160,7 @@ class CollaborationStore:
     def save_policy(
         self, policy: CollaborationPolicy, *, expected_version: int | None = None
     ) -> CollaborationPolicy:
-        with self._lock, self._conn() as conn:
+        with self._observed_lock(), self._conn() as conn:
             existing = conn.execute(
                 "SELECT version FROM collaboration_policies WHERE id=?", (policy.id,)
             ).fetchone()
@@ -191,7 +203,7 @@ class CollaborationStore:
         dispatch_id: str | None = None,
         card_id: str | None = None,
     ) -> PolicyDecision:
-        with self._lock, self._conn() as conn:
+        with self._observed_lock(), self._conn() as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO collaboration_decisions
@@ -217,7 +229,7 @@ class CollaborationStore:
         column, value = (
             ("session_id", session_id) if session_id else ("dispatch_id", dispatch_id)
         )
-        with self._lock, self._conn() as conn:
+        with self._observed_lock(), self._conn() as conn:
             row = conn.execute(
                 f"SELECT payload FROM collaboration_decisions WHERE {column}=? ORDER BY created_at DESC LIMIT 1",
                 (value,),
@@ -227,7 +239,7 @@ class CollaborationStore:
     def get_mode_request(
         self, session_id: str, idempotency_key: str
     ) -> tuple[str, ModeTransitionRequest, ModeTransitionResult] | None:
-        with self._lock, self._conn() as conn:
+        with self._observed_lock(), self._conn() as conn:
             row = conn.execute(
                 """
                 SELECT fingerprint, request_payload, result_payload
@@ -250,7 +262,7 @@ class CollaborationStore:
         result: ModeTransitionResult,
     ) -> ModeTransitionResult:
         fingerprint = request_fingerprint(request)
-        with self._lock, self._conn() as conn:
+        with self._observed_lock(), self._conn() as conn:
             existing = conn.execute(
                 """
                 SELECT fingerprint, result_payload FROM collaboration_mode_requests
@@ -289,7 +301,7 @@ class CollaborationStore:
     def update_mode_result(
         self, request: ModeTransitionRequest, result: ModeTransitionResult
     ) -> ModeTransitionResult:
-        with self._lock, self._conn() as conn:
+        with self._observed_lock(), self._conn() as conn:
             conn.execute(
                 """
                 UPDATE collaboration_mode_requests
@@ -309,7 +321,7 @@ class CollaborationStore:
     def pending_mode_request(
         self, session_id: str
     ) -> tuple[ModeTransitionRequest, ModeTransitionResult] | None:
-        with self._lock, self._conn() as conn:
+        with self._observed_lock(), self._conn() as conn:
             row = conn.execute(
                 """
                 SELECT request_payload, result_payload
@@ -327,7 +339,7 @@ class CollaborationStore:
         )
 
     def save_catalog(self, catalog: CommandCatalog) -> CommandCatalog:
-        with self._lock, self._conn() as conn:
+        with self._observed_lock(), self._conn() as conn:
             conn.execute(
                 "UPDATE session_command_catalogs SET active=0 WHERE session_id=?",
                 (catalog.session_id,),
@@ -353,7 +365,7 @@ class CollaborationStore:
         return catalog
 
     def next_catalog_generation(self, session_id: str) -> int:
-        with self._lock, self._conn() as conn:
+        with self._observed_lock(), self._conn() as conn:
             row = conn.execute(
                 "SELECT COALESCE(MAX(generation), 0) AS value FROM session_command_catalogs WHERE session_id=?",
                 (session_id,),
@@ -361,7 +373,7 @@ class CollaborationStore:
         return int(row["value"] if row else 0) + 1
 
     def active_catalog(self, session_id: str) -> CommandCatalog | None:
-        with self._lock, self._conn() as conn:
+        with self._observed_lock(), self._conn() as conn:
             row = conn.execute(
                 """
                 SELECT payload FROM session_command_catalogs
@@ -375,7 +387,7 @@ class CollaborationStore:
     def get_command_result(
         self, session_id: str, idempotency_key: str
     ) -> tuple[str, CommandResult] | None:
-        with self._lock, self._conn() as conn:
+        with self._observed_lock(), self._conn() as conn:
             row = conn.execute(
                 """
                 SELECT fingerprint, result_payload FROM session_command_results
@@ -397,7 +409,7 @@ class CollaborationStore:
         idempotency_key: str,
     ) -> CommandResult:
         fingerprint = request_fingerprint(request_payload)
-        with self._lock, self._conn() as conn:
+        with self._observed_lock(), self._conn() as conn:
             existing = conn.execute(
                 """
                 SELECT fingerprint, result_payload FROM session_command_results
