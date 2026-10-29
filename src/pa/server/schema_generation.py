@@ -20,8 +20,10 @@ version uses the unmodified public generator until separately verified.
 
 from __future__ import annotations
 
-from types import FunctionType, SimpleNamespace
+from collections.abc import MutableMapping
+from types import FunctionType, MethodType, SimpleNamespace
 from typing import Any
+from weakref import ref
 
 import fastapi
 import pydantic
@@ -72,6 +74,48 @@ def _bind(function: FunctionType, namespace: dict[str, Any]) -> FunctionType:
     return bound
 
 
+class _SchemaMethodMap(MutableMapping[str, Any]):
+    """Bind native dispatch methods on lookup without retaining their owner.
+
+    A returned bound method retains the generator normally, so an escaped
+    handler stays callable. The generator's internal map alone is not a cycle.
+    Other callable values and mapping mutations keep their native ownership.
+    """
+
+    def __init__(self, owner: Any, methods: dict[str, Any]) -> None:
+        self._owner = ref(owner)
+        self._methods: dict[str, Any] = {}
+        self._bound_keys: set[str] = set()
+        self.update(methods)
+
+    def __getitem__(self, key: str) -> Any:
+        value = self._methods[key]
+        if key not in self._bound_keys:
+            return value
+        owner = self._owner()
+        if owner is None:
+            raise ReferenceError("The schema generator has been released")
+        return MethodType(value, owner)
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        if isinstance(value, MethodType) and value.__self__ is self._owner():
+            self._methods[key] = value.__func__
+            self._bound_keys.add(key)
+        else:
+            self._methods[key] = value
+            self._bound_keys.discard(key)
+
+    def __delitem__(self, key: str) -> None:
+        del self._methods[key]
+        self._bound_keys.discard(key)
+
+    def __iter__(self):
+        return iter(self._methods)
+
+    def __len__(self) -> int:
+        return len(self._methods)
+
+
 def _schema_generator(base: type) -> type:
     """Keep version-verified default encoding and definition remapping local."""
     if pydantic.__version__ != "2.13.4":
@@ -79,7 +123,21 @@ def _schema_generator(base: type) -> type:
 
     from pydantic import json_schema
 
+    native_base = base is json_schema.GenerateJsonSchema
+    if fastapi.__version__ == "0.136.3":
+        from fastapi._compat.v2 import GenerateJsonSchema as FastAPISchemaGenerator
+
+        native_base = native_base or base is FastAPISchemaGenerator
+
     class SchemaGenerator(base):
+        def build_schema_type_to_method(self):
+            methods = super().build_schema_type_to_method()
+            # Only the exact verified native generator gets the owner-weak
+            # internal map. Custom bases and subclasses keep the upstream dict.
+            if native_base and type(self) is SchemaGenerator:
+                return _SchemaMethodMap(self, methods)
+            return methods
+
         def encode_default(self, value: Any) -> Any:
             config = self._config
             # These exact builtins serialize identically without constructing
