@@ -2588,6 +2588,7 @@
     "scope": "Single passive cached natural result, no run/wake/config/policy/backup/GC action. Nested inclusive spans NEVER SUM; owner source verified at read, not retrospective causal attribution."
   },
   "limits": [
+    "Orderingfixture correction:put() stamps timestamps, so original newest/tie test didnotcreatea truetie. Privatefixedrowtimestamps now independentlyassert firstinserted winner and newerrow winner;1targetedtestPASS/applicationhashesunchanged/no retiming. Original88ebdfa9 CI40947983158 stays5firstattemptsuccess; newhead requiresfreshCI/supervisorgreen. Complete original26495552B9b28061d bundle embedded unchanged.",
     "COMPLETE24851706B5fbc870f parent embedded losslessly, every prior703row/field/history/firstfailure/negativeinterruptedstage/tenattachments retained. New concern gives704rows162concerns ALLOPEN. Fullrawlogs/ZIPs/promptbearingreceipts LOCAL/hash-only.",
     "613protectedmerge841a352f fromexact66640b5a/equalf2eba4cf/watch ec754cb0;head40945149560/main40945767318 each5firstattemptsuccess/no retries. Independentprotection/checks/0requiredapprovals/0threads/fullpagination/attributedcommit/CLEAN/no bypass;stablepremerge7/retiredmerged8/errornull. Branchsafelyadvanced/restored/pushed; currentuncommittedcandidate isnextsource614, no currentcleanclaim. No repeatmerge/cleanup/newworker.",
     "Actual612d3d/packagef7ae/PID39858/startupd801803a/config86968/lease334 remainsloaded at freshsourceownerread. Docs-only613notreinstalled; newsource614uninstalled. Original612ab6bd620complete/attempt1 andpriorcompletedhandoffs staycomplete;d448unknownnoreplay. No restart/install/rearm/rollback/policy/default/GC/power/clockchange.",
@@ -2717,9 +2718,33 @@
       "scope": "LOCAL/hash-only complete raw log/ZIP/native promptbearingresponse retained. No absence/admission/effect inference or replay authority."
     }
   },
+  "test_fixture_followup": {
+    "observed_at": "2026-10-29T20:24:12.917508+00:00",
+    "refinement": {
+      "original_test": ".dev/test_verification_prior_intent_inputs_before_true_tie_20261029.py",
+      "original_sha256": "c00e66cb90c768684cc4e0fbbaf6980608dddcfde35b76b294ebdff55279d9e5",
+      "coverage_gap": "Original put() refreshes updated_at, so assigning other.updated_at did not create an actual tie. Earlier test only established newest-match parity.",
+      "correction": "Freeze only application datetime.now for private put fixture rows; independently require first-insertion tie winner and newer-row winner, plus timestamp equality. No system clock, service default, timeout or application logic change.",
+      "source_and_timing_population": "Application files and measured handler/fixture older() unchanged; prior performance populations retained, no retiming. New test source will be linked in next immutable supplement."
+    },
+    "delta_result": {
+      "exit_code": 0,
+      "log_sha256": "fedceb118a93f8e9bed4f5b262246c28f6bfdace0d13713f5045fa2fb6554486",
+      "scope": "Private real-tie and newer-row ordering delta; only fixture application timestamps fixed, no systemclock/policy/applicationchange or benchmark replay."
+    },
+    "application_hashes_unchanged_since_final90pairs": true,
+    "original_head_ci": {
+      "head": "88ebdfa91951c4345d68f9d6d0f1d052f3287311",
+      "run": 40947983158,
+      "attempt": 1,
+      "jobs": 5,
+      "conclusion": "success"
+    },
+    "scope": "Only ordering fixture strengthened. Original229test population/timings retained; one targeted true-tie test passes. NewheadCI executes strengthened samecase. No appcode/systemclock/policy/deadlinechange, benchmark replay or count summation."
+  },
   "lossless_raw": {
     "path": "docs/benchmarks/systemic-pr613-integration-prior-intent-20261029.raw.json.gz",
-    "bytes": 26495552,
-    "sha256": "9b28061d7fce9be9b8b3be6c0e4a74a73562cb2b77a09046a4493e4cf9b2f140"
+    "bytes": 27136502,
+    "sha256": "4d4a8c8cdf0bc4a5179e5daf527398c8f85bcccaff7803f447977c425faa1288"
   }
 }

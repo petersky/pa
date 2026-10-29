@@ -113,10 +113,21 @@ def test_projection_is_detached_fresh_and_preserves_session_records(system):
 def test_authority_lookup_matches_newest_and_tie_order(system):
     card, old, record=older(system);ledger=system.ctx.services['dispatch_store']
     other=record.model_copy(update={'dispatch_id':'other','mutation_id':'other','state':'running'})
-    ledger.put(other)
-    for stamp in [record.updated_at,record.updated_at+timedelta(seconds=1)]:
-        other.updated_at=stamp;ledger.put(other)
-        assert ledger.verification_prior_intent_by_authority(record.authority_instance_id,record.idempotency_key).dispatch_id==ledger.by_authority_idempotency(record.authority_instance_id,record.idempotency_key).dispatch_id
+    # put() stamps updated_at itself; freeze only these private row timestamps
+    # so the first case genuinely exercises an equal-time insertion-order tie.
+    fixed = record.updated_at
+    class FixtureDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):return fixed
+    for offset in [0, 1]:
+        fixed = record.updated_at + timedelta(seconds=offset)
+        with patch('pa.execution.dispatch.datetime', FixtureDatetime):
+            ledger.put(other)
+        actual = ledger.verification_prior_intent_by_authority(record.authority_instance_id,record.idempotency_key)
+        expected = ledger.by_authority_idempotency(record.authority_instance_id,record.idempotency_key)
+        assert actual.dispatch_id == expected.dispatch_id == (record.dispatch_id if offset == 0 else other.dispatch_id)
+        assert ledger.get(other.dispatch_id).updated_at == fixed
+        if offset == 0:assert ledger.get(record.dispatch_id).updated_at == fixed
 
 
 @pytest.mark.asyncio

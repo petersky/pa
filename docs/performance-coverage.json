@@ -1,7 +1,7 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-29T20:16:42.309739+00:00",
+  "as_of": "2026-10-29T20:24:12.917508+00:00",
   "completion": "OPEN: all704findings162concerns.613protectedintegrated/head+maingreen;612positivelyactivated/isolatedsubsetsverified butmaintenance/full-list failures remain. Newprior-intent source repair unmerged/uninstalled. Fullscope/exact17d independent acceptance unsatisfied.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
@@ -317963,6 +317963,36 @@
       "prototype": "compactUTF8full-session encoding",
       "decision": "not_adopted_ASCII_Unicode_latency_regressions",
       "complete_json_parity": true,
+      "resolution": "open"
+    }
+  ],
+  "test_fixture_stage_history": [
+    {
+      "artifact": "docs/benchmarks/systemic-pr613-integration-prior-intent-20261029.json",
+      "followup": {
+        "observed_at": "2026-10-29T20:24:12.917508+00:00",
+        "refinement": {
+          "original_test": ".dev/test_verification_prior_intent_inputs_before_true_tie_20261029.py",
+          "original_sha256": "c00e66cb90c768684cc4e0fbbaf6980608dddcfde35b76b294ebdff55279d9e5",
+          "coverage_gap": "Original put() refreshes updated_at, so assigning other.updated_at did not create an actual tie. Earlier test only established newest-match parity.",
+          "correction": "Freeze only application datetime.now for private put fixture rows; independently require first-insertion tie winner and newer-row winner, plus timestamp equality. No system clock, service default, timeout or application logic change.",
+          "source_and_timing_population": "Application files and measured handler/fixture older() unchanged; prior performance populations retained, no retiming. New test source will be linked in next immutable supplement."
+        },
+        "delta_result": {
+          "exit_code": 0,
+          "log_sha256": "fedceb118a93f8e9bed4f5b262246c28f6bfdace0d13713f5045fa2fb6554486",
+          "scope": "Private real-tie and newer-row ordering delta; only fixture application timestamps fixed, no systemclock/policy/applicationchange or benchmark replay."
+        },
+        "application_hashes_unchanged_since_final90pairs": true,
+        "original_head_ci": {
+          "head": "88ebdfa91951c4345d68f9d6d0f1d052f3287311",
+          "run": 40947983158,
+          "attempt": 1,
+          "jobs": 5,
+          "conclusion": "success"
+        },
+        "scope": "Only ordering fixture strengthened. Original229test population/timings retained; one targeted true-tie test passes. NewheadCI executes strengthened samecase. No appcode/systemclock/policy/deadlinechange, benchmark replay or count summation."
+      },
       "resolution": "open"
     }
   ]
