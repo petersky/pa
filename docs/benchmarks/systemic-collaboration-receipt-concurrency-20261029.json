@@ -1,0 +1,4182 @@
+{
+  "contract": "pa.collaboration-receipt-concurrency-stage/v1",
+  "observed_at": "2026-10-29T21:11:52.219779+00:00",
+  "source_parent": "b464e28d00aa1d1afadde2d41da918ac70be966e",
+  "source_candidate_sha256": "021e3fd510e6346373bd9a2e0c4d189fdb4a2b3356d54016b2ceffb9a842aba6",
+  "identity": {
+    "instance": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "authority": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "session": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+    "card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+    "project": "fdc04d91-1222-447b-859c-38e67bcab6eb",
+    "repository": "https://github.com/petersky/pa",
+    "repository_id": "5ce49cd8-f632-5f6d-a0d5-0b9eaf61f9cd",
+    "worktree": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c",
+    "branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+    "original_base": "4697ed583f6a5eceead72217d07ba2ebaf4ccc83",
+    "source_base": "841a352fc6e032e284d1e6bcd6f9529701e3911c",
+    "head": "7d4052fda87864e775cdabca53778f48bb658599",
+    "upstream": "7d4052fda87864e775cdabca53778f48bb658599",
+    "tree": "bb4ff41ecc622a5b4e9fe5dd7ab199530ad92bee",
+    "lease": "d24899f49011107365c237bbf09a300f63beb5a5c9658eac682770304ade52f2",
+    "fence": 334
+  },
+  "concern": {
+    "id": "concern:collaboration-receipt-initial-read-interleaving",
+    "kind": "concern",
+    "finding": "Off-loop initial receipt read must preserve matching first-request idempotency and effect ordering",
+    "family": "collaboration",
+    "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+    "cause_classification": "confirmed_private_unmerged_source_regression",
+    "cause": "Unmergedb464 await permits two readers to observe absence. Transition returnsdifferentreceiptIDs/0duplicates andbothfamilies attempt2mocknotifications;archived615has1sharedreceipt/1duplicate/1notification. Existing56tests/12pairduplicate-onlyfixturesmissedthefirst-requestrace. OriginalheadCI40954805800passed5firstattemptchecks, butdidnotauthorizeunsafeintegration.",
+    "implemented": "Corrected public request_transition/execute_command own an async guard keyed by family/session/idempotency_key through initial read and effects. Waiters re-read after owner; different identities progress. Reference accounting removes entries after owner/waiter completion/cancellation/errors. Original effect bodies retained; native bounded executor or unbound to_thread still performs receipt read.",
+    "merged": [],
+    "deployed": "Correctedsourceuncommitted/unmerged/uninstalled at publication; actual614341/package7c7e remainsloaded. No repeated614installation/handoff.",
+    "retested": {
+      "contracts": "70testsPASS includes30newcases,totalnotadditivetoearlier56",
+      "source_scope": {
+        "baseline": "7d4052fda87864e775cdabca53778f48bb658599",
+        "baseline_sha256": "6de437d514baf002a81511b8081b8cf87c5b93d1cfdd64c42f89704c85036021",
+        "candidate_sha256": "021e3fd510e6346373bd9a2e0c4d189fdb4a2b3356d54016b2ceffb9a842aba6",
+        "other_application_ast_equal_after_explicit_scope": true,
+        "scope": "Explicit imports asyncio/asynccontextmanager; per-family/session/key guard map with user reference cleanup; guarded public wrappers; two owned bodies renamed and initial reads awaited through native/fallback helper. These additions are independently concurrency/cancellation/independent-key tested. Original fingerprint/provenance/policy/catalog/notification/provider/durable effect bodies remain AST equal after only this declared normalization. Normalization is not proof that new guard semantics are correct; tests and retained first race supply separate evidence. No authority/default/GC/deadline policy edits."
+      },
+      "paired": {
+        "baseline": "7d4052fda87864e775cdabca53778f48bb658599",
+        "baseline_sha256": "6de437d514baf002a81511b8081b8cf87c5b93d1cfdd64c42f89704c85036021",
+        "candidate_source_sha256": "021e3fd510e6346373bd9a2e0c4d189fdb4a2b3356d54016b2ceffb9a842aba6",
+        "rows": [
+          {
+            "bounded": true,
+            "family": "transition",
+            "pair": 0,
+            "variant": "baseline",
+            "request_ms": 214.32779100723565,
+            "max_loop_gap_ms": 214.96191702317446,
+            "read_on_loop": true,
+            "result_sha256": "35d694ec5bc4ff5505488a2e44a7e08232fce6f80dbdb4f7899ab638aa078959",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": true,
+            "family": "transition",
+            "pair": 0,
+            "variant": "candidate",
+            "request_ms": 209.9267920712009,
+            "max_loop_gap_ms": 6.4276669872924685,
+            "read_on_loop": false,
+            "result_sha256": "35d694ec5bc4ff5505488a2e44a7e08232fce6f80dbdb4f7899ab638aa078959",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": true,
+            "family": "transition",
+            "pair": 1,
+            "variant": "candidate",
+            "request_ms": 214.3299999879673,
+            "max_loop_gap_ms": 6.410541012883186,
+            "read_on_loop": false,
+            "result_sha256": "35d694ec5bc4ff5505488a2e44a7e08232fce6f80dbdb4f7899ab638aa078959",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": true,
+            "family": "transition",
+            "pair": 1,
+            "variant": "baseline",
+            "request_ms": 203.99274991359562,
+            "max_loop_gap_ms": 204.9145420314744,
+            "read_on_loop": true,
+            "result_sha256": "35d694ec5bc4ff5505488a2e44a7e08232fce6f80dbdb4f7899ab638aa078959",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": true,
+            "family": "transition",
+            "pair": 2,
+            "variant": "baseline",
+            "request_ms": 211.2683750456199,
+            "max_loop_gap_ms": 211.9540829444304,
+            "read_on_loop": true,
+            "result_sha256": "35d694ec5bc4ff5505488a2e44a7e08232fce6f80dbdb4f7899ab638aa078959",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": true,
+            "family": "transition",
+            "pair": 2,
+            "variant": "candidate",
+            "request_ms": 206.83908299542964,
+            "max_loop_gap_ms": 6.442666985094547,
+            "read_on_loop": false,
+            "result_sha256": "35d694ec5bc4ff5505488a2e44a7e08232fce6f80dbdb4f7899ab638aa078959",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": true,
+            "family": "command",
+            "pair": 0,
+            "variant": "baseline",
+            "request_ms": 207.5654590735212,
+            "max_loop_gap_ms": 208.18533399142325,
+            "read_on_loop": true,
+            "result_sha256": "b593abdee1a75e3880e7f4cc0608f3bbe54d87415ecbcc546ae16a42e87a3ad1",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": true,
+            "family": "command",
+            "pair": 0,
+            "variant": "candidate",
+            "request_ms": 214.55874992534518,
+            "max_loop_gap_ms": 6.445542094297707,
+            "read_on_loop": false,
+            "result_sha256": "b593abdee1a75e3880e7f4cc0608f3bbe54d87415ecbcc546ae16a42e87a3ad1",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": true,
+            "family": "command",
+            "pair": 1,
+            "variant": "candidate",
+            "request_ms": 212.060833000578,
+            "max_loop_gap_ms": 6.461167009547353,
+            "read_on_loop": false,
+            "result_sha256": "b593abdee1a75e3880e7f4cc0608f3bbe54d87415ecbcc546ae16a42e87a3ad1",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": true,
+            "family": "command",
+            "pair": 1,
+            "variant": "baseline",
+            "request_ms": 205.79608296975493,
+            "max_loop_gap_ms": 206.3590839970857,
+            "read_on_loop": true,
+            "result_sha256": "b593abdee1a75e3880e7f4cc0608f3bbe54d87415ecbcc546ae16a42e87a3ad1",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": true,
+            "family": "command",
+            "pair": 2,
+            "variant": "baseline",
+            "request_ms": 213.4807500988245,
+            "max_loop_gap_ms": 213.8915000250563,
+            "read_on_loop": true,
+            "result_sha256": "b593abdee1a75e3880e7f4cc0608f3bbe54d87415ecbcc546ae16a42e87a3ad1",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": true,
+            "family": "command",
+            "pair": 2,
+            "variant": "candidate",
+            "request_ms": 208.55583297088742,
+            "max_loop_gap_ms": 6.45941705442965,
+            "read_on_loop": false,
+            "result_sha256": "b593abdee1a75e3880e7f4cc0608f3bbe54d87415ecbcc546ae16a42e87a3ad1",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": false,
+            "family": "transition",
+            "pair": 0,
+            "variant": "baseline",
+            "request_ms": 213.27716705854982,
+            "max_loop_gap_ms": 213.82324991282076,
+            "read_on_loop": true,
+            "result_sha256": "4a5fa254f336944a9807f12c181e38ba0f8adaf0a12864a711bc89c6c8db0d4c",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": false,
+            "family": "transition",
+            "pair": 0,
+            "variant": "candidate",
+            "request_ms": 211.70012501534075,
+            "max_loop_gap_ms": 6.457875017076731,
+            "read_on_loop": false,
+            "result_sha256": "4a5fa254f336944a9807f12c181e38ba0f8adaf0a12864a711bc89c6c8db0d4c",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": false,
+            "family": "transition",
+            "pair": 1,
+            "variant": "candidate",
+            "request_ms": 211.17604104802012,
+            "max_loop_gap_ms": 6.466416991315782,
+            "read_on_loop": false,
+            "result_sha256": "4a5fa254f336944a9807f12c181e38ba0f8adaf0a12864a711bc89c6c8db0d4c",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": false,
+            "family": "transition",
+            "pair": 1,
+            "variant": "baseline",
+            "request_ms": 212.02229103073478,
+            "max_loop_gap_ms": 212.55370893049985,
+            "read_on_loop": true,
+            "result_sha256": "4a5fa254f336944a9807f12c181e38ba0f8adaf0a12864a711bc89c6c8db0d4c",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": false,
+            "family": "transition",
+            "pair": 2,
+            "variant": "baseline",
+            "request_ms": 209.1208330821246,
+            "max_loop_gap_ms": 209.87749996129423,
+            "read_on_loop": true,
+            "result_sha256": "4a5fa254f336944a9807f12c181e38ba0f8adaf0a12864a711bc89c6c8db0d4c",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": false,
+            "family": "transition",
+            "pair": 2,
+            "variant": "candidate",
+            "request_ms": 209.26745794713497,
+            "max_loop_gap_ms": 6.494457949884236,
+            "read_on_loop": false,
+            "result_sha256": "4a5fa254f336944a9807f12c181e38ba0f8adaf0a12864a711bc89c6c8db0d4c",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": false,
+            "family": "command",
+            "pair": 0,
+            "variant": "baseline",
+            "request_ms": 211.12679096404463,
+            "max_loop_gap_ms": 211.55779203400016,
+            "read_on_loop": true,
+            "result_sha256": "f7494564f4226d8a062d08741e30f06a147a70b2892f33c1cd534c7f4a907d84",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": false,
+            "family": "command",
+            "pair": 0,
+            "variant": "candidate",
+            "request_ms": 213.65475002676249,
+            "max_loop_gap_ms": 6.470750086009502,
+            "read_on_loop": false,
+            "result_sha256": "f7494564f4226d8a062d08741e30f06a147a70b2892f33c1cd534c7f4a907d84",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": false,
+            "family": "command",
+            "pair": 1,
+            "variant": "candidate",
+            "request_ms": 211.02837496437132,
+            "max_loop_gap_ms": 6.403833976946771,
+            "read_on_loop": false,
+            "result_sha256": "f7494564f4226d8a062d08741e30f06a147a70b2892f33c1cd534c7f4a907d84",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": false,
+            "family": "command",
+            "pair": 1,
+            "variant": "baseline",
+            "request_ms": 209.63637507520616,
+            "max_loop_gap_ms": 210.30479099135846,
+            "read_on_loop": true,
+            "result_sha256": "f7494564f4226d8a062d08741e30f06a147a70b2892f33c1cd534c7f4a907d84",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": false,
+            "family": "command",
+            "pair": 2,
+            "variant": "baseline",
+            "request_ms": 213.7533330824226,
+            "max_loop_gap_ms": 214.5359170390293,
+            "read_on_loop": true,
+            "result_sha256": "f7494564f4226d8a062d08741e30f06a147a70b2892f33c1cd534c7f4a907d84",
+            "guard_entries_after_call": 0
+          },
+          {
+            "bounded": false,
+            "family": "command",
+            "pair": 2,
+            "variant": "candidate",
+            "request_ms": 201.68058294802904,
+            "max_loop_gap_ms": 6.413583061657846,
+            "read_on_loop": false,
+            "result_sha256": "f7494564f4226d8a062d08741e30f06a147a70b2892f33c1cd534c7f4a907d84",
+            "guard_entries_after_call": 0
+          }
+        ],
+        "candidate_cumulative_executor_snapshots": [
+          {
+            "bounded": true,
+            "after_family": "transition",
+            "executor_snapshot": {
+              "failed_operations": {
+                "capacity": 64,
+                "scope": "Last completed failed worker/native-async invocations and executor submission failures, including short failures. Worker caller timeouts/cancellations are not completion failures; their existing counters remain separate. Failed-only percentiles use the last 256 failures per operation and are omitted until a failure completes. Static categories are not root causes; no messages, arbitrary codes, exception names, arguments, SQL or payloads retained.",
+                "observations": []
+              },
+              "failed_requests": {
+                "capacity": 64,
+                "count": 0,
+                "scope": "Last completed HTTP 4xx/5xx responses, including failed SSE responses; normal SSE lifetimes remain excluded. Route templates and numeric status only, no response bodies, error codes, IDs or query strings.",
+                "observations": []
+              },
+              "sqlite_timing_scope": "Statement wall and thread CPU include execute and lazy fetch calls; commit is separate. Inclusive nested calls can overlap. Wall minus CPU is unclassified off-CPU time, not proof of lock wait or physical disk I/O. No SQL, parameters or result values retained.",
+              "async_backend_initialization": {
+                "state": "not_started"
+              },
+              "slow_operations": {
+                "capacity": 64,
+                "scope": "last completed slow worker invocations; queue time separate from elapsed",
+                "lock_note": "measured lock sections are inclusive; nested hold intervals may overlap",
+                "lock_events_note": "last64 measured sections per slow invocation; total includes evicted sections; outer hold is the union of outermost measured sections, not CPU time; hold includes unlock and scheduling around it; release_ms separates that interval and is not pure unlock CPU or proven held time",
+                "observations": []
+              },
+              "slow_lock_timelines": {
+                "capacity": 64,
+                "events_per_invocation": 64,
+                "observations": []
+              },
+              "executor": {
+                "max_workers": 1,
+                "max_queue": 64,
+                "active": 0,
+                "queued": 0,
+                "closing": false
+              },
+              "event_loop": {
+                "samples": 0,
+                "latest_lag_ms": 0.0,
+                "p95_lag_ms": 0.0,
+                "max_lag_ms": 0.0,
+                "pre_window_lag_ms": {
+                  "samples": 0,
+                  "max": null,
+                  "p50": null,
+                  "p95": null,
+                  "p99": null
+                }
+              },
+              "requests": {
+                "window": "last_256_non_sse_requests_per_route",
+                "count": 0,
+                "average_ms": 0.0,
+                "max_ms": 0.0,
+                "slow": [],
+                "latency_ms": {
+                  "samples": 0,
+                  "max": null,
+                  "p50": null,
+                  "p95": null,
+                  "p99": null
+                },
+                "response_bytes": 0,
+                "excluded_sse_requests": 0,
+                "routes": {}
+              },
+              "owned_mutations": {
+                "pending": 0
+              },
+              "work": {
+                "window": "last_256_observations_per_metric",
+                "metrics": {}
+              },
+              "active_operations": [],
+              "operations": {
+                "collaboration.mode_receipt_read": {
+                  "submitted": 3,
+                  "completed": 3,
+                  "failed": 0,
+                  "timed_out": 0,
+                  "cancelled": 0,
+                  "rejected": 0,
+                  "active": 0,
+                  "queued": 0,
+                  "max_active": 1,
+                  "max_queued": 1,
+                  "total_queue_ms": 0.339,
+                  "total_wait_ms": 630.2677909843624,
+                  "max_wait_ms": 214.09174997825176,
+                  "total_lock_wait_ms": 0.0,
+                  "total_runtime_ms": 629.724,
+                  "max_runtime_ms": 213.992,
+                  "slow_calls": 0,
+                  "sqlite_busy_failures": 0,
+                  "filesystem_totals": {
+                    "file_lock_wait_ms": 0.0,
+                    "file_lock_hold_ms": 0.0,
+                    "file_lock_release_ms": 0.0,
+                    "atomic_write_calls": 0,
+                    "atomic_write_bytes": 0,
+                    "file_fsync_calls": 0,
+                    "file_fsync_ms": 0.0,
+                    "directory_fsync_calls": 0,
+                    "directory_fsync_ms": 0.0,
+                    "fsync_failures": 0,
+                    "atomic_replace_ms": 0.0,
+                    "object_get_calls": 0,
+                    "object_get_bytes": 0,
+                    "object_get_ms": 0.0,
+                    "object_put_files": 0,
+                    "object_put_bytes": 0
+                  },
+                  "runtime_ms": {
+                    "samples": 3,
+                    "max": 213.992,
+                    "p50": 209.295,
+                    "p95": 213.992,
+                    "p99": 213.992
+                  },
+                  "queue_ms": {
+                    "samples": 3,
+                    "max": 0.272,
+                    "p50": 0.04,
+                    "p95": 0.272,
+                    "p99": 0.272
+                  },
+                  "python_lock_wait_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "python_lock_hold_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "worker_service_ms": {
+                    "samples": 3,
+                    "max": 213.561,
+                    "p50": 208.313,
+                    "p95": 213.561,
+                    "p99": 213.561
+                  },
+                  "executor_dispatch_ms": {
+                    "samples": 3,
+                    "max": 0.645,
+                    "p50": 0.111,
+                    "p95": 0.645,
+                    "p99": 0.645
+                  },
+                  "completion_delivery_ms": {
+                    "samples": 3,
+                    "max": 0.333,
+                    "p50": 0.323,
+                    "p95": 0.333,
+                    "p99": 0.333
+                  },
+                  "thread_cpu_ms": {
+                    "samples": 3,
+                    "max": 3.491,
+                    "p50": 3.212,
+                    "p95": 3.491,
+                    "p99": 3.491
+                  },
+                  "outer_lock_hold_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "python_lock_release_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "outer_lock_release_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "sqlite_statement_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "sqlite_commit_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "sqlite_statement_thread_cpu_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "sqlite_commit_thread_cpu_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "sqlite_calls": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "sqlite_rows": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "sqlite_aggregate_items": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "sqlite_aggregate_bytes": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "file_lock_wait_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "file_lock_hold_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "file_lock_release_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "atomic_write_calls": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "atomic_write_bytes": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "file_fsync_calls": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "file_fsync_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "directory_fsync_calls": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "directory_fsync_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "fsync_failures": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "atomic_replace_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "object_get_calls": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "object_get_bytes": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "object_get_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "object_put_files": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "object_put_bytes": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  }
+                }
+              }
+            },
+            "scope": "Cumulative executor counters for this private fixture; only candidate calls use executor. Deliberate200msread included. Fallback uses asyncio thread pool and has no native operation metrics."
+          },
+          {
+            "bounded": true,
+            "after_family": "command",
+            "executor_snapshot": {
+              "failed_operations": {
+                "capacity": 64,
+                "scope": "Last completed failed worker/native-async invocations and executor submission failures, including short failures. Worker caller timeouts/cancellations are not completion failures; their existing counters remain separate. Failed-only percentiles use the last 256 failures per operation and are omitted until a failure completes. Static categories are not root causes; no messages, arbitrary codes, exception names, arguments, SQL or payloads retained.",
+                "observations": []
+              },
+              "failed_requests": {
+                "capacity": 64,
+                "count": 0,
+                "scope": "Last completed HTTP 4xx/5xx responses, including failed SSE responses; normal SSE lifetimes remain excluded. Route templates and numeric status only, no response bodies, error codes, IDs or query strings.",
+                "observations": []
+              },
+              "sqlite_timing_scope": "Statement wall and thread CPU include execute and lazy fetch calls; commit is separate. Inclusive nested calls can overlap. Wall minus CPU is unclassified off-CPU time, not proof of lock wait or physical disk I/O. No SQL, parameters or result values retained.",
+              "async_backend_initialization": {
+                "state": "not_started"
+              },
+              "slow_operations": {
+                "capacity": 64,
+                "scope": "last completed slow worker invocations; queue time separate from elapsed",
+                "lock_note": "measured lock sections are inclusive; nested hold intervals may overlap",
+                "lock_events_note": "last64 measured sections per slow invocation; total includes evicted sections; outer hold is the union of outermost measured sections, not CPU time; hold includes unlock and scheduling around it; release_ms separates that interval and is not pure unlock CPU or proven held time",
+                "observations": []
+              },
+              "slow_lock_timelines": {
+                "capacity": 64,
+                "events_per_invocation": 64,
+                "observations": []
+              },
+              "executor": {
+                "max_workers": 1,
+                "max_queue": 64,
+                "active": 0,
+                "queued": 0,
+                "closing": false
+              },
+              "event_loop": {
+                "samples": 0,
+                "latest_lag_ms": 0.0,
+                "p95_lag_ms": 0.0,
+                "max_lag_ms": 0.0,
+                "pre_window_lag_ms": {
+                  "samples": 0,
+                  "max": null,
+                  "p50": null,
+                  "p95": null,
+                  "p99": null
+                }
+              },
+              "requests": {
+                "window": "last_256_non_sse_requests_per_route",
+                "count": 0,
+                "average_ms": 0.0,
+                "max_ms": 0.0,
+                "slow": [],
+                "latency_ms": {
+                  "samples": 0,
+                  "max": null,
+                  "p50": null,
+                  "p95": null,
+                  "p99": null
+                },
+                "response_bytes": 0,
+                "excluded_sse_requests": 0,
+                "routes": {}
+              },
+              "owned_mutations": {
+                "pending": 0
+              },
+              "work": {
+                "window": "last_256_observations_per_metric",
+                "metrics": {}
+              },
+              "active_operations": [],
+              "operations": {
+                "collaboration.command_receipt_read": {
+                  "submitted": 3,
+                  "completed": 3,
+                  "failed": 0,
+                  "timed_out": 0,
+                  "cancelled": 0,
+                  "rejected": 0,
+                  "active": 0,
+                  "queued": 0,
+                  "max_active": 1,
+                  "max_queued": 1,
+                  "total_queue_ms": 0.217,
+                  "total_wait_ms": 634.3284999020398,
+                  "max_wait_ms": 214.2328330082819,
+                  "total_lock_wait_ms": 0.0,
+                  "total_runtime_ms": 633.87,
+                  "max_runtime_ms": 214.063,
+                  "slow_calls": 0,
+                  "sqlite_busy_failures": 0,
+                  "filesystem_totals": {
+                    "file_lock_wait_ms": 0.0,
+                    "file_lock_hold_ms": 0.0,
+                    "file_lock_release_ms": 0.0,
+                    "atomic_write_calls": 0,
+                    "atomic_write_bytes": 0,
+                    "file_fsync_calls": 0,
+                    "file_fsync_ms": 0.0,
+                    "directory_fsync_calls": 0,
+                    "directory_fsync_ms": 0.0,
+                    "fsync_failures": 0,
+                    "atomic_replace_ms": 0.0,
+                    "object_get_calls": 0,
+                    "object_get_bytes": 0,
+                    "object_get_ms": 0.0,
+                    "object_put_files": 0,
+                    "object_put_bytes": 0
+                  },
+                  "runtime_ms": {
+                    "samples": 3,
+                    "max": 214.063,
+                    "p50": 211.621,
+                    "p95": 214.063,
+                    "p99": 214.063
+                  },
+                  "queue_ms": {
+                    "samples": 3,
+                    "max": 0.101,
+                    "p50": 0.065,
+                    "p95": 0.101,
+                    "p99": 0.101
+                  },
+                  "python_lock_wait_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "python_lock_hold_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "worker_service_ms": {
+                    "samples": 3,
+                    "max": 213.59,
+                    "p50": 211.064,
+                    "p95": 213.59,
+                    "p99": 213.59
+                  },
+                  "executor_dispatch_ms": {
+                    "samples": 3,
+                    "max": 0.227,
+                    "p50": 0.171,
+                    "p95": 0.227,
+                    "p99": 0.227
+                  },
+                  "completion_delivery_ms": {
+                    "samples": 3,
+                    "max": 0.379,
+                    "p50": 0.327,
+                    "p95": 0.379,
+                    "p99": 0.379
+                  },
+                  "thread_cpu_ms": {
+                    "samples": 3,
+                    "max": 3.553,
+                    "p50": 3.31,
+                    "p95": 3.553,
+                    "p99": 3.553
+                  },
+                  "outer_lock_hold_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "python_lock_release_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "outer_lock_release_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "sqlite_statement_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "sqlite_commit_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "sqlite_statement_thread_cpu_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "sqlite_commit_thread_cpu_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "sqlite_calls": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "sqlite_rows": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "sqlite_aggregate_items": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "sqlite_aggregate_bytes": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "file_lock_wait_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "file_lock_hold_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "file_lock_release_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "atomic_write_calls": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "atomic_write_bytes": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "file_fsync_calls": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "file_fsync_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "directory_fsync_calls": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "directory_fsync_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "fsync_failures": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "atomic_replace_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "object_get_calls": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "object_get_bytes": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "object_get_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "object_put_files": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "object_put_bytes": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  }
+                },
+                "collaboration.mode_receipt_read": {
+                  "submitted": 3,
+                  "completed": 3,
+                  "failed": 0,
+                  "timed_out": 0,
+                  "cancelled": 0,
+                  "rejected": 0,
+                  "active": 0,
+                  "queued": 0,
+                  "max_active": 1,
+                  "max_queued": 1,
+                  "total_queue_ms": 0.339,
+                  "total_wait_ms": 630.2677909843624,
+                  "max_wait_ms": 214.09174997825176,
+                  "total_lock_wait_ms": 0.0,
+                  "total_runtime_ms": 629.724,
+                  "max_runtime_ms": 213.992,
+                  "slow_calls": 0,
+                  "sqlite_busy_failures": 0,
+                  "filesystem_totals": {
+                    "file_lock_wait_ms": 0.0,
+                    "file_lock_hold_ms": 0.0,
+                    "file_lock_release_ms": 0.0,
+                    "atomic_write_calls": 0,
+                    "atomic_write_bytes": 0,
+                    "file_fsync_calls": 0,
+                    "file_fsync_ms": 0.0,
+                    "directory_fsync_calls": 0,
+                    "directory_fsync_ms": 0.0,
+                    "fsync_failures": 0,
+                    "atomic_replace_ms": 0.0,
+                    "object_get_calls": 0,
+                    "object_get_bytes": 0,
+                    "object_get_ms": 0.0,
+                    "object_put_files": 0,
+                    "object_put_bytes": 0
+                  },
+                  "runtime_ms": {
+                    "samples": 3,
+                    "max": 213.992,
+                    "p50": 209.295,
+                    "p95": 213.992,
+                    "p99": 213.992
+                  },
+                  "queue_ms": {
+                    "samples": 3,
+                    "max": 0.272,
+                    "p50": 0.04,
+                    "p95": 0.272,
+                    "p99": 0.272
+                  },
+                  "python_lock_wait_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "python_lock_hold_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "worker_service_ms": {
+                    "samples": 3,
+                    "max": 213.561,
+                    "p50": 208.313,
+                    "p95": 213.561,
+                    "p99": 213.561
+                  },
+                  "executor_dispatch_ms": {
+                    "samples": 3,
+                    "max": 0.645,
+                    "p50": 0.111,
+                    "p95": 0.645,
+                    "p99": 0.645
+                  },
+                  "completion_delivery_ms": {
+                    "samples": 3,
+                    "max": 0.333,
+                    "p50": 0.323,
+                    "p95": 0.333,
+                    "p99": 0.333
+                  },
+                  "thread_cpu_ms": {
+                    "samples": 3,
+                    "max": 3.491,
+                    "p50": 3.212,
+                    "p95": 3.491,
+                    "p99": 3.491
+                  },
+                  "outer_lock_hold_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "python_lock_release_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "outer_lock_release_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "sqlite_statement_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "sqlite_commit_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "sqlite_statement_thread_cpu_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "sqlite_commit_thread_cpu_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "sqlite_calls": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "sqlite_rows": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "sqlite_aggregate_items": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "sqlite_aggregate_bytes": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "file_lock_wait_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "file_lock_hold_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "file_lock_release_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "atomic_write_calls": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "atomic_write_bytes": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "file_fsync_calls": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "file_fsync_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "directory_fsync_calls": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "directory_fsync_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "fsync_failures": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "atomic_replace_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "object_get_calls": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "object_get_bytes": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "object_get_ms": {
+                    "samples": 3,
+                    "max": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0
+                  },
+                  "object_put_files": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  },
+                  "object_put_bytes": {
+                    "samples": 3,
+                    "max": 0,
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0
+                  }
+                }
+              }
+            },
+            "scope": "Cumulative executor counters for this private fixture; only candidate calls use executor. Deliberate200msread included. Fallback uses asyncio thread pool and has no native operation metrics."
+          },
+          {
+            "bounded": false,
+            "after_family": "transition",
+            "executor_snapshot": {
+              "failed_operations": {
+                "capacity": 64,
+                "scope": "Last completed failed worker/native-async invocations and executor submission failures, including short failures. Worker caller timeouts/cancellations are not completion failures; their existing counters remain separate. Failed-only percentiles use the last 256 failures per operation and are omitted until a failure completes. Static categories are not root causes; no messages, arbitrary codes, exception names, arguments, SQL or payloads retained.",
+                "observations": []
+              },
+              "failed_requests": {
+                "capacity": 64,
+                "count": 0,
+                "scope": "Last completed HTTP 4xx/5xx responses, including failed SSE responses; normal SSE lifetimes remain excluded. Route templates and numeric status only, no response bodies, error codes, IDs or query strings.",
+                "observations": []
+              },
+              "sqlite_timing_scope": "Statement wall and thread CPU include execute and lazy fetch calls; commit is separate. Inclusive nested calls can overlap. Wall minus CPU is unclassified off-CPU time, not proof of lock wait or physical disk I/O. No SQL, parameters or result values retained.",
+              "async_backend_initialization": {
+                "state": "not_started"
+              },
+              "slow_operations": {
+                "capacity": 64,
+                "scope": "last completed slow worker invocations; queue time separate from elapsed",
+                "lock_note": "measured lock sections are inclusive; nested hold intervals may overlap",
+                "lock_events_note": "last64 measured sections per slow invocation; total includes evicted sections; outer hold is the union of outermost measured sections, not CPU time; hold includes unlock and scheduling around it; release_ms separates that interval and is not pure unlock CPU or proven held time",
+                "observations": []
+              },
+              "slow_lock_timelines": {
+                "capacity": 64,
+                "events_per_invocation": 64,
+                "observations": []
+              },
+              "executor": {
+                "max_workers": 1,
+                "max_queue": 64,
+                "active": 0,
+                "queued": 0,
+                "closing": false
+              },
+              "event_loop": {
+                "samples": 0,
+                "latest_lag_ms": 0.0,
+                "p95_lag_ms": 0.0,
+                "max_lag_ms": 0.0,
+                "pre_window_lag_ms": {
+                  "samples": 0,
+                  "max": null,
+                  "p50": null,
+                  "p95": null,
+                  "p99": null
+                }
+              },
+              "requests": {
+                "window": "last_256_non_sse_requests_per_route",
+                "count": 0,
+                "average_ms": 0.0,
+                "max_ms": 0.0,
+                "slow": [],
+                "latency_ms": {
+                  "samples": 0,
+                  "max": null,
+                  "p50": null,
+                  "p95": null,
+                  "p99": null
+                },
+                "response_bytes": 0,
+                "excluded_sse_requests": 0,
+                "routes": {}
+              },
+              "owned_mutations": {
+                "pending": 0
+              },
+              "work": {
+                "window": "last_256_observations_per_metric",
+                "metrics": {}
+              },
+              "active_operations": [],
+              "operations": {}
+            },
+            "scope": "Cumulative executor counters for this private fixture; only candidate calls use executor. Deliberate200msread included. Fallback uses asyncio thread pool and has no native operation metrics."
+          },
+          {
+            "bounded": false,
+            "after_family": "command",
+            "executor_snapshot": {
+              "failed_operations": {
+                "capacity": 64,
+                "scope": "Last completed failed worker/native-async invocations and executor submission failures, including short failures. Worker caller timeouts/cancellations are not completion failures; their existing counters remain separate. Failed-only percentiles use the last 256 failures per operation and are omitted until a failure completes. Static categories are not root causes; no messages, arbitrary codes, exception names, arguments, SQL or payloads retained.",
+                "observations": []
+              },
+              "failed_requests": {
+                "capacity": 64,
+                "count": 0,
+                "scope": "Last completed HTTP 4xx/5xx responses, including failed SSE responses; normal SSE lifetimes remain excluded. Route templates and numeric status only, no response bodies, error codes, IDs or query strings.",
+                "observations": []
+              },
+              "sqlite_timing_scope": "Statement wall and thread CPU include execute and lazy fetch calls; commit is separate. Inclusive nested calls can overlap. Wall minus CPU is unclassified off-CPU time, not proof of lock wait or physical disk I/O. No SQL, parameters or result values retained.",
+              "async_backend_initialization": {
+                "state": "not_started"
+              },
+              "slow_operations": {
+                "capacity": 64,
+                "scope": "last completed slow worker invocations; queue time separate from elapsed",
+                "lock_note": "measured lock sections are inclusive; nested hold intervals may overlap",
+                "lock_events_note": "last64 measured sections per slow invocation; total includes evicted sections; outer hold is the union of outermost measured sections, not CPU time; hold includes unlock and scheduling around it; release_ms separates that interval and is not pure unlock CPU or proven held time",
+                "observations": []
+              },
+              "slow_lock_timelines": {
+                "capacity": 64,
+                "events_per_invocation": 64,
+                "observations": []
+              },
+              "executor": {
+                "max_workers": 1,
+                "max_queue": 64,
+                "active": 0,
+                "queued": 0,
+                "closing": false
+              },
+              "event_loop": {
+                "samples": 0,
+                "latest_lag_ms": 0.0,
+                "p95_lag_ms": 0.0,
+                "max_lag_ms": 0.0,
+                "pre_window_lag_ms": {
+                  "samples": 0,
+                  "max": null,
+                  "p50": null,
+                  "p95": null,
+                  "p99": null
+                }
+              },
+              "requests": {
+                "window": "last_256_non_sse_requests_per_route",
+                "count": 0,
+                "average_ms": 0.0,
+                "max_ms": 0.0,
+                "slow": [],
+                "latency_ms": {
+                  "samples": 0,
+                  "max": null,
+                  "p50": null,
+                  "p95": null,
+                  "p99": null
+                },
+                "response_bytes": 0,
+                "excluded_sse_requests": 0,
+                "routes": {}
+              },
+              "owned_mutations": {
+                "pending": 0
+              },
+              "work": {
+                "window": "last_256_observations_per_metric",
+                "metrics": {}
+              },
+              "active_operations": [],
+              "operations": {}
+            },
+            "scope": "Cumulative executor counters for this private fixture; only candidate calls use executor. Deliberate200msread included. Fallback uses asyncio thread pool and has no native operation metrics."
+          }
+        ],
+        "observed_at": "2026-10-29T21:10:12.410814+00:00",
+        "scope": "Twelve alternating private pairs:3perfamily/executor; complete native receipt duplicate results match. Deliberate200msread preserved, request latency not removed, loop progress compared. No provider/configuration/admission/notification effects, production mutation, policy/default/GC/deadline change, physicalIO/historicalcause/hardware/wholePAacceptance. Bothrootsprivatebeforeimports/children. Sourcecandidateuninstalled."
+      },
+      "mixed": {
+        "events": 9600,
+        "warnings": {},
+        "maintenance": {
+          "samples": 1,
+          "max_ms": 836.293,
+          "p50_ms": 836.293,
+          "p95_ms": 836.293,
+          "p99_ms": 836.293
+        },
+        "threshold_violations": {
+          "maintenance.run": 1
+        },
+        "source_modules": {
+          "pa.health_journal.service": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/health_journal/service.py",
+            "sha256": "0b3fdaabf665853ea87faf002847df2d499c8c5e67f20b122bb68b533706ef1b"
+          },
+          "pa.execution.dispatch": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/execution/dispatch.py",
+            "sha256": "81988a943b9848246759cf1feb6867b0c251f98f4d0ed405794dc9b42f546649"
+          },
+          "pa.domain.card_enrichment": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/domain/card_enrichment.py",
+            "sha256": "57803315c4a8f0bd42fa010a4b442cade9102833ca12801ce30a7eda8317097e"
+          },
+          "pa.domain.projection": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/domain/projection.py",
+            "sha256": "5221d41bfa3454153fc9f23534a5aa98b18ed1fe824784b8a3321408f0ab6b81"
+          },
+          "pa.modules.collaboration": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/modules/collaboration.py",
+            "sha256": "a260d1405fe3b7dec71c588725850649b7ac9de75edf9cd6d7b62d83acbde555"
+          },
+          "pa.collaboration.service": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/collaboration/service.py",
+            "sha256": "021e3fd510e6346373bd9a2e0c4d189fdb4a2b3356d54016b2ceffb9a842aba6"
+          },
+          "pa.execution.verification": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/execution/verification.py",
+            "sha256": "705088b9cc75f23263fae5a0bb5e9882dd15f7b98f12bfcc8e7cc251b8145a25"
+          },
+          "pa.modules.browser": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/modules/browser.py",
+            "sha256": "af16439ba6f9e3db11e39b684448836d3917b1c84492e712820499020ce7de48"
+          },
+          "pa.modules.fleet": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/modules/fleet.py",
+            "sha256": "5d2daaf20f1ea751db385aba613863d8ff1de5383f4b0700d49eae5b910ce5dd"
+          },
+          "pa.server.schema_generation": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/server/schema_generation.py",
+            "sha256": "e6e5e180d9d3f3c53e7c0003b5316d87d41ea7c210ae25245b99148fbeb93aad"
+          }
+        }
+      }
+    },
+    "resolution": "open",
+    "next_actor": "This same session/card",
+    "next_action": "Push corrected exacthead; replace PR review description; supervisor stablegreen plus independentcompleteGitHubrevalidation/protectedmerge/mainCI. Future exactactivation/retests and broaderwholePAacceptance stillrequired."
+  },
+  "first_regression": {
+    "observed_at": "2026-10-29T21:08:57.398440+00:00",
+    "source_candidate": "b464e28d00aa1d1afadde2d41da918ac70be966e",
+    "source_module_sha256": "f76c8e78fe03d66ac7e08c7e62fc34fbec73d772086f7c841983a8db2927f342",
+    "rows": [
+      {
+        "family": "transition",
+        "variant": "archived615",
+        "read_observed_absence": [
+          true,
+          false
+        ],
+        "notification_count": 1,
+        "receipt_ids_equal": true,
+        "duplicate_count": 1,
+        "same_status": true
+      },
+      {
+        "family": "transition",
+        "variant": "candidate",
+        "read_observed_absence": [
+          true,
+          true
+        ],
+        "notification_count": 2,
+        "receipt_ids_equal": false,
+        "duplicate_count": 0,
+        "same_status": true
+      },
+      {
+        "family": "command",
+        "variant": "archived615",
+        "read_observed_absence": [
+          true,
+          false
+        ],
+        "notification_count": 1,
+        "receipt_ids_equal": true,
+        "duplicate_count": 1,
+        "same_status": true
+      },
+      {
+        "family": "command",
+        "variant": "candidate",
+        "read_observed_absence": [
+          true,
+          true
+        ],
+        "notification_count": 2,
+        "receipt_ids_equal": true,
+        "duplicate_count": 1,
+        "same_status": true
+      }
+    ],
+    "scope": "New private concurrent FIRST request diagnostic. Real private durable receipt store; two native executor readers deliberately meet after observing absence. Archived615 synchronous read cannot interleave at that boundary. Deliberately stale requests produce no provider/configuration/admission or notification effects; notification calls counted only. Reveals any newly introduced absence-read interleaving, not historical latency or existing approval notifications. Both roots private before PA imports, unchanged deadlines/defaults/GC/policies; complete first population retained."
+  },
+  "corrected_contracts": {
+    "tests": 70,
+    "failures": 0,
+    "errors": 0,
+    "xml": {
+      "bytes": 11116,
+      "sha256": "f4938e9ef8881d21e11c0444fb9f667a086bb018b6c42304401e113a7e8e901b"
+    }
+  },
+  "original_head_ci": {
+    "run_metadata": {
+      "id": 40954805800,
+      "name": "CI",
+      "node_id": "WFR_kwLOSnxSCs8AAAAJiRi-KA",
+      "head_branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+      "head_sha": "b464e28d00aa1d1afadde2d41da918ac70be966e",
+      "path": ".github/workflows/ci.yml",
+      "display_title": "Offload internal collaboration receipt reads before effects",
+      "run_number": 1635,
+      "event": "pull_request",
+      "status": "completed",
+      "conclusion": "success",
+      "workflow_id": 307631205,
+      "check_suite_id": 111020482552,
+      "check_suite_node_id": "CS_kwDOSnxSCs8AAAAZ2VYf-A",
+      "url": "https://api.github.com/repos/petersky/pa/actions/runs/40954805800",
+      "html_url": "https://github.com/petersky/pa/actions/runs/40954805800",
+      "pull_requests": [
+        {
+          "url": "https://api.github.com/repos/petersky/pa/pulls/616",
+          "id": 5075522697,
+          "number": 616,
+          "head": {
+            "ref": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+            "sha": "b464e28d00aa1d1afadde2d41da918ac70be966e",
+            "repo": {
+              "id": 1249661450,
+              "url": "https://api.github.com/repos/petersky/pa",
+              "name": "pa"
+            }
+          },
+          "base": {
+            "ref": "main",
+            "sha": "7d4052fda87864e775cdabca53778f48bb658599",
+            "repo": {
+              "id": 1249661450,
+              "url": "https://api.github.com/repos/petersky/pa",
+              "name": "pa"
+            }
+          }
+        }
+      ],
+      "created_at": "2026-10-29T21:05:51Z",
+      "updated_at": "2026-10-29T21:09:12Z",
+      "actor": {
+        "login": "petersky",
+        "id": 1606386,
+        "node_id": "MDQ6VXNlcjE2MDYzODY=",
+        "avatar_url": "https://avatars.githubusercontent.com/u/1606386?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/petersky",
+        "html_url": "https://github.com/petersky",
+        "followers_url": "https://api.github.com/users/petersky/followers",
+        "following_url": "https://api.github.com/users/petersky/following{/other_user}",
+        "gists_url": "https://api.github.com/users/petersky/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/petersky/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/petersky/subscriptions",
+        "organizations_url": "https://api.github.com/users/petersky/orgs",
+        "repos_url": "https://api.github.com/users/petersky/repos",
+        "events_url": "https://api.github.com/users/petersky/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/petersky/received_events",
+        "type": "User",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "run_attempt": 1,
+      "referenced_workflows": [],
+      "run_started_at": "2026-10-29T21:05:51Z",
+      "triggering_actor": {
+        "login": "petersky",
+        "id": 1606386,
+        "node_id": "MDQ6VXNlcjE2MDYzODY=",
+        "avatar_url": "https://avatars.githubusercontent.com/u/1606386?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/petersky",
+        "html_url": "https://github.com/petersky",
+        "followers_url": "https://api.github.com/users/petersky/followers",
+        "following_url": "https://api.github.com/users/petersky/following{/other_user}",
+        "gists_url": "https://api.github.com/users/petersky/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/petersky/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/petersky/subscriptions",
+        "organizations_url": "https://api.github.com/users/petersky/orgs",
+        "repos_url": "https://api.github.com/users/petersky/repos",
+        "events_url": "https://api.github.com/users/petersky/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/petersky/received_events",
+        "type": "User",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "jobs_url": "https://api.github.com/repos/petersky/pa/actions/runs/40954805800/jobs",
+      "logs_url": "https://api.github.com/repos/petersky/pa/actions/runs/40954805800/logs",
+      "check_suite_url": "https://api.github.com/repos/petersky/pa/check-suites/111020482552",
+      "artifacts_url": "https://api.github.com/repos/petersky/pa/actions/runs/40954805800/artifacts",
+      "cancel_url": "https://api.github.com/repos/petersky/pa/actions/runs/40954805800/cancel",
+      "rerun_url": "https://api.github.com/repos/petersky/pa/actions/runs/40954805800/rerun",
+      "previous_attempt_url": null,
+      "workflow_url": "https://api.github.com/repos/petersky/pa/actions/workflows/307631205",
+      "head_commit": {
+        "id": "b464e28d00aa1d1afadde2d41da918ac70be966e",
+        "tree_id": "eefc5adb4c9b871db38e612b14e2f45a461a7e24",
+        "message": "Offload internal collaboration receipt reads before effects",
+        "timestamp": "2026-10-29T21:03:52Z",
+        "author": {
+          "name": "Kyle Petersen",
+          "email": "petersky@gmail.com"
+        },
+        "committer": {
+          "name": "Kyle Petersen",
+          "email": "petersky@gmail.com"
+        }
+      },
+      "repository": {
+        "id": 1249661450,
+        "node_id": "R_kgDOSnxSCg",
+        "name": "pa",
+        "full_name": "petersky/pa",
+        "private": false,
+        "owner": {
+          "login": "petersky",
+          "id": 1606386,
+          "node_id": "MDQ6VXNlcjE2MDYzODY=",
+          "avatar_url": "https://avatars.githubusercontent.com/u/1606386?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/petersky",
+          "html_url": "https://github.com/petersky",
+          "followers_url": "https://api.github.com/users/petersky/followers",
+          "following_url": "https://api.github.com/users/petersky/following{/other_user}",
+          "gists_url": "https://api.github.com/users/petersky/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/petersky/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/petersky/subscriptions",
+          "organizations_url": "https://api.github.com/users/petersky/orgs",
+          "repos_url": "https://api.github.com/users/petersky/repos",
+          "events_url": "https://api.github.com/users/petersky/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/petersky/received_events",
+          "type": "User",
+          "user_view_type": "public",
+          "site_admin": false
+        },
+        "html_url": "https://github.com/petersky/pa",
+        "description": "Human\u2013agent orchestration: goals, tasks, knowledge, and distributed coordination",
+        "fork": false,
+        "url": "https://api.github.com/repos/petersky/pa",
+        "forks_url": "https://api.github.com/repos/petersky/pa/forks",
+        "keys_url": "https://api.github.com/repos/petersky/pa/keys{/key_id}",
+        "collaborators_url": "https://api.github.com/repos/petersky/pa/collaborators{/collaborator}",
+        "teams_url": "https://api.github.com/repos/petersky/pa/teams",
+        "hooks_url": "https://api.github.com/repos/petersky/pa/hooks",
+        "issue_events_url": "https://api.github.com/repos/petersky/pa/issues/events{/number}",
+        "events_url": "https://api.github.com/repos/petersky/pa/events",
+        "assignees_url": "https://api.github.com/repos/petersky/pa/assignees{/user}",
+        "branches_url": "https://api.github.com/repos/petersky/pa/branches{/branch}",
+        "tags_url": "https://api.github.com/repos/petersky/pa/tags",
+        "blobs_url": "https://api.github.com/repos/petersky/pa/git/blobs{/sha}",
+        "git_tags_url": "https://api.github.com/repos/petersky/pa/git/tags{/sha}",
+        "git_refs_url": "https://api.github.com/repos/petersky/pa/git/refs{/sha}",
+        "trees_url": "https://api.github.com/repos/petersky/pa/git/trees{/sha}",
+        "statuses_url": "https://api.github.com/repos/petersky/pa/statuses/{sha}",
+        "languages_url": "https://api.github.com/repos/petersky/pa/languages",
+        "stargazers_url": "https://api.github.com/repos/petersky/pa/stargazers",
+        "contributors_url": "https://api.github.com/repos/petersky/pa/contributors",
+        "subscribers_url": "https://api.github.com/repos/petersky/pa/subscribers",
+        "subscription_url": "https://api.github.com/repos/petersky/pa/subscription",
+        "commits_url": "https://api.github.com/repos/petersky/pa/commits{/sha}",
+        "git_commits_url": "https://api.github.com/repos/petersky/pa/git/commits{/sha}",
+        "comments_url": "https://api.github.com/repos/petersky/pa/comments{/number}",
+        "issue_comment_url": "https://api.github.com/repos/petersky/pa/issues/comments{/number}",
+        "contents_url": "https://api.github.com/repos/petersky/pa/contents/{+path}",
+        "compare_url": "https://api.github.com/repos/petersky/pa/compare/{base}...{head}",
+        "merges_url": "https://api.github.com/repos/petersky/pa/merges",
+        "archive_url": "https://api.github.com/repos/petersky/pa/{archive_format}{/ref}",
+        "downloads_url": "https://api.github.com/repos/petersky/pa/downloads",
+        "issues_url": "https://api.github.com/repos/petersky/pa/issues{/number}",
+        "pulls_url": "https://api.github.com/repos/petersky/pa/pulls{/number}",
+        "milestones_url": "https://api.github.com/repos/petersky/pa/milestones{/number}",
+        "notifications_url": "https://api.github.com/repos/petersky/pa/notifications{?since,all,participating}",
+        "labels_url": "https://api.github.com/repos/petersky/pa/labels{/name}",
+        "releases_url": "https://api.github.com/repos/petersky/pa/releases{/id}",
+        "deployments_url": "https://api.github.com/repos/petersky/pa/deployments"
+      },
+      "head_repository": {
+        "id": 1249661450,
+        "node_id": "R_kgDOSnxSCg",
+        "name": "pa",
+        "full_name": "petersky/pa",
+        "private": false,
+        "owner": {
+          "login": "petersky",
+          "id": 1606386,
+          "node_id": "MDQ6VXNlcjE2MDYzODY=",
+          "avatar_url": "https://avatars.githubusercontent.com/u/1606386?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/petersky",
+          "html_url": "https://github.com/petersky",
+          "followers_url": "https://api.github.com/users/petersky/followers",
+          "following_url": "https://api.github.com/users/petersky/following{/other_user}",
+          "gists_url": "https://api.github.com/users/petersky/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/petersky/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/petersky/subscriptions",
+          "organizations_url": "https://api.github.com/users/petersky/orgs",
+          "repos_url": "https://api.github.com/users/petersky/repos",
+          "events_url": "https://api.github.com/users/petersky/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/petersky/received_events",
+          "type": "User",
+          "user_view_type": "public",
+          "site_admin": false
+        },
+        "html_url": "https://github.com/petersky/pa",
+        "description": "Human\u2013agent orchestration: goals, tasks, knowledge, and distributed coordination",
+        "fork": false,
+        "url": "https://api.github.com/repos/petersky/pa",
+        "forks_url": "https://api.github.com/repos/petersky/pa/forks",
+        "keys_url": "https://api.github.com/repos/petersky/pa/keys{/key_id}",
+        "collaborators_url": "https://api.github.com/repos/petersky/pa/collaborators{/collaborator}",
+        "teams_url": "https://api.github.com/repos/petersky/pa/teams",
+        "hooks_url": "https://api.github.com/repos/petersky/pa/hooks",
+        "issue_events_url": "https://api.github.com/repos/petersky/pa/issues/events{/number}",
+        "events_url": "https://api.github.com/repos/petersky/pa/events",
+        "assignees_url": "https://api.github.com/repos/petersky/pa/assignees{/user}",
+        "branches_url": "https://api.github.com/repos/petersky/pa/branches{/branch}",
+        "tags_url": "https://api.github.com/repos/petersky/pa/tags",
+        "blobs_url": "https://api.github.com/repos/petersky/pa/git/blobs{/sha}",
+        "git_tags_url": "https://api.github.com/repos/petersky/pa/git/tags{/sha}",
+        "git_refs_url": "https://api.github.com/repos/petersky/pa/git/refs{/sha}",
+        "trees_url": "https://api.github.com/repos/petersky/pa/git/trees{/sha}",
+        "statuses_url": "https://api.github.com/repos/petersky/pa/statuses/{sha}",
+        "languages_url": "https://api.github.com/repos/petersky/pa/languages",
+        "stargazers_url": "https://api.github.com/repos/petersky/pa/stargazers",
+        "contributors_url": "https://api.github.com/repos/petersky/pa/contributors",
+        "subscribers_url": "https://api.github.com/repos/petersky/pa/subscribers",
+        "subscription_url": "https://api.github.com/repos/petersky/pa/subscription",
+        "commits_url": "https://api.github.com/repos/petersky/pa/commits{/sha}",
+        "git_commits_url": "https://api.github.com/repos/petersky/pa/git/commits{/sha}",
+        "comments_url": "https://api.github.com/repos/petersky/pa/comments{/number}",
+        "issue_comment_url": "https://api.github.com/repos/petersky/pa/issues/comments{/number}",
+        "contents_url": "https://api.github.com/repos/petersky/pa/contents/{+path}",
+        "compare_url": "https://api.github.com/repos/petersky/pa/compare/{base}...{head}",
+        "merges_url": "https://api.github.com/repos/petersky/pa/merges",
+        "archive_url": "https://api.github.com/repos/petersky/pa/{archive_format}{/ref}",
+        "downloads_url": "https://api.github.com/repos/petersky/pa/downloads",
+        "issues_url": "https://api.github.com/repos/petersky/pa/issues{/number}",
+        "pulls_url": "https://api.github.com/repos/petersky/pa/pulls{/number}",
+        "milestones_url": "https://api.github.com/repos/petersky/pa/milestones{/number}",
+        "notifications_url": "https://api.github.com/repos/petersky/pa/notifications{?since,all,participating}",
+        "labels_url": "https://api.github.com/repos/petersky/pa/labels{/name}",
+        "releases_url": "https://api.github.com/repos/petersky/pa/releases{/id}",
+        "deployments_url": "https://api.github.com/repos/petersky/pa/deployments"
+      }
+    },
+    "jobs": {
+      "total_count": 5,
+      "jobs": [
+        {
+          "id": 123732005235,
+          "run_id": 40954805800,
+          "workflow_name": "CI",
+          "head_branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+          "run_url": "https://api.github.com/repos/petersky/pa/actions/runs/40954805800",
+          "run_attempt": 1,
+          "node_id": "CR_kwDOSnxSCs8AAAAczwCRcw",
+          "head_sha": "b464e28d00aa1d1afadde2d41da918ac70be966e",
+          "url": "https://api.github.com/repos/petersky/pa/actions/jobs/123732005235",
+          "html_url": "https://github.com/petersky/pa/actions/runs/40954805800/job/123732005235",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-29T21:05:51Z",
+          "started_at": "2026-10-29T21:05:53Z",
+          "completed_at": "2026-10-29T21:06:38Z",
+          "name": "smoke",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-29T21:05:54Z",
+              "completed_at": "2026-10-29T21:05:56Z"
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-29T21:05:56Z",
+              "completed_at": "2026-10-29T21:06:16Z"
+            },
+            {
+              "name": "Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-29T21:06:16Z",
+              "completed_at": "2026-10-29T21:06:19Z"
+            },
+            {
+              "name": "Set up Python",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-29T21:06:19Z",
+              "completed_at": "2026-10-29T21:06:20Z"
+            },
+            {
+              "name": "Install dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-29T21:06:20Z",
+              "completed_at": "2026-10-29T21:06:22Z"
+            },
+            {
+              "name": "Boot smoke test",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-29T21:06:22Z",
+              "completed_at": "2026-10-29T21:06:27Z"
+            },
+            {
+              "name": "Build published artifacts",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-29T21:06:27Z",
+              "completed_at": "2026-10-29T21:06:30Z"
+            },
+            {
+              "name": "Packaged MCP 2 stdio smoke",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-29T21:06:30Z",
+              "completed_at": "2026-10-29T21:06:34Z"
+            },
+            {
+              "name": "Channel resolution smoke",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9,
+              "started_at": "2026-10-29T21:06:34Z",
+              "completed_at": "2026-10-29T21:06:35Z"
+            },
+            {
+              "name": "Post Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17,
+              "started_at": "2026-10-29T21:06:35Z",
+              "completed_at": "2026-10-29T21:06:35Z"
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 18,
+              "started_at": "2026-10-29T21:06:35Z",
+              "completed_at": "2026-10-29T21:06:35Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 19,
+              "started_at": "2026-10-29T21:06:35Z",
+              "completed_at": "2026-10-29T21:06:35Z"
+            }
+          ],
+          "check_run_url": "https://api.github.com/repos/petersky/pa/check-runs/123732005235",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "runner_id": 1000005653,
+          "runner_name": "GitHub Actions 1000005653",
+          "runner_group_id": 0,
+          "runner_group_name": "GitHub Actions"
+        },
+        {
+          "id": 123732005704,
+          "run_id": 40954805800,
+          "workflow_name": "CI",
+          "head_branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+          "run_url": "https://api.github.com/repos/petersky/pa/actions/runs/40954805800",
+          "run_attempt": 1,
+          "node_id": "CR_kwDOSnxSCs8AAAAczwCTSA",
+          "head_sha": "b464e28d00aa1d1afadde2d41da918ac70be966e",
+          "url": "https://api.github.com/repos/petersky/pa/actions/jobs/123732005704",
+          "html_url": "https://github.com/petersky/pa/actions/runs/40954805800/job/123732005704",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-29T21:05:51Z",
+          "started_at": "2026-10-29T21:05:53Z",
+          "completed_at": "2026-10-29T21:08:47Z",
+          "name": "test (0)",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-29T21:05:54Z",
+              "completed_at": "2026-10-29T21:05:55Z"
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-29T21:05:55Z",
+              "completed_at": "2026-10-29T21:06:15Z"
+            },
+            {
+              "name": "Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-29T21:06:15Z",
+              "completed_at": "2026-10-29T21:06:18Z"
+            },
+            {
+              "name": "Set up Python",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-29T21:06:18Z",
+              "completed_at": "2026-10-29T21:06:19Z"
+            },
+            {
+              "name": "Install dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-29T21:06:19Z",
+              "completed_at": "2026-10-29T21:06:20Z"
+            },
+            {
+              "name": "Warm up Chrome",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-29T21:06:20Z",
+              "completed_at": "2026-10-29T21:06:21Z"
+            },
+            {
+              "name": "Test",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-29T21:06:21Z",
+              "completed_at": "2026-10-29T21:08:44Z"
+            },
+            {
+              "name": "Retain bounded deadline evidence",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-29T21:08:44Z",
+              "completed_at": "2026-10-29T21:08:45Z"
+            },
+            {
+              "name": "Post Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 15,
+              "started_at": "2026-10-29T21:08:45Z",
+              "completed_at": "2026-10-29T21:08:45Z"
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 16,
+              "started_at": "2026-10-29T21:08:45Z",
+              "completed_at": "2026-10-29T21:08:45Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17,
+              "started_at": "2026-10-29T21:08:45Z",
+              "completed_at": "2026-10-29T21:08:45Z"
+            }
+          ],
+          "check_run_url": "https://api.github.com/repos/petersky/pa/check-runs/123732005704",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "runner_id": 1000005656,
+          "runner_name": "GitHub Actions 1000005656",
+          "runner_group_id": 0,
+          "runner_group_name": "GitHub Actions"
+        },
+        {
+          "id": 123732005802,
+          "run_id": 40954805800,
+          "workflow_name": "CI",
+          "head_branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+          "run_url": "https://api.github.com/repos/petersky/pa/actions/runs/40954805800",
+          "run_attempt": 1,
+          "node_id": "CR_kwDOSnxSCs8AAAAczwCTqg",
+          "head_sha": "b464e28d00aa1d1afadde2d41da918ac70be966e",
+          "url": "https://api.github.com/repos/petersky/pa/actions/jobs/123732005802",
+          "html_url": "https://github.com/petersky/pa/actions/runs/40954805800/job/123732005802",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-29T21:05:51Z",
+          "started_at": "2026-10-29T21:05:53Z",
+          "completed_at": "2026-10-29T21:09:12Z",
+          "name": "test (3)",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-29T21:05:54Z",
+              "completed_at": "2026-10-29T21:05:55Z"
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-29T21:05:55Z",
+              "completed_at": "2026-10-29T21:06:21Z"
+            },
+            {
+              "name": "Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-29T21:06:21Z",
+              "completed_at": "2026-10-29T21:06:24Z"
+            },
+            {
+              "name": "Set up Python",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-29T21:06:24Z",
+              "completed_at": "2026-10-29T21:06:25Z"
+            },
+            {
+              "name": "Install dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-29T21:06:25Z",
+              "completed_at": "2026-10-29T21:06:27Z"
+            },
+            {
+              "name": "Warm up Chrome",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-29T21:06:27Z",
+              "completed_at": "2026-10-29T21:06:36Z"
+            },
+            {
+              "name": "Test",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-29T21:06:36Z",
+              "completed_at": "2026-10-29T21:09:08Z"
+            },
+            {
+              "name": "Retain bounded deadline evidence",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-29T21:09:08Z",
+              "completed_at": "2026-10-29T21:09:09Z"
+            },
+            {
+              "name": "Post Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 15,
+              "started_at": "2026-10-29T21:09:09Z",
+              "completed_at": "2026-10-29T21:09:09Z"
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 16,
+              "started_at": "2026-10-29T21:09:09Z",
+              "completed_at": "2026-10-29T21:09:09Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17,
+              "started_at": "2026-10-29T21:09:09Z",
+              "completed_at": "2026-10-29T21:09:09Z"
+            }
+          ],
+          "check_run_url": "https://api.github.com/repos/petersky/pa/check-runs/123732005802",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "runner_id": 1000005655,
+          "runner_name": "GitHub Actions 1000005655",
+          "runner_group_id": 0,
+          "runner_group_name": "GitHub Actions"
+        },
+        {
+          "id": 123732005809,
+          "run_id": 40954805800,
+          "workflow_name": "CI",
+          "head_branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+          "run_url": "https://api.github.com/repos/petersky/pa/actions/runs/40954805800",
+          "run_attempt": 1,
+          "node_id": "CR_kwDOSnxSCs8AAAAczwCTsQ",
+          "head_sha": "b464e28d00aa1d1afadde2d41da918ac70be966e",
+          "url": "https://api.github.com/repos/petersky/pa/actions/jobs/123732005809",
+          "html_url": "https://github.com/petersky/pa/actions/runs/40954805800/job/123732005809",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-29T21:05:51Z",
+          "started_at": "2026-10-29T21:05:54Z",
+          "completed_at": "2026-10-29T21:08:58Z",
+          "name": "test (2)",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-29T21:05:55Z",
+              "completed_at": "2026-10-29T21:05:56Z"
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-29T21:05:56Z",
+              "completed_at": "2026-10-29T21:06:22Z"
+            },
+            {
+              "name": "Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-29T21:06:22Z",
+              "completed_at": "2026-10-29T21:06:25Z"
+            },
+            {
+              "name": "Set up Python",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-29T21:06:25Z",
+              "completed_at": "2026-10-29T21:06:25Z"
+            },
+            {
+              "name": "Install dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-29T21:06:25Z",
+              "completed_at": "2026-10-29T21:06:27Z"
+            },
+            {
+              "name": "Warm up Chrome",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-29T21:06:27Z",
+              "completed_at": "2026-10-29T21:06:34Z"
+            },
+            {
+              "name": "Test",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-29T21:06:34Z",
+              "completed_at": "2026-10-29T21:08:54Z"
+            },
+            {
+              "name": "Retain bounded deadline evidence",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-29T21:08:54Z",
+              "completed_at": "2026-10-29T21:08:54Z"
+            },
+            {
+              "name": "Post Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 15,
+              "started_at": "2026-10-29T21:08:54Z",
+              "completed_at": "2026-10-29T21:08:54Z"
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 16,
+              "started_at": "2026-10-29T21:08:54Z",
+              "completed_at": "2026-10-29T21:08:54Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17,
+              "started_at": "2026-10-29T21:08:54Z",
+              "completed_at": "2026-10-29T21:08:54Z"
+            }
+          ],
+          "check_run_url": "https://api.github.com/repos/petersky/pa/check-runs/123732005809",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "runner_id": 1000005654,
+          "runner_name": "GitHub Actions 1000005654",
+          "runner_group_id": 0,
+          "runner_group_name": "GitHub Actions"
+        },
+        {
+          "id": 123732005952,
+          "run_id": 40954805800,
+          "workflow_name": "CI",
+          "head_branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+          "run_url": "https://api.github.com/repos/petersky/pa/actions/runs/40954805800",
+          "run_attempt": 1,
+          "node_id": "CR_kwDOSnxSCs8AAAAczwCUQA",
+          "head_sha": "b464e28d00aa1d1afadde2d41da918ac70be966e",
+          "url": "https://api.github.com/repos/petersky/pa/actions/jobs/123732005952",
+          "html_url": "https://github.com/petersky/pa/actions/runs/40954805800/job/123732005952",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-29T21:05:51Z",
+          "started_at": "2026-10-29T21:05:54Z",
+          "completed_at": "2026-10-29T21:09:00Z",
+          "name": "test (1)",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-29T21:05:55Z",
+              "completed_at": "2026-10-29T21:05:56Z"
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-29T21:05:56Z",
+              "completed_at": "2026-10-29T21:06:24Z"
+            },
+            {
+              "name": "Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-29T21:06:24Z",
+              "completed_at": "2026-10-29T21:06:28Z"
+            },
+            {
+              "name": "Set up Python",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-29T21:06:28Z",
+              "completed_at": "2026-10-29T21:06:29Z"
+            },
+            {
+              "name": "Install dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-29T21:06:29Z",
+              "completed_at": "2026-10-29T21:06:31Z"
+            },
+            {
+              "name": "Warm up Chrome",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-29T21:06:31Z",
+              "completed_at": "2026-10-29T21:06:40Z"
+            },
+            {
+              "name": "Test",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-29T21:06:40Z",
+              "completed_at": "2026-10-29T21:08:55Z"
+            },
+            {
+              "name": "Retain bounded deadline evidence",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-29T21:08:55Z",
+              "completed_at": "2026-10-29T21:08:57Z"
+            },
+            {
+              "name": "Post Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 15,
+              "started_at": "2026-10-29T21:08:57Z",
+              "completed_at": "2026-10-29T21:08:57Z"
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 16,
+              "started_at": "2026-10-29T21:08:57Z",
+              "completed_at": "2026-10-29T21:08:57Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17,
+              "started_at": "2026-10-29T21:08:57Z",
+              "completed_at": "2026-10-29T21:08:57Z"
+            }
+          ],
+          "check_run_url": "https://api.github.com/repos/petersky/pa/check-runs/123732005952",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "runner_id": 1000005657,
+          "runner_name": "GitHub Actions 1000005657",
+          "runner_group_id": 0,
+          "runner_group_name": "GitHub Actions"
+        }
+      ]
+    },
+    "contract": "pa.ci-deadline-artifact-observation/v1",
+    "observed_at": "2026-10-29T21:10:29.081899+00:00",
+    "run": 40954805800,
+    "attempt": 1,
+    "head_sha": "b464e28d00aa1d1afadde2d41da918ac70be966e",
+    "github_sha": "bc3785277ce259683e4b8ef6a8aa314f29e374bb",
+    "verified_test_merge_parents": [
+      "7d4052fda87864e775cdabca53778f48bb658599",
+      "b464e28d00aa1d1afadde2d41da918ac70be966e"
+    ],
+    "artifacts": [
+      {
+        "metadata": {
+          "id": 12933186678,
+          "node_id": "MDg6QXJ0aWZhY3QxMjkzMzE4NjY3OA==",
+          "name": "deadline-evidence-1-1",
+          "size_in_bytes": 1553,
+          "url": "https://api.github.com/repos/petersky/pa/actions/artifacts/12933186678",
+          "archive_download_url": "https://api.github.com/repos/petersky/pa/actions/artifacts/12933186678/zip",
+          "expired": false,
+          "digest": "sha256:91137e588097f638099d047f17758c47ab34afd3a4560ca5187d2641c6e7f035",
+          "created_at": "2026-10-29T21:08:56Z",
+          "updated_at": "2026-10-29T21:08:56Z",
+          "expires_at": "2027-01-27T21:05:51Z",
+          "workflow_run": {
+            "id": 40954805800,
+            "repository_id": 1249661450,
+            "head_repository_id": 1249661450,
+            "head_branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+            "head_sha": "b464e28d00aa1d1afadde2d41da918ac70be966e"
+          }
+        },
+        "local_zip": ".dev/pr616-head-deadline-evidence-12933186678-20261029.zip",
+        "zip_sha256": "91137e588097f638099d047f17758c47ab34afd3a4560ca5187d2641c6e7f035",
+        "zip_bytes": 1553
+      },
+      {
+        "metadata": {
+          "id": 12932796980,
+          "node_id": "MDg6QXJ0aWZhY3QxMjkzMjc5Njk4MA==",
+          "name": "deadline-evidence-0-1",
+          "size_in_bytes": 2513,
+          "url": "https://api.github.com/repos/petersky/pa/actions/artifacts/12932796980",
+          "archive_download_url": "https://api.github.com/repos/petersky/pa/actions/artifacts/12932796980/zip",
+          "expired": false,
+          "digest": "sha256:d3a7a9865739dff0cd9f6de79ac13556a8c339531dcb1fe447a55e9d53a0c47c",
+          "created_at": "2026-10-29T21:08:45Z",
+          "updated_at": "2026-10-29T21:08:45Z",
+          "expires_at": "2027-01-27T21:05:51Z",
+          "workflow_run": {
+            "id": 40954805800,
+            "repository_id": 1249661450,
+            "head_repository_id": 1249661450,
+            "head_branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+            "head_sha": "b464e28d00aa1d1afadde2d41da918ac70be966e"
+          }
+        },
+        "local_zip": ".dev/pr616-head-deadline-evidence-12932796980-20261029.zip",
+        "zip_sha256": "d3a7a9865739dff0cd9f6de79ac13556a8c339531dcb1fe447a55e9d53a0c47c",
+        "zip_bytes": 2513
+      }
+    ],
+    "entries": [
+      {
+        "artifact": 12933186678,
+        "name": "agent-snapshot-814e6007904e435fbcd2dd0b430827e2.json",
+        "evidence": {
+          "contract": "pa.test-deadline-evidence/v1",
+          "python": "3.14.10",
+          "platform": "Linux",
+          "source_sha": "bc3785277ce259683e4b8ef6a8aa314f29e374bb",
+          "gc_thresholds": [
+            2000,
+            10,
+            10
+          ],
+          "loop_thread_id": 139914301167424,
+          "request_wall_ms": 1.7193669999926442,
+          "request_loop_thread_cpu_ms": 1.332530999999193,
+          "gc_events_total": 0,
+          "gc_events_retained": 0,
+          "gc_events_dropped": 0,
+          "request_gc_overlaps": [],
+          "worker_calls_started": 1,
+          "worker_calls_total": 1,
+          "worker_calls_incomplete": 0,
+          "worker_events_dropped": 0,
+          "worker_intervals": [
+            {
+              "wall_ms": 0.3079359999844655,
+              "thread_cpu_ms": 0.308816,
+              "thread_id": 139914055280320,
+              "start_relative_ms": 0.3074400000002697,
+              "end_relative_ms": 0.6153759999847352
+            }
+          ],
+          "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+        }
+      },
+      {
+        "artifact": 12933186678,
+        "name": "incomplete-worker-a1823a29973641ab978b356a082af874.json",
+        "evidence": {
+          "contract": "pa.test-deadline-evidence/v1",
+          "python": "3.14.10",
+          "platform": "Linux",
+          "source_sha": "bc3785277ce259683e4b8ef6a8aa314f29e374bb",
+          "gc_thresholds": [
+            2000,
+            10,
+            10
+          ],
+          "loop_thread_id": 139914301167424,
+          "request_wall_ms": 0.17189100000791768,
+          "request_loop_thread_cpu_ms": 0.11215900000038914,
+          "gc_events_total": 0,
+          "gc_events_retained": 0,
+          "gc_events_dropped": 0,
+          "request_gc_overlaps": [],
+          "worker_calls_started": 1,
+          "worker_calls_total": 1,
+          "worker_calls_incomplete": 0,
+          "worker_events_dropped": 0,
+          "worker_intervals": [
+            {
+              "wall_ms": 0.07447000001548076,
+              "thread_cpu_ms": 0.024115000000000008,
+              "thread_id": 139913777374912,
+              "start_relative_ms": 0.1442239999960293,
+              "end_relative_ms": 0.21869400001151007
+            }
+          ],
+          "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+        }
+      },
+      {
+        "artifact": 12932796980,
+        "name": "mixed-hot-path-loop-lag-a5af3a017845405eadd57d6ee090d740.json",
+        "evidence": {
+          "contract": "pa.test-deadline-evidence/v1",
+          "python": "3.14.10",
+          "platform": "Linux",
+          "source_sha": "bc3785277ce259683e4b8ef6a8aa314f29e374bb",
+          "gc_thresholds": [
+            2000,
+            10,
+            10
+          ],
+          "loop_thread_id": 139695538775872,
+          "request_wall_ms": 82.48093800000333,
+          "request_loop_thread_cpu_ms": 7.160214000000664,
+          "gc_events_total": 0,
+          "gc_events_retained": 0,
+          "gc_events_dropped": 0,
+          "request_gc_overlaps": [],
+          "worker_calls_started": 6,
+          "worker_calls_total": 6,
+          "worker_calls_incomplete": 0,
+          "worker_events_dropped": 0,
+          "worker_intervals": [
+            {
+              "wall_ms": 40.08122399999081,
+              "thread_cpu_ms": 0.03491299999999999,
+              "thread_id": 139695002478272,
+              "start_relative_ms": 0.6104160000006686,
+              "end_relative_ms": 40.69163999999148
+            },
+            {
+              "wall_ms": 40.35008000001028,
+              "thread_cpu_ms": 0.028433000000000003,
+              "thread_id": 139695019259584,
+              "start_relative_ms": 0.9888129999922057,
+              "end_relative_ms": 41.338893000002486
+            },
+            {
+              "wall_ms": 40.06706299999507,
+              "thread_cpu_ms": 0.015594,
+              "thread_id": 139694985696960,
+              "start_relative_ms": 1.754323000000113,
+              "end_relative_ms": 41.82138599999519
+            },
+            {
+              "wall_ms": 40.07113900000547,
+              "thread_cpu_ms": 0.018067000000000003,
+              "thread_id": 139694885041856,
+              "start_relative_ms": 3.1766199999907485,
+              "end_relative_ms": 43.24775899999622
+            },
+            {
+              "wall_ms": 40.08762399999455,
+              "thread_cpu_ms": 0.03405200000000002,
+              "thread_id": 139695002478272,
+              "start_relative_ms": 41.392357999995966,
+              "end_relative_ms": 81.47998199999051
+            },
+            {
+              "wall_ms": 40.272704000003046,
+              "thread_cpu_ms": 0.026730999999999998,
+              "thread_id": 139695019259584,
+              "start_relative_ms": 41.70019800000091,
+              "end_relative_ms": 81.97290200000396
+            }
+          ],
+          "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+        }
+      },
+      {
+        "artifact": 12932796980,
+        "name": "restart-drain-start-8a4c1e06efa146a1a40a24178927639c.json",
+        "evidence": {
+          "contract": "pa.test-deadline-evidence/v1",
+          "python": "3.14.10",
+          "platform": "Linux",
+          "source_sha": "bc3785277ce259683e4b8ef6a8aa314f29e374bb",
+          "gc_thresholds": [
+            2000,
+            10,
+            10
+          ],
+          "loop_thread_id": 139812215121728,
+          "request_wall_ms": 0.04011100000411716,
+          "request_loop_thread_cpu_ms": 0.03716599999847858,
+          "gc_events_total": 0,
+          "gc_events_retained": 0,
+          "gc_events_dropped": 0,
+          "request_gc_overlaps": [],
+          "worker_calls_started": 0,
+          "worker_calls_total": 0,
+          "worker_calls_incomplete": 0,
+          "worker_events_dropped": 0,
+          "worker_intervals": [],
+          "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+        }
+      },
+      {
+        "artifact": 12932796980,
+        "name": "sync-unrelated-surfaces-cd54c4f97b6a47c1a5d4bb9e1a676aad.json",
+        "evidence": {
+          "contract": "pa.test-deadline-evidence/v1",
+          "python": "3.14.10",
+          "platform": "Linux",
+          "source_sha": "bc3785277ce259683e4b8ef6a8aa314f29e374bb",
+          "gc_thresholds": [
+            2000,
+            10,
+            10
+          ],
+          "loop_thread_id": 139695538775872,
+          "request_wall_ms": 5.807416000010335,
+          "request_loop_thread_cpu_ms": 5.80716300000006,
+          "gc_events_total": 0,
+          "gc_events_retained": 0,
+          "gc_events_dropped": 0,
+          "request_gc_overlaps": [],
+          "worker_calls_started": 1,
+          "worker_calls_total": 1,
+          "worker_calls_incomplete": 0,
+          "worker_events_dropped": 0,
+          "worker_intervals": [
+            {
+              "wall_ms": 200.08045900000582,
+              "thread_cpu_ms": 0.03518299999999999,
+              "thread_id": 139695276185280,
+              "start_relative_ms": -2.4502689999934546,
+              "end_relative_ms": 197.63019000001236
+            }
+          ],
+          "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+        }
+      }
+    ],
+    "scope": "Actual first-attempt Linux Python3.14.10 numeric CI artifacts. Head synthetic tested merge independently verified; main exact integrated source. Deadline probe populations, whole mixed request time, bounded loop evidence and older GC failures remain distinct; no historical attribution, general GC quiet or wholePA acceptance inferred."
+  },
+  "new_boundary_diagnostic": {
+    "contract": "pa.private-maintenance-boundary-spans/v1",
+    "started_at": "2026-10-29T21:07:47.998551+00:00",
+    "finished_at": "2026-10-29T21:08:13.635728+00:00",
+    "source": "341e85494eaa2646290ef20b66afd52671c18e39",
+    "exit_code": 0,
+    "error_type": null,
+    "source_hashes": {
+      "/Users/petersky/.local/share/uv/tools/pa/lib/python3.14/site-packages/pa/domain/transcript_storage.py": "89ed4ade240cd884830aa0642e7515e5c4a8e51067adce4fda1e0eeab2ab237e",
+      "/Users/petersky/.local/share/uv/tools/pa/lib/python3.14/site-packages/pa/domain/projection.py": "5221d41bfa3454153fc9f23534a5aa98b18ed1fe824784b8a3321408f0ab6b81",
+      "/Users/petersky/.local/share/uv/tools/pa/lib/python3.14/site-packages/pa/instance/maintenance.py": "51bd11acafdcf94aa3de55d2654c01c0a89542be278514918952408040333d5d"
+    },
+    "profiles": [
+      {
+        "started_at": "2026-10-29T21:07:49.157071+00:00",
+        "owner_thread_id": 6196604928,
+        "spans": [
+          {
+            "function": "prune_closed_session_transcripts",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 0.013958,
+            "error_type": null,
+            "wall_ms": 0.874584,
+            "thread_cpu_ms": 0.538584
+          },
+          {
+            "function": "transcript_storage_metrics",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 52.354875,
+            "error_type": null,
+            "wall_ms": 1.034375,
+            "thread_cpu_ms": 0.390625
+          },
+          {
+            "function": "metrics",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 52.358667,
+            "error_type": null,
+            "wall_ms": 0.90225,
+            "thread_cpu_ms": 0.319042
+          },
+          {
+            "function": "_missing_referenced_objects",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 52.996292,
+            "error_type": null,
+            "wall_ms": 0.262083,
+            "thread_cpu_ms": 0.114875
+          },
+          {
+            "function": "referenced_hashes",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 52.999292,
+            "error_type": null,
+            "wall_ms": 0.255916,
+            "thread_cpu_ms": 0.109291
+          },
+          {
+            "function": "_maintain_database",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 53.410833,
+            "error_type": null,
+            "wall_ms": 4.347417,
+            "thread_cpu_ms": 3.881875
+          },
+          {
+            "function": "_maintain_database",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 57.761917,
+            "error_type": null,
+            "wall_ms": 0.497541,
+            "thread_cpu_ms": 0.436292
+          },
+          {
+            "function": "transcript_storage_metrics",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 58.262333,
+            "error_type": null,
+            "wall_ms": 0.40125,
+            "thread_cpu_ms": 0.401417
+          },
+          {
+            "function": "metrics",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 58.26325,
+            "error_type": null,
+            "wall_ms": 0.132792,
+            "thread_cpu_ms": 0.132792
+          },
+          {
+            "function": "_missing_referenced_objects",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 58.356125,
+            "error_type": null,
+            "wall_ms": 0.038417,
+            "thread_cpu_ms": 0.038458
+          },
+          {
+            "function": "referenced_hashes",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 58.3575,
+            "error_type": null,
+            "wall_ms": 0.035708,
+            "thread_cpu_ms": 0.035834
+          }
+        ],
+        "result": {
+          "ran_at": "2026-10-29T21:07:49.157078+00:00",
+          "transcript_cutoff": "2026-10-15T21:07:49.157078+00:00",
+          "mutation_cutoff": "2026-10-15T21:07:49.157078+00:00",
+          "transcript_events_deleted": 0,
+          "mutation_operations_deleted": 0,
+          "dispatch_compact": {
+            "events": 0,
+            "receipts": 0
+          },
+          "sqlite": {
+            "compacted": false,
+            "status": "ok",
+            "phases": {
+              "connect": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.230875,
+                "thread_cpu_ms": 0.155416
+              },
+              "size_initial": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.591625,
+                "thread_cpu_ms": 0.528834
+              },
+              "integrity_before": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.962875,
+                "thread_cpu_ms": 0.77375
+              },
+              "optimize": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.650167,
+                "thread_cpu_ms": 0.561791
+              },
+              "checkpoint_before": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 1.7875,
+                "thread_cpu_ms": 1.738917
+              },
+              "size_pre_compact": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.014084,
+                "thread_cpu_ms": 0.014125
+              },
+              "size_final": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.010333,
+                "thread_cpu_ms": 0.010375
+              },
+              "close": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.072459,
+                "thread_cpu_ms": 0.072625
+              },
+              "total": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 4.345584,
+                "thread_cpu_ms": 3.879875
+              }
+            },
+            "before": {
+              "page_count": 158,
+              "page_size": 4096,
+              "freelist_count": 0,
+              "bytes": 647168,
+              "free_bytes": 0
+            },
+            "after": {
+              "page_count": 158,
+              "page_size": 4096,
+              "freelist_count": 0,
+              "bytes": 647168,
+              "free_bytes": 0
+            },
+            "page_count": 158,
+            "page_size": 4096,
+            "freelist_count": 0,
+            "bytes": 647168,
+            "free_bytes": 0,
+            "quick_check": "ok",
+            "wal_busy": 0,
+            "wal_log": 0,
+            "wal_checkpointed": 0
+          },
+          "transcript_storage": {
+            "schema_version": 1,
+            "events": 0,
+            "audit_evidence": 0,
+            "objects": 0,
+            "uncompressed_bytes": 0,
+            "compressed_bytes": 0,
+            "references": 0,
+            "deduplicated_references": 0,
+            "missing_objects": 0,
+            "journal_mode": "wal",
+            "integrity": "ok",
+            "redaction_policy": "canonical-v1",
+            "hot_payload_limit": 2048,
+            "compatibility_rows": 0,
+            "migration": "complete",
+            "migration_examined": 0,
+            "migration_changed": 0,
+            "migration_error": null,
+            "measured_at": "2026-10-29T21:07:49.215733+00:00",
+            "measurement_state": "measured"
+          },
+          "phases": {
+            "retention_selection": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.849,
+              "thread_cpu_ms": 0.513083,
+              "sqlite_calls": 3,
+              "sqlite_rows": 0,
+              "sqlite_statement_ms": 0.6645831745117903,
+              "sqlite_commit_ms": 0.0,
+              "sqlite_statement_thread_cpu_ms": 0.34304199999999996,
+              "sqlite_commit_thread_cpu_ms": 0.0,
+              "sqlite_busy_failures": 0,
+              "python_lock_wait_ms": 0.0,
+              "python_lock_hold_ms": 0.0,
+              "outer_lock_hold_ms": 0.0
+            },
+            "retention_canonical": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.003542,
+              "thread_cpu_ms": 0.004,
+              "sqlite_calls": 0,
+              "sqlite_rows": 0,
+              "sqlite_statement_ms": 0.0,
+              "sqlite_commit_ms": 0.0,
+              "sqlite_statement_thread_cpu_ms": 0.0,
+              "sqlite_commit_thread_cpu_ms": 0.0,
+              "sqlite_busy_failures": 0,
+              "python_lock_wait_ms": 0.0,
+              "python_lock_hold_ms": 0.0,
+              "outer_lock_hold_ms": 0.0
+            },
+            "transcript_retention": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.879625,
+              "thread_cpu_ms": 0.543292
+            },
+            "mutation_retention": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.498083,
+              "thread_cpu_ms": 0.102292
+            },
+            "transcript_migration_and_health": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 51.990958,
+              "thread_cpu_ms": 1.042417
+            },
+            "dispatch_compact": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.014209,
+              "thread_cpu_ms": 0.014375
+            },
+            "projection_database": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 4.349916,
+              "thread_cpu_ms": 3.88425
+            },
+            "transcript_database": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.4995,
+              "thread_cpu_ms": 0.43825
+            },
+            "transcript_health_final": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.403,
+              "thread_cpu_ms": 0.403
+            },
+            "total": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 58.662209,
+              "thread_cpu_ms": 6.453208
+            }
+          },
+          "transcript_migration": {
+            "schema_version": 1,
+            "events": 0,
+            "audit_evidence": 0,
+            "objects": 0,
+            "uncompressed_bytes": 0,
+            "compressed_bytes": 0,
+            "references": 0,
+            "deduplicated_references": 0,
+            "missing_objects": 0,
+            "journal_mode": "wal",
+            "integrity": "ok",
+            "redaction_policy": "canonical-v1",
+            "hot_payload_limit": 2048,
+            "compatibility_rows": 0,
+            "migration": "complete",
+            "migration_examined": 0,
+            "migration_changed": 0,
+            "migration_error": null,
+            "measured_at": "2026-10-29T21:07:49.210458+00:00",
+            "measurement_state": "measured"
+          },
+          "transcript_sqlite": {
+            "compacted": false,
+            "status": "ok",
+            "phases": {
+              "connect": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.092917,
+                "thread_cpu_ms": 0.093
+              },
+              "size_initial": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.063958,
+                "thread_cpu_ms": 0.064042
+              },
+              "integrity_before": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.023875,
+                "thread_cpu_ms": 0.023917
+              },
+              "optimize": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.167625,
+                "thread_cpu_ms": 0.123959
+              },
+              "checkpoint_before": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.101125,
+                "thread_cpu_ms": 0.083541
+              },
+              "size_pre_compact": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.009375,
+                "thread_cpu_ms": 0.009375
+              },
+              "size_final": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.007708,
+                "thread_cpu_ms": 0.00775
+              },
+              "close": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.015083,
+                "thread_cpu_ms": 0.015166
+              },
+              "total": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.495458,
+                "thread_cpu_ms": 0.434209
+              }
+            },
+            "before": {
+              "page_count": 14,
+              "page_size": 4096,
+              "freelist_count": 0,
+              "bytes": 57344,
+              "free_bytes": 0
+            },
+            "after": {
+              "page_count": 14,
+              "page_size": 4096,
+              "freelist_count": 0,
+              "bytes": 57344,
+              "free_bytes": 0
+            },
+            "page_count": 14,
+            "page_size": 4096,
+            "freelist_count": 0,
+            "bytes": 57344,
+            "free_bytes": 0,
+            "quick_check": "ok",
+            "wal_busy": 0,
+            "wal_log": 0,
+            "wal_checkpointed": 0
+          }
+        },
+        "wall_ms": 58.666833,
+        "thread_cpu_ms": 6.457708
+      },
+      {
+        "started_at": "2026-10-29T21:07:55.990827+00:00",
+        "owner_thread_id": 6196604928,
+        "spans": [
+          {
+            "function": "prune_closed_session_transcripts",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 0.010917,
+            "error_type": null,
+            "wall_ms": 0.052125,
+            "thread_cpu_ms": 0.052292
+          },
+          {
+            "function": "transcript_storage_metrics",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 0.36225,
+            "error_type": null,
+            "wall_ms": 0.121709,
+            "thread_cpu_ms": 0.121792
+          },
+          {
+            "function": "metrics",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 0.363375,
+            "error_type": null,
+            "wall_ms": 0.100375,
+            "thread_cpu_ms": 0.100459
+          },
+          {
+            "function": "_missing_referenced_objects",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 0.417917,
+            "error_type": null,
+            "wall_ms": 0.044583,
+            "thread_cpu_ms": 0.044583
+          },
+          {
+            "function": "referenced_hashes",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 0.4195,
+            "error_type": null,
+            "wall_ms": 0.041667,
+            "thread_cpu_ms": 0.041792
+          },
+          {
+            "function": "_maintain_database",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 0.516375,
+            "error_type": null,
+            "wall_ms": 2.990875,
+            "thread_cpu_ms": 2.440792
+          },
+          {
+            "function": "_maintain_database",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 3.510042,
+            "error_type": null,
+            "wall_ms": 0.235833,
+            "thread_cpu_ms": 0.235917
+          },
+          {
+            "function": "transcript_storage_metrics",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 3.748834,
+            "error_type": null,
+            "wall_ms": 0.088708,
+            "thread_cpu_ms": 0.088667
+          },
+          {
+            "function": "metrics",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 3.749709,
+            "error_type": null,
+            "wall_ms": 0.066458,
+            "thread_cpu_ms": 0.0665
+          },
+          {
+            "function": "_missing_referenced_objects",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 3.796334,
+            "error_type": null,
+            "wall_ms": 0.018375,
+            "thread_cpu_ms": 0.018375
+          },
+          {
+            "function": "referenced_hashes",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 3.797375,
+            "error_type": null,
+            "wall_ms": 0.01625,
+            "thread_cpu_ms": 0.016292
+          }
+        ],
+        "result": {
+          "ran_at": "2026-10-29T21:07:55.990833+00:00",
+          "transcript_cutoff": "2026-10-15T21:07:55.990833+00:00",
+          "mutation_cutoff": "2026-10-15T21:07:55.990833+00:00",
+          "transcript_events_deleted": 0,
+          "mutation_operations_deleted": 0,
+          "dispatch_compact": {
+            "events": 0,
+            "receipts": 0
+          },
+          "sqlite": {
+            "compacted": false,
+            "status": "ok",
+            "phases": {
+              "connect": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.068625,
+                "thread_cpu_ms": 0.068791
+              },
+              "size_initial": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.271875,
+                "thread_cpu_ms": 0.271958
+              },
+              "integrity_before": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.574208,
+                "thread_cpu_ms": 0.57425
+              },
+              "optimize": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.578125,
+                "thread_cpu_ms": 0.195208
+              },
+              "checkpoint_before": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 1.390834,
+                "thread_cpu_ms": 1.223708
+              },
+              "size_pre_compact": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.010625,
+                "thread_cpu_ms": 0.010667
+              },
+              "size_final": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.008125,
+                "thread_cpu_ms": 0.008125
+              },
+              "close": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.070959,
+                "thread_cpu_ms": 0.071083
+              },
+              "total": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 2.989291,
+                "thread_cpu_ms": 2.439208
+              }
+            },
+            "before": {
+              "page_count": 638,
+              "page_size": 4096,
+              "freelist_count": 0,
+              "bytes": 2613248,
+              "free_bytes": 0
+            },
+            "after": {
+              "page_count": 638,
+              "page_size": 4096,
+              "freelist_count": 0,
+              "bytes": 2613248,
+              "free_bytes": 0
+            },
+            "page_count": 638,
+            "page_size": 4096,
+            "freelist_count": 0,
+            "bytes": 2613248,
+            "free_bytes": 0,
+            "quick_check": "ok",
+            "wal_busy": 0,
+            "wal_log": 0,
+            "wal_checkpointed": 0
+          },
+          "transcript_storage": {
+            "schema_version": 1,
+            "events": 0,
+            "audit_evidence": 0,
+            "objects": 0,
+            "uncompressed_bytes": 0,
+            "compressed_bytes": 0,
+            "references": 0,
+            "deduplicated_references": 0,
+            "missing_objects": 0,
+            "journal_mode": "wal",
+            "integrity": "ok",
+            "redaction_policy": "canonical-v1",
+            "hot_payload_limit": 2048,
+            "compatibility_rows": 0,
+            "migration": "complete",
+            "migration_examined": 0,
+            "migration_changed": 0,
+            "migration_error": null,
+            "measured_at": "2026-10-29T21:07:55.994665+00:00",
+            "measurement_state": "measured"
+          },
+          "phases": {
+            "retention_selection": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.040709,
+              "thread_cpu_ms": 0.041125,
+              "sqlite_calls": 2,
+              "sqlite_rows": 0,
+              "sqlite_statement_ms": 0.021541956812143326,
+              "sqlite_commit_ms": 0.0,
+              "sqlite_statement_thread_cpu_ms": 0.02062499999999981,
+              "sqlite_commit_thread_cpu_ms": 0.0,
+              "sqlite_busy_failures": 0,
+              "python_lock_wait_ms": 0.0,
+              "python_lock_hold_ms": 0.0,
+              "outer_lock_hold_ms": 0.0
+            },
+            "retention_canonical": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.001292,
+              "thread_cpu_ms": 0.001375,
+              "sqlite_calls": 0,
+              "sqlite_rows": 0,
+              "sqlite_statement_ms": 0.0,
+              "sqlite_commit_ms": 0.0,
+              "sqlite_statement_thread_cpu_ms": 0.0,
+              "sqlite_commit_thread_cpu_ms": 0.0,
+              "sqlite_busy_failures": 0,
+              "python_lock_wait_ms": 0.0,
+              "python_lock_hold_ms": 0.0,
+              "outer_lock_hold_ms": 0.0
+            },
+            "transcript_retention": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.054834,
+              "thread_cpu_ms": 0.055041
+            },
+            "mutation_retention": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.028416,
+              "thread_cpu_ms": 0.028542
+            },
+            "transcript_migration_and_health": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.385292,
+              "thread_cpu_ms": 0.385334
+            },
+            "dispatch_compact": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.028833,
+              "thread_cpu_ms": 0.028958
+            },
+            "projection_database": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 2.99275,
+              "thread_cpu_ms": 2.442667
+            },
+            "transcript_database": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.2375,
+              "thread_cpu_ms": 0.237584
+            },
+            "transcript_health_final": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.09,
+              "thread_cpu_ms": 0.090084
+            },
+            "total": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 3.83675,
+              "thread_cpu_ms": 3.286625
+            }
+          },
+          "transcript_migration": {
+            "schema_version": 1,
+            "events": 0,
+            "audit_evidence": 0,
+            "objects": 0,
+            "uncompressed_bytes": 0,
+            "compressed_bytes": 0,
+            "references": 0,
+            "deduplicated_references": 0,
+            "missing_objects": 0,
+            "journal_mode": "wal",
+            "integrity": "ok",
+            "redaction_policy": "canonical-v1",
+            "hot_payload_limit": 2048,
+            "compatibility_rows": 0,
+            "migration": "complete",
+            "migration_examined": 0,
+            "migration_changed": 0,
+            "migration_error": null,
+            "measured_at": "2026-10-29T21:07:55.991311+00:00",
+            "measurement_state": "measured"
+          },
+          "transcript_sqlite": {
+            "compacted": false,
+            "status": "ok",
+            "phases": {
+              "connect": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.080875,
+                "thread_cpu_ms": 0.080875
+              },
+              "size_initial": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.068458,
+                "thread_cpu_ms": 0.068459
+              },
+              "integrity_before": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.024334,
+                "thread_cpu_ms": 0.024375
+              },
+              "optimize": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.005875,
+                "thread_cpu_ms": 0.005917
+              },
+              "checkpoint_before": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.009083,
+                "thread_cpu_ms": 0.009083
+              },
+              "size_pre_compact": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.009875,
+                "thread_cpu_ms": 0.009917
+              },
+              "size_final": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.00875,
+                "thread_cpu_ms": 0.008792
+              },
+              "close": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.014917,
+                "thread_cpu_ms": 0.015
+              },
+              "total": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.234334,
+                "thread_cpu_ms": 0.234375
+              }
+            },
+            "before": {
+              "page_count": 14,
+              "page_size": 4096,
+              "freelist_count": 0,
+              "bytes": 57344,
+              "free_bytes": 0
+            },
+            "after": {
+              "page_count": 14,
+              "page_size": 4096,
+              "freelist_count": 0,
+              "bytes": 57344,
+              "free_bytes": 0
+            },
+            "page_count": 14,
+            "page_size": 4096,
+            "freelist_count": 0,
+            "bytes": 57344,
+            "free_bytes": 0,
+            "quick_check": "ok",
+            "wal_busy": 0,
+            "wal_log": 0,
+            "wal_checkpointed": 0
+          }
+        },
+        "wall_ms": 3.840042,
+        "thread_cpu_ms": 3.289708
+      },
+      {
+        "started_at": "2026-10-29T21:08:00.250940+00:00",
+        "owner_thread_id": 6196604928,
+        "spans": [
+          {
+            "function": "prune_closed_session_transcripts",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 0.008708,
+            "error_type": null,
+            "wall_ms": 240.148292,
+            "thread_cpu_ms": 78.802167
+          },
+          {
+            "function": "collect_unreferenced_objects",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 20.924541,
+            "error_type": null,
+            "wall_ms": 194.776375,
+            "thread_cpu_ms": 61.679708
+          },
+          {
+            "function": "transcript_storage_metrics",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 263.548583,
+            "error_type": null,
+            "wall_ms": 192.788083,
+            "thread_cpu_ms": 71.717667
+          },
+          {
+            "function": "metrics",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 263.552708,
+            "error_type": null,
+            "wall_ms": 191.297167,
+            "thread_cpu_ms": 71.304166
+          },
+          {
+            "function": "_missing_referenced_objects",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 273.441791,
+            "error_type": null,
+            "wall_ms": 181.404459,
+            "thread_cpu_ms": 62.445333
+          },
+          {
+            "function": "referenced_hashes",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 273.444625,
+            "error_type": null,
+            "wall_ms": 39.893625,
+            "thread_cpu_ms": 10.95775
+          },
+          {
+            "function": "_maintain_database",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 456.383416,
+            "error_type": null,
+            "wall_ms": 109.046375,
+            "thread_cpu_ms": 40.783917
+          },
+          {
+            "function": "_maintain_database",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 565.438125,
+            "error_type": null,
+            "wall_ms": 23.488875,
+            "thread_cpu_ms": 13.488875
+          },
+          {
+            "function": "transcript_storage_metrics",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 588.933666,
+            "error_type": null,
+            "wall_ms": 166.678042,
+            "thread_cpu_ms": 63.587209
+          },
+          {
+            "function": "metrics",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 588.934958,
+            "error_type": null,
+            "wall_ms": 163.647458,
+            "thread_cpu_ms": 62.840875
+          },
+          {
+            "function": "_missing_referenced_objects",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 599.784916,
+            "error_type": null,
+            "wall_ms": 152.79425,
+            "thread_cpu_ms": 53.786334
+          },
+          {
+            "function": "referenced_hashes",
+            "owner_thread_id": 6196604928,
+            "start_relative_ms": 599.78925,
+            "error_type": null,
+            "wall_ms": 25.75075,
+            "thread_cpu_ms": 8.820542
+          }
+        ],
+        "result": {
+          "ran_at": "2026-10-29T21:08:00.250946+00:00",
+          "transcript_cutoff": "2026-10-15T21:08:00.250946+00:00",
+          "mutation_cutoff": "2026-10-15T21:08:00.250946+00:00",
+          "transcript_events_deleted": 5000,
+          "mutation_operations_deleted": 0,
+          "dispatch_compact": {
+            "events": 0,
+            "receipts": 0
+          },
+          "sqlite": {
+            "compacted": true,
+            "status": "ok",
+            "phases": {
+              "connect": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 1.055792,
+                "thread_cpu_ms": 0.178625
+              },
+              "size_initial": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 1.484375,
+                "thread_cpu_ms": 0.477958
+              },
+              "integrity_before": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 5.098708,
+                "thread_cpu_ms": 3.857834
+              },
+              "optimize": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 5.107,
+                "thread_cpu_ms": 1.580667
+              },
+              "checkpoint_before": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 3.629917,
+                "thread_cpu_ms": 2.240875
+              },
+              "size_pre_compact": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.027584,
+                "thread_cpu_ms": 0.025041
+              },
+              "disk_space": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.008875,
+                "thread_cpu_ms": 0.009042
+              },
+              "vacuum": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 45.962792,
+                "thread_cpu_ms": 26.700333
+              },
+              "integrity_after": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 4.233791,
+                "thread_cpu_ms": 3.694959
+              },
+              "checkpoint_after": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 40.343792,
+                "thread_cpu_ms": 1.34525
+              },
+              "size_final": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 1.532042,
+                "thread_cpu_ms": 0.272542
+              },
+              "close": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.508875,
+                "thread_cpu_ms": 0.351959
+              },
+              "total": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 109.042083,
+                "thread_cpu_ms": 40.779458
+              }
+            },
+            "before": {
+              "page_count": 2396,
+              "page_size": 4096,
+              "freelist_count": 290,
+              "bytes": 9814016,
+              "free_bytes": 1187840
+            },
+            "after": {
+              "page_count": 2059,
+              "page_size": 4096,
+              "freelist_count": 0,
+              "bytes": 8433664,
+              "free_bytes": 0
+            },
+            "page_count": 2059,
+            "page_size": 4096,
+            "freelist_count": 0,
+            "bytes": 8433664,
+            "free_bytes": 0,
+            "quick_check": "ok",
+            "wal_busy": 0,
+            "wal_log": 0,
+            "wal_checkpointed": 0
+          },
+          "transcript_storage": {
+            "schema_version": 1,
+            "events": 14623,
+            "audit_evidence": 16,
+            "objects": 12511,
+            "uncompressed_bytes": 82774177,
+            "compressed_bytes": 996501,
+            "references": 12511,
+            "deduplicated_references": 0,
+            "missing_objects": 0,
+            "journal_mode": "wal",
+            "integrity": "ok",
+            "redaction_policy": "canonical-v1",
+            "hot_payload_limit": 2048,
+            "compatibility_rows": 15199,
+            "migration": "complete",
+            "migration_examined": 0,
+            "migration_changed": 0,
+            "migration_error": null,
+            "measured_at": "2026-10-29T21:08:01.006535+00:00",
+            "measurement_state": "measured"
+          },
+          "phases": {
+            "retention_selection": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.81475,
+              "thread_cpu_ms": 0.070208,
+              "sqlite_calls": 3,
+              "sqlite_rows": 1,
+              "sqlite_statement_ms": 0.13025000225752592,
+              "sqlite_commit_ms": 0.0,
+              "sqlite_statement_thread_cpu_ms": 0.04629199999999986,
+              "sqlite_commit_thread_cpu_ms": 0.0,
+              "sqlite_busy_failures": 0,
+              "python_lock_wait_ms": 0.0,
+              "python_lock_hold_ms": 0.0,
+              "outer_lock_hold_ms": 0.0
+            },
+            "retention_discovery": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.847,
+              "thread_cpu_ms": 0.214667,
+              "sqlite_calls": 3,
+              "sqlite_rows": 1,
+              "sqlite_statement_ms": 0.8368331473320723,
+              "sqlite_commit_ms": 0.0,
+              "sqlite_statement_thread_cpu_ms": 0.20337500000000217,
+              "sqlite_commit_thread_cpu_ms": 0.0,
+              "sqlite_busy_failures": 0,
+              "python_lock_wait_ms": 0.0,
+              "python_lock_hold_ms": 0.0,
+              "outer_lock_hold_ms": 0.0
+            },
+            "retention_transaction": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 20.082958,
+              "thread_cpu_ms": 8.880875,
+              "sqlite_calls": 10,
+              "sqlite_rows": 1,
+              "sqlite_statement_ms": 10.400376166217029,
+              "sqlite_commit_ms": 2.0964581053704023,
+              "sqlite_statement_thread_cpu_ms": 6.761208000000001,
+              "sqlite_commit_thread_cpu_ms": 1.9884159999999997,
+              "sqlite_busy_failures": 0,
+              "python_lock_wait_ms": 7.4588339775800705,
+              "python_lock_hold_ms": 12.617958011105657,
+              "outer_lock_hold_ms": 12.617958011105657
+            },
+            "retention_object_collection": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 194.780792,
+              "thread_cpu_ms": 61.683875,
+              "sqlite_calls": 196,
+              "sqlite_rows": 0,
+              "sqlite_statement_ms": 23.751703440211713,
+              "sqlite_commit_ms": 0.0,
+              "sqlite_statement_thread_cpu_ms": 14.557748000000064,
+              "sqlite_commit_thread_cpu_ms": 0.0,
+              "sqlite_busy_failures": 0,
+              "python_lock_wait_ms": 8.77116690389812,
+              "python_lock_hold_ms": 0.002540997229516506,
+              "outer_lock_hold_ms": 0.002540997229516506
+            },
+            "retention_canonical": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 214.876458,
+              "thread_cpu_ms": 70.576833,
+              "sqlite_calls": 206,
+              "sqlite_rows": 1,
+              "sqlite_statement_ms": 34.15207960642874,
+              "sqlite_commit_ms": 2.0964581053704023,
+              "sqlite_statement_thread_cpu_ms": 21.318956000000064,
+              "sqlite_commit_thread_cpu_ms": 1.9884159999999997,
+              "sqlite_busy_failures": 0,
+              "python_lock_wait_ms": 16.23000088147819,
+              "python_lock_hold_ms": 12.620499008335173,
+              "outer_lock_hold_ms": 12.620499008335173
+            },
+            "retention_mirror": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 24.43925,
+              "thread_cpu_ms": 8.138125,
+              "sqlite_calls": 8,
+              "sqlite_rows": 2,
+              "sqlite_statement_ms": 18.885667086578906,
+              "sqlite_commit_ms": 5.442625028081238,
+              "sqlite_statement_thread_cpu_ms": 5.245959999999982,
+              "sqlite_commit_thread_cpu_ms": 2.8400000000000087,
+              "sqlite_busy_failures": 0,
+              "python_lock_wait_ms": 0.0,
+              "python_lock_hold_ms": 0.0,
+              "outer_lock_hold_ms": 0.0
+            },
+            "transcript_retention": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 240.151666,
+              "thread_cpu_ms": 78.805541
+            },
+            "mutation_retention": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 21.800208,
+              "thread_cpu_ms": 0.166083
+            },
+            "transcript_migration_and_health": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 194.364542,
+              "thread_cpu_ms": 71.81375
+            },
+            "dispatch_compact": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.034333,
+              "thread_cpu_ms": 0.0345
+            },
+            "projection_database": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 109.05275,
+              "thread_cpu_ms": 40.791166
+            },
+            "transcript_database": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 23.492584,
+              "thread_cpu_ms": 13.492417
+            },
+            "transcript_health_final": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 166.682625,
+              "thread_cpu_ms": 63.59125
+            },
+            "total": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 755.613667,
+              "thread_cpu_ms": 268.727292
+            }
+          },
+          "transcript_migration": {
+            "schema_version": 1,
+            "events": 13503,
+            "audit_evidence": 16,
+            "objects": 12511,
+            "uncompressed_bytes": 82774177,
+            "compressed_bytes": 996501,
+            "references": 12511,
+            "deduplicated_references": 0,
+            "missing_objects": 0,
+            "journal_mode": "wal",
+            "integrity": "ok",
+            "redaction_policy": "canonical-v1",
+            "hot_payload_limit": 2048,
+            "compatibility_rows": 14271,
+            "migration": "complete",
+            "migration_examined": 0,
+            "migration_changed": 0,
+            "migration_error": null,
+            "measured_at": "2026-10-29T21:08:00.707263+00:00",
+            "measurement_state": "measured"
+          },
+          "transcript_sqlite": {
+            "compacted": false,
+            "status": "ok",
+            "phases": {
+              "connect": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.227375,
+                "thread_cpu_ms": 0.162875
+              },
+              "size_initial": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.356833,
+                "thread_cpu_ms": 0.20925
+              },
+              "integrity_before": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 10.033417,
+                "thread_cpu_ms": 7.910625
+              },
+              "optimize": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 7.831167,
+                "thread_cpu_ms": 3.204542
+              },
+              "checkpoint_before": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 4.0325,
+                "thread_cpu_ms": 1.709792
+              },
+              "size_pre_compact": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.579,
+                "thread_cpu_ms": 0.104916
+              },
+              "size_final": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.247291,
+                "thread_cpu_ms": 0.052959
+              },
+              "close": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 0.151416,
+                "thread_cpu_ms": 0.105917
+              },
+              "total": {
+                "calls": 1,
+                "errors": 0,
+                "wall_ms": 23.485583,
+                "thread_cpu_ms": 13.485375
+              }
+            },
+            "before": {
+              "page_count": 4090,
+              "page_size": 4096,
+              "freelist_count": 0,
+              "bytes": 16752640,
+              "free_bytes": 0
+            },
+            "after": {
+              "page_count": 4090,
+              "page_size": 4096,
+              "freelist_count": 0,
+              "bytes": 16752640,
+              "free_bytes": 0
+            },
+            "page_count": 4090,
+            "page_size": 4096,
+            "freelist_count": 0,
+            "bytes": 16752640,
+            "free_bytes": 0,
+            "quick_check": "ok",
+            "wal_busy": 0,
+            "wal_log": 0,
+            "wal_checkpointed": 0
+          }
+        },
+        "wall_ms": 755.617458,
+        "thread_cpu_ms": 268.730667
+      }
+    ],
+    "workload_path": ".dev/exact614-boundary-spans-v2-mixed100-20261029.json",
+    "workload_sha256": "2ee8e5742187a0d6d2562d53743aee8dc7dace17debd0d5524f18395a9aa6920",
+    "log_sha256": "2a3fb02c16a3b78c590432c32a26e8dd54aecee424a1d6084ea364b3452630e7",
+    "scope": "New separate private diagnostic population after the invalid custom timer and timing-perturbed global owner observer. Only seven function-boundary wrappers: monotonic wall and current thread CPU; no sys.setprofile, cProfile, per-generator/per-frame callback, arguments, SQL or payloads. Nested inclusive spans MUST NOT be summed. Wrapper overhead remains; not an uninstrumented acceptance result, historical cause or physical disk/native busy/offCPU/GC ownership proof. Same100iterations/12511coldobjects/5000retention/9600ordered workload and every original assertion/cleanup/fresh migration/final health/integrity/retention/compaction policy retained. Both private roots precede all PA imports; exact installed interpreter/source attested. No production effects, real provider/browser/network/admission, GC/default/clock/policy changes, or passing acceptance retry."
+  },
+  "first_boundary_path_failure": {
+    "error_type": "KeyError",
+    "error_key": "pa/lib/python3.14/site-packages/pa/domain/transcript_storage.py",
+    "helper": ".dev/observe614_maintenance_boundary_spans_20261029.py",
+    "helper_sha256": "96eb2d740c7ad7d7b999fd07407d61eef0d8ee690a78cd11a0582a2d038d1ce5",
+    "phase": "installed_source_attestation_before_wrappers_or_workload",
+    "cause": "First /pa/ split selected uv tool-directory component rather than Python package root.",
+    "workload_started": false,
+    "outputs_created": false,
+    "production_effects": false,
+    "correction": "New v2 helper derives relative path from actual package root; original helper/failure retained.",
+    "scope": "Avoidable diagnostic path check error before workload; not a PA runtime performance result."
+  },
+  "limits": [
+    "All708rows/164concerns OPEN. Everyprior707row/fieldunchanged andcomplete33386306B/fc006543 parent preserved; allolderprotectedhistory/tenattachments/logs/ZIPs/firstfailure/adverse/unknownresultsretained.",
+    "Originalb464PR616headCI40954805800fivefirstattemptsuccess,butnewconcurrentfirstrequestprobe showssemanticregression. Nevermerged/retriedoriginalhead. GuardedcorrectionneedsfreshCI/watch/independentsignals; no stalegreen reuse.",
+    "70tests/30newcases preserveexistingcollaborationauthority/defaults and covermatchingfirstrequests/conflicts/waitercancellation/independentkeys/sessions/families/mapcleanup. Earlier56/16and52testpopulationsremainseparate, notadditive. Effects aremocked/private; realprovider/configuration/admission acceptanceunperformed.",
+    "Corrected12pairs/24calls retain200msread andcomplete duplicate results,maxloop214.962\u21926.494ms. Eachnativeoperationhas3completions/no failuretimeoutrejection/slowcall; fullcumulativecounterandphasewindows retained. NativeSQLite/lockzeros areinstrumentationgaps; guardwaitnotmeasuredexecutorqueue. Fallbackmetricsnotcapturedbynativeexecutor.",
+    "Corrected100mixed9600ordered/zero workerwarnings butmaintenance836.293msone500msviolation. Earlier843.540/installed614840.356/original614879.842/olderfailures remainseparate. Tenmodulehashesattested; broadmixeddoesnotexerciseeverynewreceiptbranch/realstartupdrain/provider/MCP/placement/admission/workspace/network/peerpath.",
+    "Newinstalled614boundary-onlydiagnostic separatefrominvalidcProfile/globalobserver:3calls,retained-cold755.617wall268.731CPU. Twofreshhealth192.788/166.678wall; nestedmissing181.404/152.794;referenced39.894/25.751ms. InclusiveoverlapNEVERSUM; wrapperoverheadremains; nohistoricalcause/disk/nativebusy/offCPU/GCownership oracceptanceclaim. FirsthelperpackagepathKeyErrorbeforewrappers/workload retained;v2onlycorrectspath.",
+    "Installed614341e/package7c7e/PID50504/config86968 remainsunchanged. No newinstall/restart/rearm orGC/default/policy/power/clock changes. Allpublic5full-session2MiBfailures/completebody-schema gap,maintenance/queue/payload/callwriteamplification/peer/log/ambiguousreceipt gaps stayopen. Acceptedbackup0331/b527/DB89957originalscopesstayCLOSED. Exact17dindependentacceptance scheduler-owned/unaccepted; no Done/selfverifier/CASloops/cleanup."
+  ],
+  "local_only_custody": {
+    ".dev/collaboration616-internal-source-mixed-launch-20261029.log": {
+      "bytes": 6666,
+      "sha256": "570796ba8aa5db449b733118a439dc2eb87f1651206fd8a7782b587c6ca2b6c9",
+      "scope": "CompleteLOCALraw/hash-only; no privateprompt/responsebody published."
+    },
+    ".dev/collaboration616-guarded-source-mixed100-20261029.log": {
+      "bytes": 382963,
+      "sha256": "392b89353cf888e40b2bcdfb372de940a424624a9306e2d2290ec5f4f2a1da9b",
+      "scope": "CompleteLOCALraw/hash-only; no privateprompt/responsebody published."
+    },
+    ".dev/collaboration616-final-contracts-20261029.log": {
+      "bytes": 99,
+      "sha256": "69983d5f7d7fb2b67863dcdd8a49a4ad3ba585db4f7c321e65c991f65a48180f",
+      "scope": "CompleteLOCALraw/hash-only; no privateprompt/responsebody published."
+    },
+    ".dev/collaboration616-guarded-contracts-20261029.log": {
+      "bytes": 99,
+      "sha256": "dfbd4d581790a49b2cb2b3b7044558416a2f06ebbcb2e8e4eca88eca9b0adb04",
+      "scope": "CompleteLOCALraw/hash-only; no privateprompt/responsebody published."
+    },
+    ".dev/collaboration616-internal-read-contracts-20261029.log": {
+      "bytes": 80,
+      "sha256": "4cf2124032e464147e816ec20702b3b32e3647b01af12dd56f695de26cf6f779",
+      "scope": "CompleteLOCALraw/hash-only; no privateprompt/responsebody published."
+    },
+    ".dev/collaboration616-guarded-source-mixed-launch-20261029.log": {
+      "bytes": 6786,
+      "sha256": "195092c8437fa07144edafa792b9aed0e5f5148152ea4a85f816978a42305cbe",
+      "scope": "CompleteLOCALraw/hash-only; no privateprompt/responsebody published."
+    },
+    ".dev/collaboration616-internal-source-mixed100-20261029.log": {
+      "bytes": 382959,
+      "sha256": "82eeca0022269239c2d057e559671c7441378dfa932f9592078b868504359728",
+      "scope": "CompleteLOCALraw/hash-only; no privateprompt/responsebody published."
+    },
+    ".dev/collaboration616-guarded-contracts-20261029.xml": {
+      "bytes": 11116,
+      "sha256": "f4938e9ef8881d21e11c0444fb9f667a086bb018b6c42304401e113a7e8e901b",
+      "scope": "CompleteLOCALraw/hash-only; no privateprompt/responsebody published."
+    },
+    ".dev/collaboration616-final-contracts-20261029.xml": {
+      "bytes": 8759,
+      "sha256": "e2fba2b2a82af1bcf07eada1094735d2d2298055c48507a56d0a982d6040afd3",
+      "scope": "CompleteLOCALraw/hash-only; no privateprompt/responsebody published."
+    },
+    ".dev/pr590-main-deadline-evidence-12616554519-20261025.zip": {
+      "bytes": 707,
+      "sha256": "88c3ef6e3d0322f126bd4c9b90fd4b319f6321457c6f96bc10bf73a1accb46cd",
+      "scope": "CompleteLOCALraw/hash-only; no privateprompt/responsebody published."
+    },
+    ".dev/pr616-head-deadline-evidence-12933186678-20261029.zip": {
+      "bytes": 1553,
+      "sha256": "91137e588097f638099d047f17758c47ab34afd3a4560ca5187d2641c6e7f035",
+      "scope": "CompleteLOCALraw/hash-only; no privateprompt/responsebody published."
+    },
+    ".dev/pr590-head-deadline-evidence-12616748447-20261025.zip": {
+      "bytes": 705,
+      "sha256": "83217e032464726914be158e18855aee24b8f1b20882dac36e8fa9831c8b2c85",
+      "scope": "CompleteLOCALraw/hash-only; no privateprompt/responsebody published."
+    },
+    ".dev/pr589-head-deadline-evidence-12616205355-20261025.zip": {
+      "bytes": 707,
+      "sha256": "07741f6e16504b457427e08b2af8e0d030a138a28c458c1adb8fc841d6d0b6bb",
+      "scope": "CompleteLOCALraw/hash-only; no privateprompt/responsebody published."
+    },
+    ".dev/pr589-main-deadline-evidence-12616026092-20261025.zip": {
+      "bytes": 709,
+      "sha256": "51a632ea7b197792a75f4fe9397bcdb848358896087915759633aad175ed0972",
+      "scope": "CompleteLOCALraw/hash-only; no privateprompt/responsebody published."
+    },
+    ".dev/pr589-main-deadline-evidence-12616780480-20261025.zip": {
+      "bytes": 1551,
+      "sha256": "46d9a4afe210ebceb6729e8cb34159055d7c650afa3439ae638939a6aa66e832",
+      "scope": "CompleteLOCALraw/hash-only; no privateprompt/responsebody published."
+    },
+    ".dev/pr590-head-deadline-evidence-12616758394-20261025.zip": {
+      "bytes": 1551,
+      "sha256": "214c7a079597a49739a41b15058900c4bd298d0dcce558403124f301f06181e4",
+      "scope": "CompleteLOCALraw/hash-only; no privateprompt/responsebody published."
+    },
+    ".dev/pr616-head-deadline-evidence-12932796980-20261029.zip": {
+      "bytes": 2513,
+      "sha256": "d3a7a9865739dff0cd9f6de79ac13556a8c339531dcb1fe447a55e9d53a0c47c",
+      "scope": "CompleteLOCALraw/hash-only; no privateprompt/responsebody published."
+    },
+    ".dev/pr600-head-deadline-evidence-12875086167-20261029.zip": {
+      "bytes": 2237,
+      "sha256": "50caab175f7b2fa3f6d443484ef8c34d3b05cab010ec87894fe9283c69d02a21",
+      "scope": "CompleteLOCALraw/hash-only; no privateprompt/responsebody published."
+    },
+    ".dev/pr589-head-deadline-evidence-12616650109-20261025.zip": {
+      "bytes": 1546,
+      "sha256": "f06304ebb7d68f88903228d78296cbc6e48642442023555722fca6ccd6170b44",
+      "scope": "CompleteLOCALraw/hash-only; no privateprompt/responsebody published."
+    },
+    ".dev/pr616-supervised-native-20261029.LOCAL.json": {
+      "bytes": 5043,
+      "sha256": "eaf7a49a643eb9cf75a4885c6e4a984b388091d0effc5f9c369cec41e593e274",
+      "scope": "CompleteLOCALraw/hash-only; no privateprompt/responsebody published."
+    },
+    ".dev/exact614-maintenance-boundary-spans-v2-20261029.log": {
+      "bytes": 382949,
+      "sha256": "2a3fb02c16a3b78c590432c32a26e8dd54aecee424a1d6084ea364b3452630e7",
+      "scope": "CompleteLOCALraw/hash-only; no privateprompt/responsebody published."
+    },
+    ".dev/verification614-initial-snapshot-boundary-failure-20261029.log": {
+      "bytes": 6029,
+      "sha256": "95bebca059de1b673381a795a1ab62bdbbd68745924405dccab162773ee76daa",
+      "scope": "CompleteLOCALraw/hash-only; no privateprompt/responsebody published."
+    }
+  },
+  "lossless_raw": {
+    "path": "docs/benchmarks/systemic-collaboration-receipt-concurrency-20261029.raw.json.gz",
+    "bytes": 36615726,
+    "sha256": "88f137b16a40c2c2058ff91702ec185d2d331a95674985f65b27628be70ed177"
+  }
+}

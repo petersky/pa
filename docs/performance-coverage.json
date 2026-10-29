@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-29T20:49:50.034055+00:00",
-  "completion": "OPEN:704findings162concerns. Exact614activated;881tests9subtests19private11additionalpass, maintenance840.356ms andfivefull-list2MiBfailures. Exact17d independentacceptance/fullrealpaths pending.",
+  "as_of": "2026-10-29T21:11:52.219779+00:00",
+  "completion": "OPEN:708findings164concerns. Correctedsourcefirst-requestownershipvalidated locally; originalunmergedheadrace/allfirstresultsretained. Installed614maintenance/full-list/realpathfailures andexact17d independentacceptance remainopen.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -219943,6 +219943,1848 @@
       "resolution": "open",
       "next_actor": "This same systemic session/card",
       "next_action": "Ready PR/durable supervisor/exacthead+main protected integration; future reviewedactivation/installedretests and fullremaining performance acceptance. Fullsession snapshots, maintenance/payload/provider/peer/log gaps remain open."
+    },
+    {
+      "id": "concern:collaboration-internal-receipt-read-loop",
+      "kind": "concern",
+      "finding": "Internal collaboration transition/command receipt reads can block the event loop",
+      "family": "collaboration",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_controlled_native_read_loop_blocking_historical_share_unverified",
+      "cause": "Native private already-committed receipt paths with deliberate200msread show204\u2013211msloopgaps. Twelve paired native/fallback comparisons preservecomplete duplicate results andreadlatency;largestloopgap214.635\u21926.548ms. Not historical stall attribution/real provider or actual policy effects.",
+      "implemented": "Only the two initial CollaborationStore receipt reads in request_transition/execute_command move off-loop, via bound native AsyncRuntime or unbound asyncio.to_thread. Original duplicate/fingerprint/conflict/provenance/policy/catalog/notification/provider/write effects stay on caller path. Cancellation/read errors do not reach effects. No mode/model/permission/default/policy/GC/deadline changes.",
+      "merged": [],
+      "deployed": "Sourcecandidateunmerged/uninstalled;actual614341/package7c7e/PID50504/config86968 remainsloaded.615docs-onlymerge requires no reinstall.",
+      "retested": {
+        "contracts": "56existing/newtestsPASS including16newcases;first52casesuitelogretained",
+        "comparison": {
+          "baseline": "7d4052fda87864e775cdabca53778f48bb658599",
+          "baseline_sha256": "6de437d514baf002a81511b8081b8cf87c5b93d1cfdd64c42f89704c85036021",
+          "candidate_source_sha256": "f76c8e78fe03d66ac7e08c7e62fc34fbec73d772086f7c841983a8db2927f342",
+          "rows": [
+            {
+              "bounded": true,
+              "family": "transition",
+              "pair": 0,
+              "variant": "baseline",
+              "request_ms": 212.65549992676824,
+              "max_loop_gap_ms": 213.05837505497038,
+              "read_on_loop": true,
+              "result_sha256": "3a995b1adb534c92e98b2c710ba57bad837eefc07d86c7d938591432d150ff5d"
+            },
+            {
+              "bounded": true,
+              "family": "transition",
+              "pair": 0,
+              "variant": "candidate",
+              "request_ms": 216.08525002375245,
+              "max_loop_gap_ms": 6.537583074532449,
+              "read_on_loop": false,
+              "result_sha256": "3a995b1adb534c92e98b2c710ba57bad837eefc07d86c7d938591432d150ff5d"
+            },
+            {
+              "bounded": true,
+              "family": "transition",
+              "pair": 1,
+              "variant": "candidate",
+              "request_ms": 210.21466702222824,
+              "max_loop_gap_ms": 6.439332966692746,
+              "read_on_loop": false,
+              "result_sha256": "3a995b1adb534c92e98b2c710ba57bad837eefc07d86c7d938591432d150ff5d"
+            },
+            {
+              "bounded": true,
+              "family": "transition",
+              "pair": 1,
+              "variant": "baseline",
+              "request_ms": 207.3185829212889,
+              "max_loop_gap_ms": 207.99862500280142,
+              "read_on_loop": true,
+              "result_sha256": "3a995b1adb534c92e98b2c710ba57bad837eefc07d86c7d938591432d150ff5d"
+            },
+            {
+              "bounded": true,
+              "family": "transition",
+              "pair": 2,
+              "variant": "baseline",
+              "request_ms": 208.45658297184855,
+              "max_loop_gap_ms": 209.07424995675683,
+              "read_on_loop": true,
+              "result_sha256": "3a995b1adb534c92e98b2c710ba57bad837eefc07d86c7d938591432d150ff5d"
+            },
+            {
+              "bounded": true,
+              "family": "transition",
+              "pair": 2,
+              "variant": "candidate",
+              "request_ms": 211.06174995657057,
+              "max_loop_gap_ms": 6.3994580414146185,
+              "read_on_loop": false,
+              "result_sha256": "3a995b1adb534c92e98b2c710ba57bad837eefc07d86c7d938591432d150ff5d"
+            },
+            {
+              "bounded": true,
+              "family": "command",
+              "pair": 0,
+              "variant": "baseline",
+              "request_ms": 213.7726249638945,
+              "max_loop_gap_ms": 214.1003340948373,
+              "read_on_loop": true,
+              "result_sha256": "457d937aa4c11adcdb5caae6089dc8424913e01b3553239845b4247d2d19e8a4"
+            },
+            {
+              "bounded": true,
+              "family": "command",
+              "pair": 0,
+              "variant": "candidate",
+              "request_ms": 212.40895800292492,
+              "max_loop_gap_ms": 6.447750027291477,
+              "read_on_loop": false,
+              "result_sha256": "457d937aa4c11adcdb5caae6089dc8424913e01b3553239845b4247d2d19e8a4"
+            },
+            {
+              "bounded": true,
+              "family": "command",
+              "pair": 1,
+              "variant": "candidate",
+              "request_ms": 205.67104103974998,
+              "max_loop_gap_ms": 6.423542043194175,
+              "read_on_loop": false,
+              "result_sha256": "457d937aa4c11adcdb5caae6089dc8424913e01b3553239845b4247d2d19e8a4"
+            },
+            {
+              "bounded": true,
+              "family": "command",
+              "pair": 1,
+              "variant": "baseline",
+              "request_ms": 213.9542499789968,
+              "max_loop_gap_ms": 214.63516703806818,
+              "read_on_loop": true,
+              "result_sha256": "457d937aa4c11adcdb5caae6089dc8424913e01b3553239845b4247d2d19e8a4"
+            },
+            {
+              "bounded": true,
+              "family": "command",
+              "pair": 2,
+              "variant": "baseline",
+              "request_ms": 210.14787501189858,
+              "max_loop_gap_ms": 210.68445802666247,
+              "read_on_loop": true,
+              "result_sha256": "457d937aa4c11adcdb5caae6089dc8424913e01b3553239845b4247d2d19e8a4"
+            },
+            {
+              "bounded": true,
+              "family": "command",
+              "pair": 2,
+              "variant": "candidate",
+              "request_ms": 213.52808293886483,
+              "max_loop_gap_ms": 6.445500068366528,
+              "read_on_loop": false,
+              "result_sha256": "457d937aa4c11adcdb5caae6089dc8424913e01b3553239845b4247d2d19e8a4"
+            },
+            {
+              "bounded": false,
+              "family": "transition",
+              "pair": 0,
+              "variant": "baseline",
+              "request_ms": 206.8086250219494,
+              "max_loop_gap_ms": 207.27591693866998,
+              "read_on_loop": true,
+              "result_sha256": "0094dcf9524d28d987b14688cd9c93744c87c3761958f46011245478e1557640"
+            },
+            {
+              "bounded": false,
+              "family": "transition",
+              "pair": 0,
+              "variant": "candidate",
+              "request_ms": 209.06000002287328,
+              "max_loop_gap_ms": 6.523209041915834,
+              "read_on_loop": false,
+              "result_sha256": "0094dcf9524d28d987b14688cd9c93744c87c3761958f46011245478e1557640"
+            },
+            {
+              "bounded": false,
+              "family": "transition",
+              "pair": 1,
+              "variant": "candidate",
+              "request_ms": 211.9102500146255,
+              "max_loop_gap_ms": 6.547790952026844,
+              "read_on_loop": false,
+              "result_sha256": "0094dcf9524d28d987b14688cd9c93744c87c3761958f46011245478e1557640"
+            },
+            {
+              "bounded": false,
+              "family": "transition",
+              "pair": 1,
+              "variant": "baseline",
+              "request_ms": 211.28633292391896,
+              "max_loop_gap_ms": 211.51575003750622,
+              "read_on_loop": true,
+              "result_sha256": "0094dcf9524d28d987b14688cd9c93744c87c3761958f46011245478e1557640"
+            },
+            {
+              "bounded": false,
+              "family": "transition",
+              "pair": 2,
+              "variant": "baseline",
+              "request_ms": 213.80087500438094,
+              "max_loop_gap_ms": 214.172541978769,
+              "read_on_loop": true,
+              "result_sha256": "0094dcf9524d28d987b14688cd9c93744c87c3761958f46011245478e1557640"
+            },
+            {
+              "bounded": false,
+              "family": "transition",
+              "pair": 2,
+              "variant": "candidate",
+              "request_ms": 214.05933296773583,
+              "max_loop_gap_ms": 6.456082919612527,
+              "read_on_loop": false,
+              "result_sha256": "0094dcf9524d28d987b14688cd9c93744c87c3761958f46011245478e1557640"
+            },
+            {
+              "bounded": false,
+              "family": "command",
+              "pair": 0,
+              "variant": "baseline",
+              "request_ms": 209.31679208297282,
+              "max_loop_gap_ms": 210.05295892246068,
+              "read_on_loop": true,
+              "result_sha256": "7a8b3acb2464bd4e859e47091b6073671b7fb067297b6b127a357b329e2081f1"
+            },
+            {
+              "bounded": false,
+              "family": "command",
+              "pair": 0,
+              "variant": "candidate",
+              "request_ms": 205.42254205793142,
+              "max_loop_gap_ms": 6.453958107158542,
+              "read_on_loop": false,
+              "result_sha256": "7a8b3acb2464bd4e859e47091b6073671b7fb067297b6b127a357b329e2081f1"
+            },
+            {
+              "bounded": false,
+              "family": "command",
+              "pair": 1,
+              "variant": "candidate",
+              "request_ms": 204.40541696734726,
+              "max_loop_gap_ms": 6.45345903467387,
+              "read_on_loop": false,
+              "result_sha256": "7a8b3acb2464bd4e859e47091b6073671b7fb067297b6b127a357b329e2081f1"
+            },
+            {
+              "bounded": false,
+              "family": "command",
+              "pair": 1,
+              "variant": "baseline",
+              "request_ms": 208.8148749899119,
+              "max_loop_gap_ms": 209.3745410675183,
+              "read_on_loop": true,
+              "result_sha256": "7a8b3acb2464bd4e859e47091b6073671b7fb067297b6b127a357b329e2081f1"
+            },
+            {
+              "bounded": false,
+              "family": "command",
+              "pair": 2,
+              "variant": "baseline",
+              "request_ms": 204.96854092925787,
+              "max_loop_gap_ms": 205.45120805036277,
+              "read_on_loop": true,
+              "result_sha256": "7a8b3acb2464bd4e859e47091b6073671b7fb067297b6b127a357b329e2081f1"
+            },
+            {
+              "bounded": false,
+              "family": "command",
+              "pair": 2,
+              "variant": "candidate",
+              "request_ms": 210.55824996437877,
+              "max_loop_gap_ms": 6.5228750463575125,
+              "read_on_loop": false,
+              "result_sha256": "7a8b3acb2464bd4e859e47091b6073671b7fb067297b6b127a357b329e2081f1"
+            }
+          ],
+          "observed_at": "2026-10-29T21:00:50.642936+00:00",
+          "scope": "Twelve alternating private pairs:3perfamily/executor; complete native receipt duplicate results match. Deliberate200msread preserved, request latency not removed, loop progress compared. No provider/configuration/admission/notification effects, production mutation, policy/default/GC/deadline change, physicalIO/historicalcause/hardware/wholePAacceptance. Bothrootsprivatebeforeimports/children. Sourcecandidateuninstalled."
+        },
+        "mixed": {
+          "events": 9600,
+          "warnings": {},
+          "threshold_violations": {
+            "maintenance.run": 1
+          },
+          "maintenance": {
+            "samples": 1,
+            "max_ms": 843.54,
+            "p50_ms": 843.54,
+            "p95_ms": 843.54,
+            "p99_ms": 843.54
+          },
+          "module_hashes": 10,
+          "nonzero_failed_timedout_rejected": []
+        }
+      },
+      "resolution": "open",
+      "next_actor": "This same systemic session/card",
+      "next_action": "ProtectedsourcePR/supervisor/exacthead+maingreen, reviewedfutureactivation/retests. Broaderinternalcollaborationreads/writes/policy/apply/commands andfullrealacceptance remainopen."
+    },
+    {
+      "id": "runtime:collaboration.mode_receipt_read",
+      "kind": "runtime_operation",
+      "finding": "collaboration.mode_receipt_read",
+      "family": "collaboration",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "new_source_offload_operation_label",
+      "implemented": "Only the two initial CollaborationStore receipt reads in request_transition/execute_command move off-loop, via bound native AsyncRuntime or unbound asyncio.to_thread. Original duplicate/fingerprint/conflict/provenance/policy/catalog/notification/provider/write effects stay on caller path. Cancellation/read errors do not reach effects. No mode/model/permission/default/policy/GC/deadline changes.",
+      "measurement": "Declaredboundexecutorlabel executed by native/fallbackscopedfixtures; no per-operation quantitative runtime snapshot captured. Not a live/process-baseline observation or measuredzero.",
+      "merged": [],
+      "deployed": "Unmerged/uninstalledsource",
+      "retested": "56tests/12pairedfixtures, broadmixeddoesnotexerciseeverynewreceiptbranch",
+      "resolution": "open",
+      "next_actor": "This session/card",
+      "next_action": "Capture bounded operation counters/queue/service/CPU and production activation/retests under representative nonduplicate/concurrent paths without changing receipts/admission/policies."
+    },
+    {
+      "id": "runtime:collaboration.command_receipt_read",
+      "kind": "runtime_operation",
+      "finding": "collaboration.command_receipt_read",
+      "family": "collaboration",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "new_source_offload_operation_label",
+      "implemented": "Only the two initial CollaborationStore receipt reads in request_transition/execute_command move off-loop, via bound native AsyncRuntime or unbound asyncio.to_thread. Original duplicate/fingerprint/conflict/provenance/policy/catalog/notification/provider/write effects stay on caller path. Cancellation/read errors do not reach effects. No mode/model/permission/default/policy/GC/deadline changes.",
+      "measurement": "Declaredboundexecutorlabel executed by native/fallbackscopedfixtures; no per-operation quantitative runtime snapshot captured. Not a live/process-baseline observation or measuredzero.",
+      "merged": [],
+      "deployed": "Unmerged/uninstalledsource",
+      "retested": "56tests/12pairedfixtures, broadmixeddoesnotexerciseeverynewreceiptbranch",
+      "resolution": "open",
+      "next_actor": "This session/card",
+      "next_action": "Capture bounded operation counters/queue/service/CPU and production activation/retests under representative nonduplicate/concurrent paths without changing receipts/admission/policies."
+    },
+    {
+      "id": "concern:collaboration-receipt-initial-read-interleaving",
+      "kind": "concern",
+      "finding": "Off-loop initial receipt read must preserve matching first-request idempotency and effect ordering",
+      "family": "collaboration",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_private_unmerged_source_regression",
+      "cause": "Unmergedb464 await permits two readers to observe absence. Transition returnsdifferentreceiptIDs/0duplicates andbothfamilies attempt2mocknotifications;archived615has1sharedreceipt/1duplicate/1notification. Existing56tests/12pairduplicate-onlyfixturesmissedthefirst-requestrace. OriginalheadCI40954805800passed5firstattemptchecks, butdidnotauthorizeunsafeintegration.",
+      "implemented": "Corrected public request_transition/execute_command own an async guard keyed by family/session/idempotency_key through initial read and effects. Waiters re-read after owner; different identities progress. Reference accounting removes entries after owner/waiter completion/cancellation/errors. Original effect bodies retained; native bounded executor or unbound to_thread still performs receipt read.",
+      "merged": [],
+      "deployed": "Correctedsourceuncommitted/unmerged/uninstalled at publication; actual614341/package7c7e remainsloaded. No repeated614installation/handoff.",
+      "retested": {
+        "contracts": "70testsPASS includes30newcases,totalnotadditivetoearlier56",
+        "source_scope": {
+          "baseline": "7d4052fda87864e775cdabca53778f48bb658599",
+          "baseline_sha256": "6de437d514baf002a81511b8081b8cf87c5b93d1cfdd64c42f89704c85036021",
+          "candidate_sha256": "021e3fd510e6346373bd9a2e0c4d189fdb4a2b3356d54016b2ceffb9a842aba6",
+          "other_application_ast_equal_after_explicit_scope": true,
+          "scope": "Explicit imports asyncio/asynccontextmanager; per-family/session/key guard map with user reference cleanup; guarded public wrappers; two owned bodies renamed and initial reads awaited through native/fallback helper. These additions are independently concurrency/cancellation/independent-key tested. Original fingerprint/provenance/policy/catalog/notification/provider/durable effect bodies remain AST equal after only this declared normalization. Normalization is not proof that new guard semantics are correct; tests and retained first race supply separate evidence. No authority/default/GC/deadline policy edits."
+        },
+        "paired": {
+          "baseline": "7d4052fda87864e775cdabca53778f48bb658599",
+          "baseline_sha256": "6de437d514baf002a81511b8081b8cf87c5b93d1cfdd64c42f89704c85036021",
+          "candidate_source_sha256": "021e3fd510e6346373bd9a2e0c4d189fdb4a2b3356d54016b2ceffb9a842aba6",
+          "rows": [
+            {
+              "bounded": true,
+              "family": "transition",
+              "pair": 0,
+              "variant": "baseline",
+              "request_ms": 214.32779100723565,
+              "max_loop_gap_ms": 214.96191702317446,
+              "read_on_loop": true,
+              "result_sha256": "35d694ec5bc4ff5505488a2e44a7e08232fce6f80dbdb4f7899ab638aa078959",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": true,
+              "family": "transition",
+              "pair": 0,
+              "variant": "candidate",
+              "request_ms": 209.9267920712009,
+              "max_loop_gap_ms": 6.4276669872924685,
+              "read_on_loop": false,
+              "result_sha256": "35d694ec5bc4ff5505488a2e44a7e08232fce6f80dbdb4f7899ab638aa078959",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": true,
+              "family": "transition",
+              "pair": 1,
+              "variant": "candidate",
+              "request_ms": 214.3299999879673,
+              "max_loop_gap_ms": 6.410541012883186,
+              "read_on_loop": false,
+              "result_sha256": "35d694ec5bc4ff5505488a2e44a7e08232fce6f80dbdb4f7899ab638aa078959",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": true,
+              "family": "transition",
+              "pair": 1,
+              "variant": "baseline",
+              "request_ms": 203.99274991359562,
+              "max_loop_gap_ms": 204.9145420314744,
+              "read_on_loop": true,
+              "result_sha256": "35d694ec5bc4ff5505488a2e44a7e08232fce6f80dbdb4f7899ab638aa078959",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": true,
+              "family": "transition",
+              "pair": 2,
+              "variant": "baseline",
+              "request_ms": 211.2683750456199,
+              "max_loop_gap_ms": 211.9540829444304,
+              "read_on_loop": true,
+              "result_sha256": "35d694ec5bc4ff5505488a2e44a7e08232fce6f80dbdb4f7899ab638aa078959",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": true,
+              "family": "transition",
+              "pair": 2,
+              "variant": "candidate",
+              "request_ms": 206.83908299542964,
+              "max_loop_gap_ms": 6.442666985094547,
+              "read_on_loop": false,
+              "result_sha256": "35d694ec5bc4ff5505488a2e44a7e08232fce6f80dbdb4f7899ab638aa078959",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": true,
+              "family": "command",
+              "pair": 0,
+              "variant": "baseline",
+              "request_ms": 207.5654590735212,
+              "max_loop_gap_ms": 208.18533399142325,
+              "read_on_loop": true,
+              "result_sha256": "b593abdee1a75e3880e7f4cc0608f3bbe54d87415ecbcc546ae16a42e87a3ad1",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": true,
+              "family": "command",
+              "pair": 0,
+              "variant": "candidate",
+              "request_ms": 214.55874992534518,
+              "max_loop_gap_ms": 6.445542094297707,
+              "read_on_loop": false,
+              "result_sha256": "b593abdee1a75e3880e7f4cc0608f3bbe54d87415ecbcc546ae16a42e87a3ad1",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": true,
+              "family": "command",
+              "pair": 1,
+              "variant": "candidate",
+              "request_ms": 212.060833000578,
+              "max_loop_gap_ms": 6.461167009547353,
+              "read_on_loop": false,
+              "result_sha256": "b593abdee1a75e3880e7f4cc0608f3bbe54d87415ecbcc546ae16a42e87a3ad1",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": true,
+              "family": "command",
+              "pair": 1,
+              "variant": "baseline",
+              "request_ms": 205.79608296975493,
+              "max_loop_gap_ms": 206.3590839970857,
+              "read_on_loop": true,
+              "result_sha256": "b593abdee1a75e3880e7f4cc0608f3bbe54d87415ecbcc546ae16a42e87a3ad1",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": true,
+              "family": "command",
+              "pair": 2,
+              "variant": "baseline",
+              "request_ms": 213.4807500988245,
+              "max_loop_gap_ms": 213.8915000250563,
+              "read_on_loop": true,
+              "result_sha256": "b593abdee1a75e3880e7f4cc0608f3bbe54d87415ecbcc546ae16a42e87a3ad1",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": true,
+              "family": "command",
+              "pair": 2,
+              "variant": "candidate",
+              "request_ms": 208.55583297088742,
+              "max_loop_gap_ms": 6.45941705442965,
+              "read_on_loop": false,
+              "result_sha256": "b593abdee1a75e3880e7f4cc0608f3bbe54d87415ecbcc546ae16a42e87a3ad1",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": false,
+              "family": "transition",
+              "pair": 0,
+              "variant": "baseline",
+              "request_ms": 213.27716705854982,
+              "max_loop_gap_ms": 213.82324991282076,
+              "read_on_loop": true,
+              "result_sha256": "4a5fa254f336944a9807f12c181e38ba0f8adaf0a12864a711bc89c6c8db0d4c",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": false,
+              "family": "transition",
+              "pair": 0,
+              "variant": "candidate",
+              "request_ms": 211.70012501534075,
+              "max_loop_gap_ms": 6.457875017076731,
+              "read_on_loop": false,
+              "result_sha256": "4a5fa254f336944a9807f12c181e38ba0f8adaf0a12864a711bc89c6c8db0d4c",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": false,
+              "family": "transition",
+              "pair": 1,
+              "variant": "candidate",
+              "request_ms": 211.17604104802012,
+              "max_loop_gap_ms": 6.466416991315782,
+              "read_on_loop": false,
+              "result_sha256": "4a5fa254f336944a9807f12c181e38ba0f8adaf0a12864a711bc89c6c8db0d4c",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": false,
+              "family": "transition",
+              "pair": 1,
+              "variant": "baseline",
+              "request_ms": 212.02229103073478,
+              "max_loop_gap_ms": 212.55370893049985,
+              "read_on_loop": true,
+              "result_sha256": "4a5fa254f336944a9807f12c181e38ba0f8adaf0a12864a711bc89c6c8db0d4c",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": false,
+              "family": "transition",
+              "pair": 2,
+              "variant": "baseline",
+              "request_ms": 209.1208330821246,
+              "max_loop_gap_ms": 209.87749996129423,
+              "read_on_loop": true,
+              "result_sha256": "4a5fa254f336944a9807f12c181e38ba0f8adaf0a12864a711bc89c6c8db0d4c",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": false,
+              "family": "transition",
+              "pair": 2,
+              "variant": "candidate",
+              "request_ms": 209.26745794713497,
+              "max_loop_gap_ms": 6.494457949884236,
+              "read_on_loop": false,
+              "result_sha256": "4a5fa254f336944a9807f12c181e38ba0f8adaf0a12864a711bc89c6c8db0d4c",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": false,
+              "family": "command",
+              "pair": 0,
+              "variant": "baseline",
+              "request_ms": 211.12679096404463,
+              "max_loop_gap_ms": 211.55779203400016,
+              "read_on_loop": true,
+              "result_sha256": "f7494564f4226d8a062d08741e30f06a147a70b2892f33c1cd534c7f4a907d84",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": false,
+              "family": "command",
+              "pair": 0,
+              "variant": "candidate",
+              "request_ms": 213.65475002676249,
+              "max_loop_gap_ms": 6.470750086009502,
+              "read_on_loop": false,
+              "result_sha256": "f7494564f4226d8a062d08741e30f06a147a70b2892f33c1cd534c7f4a907d84",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": false,
+              "family": "command",
+              "pair": 1,
+              "variant": "candidate",
+              "request_ms": 211.02837496437132,
+              "max_loop_gap_ms": 6.403833976946771,
+              "read_on_loop": false,
+              "result_sha256": "f7494564f4226d8a062d08741e30f06a147a70b2892f33c1cd534c7f4a907d84",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": false,
+              "family": "command",
+              "pair": 1,
+              "variant": "baseline",
+              "request_ms": 209.63637507520616,
+              "max_loop_gap_ms": 210.30479099135846,
+              "read_on_loop": true,
+              "result_sha256": "f7494564f4226d8a062d08741e30f06a147a70b2892f33c1cd534c7f4a907d84",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": false,
+              "family": "command",
+              "pair": 2,
+              "variant": "baseline",
+              "request_ms": 213.7533330824226,
+              "max_loop_gap_ms": 214.5359170390293,
+              "read_on_loop": true,
+              "result_sha256": "f7494564f4226d8a062d08741e30f06a147a70b2892f33c1cd534c7f4a907d84",
+              "guard_entries_after_call": 0
+            },
+            {
+              "bounded": false,
+              "family": "command",
+              "pair": 2,
+              "variant": "candidate",
+              "request_ms": 201.68058294802904,
+              "max_loop_gap_ms": 6.413583061657846,
+              "read_on_loop": false,
+              "result_sha256": "f7494564f4226d8a062d08741e30f06a147a70b2892f33c1cd534c7f4a907d84",
+              "guard_entries_after_call": 0
+            }
+          ],
+          "candidate_cumulative_executor_snapshots": [
+            {
+              "bounded": true,
+              "after_family": "transition",
+              "executor_snapshot": {
+                "failed_operations": {
+                  "capacity": 64,
+                  "scope": "Last completed failed worker/native-async invocations and executor submission failures, including short failures. Worker caller timeouts/cancellations are not completion failures; their existing counters remain separate. Failed-only percentiles use the last 256 failures per operation and are omitted until a failure completes. Static categories are not root causes; no messages, arbitrary codes, exception names, arguments, SQL or payloads retained.",
+                  "observations": []
+                },
+                "failed_requests": {
+                  "capacity": 64,
+                  "count": 0,
+                  "scope": "Last completed HTTP 4xx/5xx responses, including failed SSE responses; normal SSE lifetimes remain excluded. Route templates and numeric status only, no response bodies, error codes, IDs or query strings.",
+                  "observations": []
+                },
+                "sqlite_timing_scope": "Statement wall and thread CPU include execute and lazy fetch calls; commit is separate. Inclusive nested calls can overlap. Wall minus CPU is unclassified off-CPU time, not proof of lock wait or physical disk I/O. No SQL, parameters or result values retained.",
+                "async_backend_initialization": {
+                  "state": "not_started"
+                },
+                "slow_operations": {
+                  "capacity": 64,
+                  "scope": "last completed slow worker invocations; queue time separate from elapsed",
+                  "lock_note": "measured lock sections are inclusive; nested hold intervals may overlap",
+                  "lock_events_note": "last64 measured sections per slow invocation; total includes evicted sections; outer hold is the union of outermost measured sections, not CPU time; hold includes unlock and scheduling around it; release_ms separates that interval and is not pure unlock CPU or proven held time",
+                  "observations": []
+                },
+                "slow_lock_timelines": {
+                  "capacity": 64,
+                  "events_per_invocation": 64,
+                  "observations": []
+                },
+                "executor": {
+                  "max_workers": 1,
+                  "max_queue": 64,
+                  "active": 0,
+                  "queued": 0,
+                  "closing": false
+                },
+                "event_loop": {
+                  "samples": 0,
+                  "latest_lag_ms": 0.0,
+                  "p95_lag_ms": 0.0,
+                  "max_lag_ms": 0.0,
+                  "pre_window_lag_ms": {
+                    "samples": 0,
+                    "max": null,
+                    "p50": null,
+                    "p95": null,
+                    "p99": null
+                  }
+                },
+                "requests": {
+                  "window": "last_256_non_sse_requests_per_route",
+                  "count": 0,
+                  "average_ms": 0.0,
+                  "max_ms": 0.0,
+                  "slow": [],
+                  "latency_ms": {
+                    "samples": 0,
+                    "max": null,
+                    "p50": null,
+                    "p95": null,
+                    "p99": null
+                  },
+                  "response_bytes": 0,
+                  "excluded_sse_requests": 0,
+                  "routes": {}
+                },
+                "owned_mutations": {
+                  "pending": 0
+                },
+                "work": {
+                  "window": "last_256_observations_per_metric",
+                  "metrics": {}
+                },
+                "active_operations": [],
+                "operations": {
+                  "collaboration.mode_receipt_read": {
+                    "submitted": 3,
+                    "completed": 3,
+                    "failed": 0,
+                    "timed_out": 0,
+                    "cancelled": 0,
+                    "rejected": 0,
+                    "active": 0,
+                    "queued": 0,
+                    "max_active": 1,
+                    "max_queued": 1,
+                    "total_queue_ms": 0.339,
+                    "total_wait_ms": 630.2677909843624,
+                    "max_wait_ms": 214.09174997825176,
+                    "total_lock_wait_ms": 0.0,
+                    "total_runtime_ms": 629.724,
+                    "max_runtime_ms": 213.992,
+                    "slow_calls": 0,
+                    "sqlite_busy_failures": 0,
+                    "filesystem_totals": {
+                      "file_lock_wait_ms": 0.0,
+                      "file_lock_hold_ms": 0.0,
+                      "file_lock_release_ms": 0.0,
+                      "atomic_write_calls": 0,
+                      "atomic_write_bytes": 0,
+                      "file_fsync_calls": 0,
+                      "file_fsync_ms": 0.0,
+                      "directory_fsync_calls": 0,
+                      "directory_fsync_ms": 0.0,
+                      "fsync_failures": 0,
+                      "atomic_replace_ms": 0.0,
+                      "object_get_calls": 0,
+                      "object_get_bytes": 0,
+                      "object_get_ms": 0.0,
+                      "object_put_files": 0,
+                      "object_put_bytes": 0
+                    },
+                    "runtime_ms": {
+                      "samples": 3,
+                      "max": 213.992,
+                      "p50": 209.295,
+                      "p95": 213.992,
+                      "p99": 213.992
+                    },
+                    "queue_ms": {
+                      "samples": 3,
+                      "max": 0.272,
+                      "p50": 0.04,
+                      "p95": 0.272,
+                      "p99": 0.272
+                    },
+                    "python_lock_wait_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "python_lock_hold_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "worker_service_ms": {
+                      "samples": 3,
+                      "max": 213.561,
+                      "p50": 208.313,
+                      "p95": 213.561,
+                      "p99": 213.561
+                    },
+                    "executor_dispatch_ms": {
+                      "samples": 3,
+                      "max": 0.645,
+                      "p50": 0.111,
+                      "p95": 0.645,
+                      "p99": 0.645
+                    },
+                    "completion_delivery_ms": {
+                      "samples": 3,
+                      "max": 0.333,
+                      "p50": 0.323,
+                      "p95": 0.333,
+                      "p99": 0.333
+                    },
+                    "thread_cpu_ms": {
+                      "samples": 3,
+                      "max": 3.491,
+                      "p50": 3.212,
+                      "p95": 3.491,
+                      "p99": 3.491
+                    },
+                    "outer_lock_hold_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "python_lock_release_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "outer_lock_release_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "sqlite_statement_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "sqlite_commit_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "sqlite_statement_thread_cpu_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "sqlite_commit_thread_cpu_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "sqlite_calls": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "sqlite_rows": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "sqlite_aggregate_items": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "sqlite_aggregate_bytes": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "file_lock_wait_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "file_lock_hold_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "file_lock_release_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "atomic_write_calls": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "atomic_write_bytes": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "file_fsync_calls": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "file_fsync_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "directory_fsync_calls": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "directory_fsync_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "fsync_failures": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "atomic_replace_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "object_get_calls": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "object_get_bytes": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "object_get_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "object_put_files": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "object_put_bytes": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    }
+                  }
+                }
+              },
+              "scope": "Cumulative executor counters for this private fixture; only candidate calls use executor. Deliberate200msread included. Fallback uses asyncio thread pool and has no native operation metrics."
+            },
+            {
+              "bounded": true,
+              "after_family": "command",
+              "executor_snapshot": {
+                "failed_operations": {
+                  "capacity": 64,
+                  "scope": "Last completed failed worker/native-async invocations and executor submission failures, including short failures. Worker caller timeouts/cancellations are not completion failures; their existing counters remain separate. Failed-only percentiles use the last 256 failures per operation and are omitted until a failure completes. Static categories are not root causes; no messages, arbitrary codes, exception names, arguments, SQL or payloads retained.",
+                  "observations": []
+                },
+                "failed_requests": {
+                  "capacity": 64,
+                  "count": 0,
+                  "scope": "Last completed HTTP 4xx/5xx responses, including failed SSE responses; normal SSE lifetimes remain excluded. Route templates and numeric status only, no response bodies, error codes, IDs or query strings.",
+                  "observations": []
+                },
+                "sqlite_timing_scope": "Statement wall and thread CPU include execute and lazy fetch calls; commit is separate. Inclusive nested calls can overlap. Wall minus CPU is unclassified off-CPU time, not proof of lock wait or physical disk I/O. No SQL, parameters or result values retained.",
+                "async_backend_initialization": {
+                  "state": "not_started"
+                },
+                "slow_operations": {
+                  "capacity": 64,
+                  "scope": "last completed slow worker invocations; queue time separate from elapsed",
+                  "lock_note": "measured lock sections are inclusive; nested hold intervals may overlap",
+                  "lock_events_note": "last64 measured sections per slow invocation; total includes evicted sections; outer hold is the union of outermost measured sections, not CPU time; hold includes unlock and scheduling around it; release_ms separates that interval and is not pure unlock CPU or proven held time",
+                  "observations": []
+                },
+                "slow_lock_timelines": {
+                  "capacity": 64,
+                  "events_per_invocation": 64,
+                  "observations": []
+                },
+                "executor": {
+                  "max_workers": 1,
+                  "max_queue": 64,
+                  "active": 0,
+                  "queued": 0,
+                  "closing": false
+                },
+                "event_loop": {
+                  "samples": 0,
+                  "latest_lag_ms": 0.0,
+                  "p95_lag_ms": 0.0,
+                  "max_lag_ms": 0.0,
+                  "pre_window_lag_ms": {
+                    "samples": 0,
+                    "max": null,
+                    "p50": null,
+                    "p95": null,
+                    "p99": null
+                  }
+                },
+                "requests": {
+                  "window": "last_256_non_sse_requests_per_route",
+                  "count": 0,
+                  "average_ms": 0.0,
+                  "max_ms": 0.0,
+                  "slow": [],
+                  "latency_ms": {
+                    "samples": 0,
+                    "max": null,
+                    "p50": null,
+                    "p95": null,
+                    "p99": null
+                  },
+                  "response_bytes": 0,
+                  "excluded_sse_requests": 0,
+                  "routes": {}
+                },
+                "owned_mutations": {
+                  "pending": 0
+                },
+                "work": {
+                  "window": "last_256_observations_per_metric",
+                  "metrics": {}
+                },
+                "active_operations": [],
+                "operations": {
+                  "collaboration.command_receipt_read": {
+                    "submitted": 3,
+                    "completed": 3,
+                    "failed": 0,
+                    "timed_out": 0,
+                    "cancelled": 0,
+                    "rejected": 0,
+                    "active": 0,
+                    "queued": 0,
+                    "max_active": 1,
+                    "max_queued": 1,
+                    "total_queue_ms": 0.217,
+                    "total_wait_ms": 634.3284999020398,
+                    "max_wait_ms": 214.2328330082819,
+                    "total_lock_wait_ms": 0.0,
+                    "total_runtime_ms": 633.87,
+                    "max_runtime_ms": 214.063,
+                    "slow_calls": 0,
+                    "sqlite_busy_failures": 0,
+                    "filesystem_totals": {
+                      "file_lock_wait_ms": 0.0,
+                      "file_lock_hold_ms": 0.0,
+                      "file_lock_release_ms": 0.0,
+                      "atomic_write_calls": 0,
+                      "atomic_write_bytes": 0,
+                      "file_fsync_calls": 0,
+                      "file_fsync_ms": 0.0,
+                      "directory_fsync_calls": 0,
+                      "directory_fsync_ms": 0.0,
+                      "fsync_failures": 0,
+                      "atomic_replace_ms": 0.0,
+                      "object_get_calls": 0,
+                      "object_get_bytes": 0,
+                      "object_get_ms": 0.0,
+                      "object_put_files": 0,
+                      "object_put_bytes": 0
+                    },
+                    "runtime_ms": {
+                      "samples": 3,
+                      "max": 214.063,
+                      "p50": 211.621,
+                      "p95": 214.063,
+                      "p99": 214.063
+                    },
+                    "queue_ms": {
+                      "samples": 3,
+                      "max": 0.101,
+                      "p50": 0.065,
+                      "p95": 0.101,
+                      "p99": 0.101
+                    },
+                    "python_lock_wait_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "python_lock_hold_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "worker_service_ms": {
+                      "samples": 3,
+                      "max": 213.59,
+                      "p50": 211.064,
+                      "p95": 213.59,
+                      "p99": 213.59
+                    },
+                    "executor_dispatch_ms": {
+                      "samples": 3,
+                      "max": 0.227,
+                      "p50": 0.171,
+                      "p95": 0.227,
+                      "p99": 0.227
+                    },
+                    "completion_delivery_ms": {
+                      "samples": 3,
+                      "max": 0.379,
+                      "p50": 0.327,
+                      "p95": 0.379,
+                      "p99": 0.379
+                    },
+                    "thread_cpu_ms": {
+                      "samples": 3,
+                      "max": 3.553,
+                      "p50": 3.31,
+                      "p95": 3.553,
+                      "p99": 3.553
+                    },
+                    "outer_lock_hold_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "python_lock_release_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "outer_lock_release_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "sqlite_statement_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "sqlite_commit_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "sqlite_statement_thread_cpu_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "sqlite_commit_thread_cpu_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "sqlite_calls": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "sqlite_rows": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "sqlite_aggregate_items": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "sqlite_aggregate_bytes": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "file_lock_wait_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "file_lock_hold_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "file_lock_release_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "atomic_write_calls": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "atomic_write_bytes": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "file_fsync_calls": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "file_fsync_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "directory_fsync_calls": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "directory_fsync_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "fsync_failures": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "atomic_replace_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "object_get_calls": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "object_get_bytes": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "object_get_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "object_put_files": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "object_put_bytes": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    }
+                  },
+                  "collaboration.mode_receipt_read": {
+                    "submitted": 3,
+                    "completed": 3,
+                    "failed": 0,
+                    "timed_out": 0,
+                    "cancelled": 0,
+                    "rejected": 0,
+                    "active": 0,
+                    "queued": 0,
+                    "max_active": 1,
+                    "max_queued": 1,
+                    "total_queue_ms": 0.339,
+                    "total_wait_ms": 630.2677909843624,
+                    "max_wait_ms": 214.09174997825176,
+                    "total_lock_wait_ms": 0.0,
+                    "total_runtime_ms": 629.724,
+                    "max_runtime_ms": 213.992,
+                    "slow_calls": 0,
+                    "sqlite_busy_failures": 0,
+                    "filesystem_totals": {
+                      "file_lock_wait_ms": 0.0,
+                      "file_lock_hold_ms": 0.0,
+                      "file_lock_release_ms": 0.0,
+                      "atomic_write_calls": 0,
+                      "atomic_write_bytes": 0,
+                      "file_fsync_calls": 0,
+                      "file_fsync_ms": 0.0,
+                      "directory_fsync_calls": 0,
+                      "directory_fsync_ms": 0.0,
+                      "fsync_failures": 0,
+                      "atomic_replace_ms": 0.0,
+                      "object_get_calls": 0,
+                      "object_get_bytes": 0,
+                      "object_get_ms": 0.0,
+                      "object_put_files": 0,
+                      "object_put_bytes": 0
+                    },
+                    "runtime_ms": {
+                      "samples": 3,
+                      "max": 213.992,
+                      "p50": 209.295,
+                      "p95": 213.992,
+                      "p99": 213.992
+                    },
+                    "queue_ms": {
+                      "samples": 3,
+                      "max": 0.272,
+                      "p50": 0.04,
+                      "p95": 0.272,
+                      "p99": 0.272
+                    },
+                    "python_lock_wait_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "python_lock_hold_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "worker_service_ms": {
+                      "samples": 3,
+                      "max": 213.561,
+                      "p50": 208.313,
+                      "p95": 213.561,
+                      "p99": 213.561
+                    },
+                    "executor_dispatch_ms": {
+                      "samples": 3,
+                      "max": 0.645,
+                      "p50": 0.111,
+                      "p95": 0.645,
+                      "p99": 0.645
+                    },
+                    "completion_delivery_ms": {
+                      "samples": 3,
+                      "max": 0.333,
+                      "p50": 0.323,
+                      "p95": 0.333,
+                      "p99": 0.333
+                    },
+                    "thread_cpu_ms": {
+                      "samples": 3,
+                      "max": 3.491,
+                      "p50": 3.212,
+                      "p95": 3.491,
+                      "p99": 3.491
+                    },
+                    "outer_lock_hold_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "python_lock_release_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "outer_lock_release_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "sqlite_statement_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "sqlite_commit_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "sqlite_statement_thread_cpu_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "sqlite_commit_thread_cpu_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "sqlite_calls": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "sqlite_rows": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "sqlite_aggregate_items": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "sqlite_aggregate_bytes": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "file_lock_wait_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "file_lock_hold_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "file_lock_release_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "atomic_write_calls": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "atomic_write_bytes": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "file_fsync_calls": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "file_fsync_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "directory_fsync_calls": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "directory_fsync_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "fsync_failures": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "atomic_replace_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "object_get_calls": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "object_get_bytes": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "object_get_ms": {
+                      "samples": 3,
+                      "max": 0.0,
+                      "p50": 0.0,
+                      "p95": 0.0,
+                      "p99": 0.0
+                    },
+                    "object_put_files": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    },
+                    "object_put_bytes": {
+                      "samples": 3,
+                      "max": 0,
+                      "p50": 0,
+                      "p95": 0,
+                      "p99": 0
+                    }
+                  }
+                }
+              },
+              "scope": "Cumulative executor counters for this private fixture; only candidate calls use executor. Deliberate200msread included. Fallback uses asyncio thread pool and has no native operation metrics."
+            },
+            {
+              "bounded": false,
+              "after_family": "transition",
+              "executor_snapshot": {
+                "failed_operations": {
+                  "capacity": 64,
+                  "scope": "Last completed failed worker/native-async invocations and executor submission failures, including short failures. Worker caller timeouts/cancellations are not completion failures; their existing counters remain separate. Failed-only percentiles use the last 256 failures per operation and are omitted until a failure completes. Static categories are not root causes; no messages, arbitrary codes, exception names, arguments, SQL or payloads retained.",
+                  "observations": []
+                },
+                "failed_requests": {
+                  "capacity": 64,
+                  "count": 0,
+                  "scope": "Last completed HTTP 4xx/5xx responses, including failed SSE responses; normal SSE lifetimes remain excluded. Route templates and numeric status only, no response bodies, error codes, IDs or query strings.",
+                  "observations": []
+                },
+                "sqlite_timing_scope": "Statement wall and thread CPU include execute and lazy fetch calls; commit is separate. Inclusive nested calls can overlap. Wall minus CPU is unclassified off-CPU time, not proof of lock wait or physical disk I/O. No SQL, parameters or result values retained.",
+                "async_backend_initialization": {
+                  "state": "not_started"
+                },
+                "slow_operations": {
+                  "capacity": 64,
+                  "scope": "last completed slow worker invocations; queue time separate from elapsed",
+                  "lock_note": "measured lock sections are inclusive; nested hold intervals may overlap",
+                  "lock_events_note": "last64 measured sections per slow invocation; total includes evicted sections; outer hold is the union of outermost measured sections, not CPU time; hold includes unlock and scheduling around it; release_ms separates that interval and is not pure unlock CPU or proven held time",
+                  "observations": []
+                },
+                "slow_lock_timelines": {
+                  "capacity": 64,
+                  "events_per_invocation": 64,
+                  "observations": []
+                },
+                "executor": {
+                  "max_workers": 1,
+                  "max_queue": 64,
+                  "active": 0,
+                  "queued": 0,
+                  "closing": false
+                },
+                "event_loop": {
+                  "samples": 0,
+                  "latest_lag_ms": 0.0,
+                  "p95_lag_ms": 0.0,
+                  "max_lag_ms": 0.0,
+                  "pre_window_lag_ms": {
+                    "samples": 0,
+                    "max": null,
+                    "p50": null,
+                    "p95": null,
+                    "p99": null
+                  }
+                },
+                "requests": {
+                  "window": "last_256_non_sse_requests_per_route",
+                  "count": 0,
+                  "average_ms": 0.0,
+                  "max_ms": 0.0,
+                  "slow": [],
+                  "latency_ms": {
+                    "samples": 0,
+                    "max": null,
+                    "p50": null,
+                    "p95": null,
+                    "p99": null
+                  },
+                  "response_bytes": 0,
+                  "excluded_sse_requests": 0,
+                  "routes": {}
+                },
+                "owned_mutations": {
+                  "pending": 0
+                },
+                "work": {
+                  "window": "last_256_observations_per_metric",
+                  "metrics": {}
+                },
+                "active_operations": [],
+                "operations": {}
+              },
+              "scope": "Cumulative executor counters for this private fixture; only candidate calls use executor. Deliberate200msread included. Fallback uses asyncio thread pool and has no native operation metrics."
+            },
+            {
+              "bounded": false,
+              "after_family": "command",
+              "executor_snapshot": {
+                "failed_operations": {
+                  "capacity": 64,
+                  "scope": "Last completed failed worker/native-async invocations and executor submission failures, including short failures. Worker caller timeouts/cancellations are not completion failures; their existing counters remain separate. Failed-only percentiles use the last 256 failures per operation and are omitted until a failure completes. Static categories are not root causes; no messages, arbitrary codes, exception names, arguments, SQL or payloads retained.",
+                  "observations": []
+                },
+                "failed_requests": {
+                  "capacity": 64,
+                  "count": 0,
+                  "scope": "Last completed HTTP 4xx/5xx responses, including failed SSE responses; normal SSE lifetimes remain excluded. Route templates and numeric status only, no response bodies, error codes, IDs or query strings.",
+                  "observations": []
+                },
+                "sqlite_timing_scope": "Statement wall and thread CPU include execute and lazy fetch calls; commit is separate. Inclusive nested calls can overlap. Wall minus CPU is unclassified off-CPU time, not proof of lock wait or physical disk I/O. No SQL, parameters or result values retained.",
+                "async_backend_initialization": {
+                  "state": "not_started"
+                },
+                "slow_operations": {
+                  "capacity": 64,
+                  "scope": "last completed slow worker invocations; queue time separate from elapsed",
+                  "lock_note": "measured lock sections are inclusive; nested hold intervals may overlap",
+                  "lock_events_note": "last64 measured sections per slow invocation; total includes evicted sections; outer hold is the union of outermost measured sections, not CPU time; hold includes unlock and scheduling around it; release_ms separates that interval and is not pure unlock CPU or proven held time",
+                  "observations": []
+                },
+                "slow_lock_timelines": {
+                  "capacity": 64,
+                  "events_per_invocation": 64,
+                  "observations": []
+                },
+                "executor": {
+                  "max_workers": 1,
+                  "max_queue": 64,
+                  "active": 0,
+                  "queued": 0,
+                  "closing": false
+                },
+                "event_loop": {
+                  "samples": 0,
+                  "latest_lag_ms": 0.0,
+                  "p95_lag_ms": 0.0,
+                  "max_lag_ms": 0.0,
+                  "pre_window_lag_ms": {
+                    "samples": 0,
+                    "max": null,
+                    "p50": null,
+                    "p95": null,
+                    "p99": null
+                  }
+                },
+                "requests": {
+                  "window": "last_256_non_sse_requests_per_route",
+                  "count": 0,
+                  "average_ms": 0.0,
+                  "max_ms": 0.0,
+                  "slow": [],
+                  "latency_ms": {
+                    "samples": 0,
+                    "max": null,
+                    "p50": null,
+                    "p95": null,
+                    "p99": null
+                  },
+                  "response_bytes": 0,
+                  "excluded_sse_requests": 0,
+                  "routes": {}
+                },
+                "owned_mutations": {
+                  "pending": 0
+                },
+                "work": {
+                  "window": "last_256_observations_per_metric",
+                  "metrics": {}
+                },
+                "active_operations": [],
+                "operations": {}
+              },
+              "scope": "Cumulative executor counters for this private fixture; only candidate calls use executor. Deliberate200msread included. Fallback uses asyncio thread pool and has no native operation metrics."
+            }
+          ],
+          "observed_at": "2026-10-29T21:10:12.410814+00:00",
+          "scope": "Twelve alternating private pairs:3perfamily/executor; complete native receipt duplicate results match. Deliberate200msread preserved, request latency not removed, loop progress compared. No provider/configuration/admission/notification effects, production mutation, policy/default/GC/deadline change, physicalIO/historicalcause/hardware/wholePAacceptance. Bothrootsprivatebeforeimports/children. Sourcecandidateuninstalled."
+        },
+        "mixed": {
+          "events": 9600,
+          "warnings": {},
+          "maintenance": {
+            "samples": 1,
+            "max_ms": 836.293,
+            "p50_ms": 836.293,
+            "p95_ms": 836.293,
+            "p99_ms": 836.293
+          },
+          "threshold_violations": {
+            "maintenance.run": 1
+          },
+          "source_modules": {
+            "pa.health_journal.service": {
+              "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/health_journal/service.py",
+              "sha256": "0b3fdaabf665853ea87faf002847df2d499c8c5e67f20b122bb68b533706ef1b"
+            },
+            "pa.execution.dispatch": {
+              "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/execution/dispatch.py",
+              "sha256": "81988a943b9848246759cf1feb6867b0c251f98f4d0ed405794dc9b42f546649"
+            },
+            "pa.domain.card_enrichment": {
+              "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/domain/card_enrichment.py",
+              "sha256": "57803315c4a8f0bd42fa010a4b442cade9102833ca12801ce30a7eda8317097e"
+            },
+            "pa.domain.projection": {
+              "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/domain/projection.py",
+              "sha256": "5221d41bfa3454153fc9f23534a5aa98b18ed1fe824784b8a3321408f0ab6b81"
+            },
+            "pa.modules.collaboration": {
+              "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/modules/collaboration.py",
+              "sha256": "a260d1405fe3b7dec71c588725850649b7ac9de75edf9cd6d7b62d83acbde555"
+            },
+            "pa.collaboration.service": {
+              "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/collaboration/service.py",
+              "sha256": "021e3fd510e6346373bd9a2e0c4d189fdb4a2b3356d54016b2ceffb9a842aba6"
+            },
+            "pa.execution.verification": {
+              "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/execution/verification.py",
+              "sha256": "705088b9cc75f23263fae5a0bb5e9882dd15f7b98f12bfcc8e7cc251b8145a25"
+            },
+            "pa.modules.browser": {
+              "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/modules/browser.py",
+              "sha256": "af16439ba6f9e3db11e39b684448836d3917b1c84492e712820499020ce7de48"
+            },
+            "pa.modules.fleet": {
+              "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/modules/fleet.py",
+              "sha256": "5d2daaf20f1ea751db385aba613863d8ff1de5383f4b0700d49eae5b910ce5dd"
+            },
+            "pa.server.schema_generation": {
+              "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/server/schema_generation.py",
+              "sha256": "e6e5e180d9d3f3c53e7c0003b5316d87d41ea7c210ae25245b99148fbeb93aad"
+            }
+          }
+        }
+      },
+      "resolution": "open",
+      "next_actor": "This same session/card",
+      "next_action": "Push corrected exacthead; replace PR review description; supervisor stablegreen plus independentcompleteGitHubrevalidation/protectedmerge/mainCI. Future exactactivation/retests and broaderwholePAacceptance stillrequired."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -317774,6 +319616,13 @@
       "artifact": "docs/benchmarks/systemic-pr613-integration-prior-intent-20261029.json",
       "status": "Source tested/unmerged/uninstalled; no wholePA acceptance",
       "resolution": "open"
+    },
+    {
+      "artifact": "docs/benchmarks/systemic-pr615-integration-collaboration-receipts-20261029.json",
+      "row_id": "concern:collaboration-internal-receipt-read-loop",
+      "implemented": "Only the two initial CollaborationStore receipt reads in request_transition/execute_command move off-loop, via bound native AsyncRuntime or unbound asyncio.to_thread. Original duplicate/fingerprint/conflict/provenance/policy/catalog/notification/provider/write effects stay on caller path. Cancellation/read errors do not reach effects. No mode/model/permission/default/policy/GC/deadline changes.",
+      "status": "Sourceonly/unmerged/uninstalled",
+      "accepted": false
     }
   ],
   "integration_history": [
@@ -319855,6 +321704,16 @@
       "head_main": "5firstattemptsuccess each/no retries",
       "application_reinstalled": false,
       "accepted": false
+    },
+    {
+      "pr": 615,
+      "artifact": "docs/benchmarks/systemic-pr615-integration-collaboration-receipts-20261029.json",
+      "head": "4c3fdbf04d004f78493d66fd5cbb55995116813d",
+      "merge": "7d4052fda87864e775cdabca53778f48bb658599",
+      "watch": "c40b07b0-edd7-42d4-a561-03eec1cb9be0",
+      "head_ci": 40952841664,
+      "main_ci": 40953539491,
+      "accepted": false
     }
   ],
   "coverage_stage_history": [
@@ -319916,6 +321775,662 @@
         "scope": "Only ordering fixture strengthened. Original229test population/timings retained; one targeted true-tie test passes. NewheadCI executes strengthened samecase. No appcode/systemclock/policy/deadlinechange, benchmark replay or count summation."
       },
       "resolution": "open"
+    }
+  ],
+  "source_followup_stages": [
+    {
+      "observed_at": "2026-10-29T21:11:52.219779+00:00",
+      "artifact": "docs/benchmarks/systemic-collaboration-receipt-concurrency-20261029.json",
+      "supersedes_unmerged_head": "b464e28d00aa1d1afadde2d41da918ac70be966e",
+      "concern_id": "concern:collaboration-receipt-initial-read-interleaving",
+      "runtime_rows": [
+        "runtime:collaboration.mode_receipt_read",
+        "runtime:collaboration.command_receipt_read"
+      ],
+      "private_cumulative_executor_snapshot": {
+        "failed_operations": {
+          "capacity": 64,
+          "scope": "Last completed failed worker/native-async invocations and executor submission failures, including short failures. Worker caller timeouts/cancellations are not completion failures; their existing counters remain separate. Failed-only percentiles use the last 256 failures per operation and are omitted until a failure completes. Static categories are not root causes; no messages, arbitrary codes, exception names, arguments, SQL or payloads retained.",
+          "observations": []
+        },
+        "failed_requests": {
+          "capacity": 64,
+          "count": 0,
+          "scope": "Last completed HTTP 4xx/5xx responses, including failed SSE responses; normal SSE lifetimes remain excluded. Route templates and numeric status only, no response bodies, error codes, IDs or query strings.",
+          "observations": []
+        },
+        "sqlite_timing_scope": "Statement wall and thread CPU include execute and lazy fetch calls; commit is separate. Inclusive nested calls can overlap. Wall minus CPU is unclassified off-CPU time, not proof of lock wait or physical disk I/O. No SQL, parameters or result values retained.",
+        "async_backend_initialization": {
+          "state": "not_started"
+        },
+        "slow_operations": {
+          "capacity": 64,
+          "scope": "last completed slow worker invocations; queue time separate from elapsed",
+          "lock_note": "measured lock sections are inclusive; nested hold intervals may overlap",
+          "lock_events_note": "last64 measured sections per slow invocation; total includes evicted sections; outer hold is the union of outermost measured sections, not CPU time; hold includes unlock and scheduling around it; release_ms separates that interval and is not pure unlock CPU or proven held time",
+          "observations": []
+        },
+        "slow_lock_timelines": {
+          "capacity": 64,
+          "events_per_invocation": 64,
+          "observations": []
+        },
+        "executor": {
+          "max_workers": 1,
+          "max_queue": 64,
+          "active": 0,
+          "queued": 0,
+          "closing": false
+        },
+        "event_loop": {
+          "samples": 0,
+          "latest_lag_ms": 0.0,
+          "p95_lag_ms": 0.0,
+          "max_lag_ms": 0.0,
+          "pre_window_lag_ms": {
+            "samples": 0,
+            "max": null,
+            "p50": null,
+            "p95": null,
+            "p99": null
+          }
+        },
+        "requests": {
+          "window": "last_256_non_sse_requests_per_route",
+          "count": 0,
+          "average_ms": 0.0,
+          "max_ms": 0.0,
+          "slow": [],
+          "latency_ms": {
+            "samples": 0,
+            "max": null,
+            "p50": null,
+            "p95": null,
+            "p99": null
+          },
+          "response_bytes": 0,
+          "excluded_sse_requests": 0,
+          "routes": {}
+        },
+        "owned_mutations": {
+          "pending": 0
+        },
+        "work": {
+          "window": "last_256_observations_per_metric",
+          "metrics": {}
+        },
+        "active_operations": [],
+        "operations": {
+          "collaboration.command_receipt_read": {
+            "submitted": 3,
+            "completed": 3,
+            "failed": 0,
+            "timed_out": 0,
+            "cancelled": 0,
+            "rejected": 0,
+            "active": 0,
+            "queued": 0,
+            "max_active": 1,
+            "max_queued": 1,
+            "total_queue_ms": 0.217,
+            "total_wait_ms": 634.3284999020398,
+            "max_wait_ms": 214.2328330082819,
+            "total_lock_wait_ms": 0.0,
+            "total_runtime_ms": 633.87,
+            "max_runtime_ms": 214.063,
+            "slow_calls": 0,
+            "sqlite_busy_failures": 0,
+            "filesystem_totals": {
+              "file_lock_wait_ms": 0.0,
+              "file_lock_hold_ms": 0.0,
+              "file_lock_release_ms": 0.0,
+              "atomic_write_calls": 0,
+              "atomic_write_bytes": 0,
+              "file_fsync_calls": 0,
+              "file_fsync_ms": 0.0,
+              "directory_fsync_calls": 0,
+              "directory_fsync_ms": 0.0,
+              "fsync_failures": 0,
+              "atomic_replace_ms": 0.0,
+              "object_get_calls": 0,
+              "object_get_bytes": 0,
+              "object_get_ms": 0.0,
+              "object_put_files": 0,
+              "object_put_bytes": 0
+            },
+            "runtime_ms": {
+              "samples": 3,
+              "max": 214.063,
+              "p50": 211.621,
+              "p95": 214.063,
+              "p99": 214.063
+            },
+            "queue_ms": {
+              "samples": 3,
+              "max": 0.101,
+              "p50": 0.065,
+              "p95": 0.101,
+              "p99": 0.101
+            },
+            "python_lock_wait_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "python_lock_hold_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "worker_service_ms": {
+              "samples": 3,
+              "max": 213.59,
+              "p50": 211.064,
+              "p95": 213.59,
+              "p99": 213.59
+            },
+            "executor_dispatch_ms": {
+              "samples": 3,
+              "max": 0.227,
+              "p50": 0.171,
+              "p95": 0.227,
+              "p99": 0.227
+            },
+            "completion_delivery_ms": {
+              "samples": 3,
+              "max": 0.379,
+              "p50": 0.327,
+              "p95": 0.379,
+              "p99": 0.379
+            },
+            "thread_cpu_ms": {
+              "samples": 3,
+              "max": 3.553,
+              "p50": 3.31,
+              "p95": 3.553,
+              "p99": 3.553
+            },
+            "outer_lock_hold_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "python_lock_release_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "outer_lock_release_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_statement_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_commit_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_statement_thread_cpu_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_commit_thread_cpu_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_calls": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_rows": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_aggregate_items": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_aggregate_bytes": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_lock_wait_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "file_lock_hold_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "file_lock_release_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "atomic_write_calls": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "atomic_write_bytes": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_fsync_calls": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_fsync_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "directory_fsync_calls": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "directory_fsync_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "fsync_failures": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "atomic_replace_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "object_get_calls": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_get_bytes": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_get_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "object_put_files": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_put_bytes": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            }
+          },
+          "collaboration.mode_receipt_read": {
+            "submitted": 3,
+            "completed": 3,
+            "failed": 0,
+            "timed_out": 0,
+            "cancelled": 0,
+            "rejected": 0,
+            "active": 0,
+            "queued": 0,
+            "max_active": 1,
+            "max_queued": 1,
+            "total_queue_ms": 0.339,
+            "total_wait_ms": 630.2677909843624,
+            "max_wait_ms": 214.09174997825176,
+            "total_lock_wait_ms": 0.0,
+            "total_runtime_ms": 629.724,
+            "max_runtime_ms": 213.992,
+            "slow_calls": 0,
+            "sqlite_busy_failures": 0,
+            "filesystem_totals": {
+              "file_lock_wait_ms": 0.0,
+              "file_lock_hold_ms": 0.0,
+              "file_lock_release_ms": 0.0,
+              "atomic_write_calls": 0,
+              "atomic_write_bytes": 0,
+              "file_fsync_calls": 0,
+              "file_fsync_ms": 0.0,
+              "directory_fsync_calls": 0,
+              "directory_fsync_ms": 0.0,
+              "fsync_failures": 0,
+              "atomic_replace_ms": 0.0,
+              "object_get_calls": 0,
+              "object_get_bytes": 0,
+              "object_get_ms": 0.0,
+              "object_put_files": 0,
+              "object_put_bytes": 0
+            },
+            "runtime_ms": {
+              "samples": 3,
+              "max": 213.992,
+              "p50": 209.295,
+              "p95": 213.992,
+              "p99": 213.992
+            },
+            "queue_ms": {
+              "samples": 3,
+              "max": 0.272,
+              "p50": 0.04,
+              "p95": 0.272,
+              "p99": 0.272
+            },
+            "python_lock_wait_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "python_lock_hold_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "worker_service_ms": {
+              "samples": 3,
+              "max": 213.561,
+              "p50": 208.313,
+              "p95": 213.561,
+              "p99": 213.561
+            },
+            "executor_dispatch_ms": {
+              "samples": 3,
+              "max": 0.645,
+              "p50": 0.111,
+              "p95": 0.645,
+              "p99": 0.645
+            },
+            "completion_delivery_ms": {
+              "samples": 3,
+              "max": 0.333,
+              "p50": 0.323,
+              "p95": 0.333,
+              "p99": 0.333
+            },
+            "thread_cpu_ms": {
+              "samples": 3,
+              "max": 3.491,
+              "p50": 3.212,
+              "p95": 3.491,
+              "p99": 3.491
+            },
+            "outer_lock_hold_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "python_lock_release_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "outer_lock_release_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_statement_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_commit_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_statement_thread_cpu_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_commit_thread_cpu_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_calls": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_rows": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_aggregate_items": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_aggregate_bytes": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_lock_wait_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "file_lock_hold_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "file_lock_release_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "atomic_write_calls": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "atomic_write_bytes": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_fsync_calls": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_fsync_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "directory_fsync_calls": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "directory_fsync_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "fsync_failures": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "atomic_replace_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "object_get_calls": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_get_bytes": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_get_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "object_put_files": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_put_bytes": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            }
+          }
+        }
+      },
+      "measurement_limits": "Each label nowhas3privatecandidatecompletions includingdeliberate200msreads. Cumulativecounter/queue/service/CPUdistributions arecomplete inartifact; fallbackhasno nativeoperationmetrics. NativeCollaborationStoreusesordinarysqlite3:zeroobservedSQL/lockphasecounters do NOTprovezero SQL/nativebusy/lockwait. Async key-guard waitisnot executorqueuewait andisnotquantified here. No live/process-baseline/newbranchcoverage or productionacceptance inferred.",
+      "accepted": false
     }
   ]
 }
