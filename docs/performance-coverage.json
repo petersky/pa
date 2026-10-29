@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-29T04:34:37.960191+00:00",
-  "completion": "OPEN: all 685 findings / 149 concerns. PR598 protected merged/main green but uninstalled; native project-label source repair tested/unmerged/uninstalled. Loaded695b46e7. All residuals, first failures and independent acceptance remain.",
+  "as_of": "2026-10-29T05:06:48.405209+00:00",
+  "completion": "OPEN: all686 findings/150 concerns. PR599 activated and scoped retests retained; five full-detail collector size failures and maintenance violations remain. New full-watch source repair tested; unmerged/uninstalled; all broader obligations remain.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -217602,6 +217602,25 @@
       "resolution": "open",
       "next_actor": "this same systemic session/card",
       "next_action": "Supervised integration, measured remaining shared causes, then fresh exact batch activation/retests and independent whole-card acceptance. No blanket closure."
+    },
+    {
+      "id": "concern:full-session-watch-hydration",
+      "kind": "concern",
+      "finding": "Full session details hydrate every retained watch before filtering related evidence",
+      "family": "session",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_private_call_and_proof_hydration_amplification_live_share_unverified",
+      "cause": "Each full session row called list_watches(include_retired=True) then filtered hydrated models by originating session or truthy matching card.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-exact599-activation-full-watch-filter-20261029.json"
+      },
+      "implemented": "Full session details use the same session-or-truthy-card predicate before native watch hydration, all retired states and original cross-realm identity matching retained, fresh per call. Matching proof payloads remain complete; custom instance/subclass list/converter readers use original full-scan path. No realm narrowing, caching, authority/mutation or schema/index change.",
+      "merged": [],
+      "deployed": "Source uninstalled. Listener is exact d783/196c9737 from PR599.",
+      "retested": "177 tests and12subtests; complete synthetic baseline/candidate responses match. Source mixed retained9600ordered events; thresholds retained in immutable artifact.",
+      "resolution": "open",
+      "next_actor": "this same systemic session/card",
+      "next_action": "Protected source integration, remaining maintenance/payload/shared causes, future exact activation and independent acceptance. Preserve full-list2MiB negative result and all historical tails."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -315338,6 +315357,12 @@
       "artifact": "docs/benchmarks/systemic-pr598-integration-project-labels-20261029.json",
       "status": "Source tested; unmerged/uninstalled",
       "resolution": "open"
+    },
+    {
+      "row_id": "concern:full-session-watch-hydration",
+      "artifact": "docs/benchmarks/systemic-exact599-activation-full-watch-filter-20261029.json",
+      "status": "Source tested; unmerged/uninstalled",
+      "resolution": "open"
     }
   ],
   "integration_history": [
@@ -315349,6 +315374,16 @@
       "trees_equal": true,
       "installed": false,
       "accepted": false
+    }
+  ],
+  "activation_stage_history": [
+    {
+      "pr": 599,
+      "artifact": "docs/benchmarks/systemic-exact599-activation-full-watch-filter-20261029.json",
+      "source": "d783f8f78caff10f85811dab4b713493030fda98",
+      "loaded": true,
+      "accepted": false,
+      "public_collector_failures": 5
     }
   ]
 }

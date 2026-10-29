@@ -428,6 +428,23 @@ class PRSupervisorStore:
             rows = conn.execute(query, params).fetchall()
         return [self._row_to_watch(row) for row in rows]
 
+    def list_session_watches(self, session) -> list[PRWatch]:
+        """Full related evidence, without hydrating unrelated watch proofs.
+
+        Match the full session detail's existing session-or-card predicate,
+        including retired watches and its cross-realm identity behavior.
+        Each call reads fresh rows and retains native model validation.
+        """
+        query = "SELECT * FROM pr_watches WHERE originating_session_id = ?"
+        params = [session.id]
+        if session.card_id:
+            query += " OR card_id = ?"
+            params.append(session.card_id)
+        query += " ORDER BY updated_at DESC"
+        with self._conn() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [self._row_to_watch(row) for row in rows]
+
     def lifecycle_watch_links(self) -> list[_LifecycleWatchLink]:
         """Fresh lifecycle obligations without retained observations or proofs.
 

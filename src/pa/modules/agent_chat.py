@@ -201,6 +201,16 @@ def _session_pr_watches(request: Request, session, *, summary: bool = False) -> 
         return []
     if summary:
         return store.session_watch_summaries(session)
+    from pa.pr_supervisor.store import PRSupervisorStore
+
+    if (
+        isinstance(store, PRSupervisorStore)
+        and inspect.isfunction(PRSupervisorStore.list_watches)
+        and inspect.getattr_static(store, "list_watches") is PRSupervisorStore.list_watches
+        and inspect.getattr_static(store, "_row_to_watch")
+        is inspect.getattr_static(PRSupervisorStore, "_row_to_watch")
+    ):
+        return [watch.model_dump(mode="json") for watch in store.list_session_watches(session)]
     return [
         watch.model_dump(mode="json")
         for watch in store.list_watches(include_retired=True)
