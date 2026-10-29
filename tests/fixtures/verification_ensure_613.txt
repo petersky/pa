@@ -1,0 +1,42 @@
+async def ensure(self, card):
+        packet = await self.call(self.packet, card, diagnostic_phase='verification_packet')
+        if not packet:
+            return None
+        current = await self.call(self.store.reserve, packet, diagnostic_phase='verification_intent_write')
+        checked_absence = False
+        for old in await self.call(self.store.list, card.id, card.realm_id, diagnostic_phase='verification_intent_read'):
+            if old['id'] == current['id'] or old['state'] in {'accepted', 'superseded'}:
+                continue
+            ledger = self.ctx.services['dispatch_store']
+            record = ((await self.call(ledger.get, old['dispatch_id'], diagnostic_phase='verification_dispatch_read')) if old['dispatch_id'] else
+                      (await self.call(ledger.by_authority_idempotency, self.ctx.settings.instance_id, 'verification:' + old['id'], diagnostic_phase='verification_dispatch_read')))
+            if record and not old['dispatch_id']:
+                await self.call(self.store.update, old['id'], 'dispatched', dispatch_id=record.dispatch_id, diagnostic_phase='verification_intent_write')
+                old = await self.call(self.store.get, old['id'], diagnostic_phase='verification_intent_read')
+            unadmitted = not old['dispatch_id'] and (old['state'] == 'pending' or old['diagnostic'] in {
+                'verification_principal_unconfigured', 'waiting_for_integration_or_origin', 'repair_workflow_pending',
+                'verification_realm_authority_required'})
+            if (not record and not old['dispatch_id'] and old['state'] == 'blocked'
+                    and old['diagnostic'] == 'HTTPStatusError' and not checked_absence):
+                # A superseded scope may have failed admission before a dispatch
+                # existed. Missing local rows alone cannot release that owner.
+                # Bound receipt reads to one per cycle and require reconciled
+                # non-commit proof at the current head from the public API.
+                checked_absence = True
+                head = await self.absent_admission_head(old)
+                if head:
+                    record = await self.call(ledger.by_authority_idempotency,
+                        self.ctx.settings.instance_id, 'verification:' + old['id'], diagnostic_phase='verification_dispatch_read')
+                    if record:
+                        await self.call(self.store.update, old['id'], 'dispatched', dispatch_id=record.dispatch_id, diagnostic_phase='verification_intent_write')
+                    else:
+                        await self.call(self.store.recovery, old['id'], 'admission-absent:' + head, 'confirmed', diagnostic_phase='verification_recovery_write')
+                        unadmitted = True
+            settled = record and record.state in TERMINAL_DISPATCH_STATES and (
+                    not record.session_id or (record.acknowledged_at and record.completion_delivery_class == 'acknowledged'
+                                              and record.reconciliation_state in RECONCILIATION_TERMINAL_STATES))
+            if settled:
+                settled = await self.call(self.job_controls_settled, old, record, diagnostic_phase='verification_controls') and (await self.origin_readiness(record))['ready']
+            if unadmitted or settled:
+                await self.call(self.store.update, old['id'], 'superseded', diagnostic='successor:' + current['id'], diagnostic_phase='verification_intent_write')
+        return current
