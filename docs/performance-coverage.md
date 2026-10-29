@@ -1,3 +1,17 @@
+# PR #595 first CI failures and bounded correction
+
+[Complete stage](benchmarks/systemic-pr595-first-ci-correction-20261029.json) and lossless raw bundle retain first run `40808115107`, attempt 1, exact head `a7f9d08c`, all five terminal jobs and the complete original log archive/hash. Three jobs passed; two shards failed. Every preceding finding remains open (**682 / 146 concerns**).
+
+Shard 3 had 1,048 passes / 155 subtests / one existing skip and two failures. An older GC directory-walk test still patched removed `iglob`; it now hooks the new entry iterator with the same forced stall, waits, append deadline, release and orphan-deletion assertions. The independent mixed hot-path test observed **207.144 ms p95 loop lag against unchanged 40 ms**. The cause is unclassified. Bounded test CPU/GC/worker evidence is added without changing its twelve requests, injected 40 ms sleeps, concurrency, 20/40 ms limits, sampling waits, normal GC, cancellation or cleanup.
+
+Shard 0 had 1,050 passes / 449 subtests / one existing skip and an unchanged **200 ms snapshot timeout**. Actual numeric evidence records **245.465 ms request wall / 3.615 ms loop CPU**, no recorded GC overlap, worker start **0.322 ms** after request start and worker incomplete at evidence publication. This is not a busy/holder/GIL/disk/GC attribution. Original synthetic checkout `db183e51` parents and equal source tree are verified. The snapshot test remains unchanged; later passing probes cannot erase this failure.
+
+The corrected private database API and mixed-lag contracts pass **13 tests**, no skips; the bounded mixed span is **89.296 ms / 4.011 ms loop CPU**, six worker calls, no recorded GC overlap. It is a different host/workload population and does not explain the Linux failures. The corrected head must pass its own complete CI and protected supervisor/independent gates; no blind retry or merged/deployed acceptance is claimed.
+
+One cached owner Fleet GET at `02:45:22 UTC` retains fresh reachability but stale Macmini status/sync with `probe_failed`; its last successful status metadata is older and does not establish a current loaded build. The other two peers have fresh required fields on older `0d6638cc` loaded builds. The read did not force a refresh or mutate peers. Every peer log/build/failure and local dropped-log/retention concern remains.
+
+---
+
 # Bounded transcript GC traversal repair
 
 [Source evidence](benchmarks/systemic-transcript-gc-entry-pairs-20261029.json) and its lossless raw bundle preserve the complete preceding exact594 activation/retests, original failed stages and ten attachments. All **682 findings / 146 concerns remain open**.

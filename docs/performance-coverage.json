@@ -1,7 +1,7 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-29T02:43:49.499203+00:00",
+  "as_of": "2026-10-29T02:51:59.984925+00:00",
   "completion": "OPEN: all 682 findings / 146 concerns. Exact PR594 activation and declared scoped retests are complete; private 778.373 ms and natural maintenance over 5 s remain. Every prior failure, full real path, peer/log/build/retention and independent acceptance criterion remains.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
@@ -201373,6 +201373,119 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
+      },
+      "pr595_first_ci_followup_20261029": {
+        "artifact": "docs/benchmarks/systemic-pr595-first-ci-correction-20261029.json",
+        "first_run": 40808115107,
+        "head": "a7f9d08ca18ff3e8826271eaf1bebeea69c259f2",
+        "failures": [
+          {
+            "test": "GC directory walk concurrency",
+            "cause": "Confirmed missing test hook update after iterator refactor; corrected new iterator hook preserves original stall/waits/append/unlink assertions."
+          },
+          {
+            "test": "Mixed hot-path loop lag",
+            "observed_p95_ms": 207.144,
+            "unchanged_limit_ms": 40,
+            "cause": "Unclassified; original loop CPU/GC spans absent. Added bounded DeadlineEvidence without changing requests, sleeps, concurrency, thresholds, GC, waits or cleanup."
+          },
+          {
+            "test": "Agent snapshot responsiveness",
+            "observed_request_ms": 245.465028,
+            "unchanged_timeout_ms": 200,
+            "loop_cpu_ms": 3.615091,
+            "worker_start_relative_ms": 0.322392,
+            "worker_incomplete_at_publication": true,
+            "recorded_gc_overlaps": 0,
+            "cause": "Unclassified. Early worker start with incomplete completion is not proof of busy/holder/GIL/disk/GC cause. Original test unchanged."
+          }
+        ],
+        "corrected_private_tests": {
+          "tests": 13,
+          "failures": 0,
+          "skipped": 0,
+          "evidence": {
+            "started_at": "2026-10-29T02:48:54.311545+00:00",
+            "finished_at": "2026-10-29T02:48:55.660412+00:00",
+            "exit_code": 0,
+            "private_roots_before_pa_imports": true,
+            "source_sha256": "89ed4ade240cd884830aa0642e7515e5c4a8e51067adce4fda1e0eeab2ab237e",
+            "log_sha256": "b7819626b9e8c2283fdc2a47754064f012f265920c0c5bf7005751698bbc8186"
+          },
+          "timing_evidence": {
+            ".dev/pr595-corrected-private-timing-20261029/mixed-hot-path-loop-lag-fd01f7a9ab384930925f9ff70b990af0.json": {
+              "contract": "pa.test-deadline-evidence/v1",
+              "python": "3.14.2",
+              "platform": "Darwin",
+              "source_sha": null,
+              "gc_thresholds": [
+                2000,
+                10,
+                0
+              ],
+              "loop_thread_id": 8276681088,
+              "request_wall_ms": 89.29608401376754,
+              "request_loop_thread_cpu_ms": 4.010749999999952,
+              "gc_events_total": 0,
+              "gc_events_retained": 0,
+              "gc_events_dropped": 0,
+              "request_gc_overlaps": [],
+              "worker_calls_started": 6,
+              "worker_calls_total": 6,
+              "worker_calls_incomplete": 0,
+              "worker_events_dropped": 0,
+              "worker_intervals": [
+                {
+                  "wall_ms": 43.208374991081655,
+                  "thread_cpu_ms": 0.033791999999999996,
+                  "thread_id": 6199717888,
+                  "start_relative_ms": 0.40550006087869406,
+                  "end_relative_ms": 43.61387505196035
+                },
+                {
+                  "wall_ms": 45.019290992058814,
+                  "thread_cpu_ms": 0.016749999999999998,
+                  "thread_id": 6216544256,
+                  "start_relative_ms": 0.6352090276777744,
+                  "end_relative_ms": 45.65450001973659
+                },
+                {
+                  "wall_ms": 42.862707981839776,
+                  "thread_cpu_ms": 0.032084,
+                  "thread_id": 6233370624,
+                  "start_relative_ms": 0.8071670308709145,
+                  "end_relative_ms": 43.66987501271069
+                },
+                {
+                  "wall_ms": 42.28499997407198,
+                  "thread_cpu_ms": 0.004875,
+                  "thread_id": 6250196992,
+                  "start_relative_ms": 1.5045420732349157,
+                  "end_relative_ms": 43.789542047306895
+                },
+                {
+                  "wall_ms": 45.005250023677945,
+                  "thread_cpu_ms": 0.005125000000000003,
+                  "thread_id": 6199717888,
+                  "start_relative_ms": 43.99820906110108,
+                  "end_relative_ms": 89.00345908477902
+                },
+                {
+                  "wall_ms": 44.59804203361273,
+                  "thread_cpu_ms": 0.009832999999999998,
+                  "thread_id": 6233370624,
+                  "start_relative_ms": 44.006625073961914,
+                  "end_relative_ms": 88.60466710757464
+                }
+              ],
+              "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+            }
+          },
+          "limits": "Passing private Linux-independent spans cannot explain original CI failures. No CI retry; corrected source head receives its own required checks."
+        },
+        "resolution": "open",
+        "next_actor": "this same session",
+        "next_action": "Require corrected exact-head CI/stable supervisor and independent signals. Preserve original207ms/245ms failures and every broader acceptance obligation."
       }
     },
     {
@@ -207063,6 +207176,119 @@
         "resolution": "open",
         "integration": "Not merged or deployed",
         "next_action": "Protected ready PR, stable supervisor, independent exact gates and head/main CI; retain remaining full maintenance and whole-card acceptance."
+      },
+      "pr595_first_ci_followup_20261029": {
+        "artifact": "docs/benchmarks/systemic-pr595-first-ci-correction-20261029.json",
+        "first_run": 40808115107,
+        "head": "a7f9d08ca18ff3e8826271eaf1bebeea69c259f2",
+        "failures": [
+          {
+            "test": "GC directory walk concurrency",
+            "cause": "Confirmed missing test hook update after iterator refactor; corrected new iterator hook preserves original stall/waits/append/unlink assertions."
+          },
+          {
+            "test": "Mixed hot-path loop lag",
+            "observed_p95_ms": 207.144,
+            "unchanged_limit_ms": 40,
+            "cause": "Unclassified; original loop CPU/GC spans absent. Added bounded DeadlineEvidence without changing requests, sleeps, concurrency, thresholds, GC, waits or cleanup."
+          },
+          {
+            "test": "Agent snapshot responsiveness",
+            "observed_request_ms": 245.465028,
+            "unchanged_timeout_ms": 200,
+            "loop_cpu_ms": 3.615091,
+            "worker_start_relative_ms": 0.322392,
+            "worker_incomplete_at_publication": true,
+            "recorded_gc_overlaps": 0,
+            "cause": "Unclassified. Early worker start with incomplete completion is not proof of busy/holder/GIL/disk/GC cause. Original test unchanged."
+          }
+        ],
+        "corrected_private_tests": {
+          "tests": 13,
+          "failures": 0,
+          "skipped": 0,
+          "evidence": {
+            "started_at": "2026-10-29T02:48:54.311545+00:00",
+            "finished_at": "2026-10-29T02:48:55.660412+00:00",
+            "exit_code": 0,
+            "private_roots_before_pa_imports": true,
+            "source_sha256": "89ed4ade240cd884830aa0642e7515e5c4a8e51067adce4fda1e0eeab2ab237e",
+            "log_sha256": "b7819626b9e8c2283fdc2a47754064f012f265920c0c5bf7005751698bbc8186"
+          },
+          "timing_evidence": {
+            ".dev/pr595-corrected-private-timing-20261029/mixed-hot-path-loop-lag-fd01f7a9ab384930925f9ff70b990af0.json": {
+              "contract": "pa.test-deadline-evidence/v1",
+              "python": "3.14.2",
+              "platform": "Darwin",
+              "source_sha": null,
+              "gc_thresholds": [
+                2000,
+                10,
+                0
+              ],
+              "loop_thread_id": 8276681088,
+              "request_wall_ms": 89.29608401376754,
+              "request_loop_thread_cpu_ms": 4.010749999999952,
+              "gc_events_total": 0,
+              "gc_events_retained": 0,
+              "gc_events_dropped": 0,
+              "request_gc_overlaps": [],
+              "worker_calls_started": 6,
+              "worker_calls_total": 6,
+              "worker_calls_incomplete": 0,
+              "worker_events_dropped": 0,
+              "worker_intervals": [
+                {
+                  "wall_ms": 43.208374991081655,
+                  "thread_cpu_ms": 0.033791999999999996,
+                  "thread_id": 6199717888,
+                  "start_relative_ms": 0.40550006087869406,
+                  "end_relative_ms": 43.61387505196035
+                },
+                {
+                  "wall_ms": 45.019290992058814,
+                  "thread_cpu_ms": 0.016749999999999998,
+                  "thread_id": 6216544256,
+                  "start_relative_ms": 0.6352090276777744,
+                  "end_relative_ms": 45.65450001973659
+                },
+                {
+                  "wall_ms": 42.862707981839776,
+                  "thread_cpu_ms": 0.032084,
+                  "thread_id": 6233370624,
+                  "start_relative_ms": 0.8071670308709145,
+                  "end_relative_ms": 43.66987501271069
+                },
+                {
+                  "wall_ms": 42.28499997407198,
+                  "thread_cpu_ms": 0.004875,
+                  "thread_id": 6250196992,
+                  "start_relative_ms": 1.5045420732349157,
+                  "end_relative_ms": 43.789542047306895
+                },
+                {
+                  "wall_ms": 45.005250023677945,
+                  "thread_cpu_ms": 0.005125000000000003,
+                  "thread_id": 6199717888,
+                  "start_relative_ms": 43.99820906110108,
+                  "end_relative_ms": 89.00345908477902
+                },
+                {
+                  "wall_ms": 44.59804203361273,
+                  "thread_cpu_ms": 0.009832999999999998,
+                  "thread_id": 6233370624,
+                  "start_relative_ms": 44.006625073961914,
+                  "end_relative_ms": 88.60466710757464
+                }
+              ],
+              "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+            }
+          },
+          "limits": "Passing private Linux-independent spans cannot explain original CI failures. No CI retry; corrected source head receives its own required checks."
+        },
+        "resolution": "open",
+        "next_actor": "this same session",
+        "next_action": "Require corrected exact-head CI/stable supervisor and independent signals. Preserve original207ms/245ms failures and every broader acceptance obligation."
       }
     },
     {
@@ -208290,7 +208516,120 @@
           "sha256": "1cc496e6c2841fd478ca564e0444e486e94251798c15b7e0c8d07b8bff10a248",
           "stage": "Final Fleet compatibility source stage; original snapshot CPU/deadline cause remains unverified."
         }
-      ]
+      ],
+      "pr595_first_ci_followup_20261029": {
+        "artifact": "docs/benchmarks/systemic-pr595-first-ci-correction-20261029.json",
+        "first_run": 40808115107,
+        "head": "a7f9d08ca18ff3e8826271eaf1bebeea69c259f2",
+        "failures": [
+          {
+            "test": "GC directory walk concurrency",
+            "cause": "Confirmed missing test hook update after iterator refactor; corrected new iterator hook preserves original stall/waits/append/unlink assertions."
+          },
+          {
+            "test": "Mixed hot-path loop lag",
+            "observed_p95_ms": 207.144,
+            "unchanged_limit_ms": 40,
+            "cause": "Unclassified; original loop CPU/GC spans absent. Added bounded DeadlineEvidence without changing requests, sleeps, concurrency, thresholds, GC, waits or cleanup."
+          },
+          {
+            "test": "Agent snapshot responsiveness",
+            "observed_request_ms": 245.465028,
+            "unchanged_timeout_ms": 200,
+            "loop_cpu_ms": 3.615091,
+            "worker_start_relative_ms": 0.322392,
+            "worker_incomplete_at_publication": true,
+            "recorded_gc_overlaps": 0,
+            "cause": "Unclassified. Early worker start with incomplete completion is not proof of busy/holder/GIL/disk/GC cause. Original test unchanged."
+          }
+        ],
+        "corrected_private_tests": {
+          "tests": 13,
+          "failures": 0,
+          "skipped": 0,
+          "evidence": {
+            "started_at": "2026-10-29T02:48:54.311545+00:00",
+            "finished_at": "2026-10-29T02:48:55.660412+00:00",
+            "exit_code": 0,
+            "private_roots_before_pa_imports": true,
+            "source_sha256": "89ed4ade240cd884830aa0642e7515e5c4a8e51067adce4fda1e0eeab2ab237e",
+            "log_sha256": "b7819626b9e8c2283fdc2a47754064f012f265920c0c5bf7005751698bbc8186"
+          },
+          "timing_evidence": {
+            ".dev/pr595-corrected-private-timing-20261029/mixed-hot-path-loop-lag-fd01f7a9ab384930925f9ff70b990af0.json": {
+              "contract": "pa.test-deadline-evidence/v1",
+              "python": "3.14.2",
+              "platform": "Darwin",
+              "source_sha": null,
+              "gc_thresholds": [
+                2000,
+                10,
+                0
+              ],
+              "loop_thread_id": 8276681088,
+              "request_wall_ms": 89.29608401376754,
+              "request_loop_thread_cpu_ms": 4.010749999999952,
+              "gc_events_total": 0,
+              "gc_events_retained": 0,
+              "gc_events_dropped": 0,
+              "request_gc_overlaps": [],
+              "worker_calls_started": 6,
+              "worker_calls_total": 6,
+              "worker_calls_incomplete": 0,
+              "worker_events_dropped": 0,
+              "worker_intervals": [
+                {
+                  "wall_ms": 43.208374991081655,
+                  "thread_cpu_ms": 0.033791999999999996,
+                  "thread_id": 6199717888,
+                  "start_relative_ms": 0.40550006087869406,
+                  "end_relative_ms": 43.61387505196035
+                },
+                {
+                  "wall_ms": 45.019290992058814,
+                  "thread_cpu_ms": 0.016749999999999998,
+                  "thread_id": 6216544256,
+                  "start_relative_ms": 0.6352090276777744,
+                  "end_relative_ms": 45.65450001973659
+                },
+                {
+                  "wall_ms": 42.862707981839776,
+                  "thread_cpu_ms": 0.032084,
+                  "thread_id": 6233370624,
+                  "start_relative_ms": 0.8071670308709145,
+                  "end_relative_ms": 43.66987501271069
+                },
+                {
+                  "wall_ms": 42.28499997407198,
+                  "thread_cpu_ms": 0.004875,
+                  "thread_id": 6250196992,
+                  "start_relative_ms": 1.5045420732349157,
+                  "end_relative_ms": 43.789542047306895
+                },
+                {
+                  "wall_ms": 45.005250023677945,
+                  "thread_cpu_ms": 0.005125000000000003,
+                  "thread_id": 6199717888,
+                  "start_relative_ms": 43.99820906110108,
+                  "end_relative_ms": 89.00345908477902
+                },
+                {
+                  "wall_ms": 44.59804203361273,
+                  "thread_cpu_ms": 0.009832999999999998,
+                  "thread_id": 6233370624,
+                  "start_relative_ms": 44.006625073961914,
+                  "end_relative_ms": 88.60466710757464
+                }
+              ],
+              "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+            }
+          },
+          "limits": "Passing private Linux-independent spans cannot explain original CI failures. No CI retry; corrected source head receives its own required checks."
+        },
+        "resolution": "open",
+        "next_actor": "this same session",
+        "next_action": "Require corrected exact-head CI/stable supervisor and independent signals. Preserve original207ms/245ms failures and every broader acceptance obligation."
+      }
     },
     {
       "id": "concern:full-fork-boundary-membership",
@@ -312016,6 +312355,16 @@
       "path": "docs/benchmarks/systemic-transcript-gc-entry-pairs-20261029.raw.json.gz",
       "sha256": "4a98d22377393023a997205f773e3b6375438d04746ad3457d605d5a459688c3",
       "bytes": 2887303
+    },
+    "all_prior_fields_preserved": true
+  },
+  "pr595_first_ci_stage": {
+    "artifact": "docs/benchmarks/systemic-pr595-first-ci-correction-20261029.json",
+    "sha256": "a1ed244b53cc2c0f79e503ca1c086dde2ff1109b3adc12aa4f450774f27f5fec",
+    "raw": {
+      "path": "docs/benchmarks/systemic-pr595-first-ci-correction-20261029.raw.json.gz",
+      "sha256": "bbd95dcb5c3f6f2fa1028d4a152a1de99cf95f587431d31f8d3006083a230a91",
+      "bytes": 2914003
     },
     "all_prior_fields_preserved": true
   }
