@@ -197,6 +197,10 @@ class VerificationService:
         supervisor = self.ctx.services.get('pr_supervisor_store')
         if not ledger or not supervisor:
             raise CompletionConflict('verification_services_unavailable')
+        origin_get = getattr(ledger, 'verification_origin', None)
+        if not callable(origin_get):
+            origin_get = ledger.get
+        origin_list = getattr(ledger, 'verification_card_origins', None)
         jobs = self.store.list(card.id, card.realm_id)
         verifier_dispatches = {j['dispatch_id'] for j in jobs if j['dispatch_id']}
         # A lost admission reply is still identified by the normal mutation key.
@@ -205,7 +209,9 @@ class VerificationService:
         dispatches = set(req.originating_dispatch_ids) | {req.originating_dispatch_id}
         # Parentage also represents independent conversation issues. Only the
         # exact card, declared origins and explicit repair/PR provenance count.
-        records = ledger.list(card_id=card.id, realm_id=card.realm_id, limit=101)
+        records = (origin_list(card_id=card.id, realm_id=card.realm_id, limit=101)
+                   if callable(origin_list) else
+                   ledger.list(card_id=card.id, realm_id=card.realm_id, limit=101))
         if len(records) > 100:
             raise CompletionConflict('verification_origin_bound_exceeded')
         for record in records:
@@ -249,7 +255,7 @@ class VerificationService:
             for action in self.health.journal.repair_actions(group_id, expected_version=group['version'], realms=[card.realm_id]):
                 result = action['result']
                 if result.get('retry_pending'):
-                    record = ledger.get(result.get('dispatch_id'))
+                    record = origin_get(result.get('dispatch_id'))
                     if record is None or record.control_operations.get('health-start_retry:' + action['id']) != 'retry':
                         pending_controls.append(action['id'])
             if group['disposition'] not in {'merged', 'awaiting_acceptance', 'deployed_verified'}:
@@ -268,7 +274,7 @@ class VerificationService:
         for watch in watches:
             sessions.add(watch.originating_session_id)
             dispatches.add(watch.dispatch_id)
-            record = ledger.get(watch.dispatch_id) if watch.dispatch_id else (
+            record = origin_get(watch.dispatch_id) if watch.dispatch_id else (
                 ledger.by_session(watch.originating_session_id) if watch.originating_session_id else None)
             if record:
                 if ((watch.card_id and record.card_id != watch.card_id)
@@ -276,7 +282,7 @@ class VerificationService:
                     raise CompletionConflict('verification_watch_origin_mismatch')
                 dispatches.add(record.dispatch_id)
         for key in dispatches - {None, ''}:
-            record = ledger.get(key)
+            record = origin_get(key)
             if record:
                 if record.realm_id != card.realm_id:
                     raise CompletionConflict('verification_origin_realm_mismatch')
@@ -378,20 +384,20 @@ class VerificationService:
         return None
 
     async def ensure(self, card):
-        packet = await self.call(self.packet, card)
+        packet = await self.call(self.packet, card, diagnostic_phase='verification_packet')
         if not packet:
             return None
-        current = await self.call(self.store.reserve, packet)
+        current = await self.call(self.store.reserve, packet, diagnostic_phase='verification_intent_write')
         checked_absence = False
-        for old in await self.call(self.store.list, card.id, card.realm_id):
+        for old in await self.call(self.store.list, card.id, card.realm_id, diagnostic_phase='verification_intent_read'):
             if old['id'] == current['id'] or old['state'] in {'accepted', 'superseded'}:
                 continue
             ledger = self.ctx.services['dispatch_store']
-            record = ((await self.call(ledger.get, old['dispatch_id'])) if old['dispatch_id'] else
-                      (await self.call(ledger.by_authority_idempotency, self.ctx.settings.instance_id, 'verification:' + old['id'])))
+            record = ((await self.call(ledger.get, old['dispatch_id'], diagnostic_phase='verification_dispatch_read')) if old['dispatch_id'] else
+                      (await self.call(ledger.by_authority_idempotency, self.ctx.settings.instance_id, 'verification:' + old['id'], diagnostic_phase='verification_dispatch_read')))
             if record and not old['dispatch_id']:
-                await self.call(self.store.update, old['id'], 'dispatched', dispatch_id=record.dispatch_id)
-                old = await self.call(self.store.get, old['id'])
+                await self.call(self.store.update, old['id'], 'dispatched', dispatch_id=record.dispatch_id, diagnostic_phase='verification_intent_write')
+                old = await self.call(self.store.get, old['id'], diagnostic_phase='verification_intent_read')
             unadmitted = not old['dispatch_id'] and (old['state'] == 'pending' or old['diagnostic'] in {
                 'verification_principal_unconfigured', 'waiting_for_integration_or_origin', 'repair_workflow_pending',
                 'verification_realm_authority_required'})
@@ -405,19 +411,19 @@ class VerificationService:
                 head = await self.absent_admission_head(old)
                 if head:
                     record = await self.call(ledger.by_authority_idempotency,
-                        self.ctx.settings.instance_id, 'verification:' + old['id'])
+                        self.ctx.settings.instance_id, 'verification:' + old['id'], diagnostic_phase='verification_dispatch_read')
                     if record:
-                        await self.call(self.store.update, old['id'], 'dispatched', dispatch_id=record.dispatch_id)
+                        await self.call(self.store.update, old['id'], 'dispatched', dispatch_id=record.dispatch_id, diagnostic_phase='verification_intent_write')
                     else:
-                        await self.call(self.store.recovery, old['id'], 'admission-absent:' + head, 'confirmed')
+                        await self.call(self.store.recovery, old['id'], 'admission-absent:' + head, 'confirmed', diagnostic_phase='verification_recovery_write')
                         unadmitted = True
             settled = record and record.state in TERMINAL_DISPATCH_STATES and (
                     not record.session_id or (record.acknowledged_at and record.completion_delivery_class == 'acknowledged'
                                               and record.reconciliation_state in RECONCILIATION_TERMINAL_STATES))
             if settled:
-                settled = await self.call(self.job_controls_settled, old, record) and (await self.origin_readiness(record))['ready']
+                settled = await self.call(self.job_controls_settled, old, record, diagnostic_phase='verification_controls') and (await self.origin_readiness(record))['ready']
             if unadmitted or settled:
-                await self.call(self.store.update, old['id'], 'superseded', diagnostic='successor:' + current['id'])
+                await self.call(self.store.update, old['id'], 'superseded', diagnostic='successor:' + current['id'], diagnostic_phase='verification_intent_write')
         return current
 
     def origins_settled(self, packet):
@@ -449,13 +455,13 @@ class VerificationService:
         if record.target_instance_id != self.ctx.settings.instance_id:
             return {**identity, 'ready':False, 'reason':'origin_owner_mismatch'}
         probe = {'origin_dispatches':[record.dispatch_id], 'pending_repair_controls':[]}
-        if not await self.call(self.origins_settled, probe):
+        if not await self.call(self.origins_settled, probe, diagnostic_phase='verification_origins'):
             return {**identity, 'ready':False, 'reason':'origin_dispatch_pending'}
         if not record.session_id:
             return {**identity, 'ready':True, 'reason':'pre_session_terminal'}
         manager = self.ctx.services.get('instance_agent')
         lifecycle = self.ctx.services.get('session_lifecycle')
-        session = await self.call(self.ctx.store.get_session, record.session_id)
+        session = await self.call(self.ctx.store.get_session, record.session_id, diagnostic_phase='verification_session_read')
         if not manager or not lifecycle or not session or session.realm_id != record.realm_id:
             return {**identity, 'ready':False, 'reason':'origin_lifecycle_unknown'}
         if record.session_id in getattr(manager, '_admitting_sessions', set()):
@@ -465,8 +471,8 @@ class VerificationService:
             return {**identity, 'ready':False, 'reason':'origin_runtime_still_owned'}
         watches = await self.call(self.ctx.services['pr_supervisor_store'].lifecycle_watch_links,
                                   diagnostic_phase='watch_list')
-        leases = await self.call(manager.workspace_manager.list, card_id=record.card_id)
-        latest = await self.call(self.ctx.services['dispatch_store'].by_session, record.session_id)
+        leases = await self.call(manager.workspace_manager.list, card_id=record.card_id, diagnostic_phase='verification_workspace_read')
+        latest = await self.call(self.ctx.services['dispatch_store'].by_session, record.session_id, diagnostic_phase='verification_dispatch_read')
         records = [record] + ([latest] if latest and latest.dispatch_id != record.dispatch_id else [])
         async with asyncio.timeout(5):
             decision, reason = await lifecycle._decision(session, sessions=[session], dispatches=records,
@@ -476,7 +482,7 @@ class VerificationService:
     async def origin_sessions_settled(self, packet):
         observed_sessions = set()
         for key in packet['origin_dispatches']:
-            record = await self.call(self.ctx.services['dispatch_store'].get, key)
+            record = await self.call(self.ctx.services['dispatch_store'].get, key, diagnostic_phase='verification_dispatch_read')
             if not record:
                 return False
             if record.session_id:
@@ -496,7 +502,7 @@ class VerificationService:
 
     async def process(self, card):
         req = card.completion_requirement
-        if req and req.verification_policy == 'independent_agent_v1' and not await self.call(self.owns_authority, card):
+        if req and req.verification_policy == 'independent_agent_v1' and not await self.call(self.owns_authority, card, diagnostic_phase='verification_authority_read'):
             return
         if req and card.lane == CardLane.DONE and card.completion_status['accepted']:
             # Recover a lost final lane-write reply from the immutable bound
@@ -508,14 +514,14 @@ class VerificationService:
                 for ref in receipt.references:
                     if not ref.startswith('verification-intent:'):
                         continue
-                    old = await self.call(self.store.get, ref.removeprefix('verification-intent:'))
+                    old = await self.call(self.store.get, ref.removeprefix('verification-intent:'), diagnostic_phase='verification_intent_read')
                     if (old and old['card_id'] == card.id and old['realm'] == card.realm_id
                             and old['packet']['requirement_revision'] == req.revision
                             and old['packet']['subject'] == receipt.subject_revision
                             and old['dispatch_id'] == receipt.actor_dispatch_id and receipt.actor_kind == 'bound_session'):
-                        await self.call(self.store.update, old['id'], 'accepted')
+                        await self.call(self.store.update, old['id'], 'accepted', diagnostic_phase='verification_intent_write')
         if req and (req.provenance == 'system_health' or (not req.acceptance_principals and 'health-group:' in req.criteria)):
-            policy = (await self.call(self.health.journal.status))['policy']
+            policy = (await self.call(self.health.journal.status, diagnostic_phase='verification_health_read'))['policy']
             if policy['authority_id'] != self.ctx.settings.instance_id or not policy['enabled'] or policy['paused']:
                 return
         if card.lane == CardLane.DONE and card.completion_status['accepted']:
@@ -523,13 +529,13 @@ class VerificationService:
             if not req or req.provenance != 'system_health':
                 return
             group_id = (req.source_reference or '').removeprefix('health-group:')
-            group = await self.call(self.health.journal.group, group_id, realms=[card.realm_id])
+            group = await self.call(self.health.journal.group, group_id, realms=[card.realm_id], diagnostic_phase='verification_health_read')
             if group['disposition'] == 'deployed_verified':
                 return
         req = card.completion_requirement
         if req and req.verification_policy == 'declared' and not req.acceptance_principals and 'health-group:' in req.criteria and not card.completion_status['accepted']:
             onboarding = 'onboarding:' + card.id + ':' + card.realm_id
-            if await self.call(self.store.recovery, onboarding, req.revision):
+            if await self.call(self.store.recovery, onboarding, req.revision, diagnostic_phase='verification_recovery_read'):
                 return
             try:
                 await self.migrate(card.id, card.realm_id, 'system_health', req.revision, card.updated_at.isoformat(),
@@ -537,20 +543,20 @@ class VerificationService:
             except CompletionConflict as exc:
                 if exc.code in {'explicit_requirement_preserved', 'system_requirement_provenance_unconfirmed',
                                 'completion_migration_not_eligible', 'verification_health_card_mismatch'}:
-                    await self.call(self.store.recovery, onboarding, req.revision, exc.code)
+                    await self.call(self.store.recovery, onboarding, req.revision, exc.code, diagnostic_phase='verification_recovery_write')
                 return  # Unproven/explicit declarations retain their authority.
             else:
-                card = await self.call(self.ctx.store.get_card, card.id, realm_id=card.realm_id)
+                card = await self.call(self.ctx.store.get_card, card.id, realm_id=card.realm_id, diagnostic_phase='verification_card_read')
         job = await self.ensure(card)
         if not job:
             return
         packet, key = job['packet'], job['id']
         if not job['dispatch_id']:
-            records = await self.call(self.ctx.services['dispatch_store'].list, card_id=card.id, realm_id=card.realm_id, limit=101)
+            records = await self.call(self.ctx.services['dispatch_store'].list, card_id=card.id, realm_id=card.realm_id, limit=101, diagnostic_phase='verification_dispatch_read')
             recovered = next((r for r in records if r.idempotency_key == 'verification:' + key), None)
             if recovered:
-                await self.call(self.store.update, key, 'dispatched', dispatch_id=recovered.dispatch_id)
-                job = await self.call(self.store.get, key)
+                await self.call(self.store.update, key, 'dispatched', dispatch_id=recovered.dispatch_id, diagnostic_phase='verification_intent_write')
+                job = await self.call(self.store.get, key, diagnostic_phase='verification_intent_read')
         receipts = [e for e in card.completion_evidence if e.requirement_revision == packet['requirement_revision']
                     and e.outcome == 'accepted' and e.subject_revision == packet['subject']
                     and 'verification-intent:' + key in e.references]
@@ -561,43 +567,43 @@ class VerificationService:
         if job['state'] == 'accepted':
             return  # Unchanged evidence never starts another verifier.
         if not packet['principal'] or packet['principal'] not in packet['eligible_principals']:
-            await self.call(self.store.update, key, 'blocked', diagnostic='verification_principal_unconfigured')
+            await self.call(self.store.update, key, 'blocked', diagnostic='verification_principal_unconfigured', diagnostic_phase='verification_intent_write')
             return
         if not packet['subject'] or not (packet['origin_sessions'] or packet['origin_dispatches']):
-            await self.call(self.store.update, key, 'blocked', diagnostic='waiting_for_integration_or_origin')
+            await self.call(self.store.update, key, 'blocked', diagnostic='waiting_for_integration_or_origin', diagnostic_phase='verification_intent_write')
             return
-        if not await self.call(self.origins_settled, packet) or not await self.origin_sessions_settled(packet):
-            await self.call(self.store.update, key, 'blocked', diagnostic='repair_workflow_pending')
+        if not await self.call(self.origins_settled, packet, diagnostic_phase='verification_origins') or not await self.origin_sessions_settled(packet):
+            await self.call(self.store.update, key, 'blocked', diagnostic='repair_workflow_pending', diagnostic_phase='verification_intent_write')
             return
         if job['dispatch_id']:
-            record = await self.call(self.ctx.services['dispatch_store'].get, job['dispatch_id'])
+            record = await self.call(self.ctx.services['dispatch_store'].get, job['dispatch_id'], diagnostic_phase='verification_dispatch_read')
             if not record:
                 return  # Unknown remains owned; never a replacement dispatch.
             if record.state in TERMINAL_DISPATCH_STATES:
                 if record.state == 'completed' and not (await self.origin_readiness(record))['ready']:
                     return
-                await self.call(self.store.update, key, 'failed', diagnostic='verification_ended_without_acceptance')
+                await self.call(self.store.update, key, 'failed', diagnostic='verification_ended_without_acceptance', diagnostic_phase='verification_intent_write')
                 await self.retry_after_provider_recovery(job, record)
             elif job['state'] == 'failed':
-                await self.call(self.store.update, key, 'dispatched')
+                await self.call(self.store.update, key, 'dispatched', diagnostic_phase='verification_intent_write')
             return
         # A revision/scope change cannot start a rival while an old verifier runs.
-        for old in await self.call(self.store.list, card.id, card.realm_id):
+        for old in await self.call(self.store.list, card.id, card.realm_id, diagnostic_phase='verification_intent_read'):
             if old['id'] == key:
                 continue
             if not old['dispatch_id']:
                 if old['state'] in {'accepted','superseded'}:
                     continue
                 return  # An uncertain earlier admission still owns the work.
-            record = await self.call(self.ctx.services['dispatch_store'].get, old['dispatch_id'])
+            record = await self.call(self.ctx.services['dispatch_store'].get, old['dispatch_id'], diagnostic_phase='verification_dispatch_read')
             if record is None or record.state not in TERMINAL_DISPATCH_STATES:
                 return
-            if not await self.call(self.job_controls_settled, old, record):
+            if not await self.call(self.job_controls_settled, old, record, diagnostic_phase='verification_controls'):
                 return
             if not (await self.origin_readiness(record))['ready']:
                 return
         if card.realm_id != self.ctx.settings.primary_realm:
-            await self.call(self.store.update, key, 'blocked', diagnostic='verification_realm_authority_required')
+            await self.call(self.store.update, key, 'blocked', diagnostic='verification_realm_authority_required', diagnostic_phase='verification_intent_write')
             return
         from pa.prompts import PROMPTS
         prompt = PROMPTS.render("completion.verify", {'intent_id':key, 'packet':encode(packet)}).text
@@ -609,25 +615,25 @@ class VerificationService:
                 'execution_contract': {'version': 1, 'profile': 'repository', 'confirmed': True,
                     'requirements': {'repository_required': True, 'expected_deliverables': ['verification']}}}
         dependency, _ = await self.provider_dependency()
-        if await self.call(self.store.recovery, key, dependency) is None:
-            await self.call(self.store.recovery, key, dependency, 'baseline')
-        fresh = await self.call(self.ctx.store.get_card, card.id, realm_id=card.realm_id)
+        if await self.call(self.store.recovery, key, dependency, diagnostic_phase='verification_recovery_read') is None:
+            await self.call(self.store.recovery, key, dependency, 'baseline', diagnostic_phase='verification_recovery_write')
+        fresh = await self.call(self.ctx.store.get_card, card.id, realm_id=card.realm_id, diagnostic_phase='verification_card_read')
         if fresh is None:
-            await self.call(self.store.update, key, 'blocked', diagnostic='verification_card_missing')
+            await self.call(self.store.update, key, 'blocked', diagnostic='verification_card_missing', diagnostic_phase='verification_intent_write')
             return
-        if digest(await self.call(self.packet, fresh)) != key:
+        if digest(await self.call(self.packet, fresh, diagnostic_phase='verification_packet')) != key:
             await self.ensure(fresh)
             return
-        if not await self.call(self.owns_authority, fresh):
+        if not await self.call(self.owns_authority, fresh, diagnostic_phase='verification_authority_read'):
             return
-        if not await self.call(self.store.claim_admission, key):
+        if not await self.call(self.store.claim_admission, key, diagnostic_phase='verification_intent_write'):
             return
         try:
             result = await self.health.local_api(actor, 'POST', '/api/fleet/dispatch', body=body, key='verification:' + key)
         except Exception as exc:
-            await self.call(self.store.update, key, 'blocked', diagnostic=type(exc).__name__)
+            await self.call(self.store.update, key, 'blocked', diagnostic=type(exc).__name__, diagnostic_phase='verification_intent_write')
             return
-        await self.call(self.store.update, key, 'dispatched', dispatch_id=result['dispatch_id'])
+        await self.call(self.store.update, key, 'dispatched', dispatch_id=result['dispatch_id'], diagnostic_phase='verification_intent_write')
 
     async def provider_dependency(self):
         selection = self.ctx.services.get('execution_selection')
@@ -643,49 +649,49 @@ class VerificationService:
         if not (record.state == 'failed' and record.recoverable and record.error_code == 'no_compatible_execution'
                 and not record.session_id and not record.prompt_acknowledged_at and not record.initial_prompt_operation):
             return
-        current = await self.call(self.ctx.store.get_card, job['card_id'], realm_id=job['realm'])
-        if not current or not await self.call(self.owns_authority, current) or current.completion_requirement.revision != job['packet']['requirement_revision']:
+        current = await self.call(self.ctx.store.get_card, job['card_id'], realm_id=job['realm'], diagnostic_phase='verification_card_read')
+        if not current or not await self.call(self.owns_authority, current, diagnostic_phase='verification_authority_read') or current.completion_requirement.revision != job['packet']['requirement_revision']:
             return
         dependency, ready = await self.provider_dependency()
-        state = await self.call(self.store.recovery, job['id'], dependency)
+        state = await self.call(self.store.recovery, job['id'], dependency, diagnostic_phase='verification_recovery_read')
         if not ready or state in {'baseline', 'rejected', 'confirmed'}:
             return
         key = 'verification-retry:' + job['id'] + ':' + dependency
-        if not await self.call(self.store.claim_retry, job['id']):
+        if not await self.call(self.store.claim_retry, job['id'], diagnostic_phase='verification_intent_write'):
             return
-        await self.call(self.store.recovery, job['id'], dependency, 'pending')
+        await self.call(self.store.recovery, job['id'], dependency, 'pending', diagnostic_phase='verification_recovery_write')
         try:
             result = await self.health.local_api({'principal_id': job['packet']['principal']}, 'POST',
                 '/api/fleet/dispatch-jobs/' + record.dispatch_id + '/retry', body={}, key=key)
         except httpx.HTTPStatusError as exc:
             if 400 <= exc.response.status_code < 500:
-                await self.call(self.store.recovery, job['id'], dependency, 'rejected')
-                await self.call(self.store.update, job['id'], 'failed')
+                await self.call(self.store.recovery, job['id'], dependency, 'rejected', diagnostic_phase='verification_recovery_write')
+                await self.call(self.store.update, job['id'], 'failed', diagnostic_phase='verification_intent_write')
             return
         except Exception:
             return  # Unknown delivery reuses the same normal retry identity.
         if result.get('dispatch_id') != record.dispatch_id:
             raise CompletionConflict('verification_retry_identity_mismatch')
-        await self.call(self.store.recovery, job['id'], dependency, 'confirmed')
-        await self.call(self.store.update, job['id'], 'dispatched')
+        await self.call(self.store.recovery, job['id'], dependency, 'confirmed', diagnostic_phase='verification_recovery_write')
+        await self.call(self.store.update, job['id'], 'dispatched', diagnostic_phase='verification_intent_write')
 
     async def finish(self, card, job, receipt):
         packet = job['packet']
         actor = {'principal_id': packet['principal']}
         watches = await self.call(self.ctx.services['pr_supervisor_store'].list_watches,
-                                  card_id=card.id, realm_id=card.realm_id, include_retired=True)
+                                  card_id=card.id, realm_id=card.realm_id, include_retired=True, diagnostic_phase='verification_watch_read')
         if watches:
             matching = next((w for w in watches if w.state.get('merge_commit_sha') == packet['subject']), watches[0])
             decision = decide_card_disposition(disposition_for_merged_watch(matching), current_lane=card.lane,
                 watches=watches, completion_requirement=card.completion_requirement,
                 completion_evidence=card.completion_evidence)
             if decision.applied_lane != CardLane.DONE:
-                await self.call(self.store.update, job['id'], 'blocked', diagnostic='waiting_for_current_integration')
+                await self.call(self.store.update, job['id'], 'blocked', diagnostic='waiting_for_current_integration', diagnostic_phase='verification_intent_write')
                 return
         if packet['health_group']:
             from pa.health_journal.acceptance import verify_acceptance
             from pa.health_journal.models import Assessment
-            group = await self.call(self.health.journal.group, packet['health_group'], realms=[card.realm_id])
+            group = await self.call(self.health.journal.group, packet['health_group'], realms=[card.realm_id], diagnostic_phase='verification_health_read')
             assessment = Assessment(expected_version=group['version'], disposition='deployed_verified',
                 reason='Independent canonical verification receipt recorded.', card_id=card.id,
                 commit=packet['subject'], acceptance_reference=receipt.idempotency_key,
@@ -699,25 +705,25 @@ class VerificationService:
             await self.health.local_api(actor, 'PATCH', '/api/cards/' + card.id + '?realm=' + card.realm_id,
                 body={'expected_version': card.updated_at.isoformat(), 'field_intent': ['lane'], 'lane': 'done'},
                 key='verification-done:' + job['id'] + ':' + card.updated_at.isoformat())
-        await self.call(self.store.update, job['id'], 'accepted')
+        await self.call(self.store.update, job['id'], 'accepted', diagnostic_phase='verification_intent_write')
 
     async def migrate(self, card_id, realm, kind, revision, version, *, key, apply=False, principal=None):
         from pa.execution.verification_migration import migration_plan
         identity = {'card_id': card_id, 'realm': realm, 'kind': kind, 'revision': revision, 'version': version, 'principal': principal}
         fingerprint = digest(identity)
-        plan = await self.call(self.store.migration, key, fingerprint) if apply else None
+        plan = await self.call(self.store.migration, key, fingerprint, diagnostic_phase='verification_migration_read') if apply else None
         if not plan:
-            card = await self.call(self.ctx.store.get_card, card_id, realm_id=realm)
+            card = await self.call(self.ctx.store.get_card, card_id, realm_id=realm, diagnostic_phase='verification_card_read')
             if not card or not card.completion_requirement or card.completion_requirement.revision != revision or card.updated_at.isoformat() != version:
                 raise CompletionConflict('stale_completion_requirement')
-            requirement = await self.call(migration_plan, self, card, kind)
+            requirement = await self.call(migration_plan, self, card, kind, diagnostic_phase='verification_migration_plan')
             plan = {'principal_id': principal or requirement.verification_principal,
                     'path': '/api/cards/' + card.id + '?realm=' + realm,
                     'body': {'expected_version': version, 'field_intent': ['completion_requirement'],
                              'completion_requirement': requirement.model_dump(mode='json')}}
             if not apply:
                 return {'eligible': True, **identity, 'replacement': plan['body']['completion_requirement']}
-            plan = await self.call(self.store.migration, key, fingerprint, plan)
+            plan = await self.call(self.store.migration, key, fingerprint, plan, diagnostic_phase='verification_migration_write')
         return await self.health.local_api({'principal_id': plan['principal_id']}, 'PATCH', plan['path'],
                                           body=plan['body'], key=key)
 
@@ -726,7 +732,7 @@ class VerificationService:
             return
         async with self.lock:
             cards = await self.call(self.ctx.store.list_cards, realm_id=self.ctx.settings.primary_realm,
-                                    limit=32, offset=self.offset)
+                                    limit=32, offset=self.offset, diagnostic_phase='verification_card_read')
             processed, deadline = 0, time.monotonic() + 15
             for card in cards:
                 try:

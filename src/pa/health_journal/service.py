@@ -22,11 +22,17 @@ from pa.health_journal.store import Journal, JournalError
 
 
 # Fixed source labels only. Never derive metric names from callable names, IDs,
-# exceptions, SQL, or request values. The verification adapter remains explicitly
-# unclassified until its separate read/write families are measured.
+# exceptions, SQL, or request values. Verification call sites supply fixed
+# read/write/planning labels; older unclassified samples remain unassigned.
 CANONICAL_PHASES = frozenset({
     'unclassified', 'dispatch_get', 'dispatch_list', 'watch_list', 'session_get',
     'workspace_list', 'card_get', 'repair_dispatches_get', 'watch_get',
+    'verification_packet', 'verification_intent_read', 'verification_intent_write',
+    'verification_dispatch_read', 'verification_origins', 'verification_controls',
+    'verification_session_read', 'verification_card_read', 'verification_watch_read',
+    'verification_workspace_read', 'verification_authority_read', 'verification_health_read',
+    'verification_recovery_read', 'verification_recovery_write',
+    'verification_migration_read', 'verification_migration_write', 'verification_migration_plan',
 })
 
 
