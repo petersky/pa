@@ -84,7 +84,7 @@ class ChatPromptEndpointTests(unittest.TestCase):
 
         async def run() -> dict:
             with (
-                patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime),
+                patch("pa.modules.agent_chat._runtime_or_404_async", new=AsyncMock(return_value=runtime)),
                 patch(
                     "pa.modules.agent_chat.get_principal_id", return_value="user:test"
                 ),
@@ -133,7 +133,7 @@ class ChatPromptEndpointTests(unittest.TestCase):
 
             async def run() -> dict:
                 with patch(
-                    "pa.modules.agent_chat._runtime_or_404", return_value=runtime
+                    "pa.modules.agent_chat._runtime_or_404_async", new=AsyncMock(return_value=runtime)
                 ):
                     return await session_prompt(
                         request,

@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-29T05:38:02.829768+00:00",
-  "completion": "OPEN: all687 findings/151concerns. PR600 activated/scoped retests retained with5full-detail collector size failures and maintenance thresholds. New origin-name repair source tested; unmerged/uninstalled. Full broader acceptance remains.",
+  "as_of": "2026-10-29T06:07:57.755251+00:00",
+  "completion": "OPEN: all689 findings/152concerns. PR601 protected integrated, uninstalled. New control-read source repair measured; maintenance854.706ms remains. Listener exact600 with retained full-detail collector failures; full independent acceptance missing.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -217640,6 +217640,326 @@
       "resolution": "open",
       "next_actor": "this same systemic session/card",
       "next_action": "Protected supervised source integration; remaining substantive shared causes, future exact activation/retests and normal independent acceptance. Preserve size failures and every old tail."
+    },
+    {
+      "family": "session",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-pr601-integration-control-reads-20261029.json"
+      },
+      "resolution": "open",
+      "next_actor": "this same systemic session/card",
+      "next_action": "Protected supervised source integration; fresh exact batch activation/scoped retests when appropriate, substantive remaining shared causes and normal independent whole-card acceptance.",
+      "id": "concern:session-control-event-loop-reads",
+      "kind": "concern",
+      "finding": "Async restart/recovery authorization, missing-runtime lookups and single-session observability performed synchronous storage or presentation work on the event loop.",
+      "cause_classification": "confirmed_private_loop_blocking_source_path_historical_contribution_unverified",
+      "cause": "Synchronous canonical session lookup and full local observability build run directly in async consumers; private delayed reads reproduce blocked unrelated loop progress.",
+      "implemented": "Use the existing bounded native worker runtime for canonical session reads and one complete local observability build/fallback read. Live runtime actions stay on the loop without storage. Recheck traffic readiness and runtime publication after awaited reads. Preserve owner/admin checks, complete local/remote responses, error bodies, recovery/receipt identities and cancellation without starting effects.",
+      "merged": [],
+      "deployed": "Uninstalled source; actual listener exact600 f103/packagebec1.",
+      "retested": "295 tests/7 subtests pass; complete private responses match; heartbeat210.686 to6.503ms under deliberate200ms read. Mixed854.706ms maintenance remains."
+    },
+    {
+      "family": "session",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-pr601-integration-control-reads-20261029.json",
+        "operation": {
+          "submitted": 3,
+          "completed": 3,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "active": 0,
+          "queued": 0,
+          "max_active": 1,
+          "max_queued": 1,
+          "total_queue_ms": 0.172,
+          "total_wait_ms": 625.7218330865726,
+          "max_wait_ms": 210.62320796772838,
+          "total_lock_wait_ms": 0.0,
+          "total_runtime_ms": 625.314,
+          "max_runtime_ms": 210.531,
+          "slow_calls": 0,
+          "sqlite_busy_failures": 0,
+          "filesystem_totals": {
+            "file_lock_wait_ms": 0.0,
+            "file_lock_hold_ms": 0.0,
+            "file_lock_release_ms": 0.0,
+            "atomic_write_calls": 0,
+            "atomic_write_bytes": 0,
+            "file_fsync_calls": 0,
+            "file_fsync_ms": 0.0,
+            "directory_fsync_calls": 0,
+            "directory_fsync_ms": 0.0,
+            "fsync_failures": 0,
+            "atomic_replace_ms": 0.0,
+            "object_get_calls": 0,
+            "object_get_bytes": 0,
+            "object_get_ms": 0.0,
+            "object_put_files": 0,
+            "object_put_bytes": 0
+          },
+          "runtime_ms": {
+            "samples": 3,
+            "max": 210.531,
+            "p50": 208.342,
+            "p95": 210.531,
+            "p99": 210.531
+          },
+          "queue_ms": {
+            "samples": 3,
+            "max": 0.099,
+            "p50": 0.055,
+            "p95": 0.099,
+            "p99": 0.099
+          },
+          "python_lock_wait_ms": {
+            "samples": 3,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "python_lock_hold_ms": {
+            "samples": 3,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "worker_service_ms": {
+            "samples": 3,
+            "max": 210.116,
+            "p50": 207.943,
+            "p95": 210.116,
+            "p99": 210.116
+          },
+          "executor_dispatch_ms": {
+            "samples": 3,
+            "max": 0.172,
+            "p50": 0.133,
+            "p95": 0.172,
+            "p99": 0.172
+          },
+          "completion_delivery_ms": {
+            "samples": 3,
+            "max": 0.352,
+            "p50": 0.322,
+            "p95": 0.352,
+            "p99": 0.352
+          },
+          "thread_cpu_ms": {
+            "samples": 3,
+            "max": 0.131,
+            "p50": 0.097,
+            "p95": 0.131,
+            "p99": 0.131
+          },
+          "outer_lock_hold_ms": {
+            "samples": 3,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "python_lock_release_ms": {
+            "samples": 3,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "outer_lock_release_ms": {
+            "samples": 3,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "sqlite_statement_ms": {
+            "samples": 3,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "sqlite_commit_ms": {
+            "samples": 3,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "sqlite_statement_thread_cpu_ms": {
+            "samples": 3,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "sqlite_commit_thread_cpu_ms": {
+            "samples": 3,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "sqlite_calls": {
+            "samples": 3,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "sqlite_rows": {
+            "samples": 3,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "sqlite_aggregate_items": {
+            "samples": 3,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "sqlite_aggregate_bytes": {
+            "samples": 3,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "file_lock_wait_ms": {
+            "samples": 3,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "file_lock_hold_ms": {
+            "samples": 3,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "file_lock_release_ms": {
+            "samples": 3,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "atomic_write_calls": {
+            "samples": 3,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "atomic_write_bytes": {
+            "samples": 3,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "file_fsync_calls": {
+            "samples": 3,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "file_fsync_ms": {
+            "samples": 3,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "directory_fsync_calls": {
+            "samples": 3,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "directory_fsync_ms": {
+            "samples": 3,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "fsync_failures": {
+            "samples": 3,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "atomic_replace_ms": {
+            "samples": 3,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "object_get_calls": {
+            "samples": 3,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "object_get_bytes": {
+            "samples": 3,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "object_get_ms": {
+            "samples": 3,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "object_put_files": {
+            "samples": 3,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "object_put_bytes": {
+            "samples": 3,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          }
+        }
+      },
+      "resolution": "open",
+      "next_actor": "this same systemic session/card",
+      "next_action": "Protected supervised source integration; fresh exact batch activation/scoped retests when appropriate, substantive remaining shared causes and normal independent whole-card acceptance.",
+      "id": "runtime-followup:agent.session_observability",
+      "kind": "runtime_operation_followup",
+      "finding": "agent.session_observability",
+      "cause_classification": "new_native_worker_observation_private_delayed_reader",
+      "implemented": "Grouped existing bounded worker observation for ordered canonical lookup/build or dispatch fallback.",
+      "merged": [],
+      "deployed": "Uninstalled source.",
+      "retested": "Three private native-worker submissions completed; deliberately delayed mock lookup. Not a registered HTTP route measurement or additional baseline-runtime coverage."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -315388,6 +315708,12 @@
       "artifact": "docs/benchmarks/systemic-exact600-activation-origin-names-20261029.json",
       "status": "Source tested; unmerged/uninstalled",
       "resolution": "open"
+    },
+    {
+      "row_id": "concern:session-control-event-loop-reads",
+      "artifact": "docs/benchmarks/systemic-pr601-integration-control-reads-20261029.json",
+      "status": "Source tested; unmerged/uninstalled",
+      "resolution": "open"
     }
   ],
   "integration_history": [
@@ -315417,6 +315743,17 @@
       "loaded": true,
       "accepted": false,
       "public_collector_failures": 5
+    }
+  ],
+  "integration_stage_history": [
+    {
+      "pr": 601,
+      "artifact": "docs/benchmarks/systemic-pr601-integration-control-reads-20261029.json",
+      "merge": "00d2bd8419d558934519a86bde3767e9c177b04d",
+      "watched_head": "1dd11c2d4ae33da1fc17d91e8fc260982fa9fe20",
+      "watch": "25faa9ce-e826-4833-af0e-cf32a07208f8",
+      "deployed": false,
+      "accepted": false
     }
   ]
 }

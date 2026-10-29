@@ -1351,7 +1351,7 @@ class AgentChatSseTests(unittest.TestCase):
         request.is_disconnected = AsyncMock(return_value=True)
 
         async def run() -> str:
-            with patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime):
+            with patch("pa.modules.agent_chat._runtime_or_404_async", new=AsyncMock(return_value=runtime)):
                 resp = await session_events(request, "sess-1")
                 chunks: list[str] = []
                 try:
@@ -1382,7 +1382,7 @@ class AgentChatSseTests(unittest.TestCase):
         request.is_disconnected = AsyncMock(side_effect=[False, True])
 
         async def run() -> str:
-            with patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime):
+            with patch("pa.modules.agent_chat._runtime_or_404_async", new=AsyncMock(return_value=runtime)):
                 resp = await session_events(request, "sess-1")
 
                 async def emit_soon() -> None:
@@ -1436,7 +1436,7 @@ class AgentChatSseTests(unittest.TestCase):
 
         async def run() -> None:
             reset_shutdown_event()
-            with patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime):
+            with patch("pa.modules.agent_chat._runtime_or_404_async", new=AsyncMock(return_value=runtime)):
                 response = await session_events(request, "sess-shutdown")
                 next_chunk = asyncio.create_task(anext(response.body_iterator))
                 for _ in range(50):
@@ -1474,7 +1474,7 @@ class AgentChatSseTests(unittest.TestCase):
         async def run() -> list[int]:
             reset_shutdown_event()
             sequences: list[int] = []
-            with patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime):
+            with patch("pa.modules.agent_chat._runtime_or_404_async", new=AsyncMock(return_value=runtime)):
                 response = await session_events(request, "sess-catchup-shutdown")
                 async for chunk in response.body_iterator:
                     text = chunk if isinstance(chunk, str) else chunk.decode()
@@ -1531,7 +1531,7 @@ class AgentChatSseTests(unittest.TestCase):
         request.is_disconnected = AsyncMock(return_value=False)
 
         async def run() -> list[int]:
-            with patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime):
+            with patch("pa.modules.agent_chat._runtime_or_404_async", new=AsyncMock(return_value=runtime)):
                 response = await session_events(request, "sess-long")
                 sequences: list[int] = []
                 try:
@@ -1592,7 +1592,7 @@ class AgentChatSseTests(unittest.TestCase):
         request.is_disconnected = AsyncMock(return_value=False)
 
         async def run() -> list[int]:
-            with patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime):
+            with patch("pa.modules.agent_chat._runtime_or_404_async", new=AsyncMock(return_value=runtime)):
                 response = await session_events(request, "sess-busy")
                 sequences: list[int] = []
                 try:
@@ -1656,7 +1656,7 @@ class AgentChatSseTests(unittest.TestCase):
         async def run() -> list[int]:
             reset_shutdown_event()
             sequences: list[int] = []
-            with patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime):
+            with patch("pa.modules.agent_chat._runtime_or_404_async", new=AsyncMock(return_value=runtime)):
                 response = await session_events(request, "sess-gap-shutdown")
                 async for chunk in response.body_iterator:
                     text = chunk if isinstance(chunk, str) else chunk.decode()

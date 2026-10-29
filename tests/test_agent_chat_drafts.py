@@ -172,7 +172,7 @@ class AgentChatDraftContractTests(unittest.TestCase):
         request.headers = {"Idempotency-Key": "browser-prompt-other"}
 
         async def run() -> None:
-            with patch("pa.modules.agent_chat._runtime_or_404") as runtime:
+            with patch("pa.modules.agent_chat._runtime_or_404_async", new_callable=AsyncMock) as runtime:
                 with self.assertRaises(HTTPException) as raised:
                     await session_prompt(
                         request,
@@ -345,7 +345,7 @@ class ClientPromptAdmissionTests(unittest.TestCase):
 
         async def run() -> None:
             with (
-                patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime),
+                patch("pa.modules.agent_chat._runtime_or_404_async", new=AsyncMock(return_value=runtime)),
                 patch(
                     "pa.modules.agent_chat.get_principal_id",
                     return_value="intruder",
@@ -408,7 +408,7 @@ class ClientPromptAdmissionTests(unittest.TestCase):
             async def run() -> None:
                 with (
                     patch(
-                        "pa.modules.agent_chat._runtime_or_404", return_value=runtime
+                        "pa.modules.agent_chat._runtime_or_404_async", new=AsyncMock(return_value=runtime)
                     ),
                     patch(
                         "pa.modules.agent_chat._submit_client_prompt",
@@ -495,7 +495,7 @@ class ClientPromptAdmissionTests(unittest.TestCase):
             async def run() -> dict:
                 with (
                     patch(
-                        "pa.modules.agent_chat._runtime_or_404", return_value=runtime
+                        "pa.modules.agent_chat._runtime_or_404_async", new=AsyncMock(return_value=runtime)
                     ),
                     patch(
                         "pa.modules.agent_chat._record_web_intake",
