@@ -1,0 +1,2320 @@
+{
+  "contract": "pa.activation-placement-read-stage/v1",
+  "observed_at": "2026-10-29T06:58:34.004452+00:00",
+  "identity": {
+    "instance": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "authority": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "session": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+    "card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+    "project": "fdc04d91-1222-447b-859c-38e67bcab6eb",
+    "repository": "https://github.com/petersky/pa",
+    "repository_id": "5ce49cd8-f632-5f6d-a0d5-0b9eaf61f9cd",
+    "worktree": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c",
+    "branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+    "original_base": "4697ed583f6a5eceead72217d07ba2ebaf4ccc83",
+    "source_base": "00d2bd8419d558934519a86bde3767e9c177b04d",
+    "head": "abe51586f2b1220e981f94b765e005d1d1de7763",
+    "upstream": "abe51586f2b1220e981f94b765e005d1d1de7763",
+    "tree": "b43fe0d686ed8c8c8da49ea4f5433ebe95072394",
+    "lease": "d24899f49011107365c237bbf09a300f63beb5a5c9658eac682770304ade52f2",
+    "fence": 334
+  },
+  "preceding_integration": {
+    "pr": 602,
+    "head": "e1123b9d4f9c0277401c5446f62a11e4ba1d147f",
+    "merge": "abe51586f2b1220e981f94b765e005d1d1de7763",
+    "tree": "b43fe0d686ed8c8c8da49ea4f5433ebe95072394",
+    "watch": "ad1eb2c1-b868-4248-bc28-e3811d03f6cc",
+    "head_ci": 40827426848,
+    "main_ci": 40827921251,
+    "checks": "Five first-attempt successes each; no retries. Protected merge already complete; never repeated."
+  },
+  "activation": {
+    "installation_count": 1,
+    "restart_attempts": 1,
+    "operation": {
+      "identity": {
+        "version": 1,
+        "owner": "restart",
+        "realm_id": "default",
+        "idempotency_key": "systemic-exactabe51586-session-control-managed-restart-20261029-v1",
+        "operation": "agent_restart_handoff",
+        "request_fingerprint": null
+      },
+      "status": "continuation_delivered",
+      "accepted": true,
+      "committed": true,
+      "projected": null,
+      "effect": "complete",
+      "phase": "succeeded",
+      "phase_version": 6,
+      "attempt": 1,
+      "reason_code": "continuation_delivered",
+      "next_action": null,
+      "effect_state": "confirmed",
+      "worker_state": "absent",
+      "domain_stage": "continuation_delivered",
+      "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+      "handoff_id": "4fc15cb0-73aa-5f8f-86a4-4e62320213b4",
+      "continuation_prompt_id": "restart-handoff:4fc15cb0-73aa-5f8f-86a4-4e62320213b4",
+      "idempotency_key": "systemic-exactabe51586-session-control-managed-restart-20261029-v1",
+      "owner": "restart",
+      "realm_id": "default",
+      "operation": "agent_restart_handoff",
+      "durable": true,
+      "recovery_state": "continuation_delivered",
+      "recovery_action": null,
+      "result": {
+        "handoff_id": "4fc15cb0-73aa-5f8f-86a4-4e62320213b4",
+        "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+        "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+        "project_id": "fdc04d91-1222-447b-859c-38e67bcab6eb",
+        "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+        "status": "continuation_delivered",
+        "failure_stage": null,
+        "error": null,
+        "attempts": 1,
+        "created_at": "2026-10-29T06:29:35.841403+00:00",
+        "updated_at": "2026-10-29T06:31:42.430178+00:00",
+        "delivered_at": "2026-10-29T06:31:42.430178+00:00"
+      }
+    },
+    "status": {
+      "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+      "process_id": 81195,
+      "runtime_revision": "abe51586f2b1220e981f94b765e005d1d1de7763",
+      "install_revision": "abe51586f2b1220e981f94b765e005d1d1de7763",
+      "runtime_build": {
+        "loaded_module_version": "1.5.9",
+        "source_revision": "abe51586f2b1220e981f94b765e005d1d1de7763",
+        "package_identity": "sha256:3f67186d0c5361b7580dfb85243dab21a15e75894fd9bc6004eb1b05b900a402",
+        "pid": 81195,
+        "startup_id": "59957880-e4f1-4849-86f5-73a8ed2674d4"
+      },
+      "sync": {
+        "realm_id": "default",
+        "head": "ca0271c5955dc5e48186bd9e48b98043f2fb2ee944515f1519349799314f18ae",
+        "projection_head": "ca0271c5955dc5e48186bd9e48b98043f2fb2ee944515f1519349799314f18ae",
+        "consistent": true,
+        "error": null
+      }
+    },
+    "configuration": {
+      "observed_at": "2026-10-29T06:32:28.625907+00:00",
+      "runtime_build": {
+        "loaded_module_version": "1.5.9",
+        "source_revision": "abe51586f2b1220e981f94b765e005d1d1de7763",
+        "package_identity": "sha256:3f67186d0c5361b7580dfb85243dab21a15e75894fd9bc6004eb1b05b900a402",
+        "pid": 81195,
+        "startup_id": "59957880-e4f1-4849-86f5-73a8ed2674d4"
+      },
+      "configuration_revision": "86968d122a80e240ea560052f275872c5d22699a35b218618200da9e62fc1767",
+      "unchanged": true,
+      "reads": [
+        {
+          "path": "/api/status",
+          "bytes": 2824,
+          "sha256": "75d03fc6843596705f4d2345a78085e6a5fd620b351d6bfc51f257969830f806",
+          "correlation_id": "0b029436-10cb-46b6-8025-2c457ed01fc3"
+        },
+        {
+          "path": "/api/configuration",
+          "bytes": 169949,
+          "sha256": "8b01d8f34a66a5a0a032975705290ebb55614c692477364ec3bb963c97978df2",
+          "correlation_id": "c01bab3b-26ea-48ae-b2e8-bcc72f356330"
+        },
+        {
+          "path": "/api/status",
+          "bytes": 2824,
+          "sha256": "75d03fc6843596705f4d2345a78085e6a5fd620b351d6bfc51f257969830f806",
+          "correlation_id": "7b44fdeb-8c35-43ce-bb75-1bb6d2b2d32a"
+        }
+      ],
+      "scope": "Ordinary owner GETs only after positive original handoff settlement. Full configuration/private responses not saved; no policy/default/service effects."
+    },
+    "native_process": {
+      "observed_at": "2026-10-29T06:32:15.390626+00:00",
+      "pid": 81195,
+      "supervisor_pid": 81191,
+      "ps": "81195 81191 Wed Oct 28 23:29:47 2026      31  0 /Users/petersky/.local/share/uv/tools/pa/bin/python3",
+      "launchctl": [
+        "state = running",
+        "program = /Users/petersky/.local/share/uv/tools/pa/bin/pa",
+        "pid = 81191",
+        "state = active",
+        "state = active",
+        "spawn type = interactive (4)"
+      ],
+      "scope": "Actual loaded owner identity paired with native process/interpreter/class; no policy/service/configuration/power/clock change."
+    },
+    "metadata": {
+      "contract": "pa.exact602-installed-metadata-attestation/v1",
+      "observed_at": "2026-10-29T06:32:15.315061+00:00",
+      "stage": "postrestart",
+      "source": "abe51586f2b1220e981f94b765e005d1d1de7763",
+      "package_identity": "sha256:3f67186d0c5361b7580dfb85243dab21a15e75894fd9bc6004eb1b05b900a402",
+      "source_files_verified": 439,
+      "record_entries_verified": 440,
+      "templates_verified": 38,
+      "template_cache_sha256": "fcb9a8ee8099db2aebeebdf06e98412cb3cfa0bcaf71ad2c297553cf3d87acfb",
+      "python_base_executable": "/Users/petersky/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/bin/python3.14",
+      "unchanged_dependency_versions": 52,
+      "private_roots_before_pa_imports": true,
+      "no_kernel_or_store_import": true,
+      "scope": "Read-only installed source, RECORD, interpreter, dependency and template-cache proof. No PA service state, credentials, Kernel, Store or workspace construction. Does not establish which modules/branches the listener executed; actual loaded owner/PID proof is separate.",
+      "manifest": {
+        ".dev/exact602-postrestart-20261029-source.json": "3ab004182dde56d6c395c102b1aae04dbbafc4be27b18a14fdd4358ff997d461",
+        ".dev/exact602-postrestart-20261029-artifact.json": "0a6c9213a323b86da0c739d2c773adac32c3bd72ca2fb3c0422ac14c36413552",
+        ".dev/exact602-postrestart-20261029-records.json": "bd2955aaf990cbf51396650048b8d4c43345b56c842de1322935c2e8b525b18f"
+      }
+    },
+    "installed_contracts": {
+      "tests": 519,
+      "subtests": 7,
+      "result": "pass"
+    },
+    "private_stages": {
+      "count": 19,
+      "result": "all_pass"
+    },
+    "installed_mixed": {
+      "events": 9600,
+      "warnings": 0,
+      "failures_timeouts_rejections": 0,
+      "maintenance_ms": 801.547
+    },
+    "public": {
+      "ordinary_gets": 95,
+      "ordinary_http200": 95,
+      "max_ms": 127.135792,
+      "sampled500msviolations": 0,
+      "encoding_checks": 8,
+      "cached_fleet_checks": 8,
+      "summary_reads": 5,
+      "summary_max_ms": 266.038583,
+      "summary_decoded_bytes": 1161850,
+      "full_reads_failed_collector": 5,
+      "full_body_schema": "UNVERIFIED",
+      "metadata_only_length": 2417641,
+      "metadata_only_body_read": 0
+    },
+    "runtime_population": {
+      "operations": 102,
+      "routes": 33,
+      "all_mapped": true,
+      "scope": "Loaded602 ordinary postretest snapshot; separate from older loaded600115/45 and all earlier windows."
+    },
+    "scope": "Exact installed activation/scoped subsets complete; installation, activation and subsets are not whole-card completion."
+  },
+  "new_source_repair": {
+    "source_base": "abe51586f2b1220e981f94b765e005d1d1de7763",
+    "source_sha256": "5d2daaf20f1ea751db385aba613863d8ff1de5383f4b0700d49eae5b910ce5dd",
+    "finding": "Async Fleet placement materialization and participation/group/default reads, including retry policy reads, still ran synchronously on the event loop.",
+    "semantics": "Read fresh native project/repository inputs and group/policy inputs using the existing bounded worker runtime. Keep lifecycle, candidate probing, candidate mutation and existing admission/lease/receipt/version/capacity fences in their original owners. Preserve group error conversion, non-group storage errors, read order/short-circuiting and cancellation before selection/effects. No policy/timeout/GC/default change.",
+    "tests": {
+      "observed_at": "2026-10-29T06:56:38.762218+00:00",
+      "tests": 248,
+      "subtests": 4,
+      "result": "All pytest tests/subtests passed per complete log; metadata recorder subsequently failed. Tests not rerun.",
+      "wrapper_exit_code": 1,
+      "pytest_exit_code": null,
+      "recorder_error": "NotADirectoryError after tests completed: filename replacement also expanded metadata Path argument",
+      "source_sha256": "5d2daaf20f1ea751db385aba613863d8ff1de5383f4b0700d49eae5b910ce5dd",
+      "test_sha256": "c1e62e6ddc58ae12e4247a2927495833e9efa31350bb34e747a3f393999f4e9b",
+      "log_sha256": "1038e00f261508c04105c8201480362e6f7851f9533f9837c320ce709538428e",
+      "runner_sha256": "865d1b97a40f4f0dcfd5e324b999b0dafa70f51ec951f0ebbb8eb5e2c4bd25f1",
+      "scope": "Private source fixtures with both roots isolated before PA imports; waits, assertions, normal GC and admission policies unchanged. No live provider or production mutations. Source unchanged since focused/loop evidence."
+    },
+    "focused": {
+      "started_at": "2026-10-29T06:55:14.886259+00:00",
+      "finished_at": "2026-10-29T06:55:15.513002+00:00",
+      "exit_code": 0,
+      "source_sha256": "5d2daaf20f1ea751db385aba613863d8ff1de5383f4b0700d49eae5b910ce5dd",
+      "test_sha256": "c1e62e6ddc58ae12e4247a2927495833e9efa31350bb34e747a3f393999f4e9b",
+      "log_sha256": "53be7140f900ef6e183370cb444be05ef41f3eae4a7fb98efb93ba1d06e4e405",
+      "scope": "Private source contracts, real native policy/project readers; mocked candidate probes/selection/provider effects. Both roots private before PA imports; no production state/network/provider, deadlines/GC unchanged."
+    },
+    "comparison": {
+      "baseline": "abe51586f2b1220e981f94b765e005d1d1de7763",
+      "source_sha256": "5d2daaf20f1ea751db385aba613863d8ff1de5383f4b0700d49eae5b910ce5dd",
+      "started_at": "2026-10-29T06:55:48.421958+00:00",
+      "rows": [
+        {
+          "pair": 0,
+          "variant": "baseline",
+          "family": "planning",
+          "request_ms": 215.520208934322,
+          "max_heartbeat_ms": 218.43658294528723,
+          "read_calls": 1,
+          "response_bytes": 3227,
+          "response_sha256": "4587b5035009ca2688e258a84e15c41c4bbb1fb207e134206f893704dc13b636"
+        },
+        {
+          "pair": 0,
+          "variant": "baseline",
+          "family": "policy",
+          "request_ms": 213.90183398034424,
+          "max_heartbeat_ms": 217.9491660790518,
+          "read_calls": 1,
+          "response_bytes": 3227,
+          "response_sha256": "4587b5035009ca2688e258a84e15c41c4bbb1fb207e134206f893704dc13b636"
+        },
+        {
+          "pair": 0,
+          "variant": "baseline",
+          "family": "retry",
+          "request_ms": 209.7717080032453,
+          "max_heartbeat_ms": 214.95495806448162,
+          "read_calls": 1,
+          "response_bytes": 168,
+          "response_sha256": "b35c25819dc67982e2bcf85749dcf013e51cb835c38236d2d46171fa9650a79b"
+        },
+        {
+          "pair": 0,
+          "variant": "candidate",
+          "family": "planning",
+          "request_ms": 205.84862492978573,
+          "max_heartbeat_ms": 6.452332949265838,
+          "read_calls": 1,
+          "response_bytes": 3227,
+          "response_sha256": "4587b5035009ca2688e258a84e15c41c4bbb1fb207e134206f893704dc13b636"
+        },
+        {
+          "pair": 0,
+          "variant": "candidate",
+          "family": "policy",
+          "request_ms": 212.72087492980063,
+          "max_heartbeat_ms": 6.450582994148135,
+          "read_calls": 1,
+          "response_bytes": 3227,
+          "response_sha256": "4587b5035009ca2688e258a84e15c41c4bbb1fb207e134206f893704dc13b636"
+        },
+        {
+          "pair": 0,
+          "variant": "candidate",
+          "family": "retry",
+          "request_ms": 212.06833398900926,
+          "max_heartbeat_ms": 6.446541985496879,
+          "read_calls": 1,
+          "response_bytes": 168,
+          "response_sha256": "b35c25819dc67982e2bcf85749dcf013e51cb835c38236d2d46171fa9650a79b"
+        },
+        {
+          "pair": 1,
+          "variant": "candidate",
+          "family": "planning",
+          "request_ms": 213.81679095793515,
+          "max_heartbeat_ms": 6.47279096301645,
+          "read_calls": 1,
+          "response_bytes": 3227,
+          "response_sha256": "4587b5035009ca2688e258a84e15c41c4bbb1fb207e134206f893704dc13b636"
+        },
+        {
+          "pair": 1,
+          "variant": "candidate",
+          "family": "policy",
+          "request_ms": 210.39633301552385,
+          "max_heartbeat_ms": 6.431124988012016,
+          "read_calls": 1,
+          "response_bytes": 3227,
+          "response_sha256": "4587b5035009ca2688e258a84e15c41c4bbb1fb207e134206f893704dc13b636"
+        },
+        {
+          "pair": 1,
+          "variant": "candidate",
+          "family": "retry",
+          "request_ms": 208.81345903035253,
+          "max_heartbeat_ms": 6.439500022679567,
+          "read_calls": 1,
+          "response_bytes": 168,
+          "response_sha256": "b35c25819dc67982e2bcf85749dcf013e51cb835c38236d2d46171fa9650a79b"
+        },
+        {
+          "pair": 1,
+          "variant": "baseline",
+          "family": "planning",
+          "request_ms": 204.51883401256055,
+          "max_heartbeat_ms": 208.65837496239692,
+          "read_calls": 1,
+          "response_bytes": 3227,
+          "response_sha256": "4587b5035009ca2688e258a84e15c41c4bbb1fb207e134206f893704dc13b636"
+        },
+        {
+          "pair": 1,
+          "variant": "baseline",
+          "family": "policy",
+          "request_ms": 208.31149991136044,
+          "max_heartbeat_ms": 212.5388749409467,
+          "read_calls": 1,
+          "response_bytes": 3227,
+          "response_sha256": "4587b5035009ca2688e258a84e15c41c4bbb1fb207e134206f893704dc13b636"
+        },
+        {
+          "pair": 1,
+          "variant": "baseline",
+          "family": "retry",
+          "request_ms": 203.09029193595052,
+          "max_heartbeat_ms": 207.33012503478676,
+          "read_calls": 1,
+          "response_bytes": 168,
+          "response_sha256": "b35c25819dc67982e2bcf85749dcf013e51cb835c38236d2d46171fa9650a79b"
+        },
+        {
+          "pair": 2,
+          "variant": "baseline",
+          "family": "planning",
+          "request_ms": 212.73962501436472,
+          "max_heartbeat_ms": 217.01958298217505,
+          "read_calls": 1,
+          "response_bytes": 3227,
+          "response_sha256": "4587b5035009ca2688e258a84e15c41c4bbb1fb207e134206f893704dc13b636"
+        },
+        {
+          "pair": 2,
+          "variant": "baseline",
+          "family": "policy",
+          "request_ms": 213.15787499770522,
+          "max_heartbeat_ms": 217.3178750090301,
+          "read_calls": 1,
+          "response_bytes": 3227,
+          "response_sha256": "4587b5035009ca2688e258a84e15c41c4bbb1fb207e134206f893704dc13b636"
+        },
+        {
+          "pair": 2,
+          "variant": "baseline",
+          "family": "retry",
+          "request_ms": 207.81266689300537,
+          "max_heartbeat_ms": 211.571458959952,
+          "read_calls": 1,
+          "response_bytes": 168,
+          "response_sha256": "b35c25819dc67982e2bcf85749dcf013e51cb835c38236d2d46171fa9650a79b"
+        },
+        {
+          "pair": 2,
+          "variant": "candidate",
+          "family": "planning",
+          "request_ms": 204.67945805285126,
+          "max_heartbeat_ms": 6.458709016442299,
+          "read_calls": 1,
+          "response_bytes": 3227,
+          "response_sha256": "4587b5035009ca2688e258a84e15c41c4bbb1fb207e134206f893704dc13b636"
+        },
+        {
+          "pair": 2,
+          "variant": "candidate",
+          "family": "policy",
+          "request_ms": 210.23262501694262,
+          "max_heartbeat_ms": 6.45041698589921,
+          "read_calls": 1,
+          "response_bytes": 3227,
+          "response_sha256": "4587b5035009ca2688e258a84e15c41c4bbb1fb207e134206f893704dc13b636"
+        },
+        {
+          "pair": 2,
+          "variant": "candidate",
+          "family": "retry",
+          "request_ms": 212.6347500598058,
+          "max_heartbeat_ms": 6.427500047720969,
+          "read_calls": 1,
+          "response_bytes": 168,
+          "response_sha256": "b35c25819dc67982e2bcf85749dcf013e51cb835c38236d2d46171fa9650a79b"
+        }
+      ],
+      "scope": "Private loop comparison with identical delayed native project/policy reads.\n\nCandidate probes, joint selection and the retry effect boundary are controlled.\nThis is not real admission, provider/network or physical I/O acceptance.\n",
+      "private_roots_before_imports": true,
+      "delay_ms": 200,
+      "complete_response_bytes_equal": true,
+      "runtime": {
+        "failed_operations": {
+          "capacity": 64,
+          "scope": "Last completed failed worker/native-async invocations and executor submission failures, including short failures. Worker caller timeouts/cancellations are not completion failures; their existing counters remain separate. Failed-only percentiles use the last 256 failures per operation and are omitted until a failure completes. Static categories are not root causes; no messages, arbitrary codes, exception names, arguments, SQL or payloads retained.",
+          "observations": [
+            {
+              "operation": "fleet.retry_placement_resolve",
+              "phase": "worker_completion",
+              "category": "exception",
+              "elapsed_ms": 0.337,
+              "observed_at_monotonic": 881395.722848,
+              "queue_wait_ms": 0.097,
+              "worker_service_ms": 0.067,
+              "thread_cpu_ms": 0.063
+            },
+            {
+              "operation": "fleet.retry_placement_resolve",
+              "phase": "worker_completion",
+              "category": "exception",
+              "elapsed_ms": 0.214,
+              "observed_at_monotonic": 881396.403538,
+              "queue_wait_ms": 0.021,
+              "worker_service_ms": 0.053,
+              "thread_cpu_ms": 0.05
+            },
+            {
+              "operation": "fleet.retry_placement_resolve",
+              "phase": "worker_completion",
+              "category": "exception",
+              "elapsed_ms": 0.446,
+              "observed_at_monotonic": 881397.081529,
+              "queue_wait_ms": 0.049,
+              "worker_service_ms": 0.124,
+              "thread_cpu_ms": 0.121
+            },
+            {
+              "operation": "fleet.retry_placement_resolve",
+              "phase": "worker_completion",
+              "category": "exception",
+              "elapsed_ms": 0.591,
+              "observed_at_monotonic": 881397.750491,
+              "queue_wait_ms": 0.087,
+              "worker_service_ms": 0.151,
+              "thread_cpu_ms": 0.144
+            },
+            {
+              "operation": "fleet.retry_placement_resolve",
+              "phase": "worker_completion",
+              "category": "exception",
+              "elapsed_ms": 0.604,
+              "observed_at_monotonic": 881398.436442,
+              "queue_wait_ms": 0.085,
+              "worker_service_ms": 0.157,
+              "thread_cpu_ms": 0.149
+            },
+            {
+              "operation": "fleet.retry_placement_resolve",
+              "phase": "worker_completion",
+              "category": "exception",
+              "elapsed_ms": 0.277,
+              "observed_at_monotonic": 881399.115625,
+              "queue_wait_ms": 0.035,
+              "worker_service_ms": 0.081,
+              "thread_cpu_ms": 0.079
+            }
+          ]
+        },
+        "failed_requests": {
+          "capacity": 64,
+          "count": 0,
+          "scope": "Last completed HTTP 4xx/5xx responses, including failed SSE responses; normal SSE lifetimes remain excluded. Route templates and numeric status only, no response bodies, error codes, IDs or query strings.",
+          "observations": []
+        },
+        "sqlite_timing_scope": "Statement wall and thread CPU include execute and lazy fetch calls; commit is separate. Inclusive nested calls can overlap. Wall minus CPU is unclassified off-CPU time, not proof of lock wait or physical disk I/O. No SQL, parameters or result values retained.",
+        "async_backend_initialization": {
+          "state": "not_started"
+        },
+        "slow_operations": {
+          "capacity": 64,
+          "scope": "last completed slow worker invocations; queue time separate from elapsed",
+          "lock_note": "measured lock sections are inclusive; nested hold intervals may overlap",
+          "lock_events_note": "last64 measured sections per slow invocation; total includes evicted sections; outer hold is the union of outermost measured sections, not CPU time; hold includes unlock and scheduling around it; release_ms separates that interval and is not pure unlock CPU or proven held time",
+          "observations": []
+        },
+        "slow_lock_timelines": {
+          "capacity": 64,
+          "events_per_invocation": 64,
+          "observations": []
+        },
+        "executor": {
+          "max_workers": 1,
+          "max_queue": 64,
+          "active": 0,
+          "queued": 0,
+          "closing": false
+        },
+        "event_loop": {
+          "samples": 0,
+          "latest_lag_ms": 0.0,
+          "p95_lag_ms": 0.0,
+          "max_lag_ms": 0.0,
+          "pre_window_lag_ms": {
+            "samples": 0,
+            "max": null,
+            "p50": null,
+            "p95": null,
+            "p99": null
+          }
+        },
+        "requests": {
+          "window": "last_256_non_sse_requests_per_route",
+          "count": 0,
+          "average_ms": 0.0,
+          "max_ms": 0.0,
+          "slow": [],
+          "latency_ms": {
+            "samples": 0,
+            "max": null,
+            "p50": null,
+            "p95": null,
+            "p99": null
+          },
+          "response_bytes": 0,
+          "excluded_sse_requests": 0,
+          "routes": {}
+        },
+        "owned_mutations": {
+          "pending": 0
+        },
+        "work": {
+          "window": "last_256_observations_per_metric",
+          "metrics": {}
+        },
+        "active_operations": [],
+        "operations": {
+          "fleet.placement_materialization_plan": {
+            "submitted": 6,
+            "completed": 6,
+            "failed": 0,
+            "timed_out": 0,
+            "cancelled": 0,
+            "rejected": 0,
+            "active": 0,
+            "queued": 0,
+            "max_active": 1,
+            "max_queued": 1,
+            "total_queue_ms": 0.279,
+            "total_wait_ms": 619.9834999861196,
+            "max_wait_ms": 211.12629096023738,
+            "total_lock_wait_ms": 0.0,
+            "total_runtime_ms": 619.385,
+            "max_runtime_ms": 211.007,
+            "slow_calls": 0,
+            "sqlite_busy_failures": 0,
+            "filesystem_totals": {
+              "file_lock_wait_ms": 0.0,
+              "file_lock_hold_ms": 0.0,
+              "file_lock_release_ms": 0.0,
+              "atomic_write_calls": 0,
+              "atomic_write_bytes": 0,
+              "file_fsync_calls": 0,
+              "file_fsync_ms": 0.0,
+              "directory_fsync_calls": 0,
+              "directory_fsync_ms": 0.0,
+              "fsync_failures": 0,
+              "atomic_replace_ms": 0.0,
+              "object_get_calls": 0,
+              "object_get_bytes": 0,
+              "object_get_ms": 0.0,
+              "object_put_files": 0,
+              "object_put_bytes": 0
+            },
+            "runtime_ms": {
+              "samples": 6,
+              "max": 211.007,
+              "p50": 0.817,
+              "p95": 211.007,
+              "p99": 211.007
+            },
+            "queue_ms": {
+              "samples": 6,
+              "max": 0.074,
+              "p50": 0.048,
+              "p95": 0.074,
+              "p99": 0.074
+            },
+            "python_lock_wait_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "python_lock_hold_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "worker_service_ms": {
+              "samples": 6,
+              "max": 210.566,
+              "p50": 0.41,
+              "p95": 210.566,
+              "p99": 210.566
+            },
+            "executor_dispatch_ms": {
+              "samples": 6,
+              "max": 0.206,
+              "p50": 0.128,
+              "p95": 0.206,
+              "p99": 0.206
+            },
+            "completion_delivery_ms": {
+              "samples": 6,
+              "max": 0.305,
+              "p50": 0.163,
+              "p95": 0.305,
+              "p99": 0.305
+            },
+            "thread_cpu_ms": {
+              "samples": 6,
+              "max": 1.089,
+              "p50": 0.399,
+              "p95": 1.089,
+              "p99": 1.089
+            },
+            "outer_lock_hold_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "python_lock_release_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "outer_lock_release_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_statement_ms": {
+              "samples": 6,
+              "max": 0.594,
+              "p50": 0.073,
+              "p95": 0.594,
+              "p99": 0.594
+            },
+            "sqlite_commit_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_statement_thread_cpu_ms": {
+              "samples": 6,
+              "max": 0.589,
+              "p50": 0.068,
+              "p95": 0.589,
+              "p99": 0.589
+            },
+            "sqlite_commit_thread_cpu_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_calls": {
+              "samples": 6,
+              "max": 3,
+              "p50": 2,
+              "p95": 3,
+              "p99": 3
+            },
+            "sqlite_rows": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_aggregate_items": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_aggregate_bytes": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_lock_wait_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "file_lock_hold_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "file_lock_release_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "atomic_write_calls": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "atomic_write_bytes": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_fsync_calls": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_fsync_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "directory_fsync_calls": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "directory_fsync_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "fsync_failures": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "atomic_replace_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "object_get_calls": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_get_bytes": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_get_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "object_put_files": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_put_bytes": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            }
+          },
+          "fleet.placement_policy_inputs": {
+            "submitted": 6,
+            "completed": 6,
+            "failed": 0,
+            "timed_out": 0,
+            "cancelled": 0,
+            "rejected": 0,
+            "active": 0,
+            "queued": 0,
+            "max_active": 1,
+            "max_queued": 1,
+            "total_queue_ms": 0.172,
+            "total_wait_ms": 628.4638338256627,
+            "max_wait_ms": 211.07204200234264,
+            "total_lock_wait_ms": 0.0,
+            "total_runtime_ms": 627.993,
+            "max_runtime_ms": 211.003,
+            "slow_calls": 0,
+            "sqlite_busy_failures": 0,
+            "filesystem_totals": {
+              "file_lock_wait_ms": 0.0,
+              "file_lock_hold_ms": 0.0,
+              "file_lock_release_ms": 0.0,
+              "atomic_write_calls": 0,
+              "atomic_write_bytes": 0,
+              "file_fsync_calls": 0,
+              "file_fsync_ms": 0.0,
+              "directory_fsync_calls": 0,
+              "directory_fsync_ms": 0.0,
+              "fsync_failures": 0,
+              "atomic_replace_ms": 0.0,
+              "object_get_calls": 0,
+              "object_get_bytes": 0,
+              "object_get_ms": 0.0,
+              "object_put_files": 0,
+              "object_put_bytes": 0
+            },
+            "runtime_ms": {
+              "samples": 6,
+              "max": 211.003,
+              "p50": 0.974,
+              "p95": 211.003,
+              "p99": 211.003
+            },
+            "queue_ms": {
+              "samples": 6,
+              "max": 0.047,
+              "p50": 0.032,
+              "p95": 0.047,
+              "p99": 0.047
+            },
+            "python_lock_wait_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "python_lock_hold_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "worker_service_ms": {
+              "samples": 6,
+              "max": 210.67,
+              "p50": 0.65,
+              "p95": 210.67,
+              "p99": 210.67
+            },
+            "executor_dispatch_ms": {
+              "samples": 6,
+              "max": 0.136,
+              "p50": 0.063,
+              "p95": 0.136,
+              "p99": 0.136
+            },
+            "completion_delivery_ms": {
+              "samples": 6,
+              "max": 0.311,
+              "p50": 0.185,
+              "p95": 0.311,
+              "p99": 0.311
+            },
+            "thread_cpu_ms": {
+              "samples": 6,
+              "max": 1.102,
+              "p50": 0.647,
+              "p95": 1.102,
+              "p99": 1.102
+            },
+            "outer_lock_hold_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "python_lock_release_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "outer_lock_release_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_statement_ms": {
+              "samples": 6,
+              "max": 0.162,
+              "p50": 0.081,
+              "p95": 0.162,
+              "p99": 0.162
+            },
+            "sqlite_commit_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_statement_thread_cpu_ms": {
+              "samples": 6,
+              "max": 0.145,
+              "p50": 0.072,
+              "p95": 0.145,
+              "p99": 0.145
+            },
+            "sqlite_commit_thread_cpu_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_calls": {
+              "samples": 6,
+              "max": 10,
+              "p50": 10,
+              "p95": 10,
+              "p99": 10
+            },
+            "sqlite_rows": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_aggregate_items": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_aggregate_bytes": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_lock_wait_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "file_lock_hold_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "file_lock_release_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "atomic_write_calls": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "atomic_write_bytes": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_fsync_calls": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_fsync_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "directory_fsync_calls": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "directory_fsync_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "fsync_failures": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "atomic_replace_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "object_get_calls": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_get_bytes": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_get_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "object_put_files": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_put_bytes": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            }
+          },
+          "fleet.placement_resolve": {
+            "submitted": 12,
+            "completed": 12,
+            "failed": 0,
+            "timed_out": 0,
+            "cancelled": 0,
+            "rejected": 0,
+            "active": 0,
+            "queued": 0,
+            "max_active": 1,
+            "max_queued": 1,
+            "total_queue_ms": 0.829,
+            "total_wait_ms": 7.209499133750796,
+            "max_wait_ms": 1.3480420457199216,
+            "total_lock_wait_ms": 0.0,
+            "total_runtime_ms": 4.995,
+            "max_runtime_ms": 1.038,
+            "slow_calls": 0,
+            "sqlite_busy_failures": 0,
+            "filesystem_totals": {
+              "file_lock_wait_ms": 0.0,
+              "file_lock_hold_ms": 0.0,
+              "file_lock_release_ms": 0.0,
+              "atomic_write_calls": 0,
+              "atomic_write_bytes": 0,
+              "file_fsync_calls": 0,
+              "file_fsync_ms": 0.0,
+              "directory_fsync_calls": 0,
+              "directory_fsync_ms": 0.0,
+              "fsync_failures": 0,
+              "atomic_replace_ms": 0.0,
+              "object_get_calls": 0,
+              "object_get_bytes": 0,
+              "object_get_ms": 0.0,
+              "object_put_files": 0,
+              "object_put_bytes": 0
+            },
+            "runtime_ms": {
+              "samples": 12,
+              "max": 1.038,
+              "p50": 0.388,
+              "p95": 1.038,
+              "p99": 1.038
+            },
+            "queue_ms": {
+              "samples": 12,
+              "max": 0.221,
+              "p50": 0.048,
+              "p95": 0.221,
+              "p99": 0.221
+            },
+            "python_lock_wait_ms": {
+              "samples": 12,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "python_lock_hold_ms": {
+              "samples": 12,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "worker_service_ms": {
+              "samples": 12,
+              "max": 0.081,
+              "p50": 0.052,
+              "p95": 0.081,
+              "p99": 0.081
+            },
+            "executor_dispatch_ms": {
+              "samples": 12,
+              "max": 0.479,
+              "p50": 0.142,
+              "p95": 0.479,
+              "p99": 0.479
+            },
+            "completion_delivery_ms": {
+              "samples": 12,
+              "max": 0.468,
+              "p50": 0.177,
+              "p95": 0.468,
+              "p99": 0.468
+            },
+            "thread_cpu_ms": {
+              "samples": 12,
+              "max": 0.075,
+              "p50": 0.05,
+              "p95": 0.075,
+              "p99": 0.075
+            },
+            "outer_lock_hold_ms": {
+              "samples": 12,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "python_lock_release_ms": {
+              "samples": 12,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "outer_lock_release_ms": {
+              "samples": 12,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_statement_ms": {
+              "samples": 12,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_commit_ms": {
+              "samples": 12,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_statement_thread_cpu_ms": {
+              "samples": 12,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_commit_thread_cpu_ms": {
+              "samples": 12,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_calls": {
+              "samples": 12,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_rows": {
+              "samples": 12,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_aggregate_items": {
+              "samples": 12,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_aggregate_bytes": {
+              "samples": 12,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_lock_wait_ms": {
+              "samples": 12,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "file_lock_hold_ms": {
+              "samples": 12,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "file_lock_release_ms": {
+              "samples": 12,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "atomic_write_calls": {
+              "samples": 12,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "atomic_write_bytes": {
+              "samples": 12,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_fsync_calls": {
+              "samples": 12,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_fsync_ms": {
+              "samples": 12,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "directory_fsync_calls": {
+              "samples": 12,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "directory_fsync_ms": {
+              "samples": 12,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "fsync_failures": {
+              "samples": 12,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "atomic_replace_ms": {
+              "samples": 12,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "object_get_calls": {
+              "samples": 12,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_get_bytes": {
+              "samples": 12,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_get_ms": {
+              "samples": 12,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "object_put_files": {
+              "samples": 12,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_put_bytes": {
+              "samples": 12,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            }
+          },
+          "fleet.retry_placement_resolve": {
+            "submitted": 6,
+            "completed": 0,
+            "failed": 6,
+            "timed_out": 0,
+            "cancelled": 0,
+            "rejected": 0,
+            "active": 0,
+            "queued": 0,
+            "max_active": 1,
+            "max_queued": 1,
+            "total_queue_ms": 0.374,
+            "total_wait_ms": 3.5855021560564637,
+            "max_wait_ms": 0.9310420136898756,
+            "total_lock_wait_ms": 0.0,
+            "total_runtime_ms": 2.432,
+            "max_runtime_ms": 0.597,
+            "slow_calls": 0,
+            "sqlite_busy_failures": 0,
+            "filesystem_totals": {
+              "file_lock_wait_ms": 0.0,
+              "file_lock_hold_ms": 0.0,
+              "file_lock_release_ms": 0.0,
+              "atomic_write_calls": 0,
+              "atomic_write_bytes": 0,
+              "file_fsync_calls": 0,
+              "file_fsync_ms": 0.0,
+              "directory_fsync_calls": 0,
+              "directory_fsync_ms": 0.0,
+              "fsync_failures": 0,
+              "atomic_replace_ms": 0.0,
+              "object_get_calls": 0,
+              "object_get_bytes": 0,
+              "object_get_ms": 0.0,
+              "object_put_files": 0,
+              "object_put_bytes": 0
+            },
+            "runtime_ms": {
+              "samples": 6,
+              "max": 0.597,
+              "p50": 0.333,
+              "p95": 0.597,
+              "p99": 0.597
+            },
+            "failed_runtime_ms": {
+              "samples": 6,
+              "max": 0.604,
+              "p50": 0.337,
+              "p95": 0.604,
+              "p99": 0.604
+            },
+            "queue_ms": {
+              "samples": 6,
+              "max": 0.097,
+              "p50": 0.049,
+              "p95": 0.097,
+              "p99": 0.097
+            },
+            "python_lock_wait_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "python_lock_hold_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "worker_service_ms": {
+              "samples": 6,
+              "max": 0.157,
+              "p50": 0.081,
+              "p95": 0.157,
+              "p99": 0.157
+            },
+            "executor_dispatch_ms": {
+              "samples": 6,
+              "max": 0.219,
+              "p50": 0.117,
+              "p95": 0.219,
+              "p99": 0.219
+            },
+            "completion_delivery_ms": {
+              "samples": 6,
+              "max": 0.215,
+              "p50": 0.146,
+              "p95": 0.215,
+              "p99": 0.215
+            },
+            "thread_cpu_ms": {
+              "samples": 6,
+              "max": 0.149,
+              "p50": 0.079,
+              "p95": 0.149,
+              "p99": 0.149
+            },
+            "outer_lock_hold_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "python_lock_release_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "outer_lock_release_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_statement_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_commit_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_statement_thread_cpu_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_commit_thread_cpu_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_calls": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_rows": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_aggregate_items": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_aggregate_bytes": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_lock_wait_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "file_lock_hold_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "file_lock_release_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "atomic_write_calls": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "atomic_write_bytes": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_fsync_calls": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_fsync_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "directory_fsync_calls": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "directory_fsync_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "fsync_failures": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "atomic_replace_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "object_get_calls": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_get_bytes": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_get_ms": {
+              "samples": 6,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "object_put_files": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_put_bytes": {
+              "samples": 6,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            }
+          },
+          "fleet.retry_policy_inputs": {
+            "submitted": 3,
+            "completed": 3,
+            "failed": 0,
+            "timed_out": 0,
+            "cancelled": 0,
+            "rejected": 0,
+            "active": 0,
+            "queued": 0,
+            "max_active": 1,
+            "max_queued": 1,
+            "total_queue_ms": 0.287,
+            "total_wait_ms": 629.7126660356298,
+            "max_wait_ms": 211.4561250200495,
+            "total_lock_wait_ms": 0.0,
+            "total_runtime_ms": 629.213,
+            "max_runtime_ms": 211.326,
+            "slow_calls": 0,
+            "sqlite_busy_failures": 0,
+            "filesystem_totals": {
+              "file_lock_wait_ms": 0.0,
+              "file_lock_hold_ms": 0.0,
+              "file_lock_release_ms": 0.0,
+              "atomic_write_calls": 0,
+              "atomic_write_bytes": 0,
+              "file_fsync_calls": 0,
+              "file_fsync_ms": 0.0,
+              "directory_fsync_calls": 0,
+              "directory_fsync_ms": 0.0,
+              "fsync_failures": 0,
+              "atomic_replace_ms": 0.0,
+              "object_get_calls": 0,
+              "object_get_bytes": 0,
+              "object_get_ms": 0.0,
+              "object_put_files": 0,
+              "object_put_bytes": 0
+            },
+            "runtime_ms": {
+              "samples": 3,
+              "max": 211.326,
+              "p50": 210.812,
+              "p95": 211.326,
+              "p99": 211.326
+            },
+            "queue_ms": {
+              "samples": 3,
+              "max": 0.161,
+              "p50": 0.067,
+              "p95": 0.161,
+              "p99": 0.161
+            },
+            "python_lock_wait_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "python_lock_hold_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "worker_service_ms": {
+              "samples": 3,
+              "max": 210.871,
+              "p50": 210.517,
+              "p95": 210.871,
+              "p99": 210.871
+            },
+            "executor_dispatch_ms": {
+              "samples": 3,
+              "max": 0.201,
+              "p50": 0.168,
+              "p95": 0.201,
+              "p99": 0.201
+            },
+            "completion_delivery_ms": {
+              "samples": 3,
+              "max": 0.303,
+              "p50": 0.249,
+              "p95": 0.303,
+              "p99": 0.303
+            },
+            "thread_cpu_ms": {
+              "samples": 3,
+              "max": 0.888,
+              "p50": 0.859,
+              "p95": 0.888,
+              "p99": 0.888
+            },
+            "outer_lock_hold_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "python_lock_release_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "outer_lock_release_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_statement_ms": {
+              "samples": 3,
+              "max": 0.16,
+              "p50": 0.159,
+              "p95": 0.16,
+              "p99": 0.16
+            },
+            "sqlite_commit_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_statement_thread_cpu_ms": {
+              "samples": 3,
+              "max": 0.148,
+              "p50": 0.148,
+              "p95": 0.148,
+              "p99": 0.148
+            },
+            "sqlite_commit_thread_cpu_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_calls": {
+              "samples": 3,
+              "max": 8,
+              "p50": 8,
+              "p95": 8,
+              "p99": 8
+            },
+            "sqlite_rows": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_aggregate_items": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_aggregate_bytes": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_lock_wait_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "file_lock_hold_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "file_lock_release_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "atomic_write_calls": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "atomic_write_bytes": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_fsync_calls": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_fsync_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "directory_fsync_calls": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "directory_fsync_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "fsync_failures": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "atomic_replace_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "object_get_calls": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_get_bytes": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_get_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "object_put_files": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_put_bytes": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            }
+          }
+        }
+      },
+      "finished_at": "2026-10-29T06:55:52.538096+00:00"
+    },
+    "mixed": {
+      "started_at": "2026-10-29T06:56:44.512004+00:00",
+      "source_modules": {
+        "pa.modules.fleet": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/modules/fleet.py",
+          "sha256": "5d2daaf20f1ea751db385aba613863d8ff1de5383f4b0700d49eae5b910ce5dd"
+        }
+      },
+      "both_roots_private_before_imports": true,
+      "exit_code": 0,
+      "finished_at": "2026-10-29T06:57:09.877989+00:00",
+      "log_sha256": "fc333462de21de3996fd109bdd40d4f7376435e868fcd7ecc4c8688d16a52330",
+      "log_bytes": 382956,
+      "events": 9600,
+      "warnings": {},
+      "threshold_violations": {
+        "maintenance.run": 1
+      },
+      "maintenance": {
+        "samples": 1,
+        "max_ms": 818.589,
+        "p50_ms": 818.589,
+        "p95_ms": 818.589,
+        "p99_ms": 818.589
+      },
+      "import_attestation": {
+        "modules": {
+          "pa.modules.fleet": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/modules/fleet.py",
+            "sha256": "5d2daaf20f1ea751db385aba613863d8ff1de5383f4b0700d49eae5b910ce5dd"
+          }
+        },
+        "before_workload": true,
+        "unchanged_after_workload": true
+      },
+      "scope": "Changed-module imports and unchanged hashes before/after mixed workload; does not establish every changed branch executes. Dedicated control-read contracts and native executor comparison exercise the repair; the mixed inventory may not execute every branch. Both roots private before all PA imports; unchanged waits/deadlines/GC; no real provider or production state."
+    },
+    "state": "Source tested; unmerged/uninstalled at this immutable stage; actual listener remains installed602."
+  },
+  "maintenance_diagnostics": {
+    "invalid_cprofile": {
+      "valid": false,
+      "negative_values_in_top_own": 19,
+      "reason": "Thread-clock cProfile captured cross-thread execution and impossible/negative totals. Exit0 does not establish valid diagnostic. No CPU attribution uses this population."
+    },
+    "corrected": "Explicit owner-thread-only selected Python call/return observer: all three calls balanced, no unmatched/openframes and nonnegative durations. Callback overhead inflates CPU; diagnostic-only, inclusive spans overlap. No sole physicalIO/GIL/lock/GC attribution or passing performance claim."
+  },
+  "first_failures": [
+    "Initial placement baseline: three loop-reader failures plus one missing required authority fixture field. Corrected baseline then four actual on-loop reader failures, before product patch.",
+    "Expanded source contracts: ten passed, malformed timestamp fixture and read count including native fixture writes failed. Exact fixture corrections then12pass; assertions and waits preserved.",
+    "Broader pytest log reports248pass/4subtestspass; post-test metadata Path construction raisedNotADirectoryError. Full log retained; pytest exit code not reconstructed, wrapper exit1. Tests not rerun.",
+    "Repeated uv sandbox cache denials occurred before child launch; exact private launches succeeded via provider approval. No credential/sandbox fallback.",
+    "First installed maintenance CPU profiler returned0 but emitted impossible/cross-thread/negative totals; explicitly INVALID. Corrected bounded owner-thread observer remains diagnostic, not acceptance.",
+    "All older nativepssandbox/Python3.9/GraphQL literal-prefix/async-marker/native-lock/disabled-agent fixture/review import/virtualenv symlink failures and prior outliers stay in the complete preceding bundle."
+  ],
+  "remaining": [
+    "Maintenance801.547ms installed602 and818.589ms new source mixed remain above500ms. Natural6025128.638291ms wall/2694.028625ms CPU includes projectionVACUUM2332.586666ms and retention1254.285833ms; inclusive spans overlap, never sum. OffCPU remains unclassified.",
+    "Five NEWtarget full10session-list reads again fail unchanged2MiB collector. Metadata control Content-Length2417641B/bodyread0; full response schema UNVERIFIED. No blind rerun, larger bound, dropped output/data or acceptance claim.",
+    "Full realKernel/provider/MCP/placement/workspace/queue/admission/startup/drain/concurrency and payload/call/write amplification remain open. Controlled candidates/selection and metadata proofs do not establish all listener/mixed branches.",
+    "Source inventory also retains browser session reads, execution-selection connection reads, Fleet capacity snapshots that expire reservations, post-turn durable actions and sync timeout detail reads. This repair only offloads read-only planning/policy sections; mutation ownership/cancellation/fencing require separate investigation.",
+    "Accepted backup0331/b527 andDB89957 original scopes remain CLOSED. Backup9/8verified/1limited/unpaused, next08:18:02.824206Z. Unsorted history is not a new incident population or exhaustive absence proof. Macmini cachedstatus/sync stale/probe_failed/current build/log/retention unverified; other cached peers older0d6638cc. No forced refresh/update/restart/manual backup action.",
+    "All original missingobject1/2842decodedB,/work603.818ms,2396statusfailures/5640760droppedB,sourceFD/rotation/logging/screenshotgaps and ambiguous555/0b79/f403/d448/HTTP413effects remain. No absence inference/replay. Answerednotificationa99ee1db delivered/resolvedv4 remains untouched; no quote/change/withdraw/rearm/redelivery/consent inference.",
+    "All prior first failures/negative/interrupted stages, ten attachments and original689rows/fields remain. Raw full prompts/private answers/logs/ZIPs stay LOCAL/untrusted/hash-only. Per-process maxima, bounded windows, log tails and fixtures remain separate populations.",
+    "Independent_agent_v1 acceptance exact17d034a6-efc7-4a9d-badc-d3fe012d0b57 remains scheduler-owned/unaccepted. Integration alone satisfied; no fabricated active/verified/acceptance milestone, self-verifier, Done/CAS loop or unfinished cleanup."
+  ],
+  "local_only_custody": {
+    ".dev/exact602-private-stage-cold10-20261029.log": {
+      "bytes": 594,
+      "sha256": "e420208883add4482ab1de2c776e9a4dc9035aa91e9c0c9e7c9cf14d02135fd4",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/installed602-postrestart-separate-baseline-20261029-mixed100.log": {
+      "bytes": 382962,
+      "sha256": "31292211ca6d54224e68a1bffe97da1213bf1e7cf6ea205dafc305836784405d",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/session-control602-mocked-fixture-corrections-20261029.log": {
+      "bytes": 98,
+      "sha256": "f3c4cdf48008c7e202b864f4f2fb73719a70152d7a94e1bef5430e7760e328db",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/session-control602-source-mixed100-20261029.log": {
+      "bytes": 382951,
+      "sha256": "1589b999f40a4adff0508ac653d9f4d9aa3a4c43b4f7186d99ba7883b84d69d4",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-outer-review-launch-20261029.log": {
+      "bytes": 708,
+      "sha256": "0b0356129c7d4a3d261c66af8e5c8f6c45fef345212ada84bce267f2cc1afa5d",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-private-stage-dispatch_matching-20261029.log": {
+      "bytes": 1730,
+      "sha256": "e720878a7d7f78d72e683b4c62bf4aee7079a65b0cac153d37ec60047f071f99",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-private-stage-lease_matching-20261029.log": {
+      "bytes": 1752,
+      "sha256": "cb1560ce17ed2e6b48faedba028a24118af9cf5f1c6f4be7f409d33af95b64cc",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-private-stage-project_labels_unique-20261029.log": {
+      "bytes": 536,
+      "sha256": "c642b0930534222507ace7851f82e95ec8d51a5b328796967e5f312359295d6e",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/session-control602-source-mixed100-final-20261029.log": {
+      "bytes": 382961,
+      "sha256": "4bcd519464ab5e63779616610fad834c693ac8d8dee7e39fb44a22a2ead989e1",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/session-control602-baseline-contracts-corrected-20261029.log": {
+      "bytes": 11529,
+      "sha256": "2ea8bb60c0cfba597823b48cef2d6684a957f03a0a64fec8a5360d69d24770b0",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-maintenance-threadcpu-profile-20261029.log": {
+      "bytes": 383019,
+      "sha256": "eb7b9b333e262587eb22f1e4b8dd361a6a0c939416c0d32fe536dc51ca1b96a5",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-private-stage-project_labels_shared-20261029.log": {
+      "bytes": 526,
+      "sha256": "77bc1b51e9d982fc0eb329eafd7db97e95842ba24c49ac487451e9fbc61383dd",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/installed602-lifecycle-contracts-20261029.log": {
+      "bytes": 5183,
+      "sha256": "699def2038811cb4db440d97e0a6eadecccbbac3116e57ece2b2a55970924cb4",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-private-stage-watch_read-20261029.log": {
+      "bytes": 1186,
+      "sha256": "e12158234faa1f6e98275f66dd41dd0bb599c7bb517246803c34c695554129df",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-private-stage-full_watch_source_hashes-20261029.log": {
+      "bytes": 62,
+      "sha256": "51fe49ce077a5e783b4fe9afb0e02a0120bf9a58e084c839fb04adac861fa4b2",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-maintenance-owner-thread-observer-20261029.log": {
+      "bytes": 382981,
+      "sha256": "6803198a879a9b2344c80b3b3e0dbc107a0756239584e356048396364f23bebb",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-private-stage-watch_matching-20261029.log": {
+      "bytes": 1665,
+      "sha256": "e83f2725d39d44259a75ccb7e90258e4bcc18f599c14797415cac806cc0255e5",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/session-control602-broader-contracts-20261029.log": {
+      "bytes": 39391,
+      "sha256": "196ac3289ddfdb4f4900cfb19b61e3a5e21f4d6c81661d8e9cd4b53365ca6ecd",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-install-20261029.log": {
+      "bytes": 692,
+      "sha256": "9bd51db2d91e3e727f34ad02574f92c73058c521ffcd1c517e35fe6847525d8d",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-private-stage-origin_names_unique-20261029.log": {
+      "bytes": 390,
+      "sha256": "66c5d161e12ae9307734bed3b01aeeae619dec09cabc9ed148ead6539291c5a1",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/session-control602-compatibility-contracts-20261029.log": {
+      "bytes": 440,
+      "sha256": "3a5e9426f98aa732be502fc209d2794a80e6b4832c8ac96d7473c00b694c7ef7",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-private-stage-full_watches_all_related-20261029.log": {
+      "bytes": 402,
+      "sha256": "86873fc95bb0087108742df392cf19043cd8ecc8ce149bd9db8d916194c20060",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/installed602-postrestart-cold-20261029.log": {
+      "bytes": 81,
+      "sha256": "cc9dac35e4d748ff79d845c3ae3a0b9f34aab64e6b489e392ca58cc5a6a48d8e",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/session-control602-final-contracts-20261029.log": {
+      "bytes": 260,
+      "sha256": "b01b53e0e365b5d77b7f3b0e7e411275e412189e5ceaf9992e49b93ee1628b31",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-wheel-build-20261029.log": {
+      "bytes": 108,
+      "sha256": "05126c7e6ce9b779c1e20320c20f1b42de115c17d0836d8d0ed982ba7a41ed55",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-private-stage-full_watches-20261029.log": {
+      "bytes": 391,
+      "sha256": "550f12a92bce31c1dba3a5d6741140384516aa586b5f824dd62ebe86d3811d16",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-private-stage-origin_names_three-20261029.log": {
+      "bytes": 394,
+      "sha256": "1491f2d579ca174efd588b14fbfe756fcb6b54bdc23ff6a684ca3ce33b9f5124",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-outer-install-launch-20261029.log": {
+      "bytes": 1568,
+      "sha256": "2a268f11ef95805bd99bfafe8fd6adb9d9f28075e6ac6be5d1c25754565cf530",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-private-stage-module_paths-20261029.log": {
+      "bytes": 166,
+      "sha256": "dea6a89da43ccba4c9be3b995a22f9337893404b07c49fe903ae11d4c437f31f",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-private-stage-mixed100-20261029.log": {
+      "bytes": 1062,
+      "sha256": "1edb74888b08880327645da2da6ed7ce56ba8a114795371a1eea847a4e84fa70",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-wheel-build-approved-20261029.log": {
+      "bytes": 101,
+      "sha256": "0fec5ef40d33d19202fee2b2ee5a6c5a96ce9fefc8d8d6798886eb29b7cdf8a1",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-private-stage-reference_guard-20261029.log": {
+      "bytes": 1000,
+      "sha256": "ba627033fccef28bc11c6fe53a12eb50b6708fcf6cccd535772b15e75787275c",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/installed602-gc-contracts-20261029.log": {
+      "bytes": 680,
+      "sha256": "aec50f184b5421edb012a4b0dd8d4fa02a3a579621a2f5e202ff70a3a13c6c11",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-private-stage-late_cursor-20261029.log": {
+      "bytes": 1765,
+      "sha256": "1d5c25d1b3c7375537afe93f449c4d2637488453a4b67ee90e8a6c6ea4bb4933",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-private-stage-control_loop_progress-20261029.log": {
+      "bytes": 3864,
+      "sha256": "7e878e563f10b1696105cd3df03dc8ab879e91de58588d8e3a7d1f2faa2e4e90",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-private-stage-lifecycle_contracts-20261029.log": {
+      "bytes": 1190,
+      "sha256": "0e760a4f1eb2ddc0871987c55c2161e2a4c9bc0e57e62c8da7495ffb85e9a3c1",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/session-control602-source-contracts-20261029.log": {
+      "bytes": 99,
+      "sha256": "bddbf4aa29f843a3d3685115bee9535a9e5b9b37cfad678482613267e5faf4d4",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-private-stage-origin_names_shared-20261029.log": {
+      "bytes": 387,
+      "sha256": "06335a50a0f001d9c77d1d67f9b458fc02b2b138dd48af21604847fce1c00716",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/session-control602-baseline-contracts-20261029.log": {
+      "bytes": 10963,
+      "sha256": "2c7ea913b832f9130981e901f7b0b0d2bff6a1cd675cce8212d065a69433dfc9",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/placement603-expanded-contracts-20261029.log": {
+      "bytes": 3467,
+      "sha256": "d9e96d1eb385f0e354b3e159e1963d2b39688bef79176a70bae7f64c717634c9",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/placement603-source-contracts-20261029.log": {
+      "bytes": 98,
+      "sha256": "7eb3878804a36e397b690b06959940424d4b86de20af5b47bb0c6c60a9b2f3a3",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/placement603-baseline-contracts-corrected-20261029.log": {
+      "bytes": 6621,
+      "sha256": "0332bb87150060d3ec83d3ac018ee94644286b75ec6a3fd14a9ed5084cb52d56",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/placement603-expanded-corrected-contracts-20261029.log": {
+      "bytes": 99,
+      "sha256": "53be7140f900ef6e183370cb444be05ef41f3eae4a7fb98efb93ba1d06e4e405",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/placement603-baseline-contracts-20261029.log": {
+      "bytes": 5977,
+      "sha256": "7760d0acc7d49e560c0d5b749e87d92bfa1306fd21e527ee0fb223a9f60d507e",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/placement603-source-mixed100-20261029.log": {
+      "bytes": 382956,
+      "sha256": "fc333462de21de3996fd109bdd40d4f7376435e868fcd7ecc4c8688d16a52330",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/placement603-broader-contracts-20261029.log": {
+      "bytes": 360,
+      "sha256": "1038e00f261508c04105c8201480362e6f7851f9533f9837c320ce709538428e",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-native-restart-receipt-20261029.json": {
+      "bytes": 31121,
+      "sha256": "bf16092661503f81393fb52de1b33956f9f798eb88ad3787a7265b6b809e291d",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-post-settlement-followup-native-receipt-20261029.json": {
+      "bytes": 519,
+      "sha256": "dd9bd7fb2ba2854509f865a6fef6565f0d9fa5090eaf9fbb5cebf0809b1f84b9",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/exact602-managed-continuation-readable-20261029.txt": {
+      "bytes": 12573,
+      "sha256": "085064abacfecb64e66984dd2fd6f8a6f46651269a816207fa51c9fbaba6a86f",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/test_fleet_placement_read_offload.expanded-first-20261029.py": {
+      "bytes": 8839,
+      "sha256": "2abd245bbf3715cea627a82191e5480fdae9227dd0423bc592e244b52a2c1b3f",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/fleet.before603-read-policy-20261029.py": {
+      "bytes": 589113,
+      "sha256": "d10abfa4d84a79dbe0d7e367c588d1d01f3bec0d92567d5fa3c075c0d19948de",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    },
+    ".dev/run603_placement_broader_contracts_20261029.py": {
+      "bytes": 2071,
+      "sha256": "865d1b97a40f4f0dcfd5e324b999b0dafa70f51ec951f0ebbb8eb5e2c4bd25f1",
+      "scope": "LOCAL untrusted raw logs/prompts/receipt or failed/archived helper; hash-only."
+    }
+  },
+  "lossless_raw": {
+    "path": "docs/benchmarks/systemic-pr602-activation-placement-reads-20261029.raw.json.gz",
+    "sha256": "10a9de12ea73bd6be00013a380b79e3e76ee92dadaecf232b3044733c8184c2e",
+    "bytes": 8239908
+  }
+}
