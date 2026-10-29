@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-29T07:39:30.263932+00:00",
-  "completion": "OPEN: all695findings/155concerns. PR603 protectedintegrated/head+mainCI5successeseach/uninstalled. Newnativegeneratorrelease source86tests/19subtests/complete6schemaspass;maintenance858.873ms and allactivation/fullacceptancegapsremain.",
+  "as_of": "2026-10-29T16:33:34.099029+00:00",
+  "completion": "OPEN: all696findings/156concerns. Exact604active/scopedretested;maintenance/full-list/live tails remain. Newbrowserauthorityread sourcefix tested/unintegrated; fullindependentacceptance remainsopen.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -218921,6 +218921,27 @@
       "resolution": "open",
       "next_actor": "this same systemic session/card",
       "next_action": "Evaluate lifetime-safe dispatch/ownership preserving custom generator subclasses and escaped native schema handlers. Do not blindly clear method maps or alter GC policies to get green; measure complete response/native error parity and allocation effects before a substantive repair."
+    },
+    {
+      "id": "concern:browser-authority-read-loop",
+      "kind": "concern",
+      "finding": "Browser automation caller and share-target authority reads block the event loop",
+      "family": "browser",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_source_and_controlled_native_read_loop_stall_historical_share_unverified",
+      "cause": "Two native session lookups execute synchronously in async browser automation before effects; each read can occupy the loop. Shared SQLite/query/service share is unquantified.",
+      "implemented": "Offload read-only caller and share-target session authority lookups via existing bounded AsyncRuntime; preserve UUID validation, ownership checks, fresh per-operation reads and browser-manager effect boundary on the caller. Fallback uses asyncio.to_thread. Cancellation cannot continue to browser action/share. No real browser/provider/network effect, authority relaxation, timeout or GC/default/configuration change.",
+      "merged": [],
+      "deployed": "Newbrowser sourceuninstalled;exact60476ceinstalled/loaded/scopedretested withremainingmaintenanceandpayloadnegatives.",
+      "retested": "69broader existing browser/session/CDP/CSRF/readiness tests then12final targeted authority/cancellation/freshness/foreign/missing cases pass; overlapping populations are not summed.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-exact604-activation-browser-reads-20261029.json",
+        "comparison": ".dev/browser605-loop-comparison-20261029.json",
+        "source_mixed": ".dev/browser605-source-mixed100-20261029-proof.json"
+      },
+      "resolution": "open",
+      "next_actor": "This same systemic card/session",
+      "next_action": "Protected readyPR/durablewatch/exacthead+mainCI integration; future exact activation/retests and remaining systemic acceptance. No mutation/default/policy/GC change or historical wholepath attribution."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -316704,6 +316725,12 @@
       "artifact": "docs/benchmarks/systemic-pr603-integration-generator-release-20261029.json",
       "status": "Source tested; unmerged/uninstalled",
       "resolution": "open"
+    },
+    {
+      "row_id": "concern:browser-authority-read-loop",
+      "artifact": "docs/benchmarks/systemic-exact604-activation-browser-reads-20261029.json",
+      "status": "Source tested;unmerged/uninstalled",
+      "resolution": "open"
     }
   ],
   "integration_history": [
@@ -316763,6 +316790,16 @@
       "watch": "c46a64cd-d0dc-4a91-8004-677e84b68576",
       "deployed": false,
       "accepted": false
+    },
+    {
+      "pr": 604,
+      "artifact": "docs/benchmarks/systemic-exact604-activation-browser-reads-20261029.json",
+      "merge": "76ce544ebe917cd74853142b917ff2245552562c",
+      "watched_head": "c590a011955af63210234ca0a6b91b7e4157d3a5",
+      "watch": "955cdfed-cfa9-49f2-afc1-f3df4b07d65d",
+      "deployed": true,
+      "accepted": false,
+      "residuals": "Installedmaintenance756.220ms/fivefull-listcollectornegatives/liveprocessrequesttails/fullcriteriaopen."
     }
   ]
 }
