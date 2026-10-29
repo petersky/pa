@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-29T18:49:08.155395+00:00",
-  "completion": "OPEN: all702findings160concerns.609protectedintegrated/uninstalled;608active/scopedretested withmaintenance/full-list/live/peer tails. Newpacket-origin/leafdiagnostic source tested/unmerged/uninstalled; independentacceptance unaccepted.",
+  "as_of": "2026-10-29T19:05:27.459675+00:00",
+  "completion": "OPEN: all702findings160concerns.610protectedmerged/uninstalled; mainfirstattemptfailure retained. Sourcehandoffphase testguard validated/unmerged; actual608active. Full independentacceptance and allremainingperformancecriteria unsatisfied.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -217674,7 +217674,27 @@
       "implemented": "Use the existing bounded native worker runtime for canonical session reads and one complete local observability build/fallback read. Live runtime actions stay on the loop without storage. Recheck traffic readiness and runtime publication after awaited reads. Preserve owner/admin checks, complete local/remote responses, error bodies, recovery/receipt identities and cancellation without starting effects.",
       "merged": [],
       "deployed": "Uninstalled source; actual listener exact600 f103/packagebec1.",
-      "retested": "295 tests/7 subtests pass; complete private responses match; heartbeat210.686 to6.503ms under deliberate200ms read. Mixed854.706ms maintenance remains."
+      "retested": "295 tests/7 subtests pass; complete private responses match; heartbeat210.686 to6.503ms under deliberate200ms read. Mixed854.706ms maintenance remains.",
+      "ci610_handoff_phase_guard_20261029": {
+        "artifact": "docs/benchmarks/systemic-pr610-main-failure-handoff-guard-20261029.json",
+        "status": "Source test correction only/unmerged/uninstalled; application source unchanged",
+        "cause_certainty": "Confirmed harness counterexample; actual firstLinuxCIphase/CPU/scheduling cause unrecorded and unproven",
+        "first_ci": {
+          "run": 40935556426,
+          "attempt": 1,
+          "head": "6dc87d954270994ff29c17a94c4082b9d87cc969",
+          "success_jobs": 4,
+          "failed_jobs": 1,
+          "failed_test": "test_late_handoff_commit_schedules_exact_receipt_after_waiter_leaves[False]",
+          "failure": "Expected one receipt, got zero",
+          "retry": false
+        },
+        "implementation": "Scope the existing40ms artificial deadline to sqlite.restart_handoff_create; prerequisite read keeps normal production default. Explicitly assert create worker entry; exercise normal/80ms prerequisite read with cancellation/timeout, and a separate40ms prerequisite timeout proving no create/schedule invocation. No productionbudget/timeout/warning/receipt/admission/cancellation code changed.",
+        "validation": "153private testsPASS. Originaltest with one80msprerequisite read deterministically fails same0rows assertion and logs onlysqlite.agent_session_read timeout; notproof of actualCIphase. Firstlocal152pass1failure inheriteddisabledagent in existingmockedproviderstarttest; identifiedenv correction scoped ONLYthatmockedtest, no actualprovider.",
+        "resolution": "open",
+        "next_actor": "This same systemic session/card",
+        "next_action": "ProtectedreadyPR/durablewatch/head+mainverification. Preserve firstfailedmain run and all earliernegativeevidence; no runtime rollout acceptance from test repair."
+      }
     },
     {
       "family": "session",
@@ -317672,6 +317692,19 @@
       "deployed": false,
       "accepted": false,
       "residuals": "Head/main fivefirstattemptsuccess;609uninstalled/608active;all broadercriteriaopen."
+    },
+    {
+      "pr": 610,
+      "artifact": "docs/benchmarks/systemic-pr610-main-failure-handoff-guard-20261029.json",
+      "watched_head": "6baaa6f5e9509eca52f054557c782b1248016aa7",
+      "merge": "6dc87d954270994ff29c17a94c4082b9d87cc969",
+      "watch": "3730a30d-682f-4c2a-b0c3-9b01507ed6b8",
+      "head_ci": 40934768617,
+      "head_ci_status": "5firstattemptsuccess",
+      "main_ci": 40935556426,
+      "main_ci_status": "4success1failure/firstattempt/no retry",
+      "deployed": false,
+      "accepted": false
     }
   ],
   "coverage_stage_history": [

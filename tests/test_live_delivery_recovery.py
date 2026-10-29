@@ -39,14 +39,29 @@ def test_virtual_deadlines_separate_queue_progress_lock_idle_and_absolute_cap():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("cancel", [True, False])
-async def test_late_handoff_commit_schedules_exact_receipt_after_waiter_leaves(tmp_path, cancel):
+@pytest.mark.parametrize("delayed_read", [False, True])
+async def test_late_handoff_commit_schedules_exact_receipt_after_waiter_leaves(tmp_path, cancel, delayed_read):
     store = CardProjection(tmp_path / "pa.db")
     store.save_session(AgentSession(id="exact-session", agent_name="codex"))
     manager = AgentSessionManager(Settings(data_dir=tmp_path), store)
-    executor = manager.async_runtime = AsyncRuntime(default_timeout=0.04)
+    executor = manager.async_runtime = AsyncRuntime()
     started, release = threading.Event(), threading.Event()
     create = store.create_restart_handoff
+    get_session = store.get_session
+    run_blocking = executor.run_blocking
     scheduled = []
+
+    def prerequisite_read(session_id):
+        if delayed_read:
+            time.sleep(0.08)
+        return get_session(session_id)
+
+    async def create_deadline(operation, *args, **kwargs):
+        # Exercise the late write, not an unrelated prerequisite-read timeout.
+        # Keep the original 40 ms write deadline and normal runtime read policy.
+        if operation == "sqlite.restart_handoff_create":
+            kwargs["timeout"] = 0.04
+        return await run_blocking(operation, *args, **kwargs)
 
     def delayed(receipt):
         started.set()
@@ -56,11 +71,13 @@ async def test_late_handoff_commit_schedules_exact_receipt_after_waiter_leaves(t
     try:
         with patch.object(store, "create_restart_handoff", side_effect=delayed), patch.object(
             manager, "_schedule_restart_handoff", side_effect=scheduled.append
+        ), patch.object(store, "get_session", side_effect=prerequisite_read), patch.object(
+            executor, "run_blocking", side_effect=create_deadline
         ):
             waiter = asyncio.create_task(manager.request_restart_handoff(
                 session_id="exact-session", continuation_prompt="Continue the exact task.", idempotency_key="stable-key",
             ))
-            await asyncio.to_thread(started.wait, 1)
+            assert await asyncio.to_thread(started.wait, 1)
             if cancel:
                 waiter.cancel()
                 with pytest.raises(asyncio.CancelledError):
@@ -79,6 +96,40 @@ async def test_late_handoff_commit_schedules_exact_receipt_after_waiter_leaves(t
             assert scheduled == [receipts[0].id]
             assert receipts[0].status == "requested"  # Scheduling is not execution success.
             assert receipts[0].continuation_prompt_id == "restart-handoff:" + receipts[0].id
+    finally:
+        release.set()
+        await executor.close()
+
+
+@pytest.mark.asyncio
+async def test_handoff_prerequisite_timeout_does_not_exercise_late_create(tmp_path):
+    store = CardProjection(tmp_path / "pa.db")
+    store.save_session(AgentSession(id="exact-session", agent_name="codex"))
+    manager = AgentSessionManager(Settings(data_dir=tmp_path), store)
+    executor = manager.async_runtime = AsyncRuntime(default_timeout=0.04)
+    started, release = threading.Event(), threading.Event()
+    get_session = store.get_session
+
+    def blocked_read(session_id):
+        started.set()
+        assert release.wait(2)
+        return get_session(session_id)
+
+    try:
+        with patch.object(store, "get_session", side_effect=blocked_read), patch.object(
+            store, "create_restart_handoff", wraps=store.create_restart_handoff
+        ) as create, patch.object(manager, "_schedule_restart_handoff") as schedule:
+            waiter = asyncio.create_task(manager.request_restart_handoff(
+                session_id="exact-session", continuation_prompt="Continue the exact task.", idempotency_key="stable-key",
+            ))
+            assert await asyncio.to_thread(started.wait, 1)
+            with pytest.raises(BlockingOperationTimeout, match="sqlite.agent_session_read"):
+                await waiter
+            release.set()
+            await executor.close()
+            create.assert_not_called()
+            schedule.assert_not_called()
+            assert store.list_restart_handoffs() == []
     finally:
         release.set()
         await executor.close()
