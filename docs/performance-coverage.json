@@ -1,7 +1,7 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-29T02:39:28.896257+00:00",
+  "as_of": "2026-10-29T02:43:49.499203+00:00",
   "completion": "OPEN: all 682 findings / 146 concerns. Exact PR594 activation and declared scoped retests are complete; private 778.373 ms and natural maintenance over 5 s remain. Every prior failure, full real path, peer/log/build/retention and independent acceptance criterion remains.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
@@ -206957,7 +206957,113 @@
           },
           "stage": "Exact aa711 activation verified; GC allocation follow-up remains uninstalled and maintenance acceptance fails."
         }
-      ]
+      ],
+      "entry_pair_source_followup_20261029": {
+        "artifact": "docs/benchmarks/systemic-transcript-gc-entry-pairs-20261029.json",
+        "measurement": {
+          "baseline": {
+            "wall_ms": {
+              "samples": 5,
+              "max": 27.909,
+              "p50": 26.857,
+              "p95": 27.909,
+              "p99": 27.909
+            },
+            "thread_cpu_ms": {
+              "samples": 5,
+              "max": 27.898,
+              "p50": 26.857,
+              "p95": 27.898,
+              "p99": 27.898
+            },
+            "sqlite_rows": [
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "sqlite_calls": [
+              198,
+              198,
+              198,
+              198,
+              198
+            ]
+          },
+          "candidate": {
+            "wall_ms": {
+              "samples": 5,
+              "max": 21.678,
+              "p50": 21.191,
+              "p95": 21.678,
+              "p99": 21.678
+            },
+            "thread_cpu_ms": {
+              "samples": 5,
+              "max": 21.675,
+              "p50": 21.191,
+              "p95": 21.675,
+              "p99": 21.675
+            },
+            "sqlite_rows": [
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "sqlite_calls": [
+              198,
+              198,
+              198,
+              198,
+              198
+            ]
+          }
+        },
+        "tests": {
+          "tests": 68,
+          "failures": 0,
+          "skipped": 0,
+          "evidence": {
+            "started_at": "2026-10-29T02:41:57.748317+00:00",
+            "finished_at": "2026-10-29T02:42:00.008686+00:00",
+            "exit_code": 0,
+            "private_roots_before_pa_imports": true,
+            "source_sha256": "89ed4ade240cd884830aa0642e7515e5c4a8e51067adce4fda1e0eeab2ab237e",
+            "log_sha256": "9ece42375aa0ecd914fee23691d7063995b2f7dacce72257ff6ce5718311570e"
+          },
+          "new_contracts": "Native glob order and suppressed-directory traversal oracle; prior pin-after128, publication/rollback, hidden/literal/symlink, unlink errors, retained bytes/rows and connection/maintenance contracts preserved."
+        },
+        "source_mixed": {
+          "iterations": 100,
+          "retained_ordered_events": 9600,
+          "warnings": {},
+          "threshold_violations": {
+            "maintenance.run": 1
+          },
+          "maintenance": {
+            "samples": 1,
+            "max_ms": 897.967,
+            "p50_ms": 897.967,
+            "p95_ms": 897.967,
+            "p99_ms": 897.967
+          },
+          "failures_timeouts_rejections": 0,
+          "matched_modules": 30,
+          "validation": {
+            "started_monotonic": 866211.754831833,
+            "finished_monotonic": 866212.596798375,
+            "duration_ms": 841.9665420660749,
+            "scope": "Durable order, retained cold content hashes, projection head and card checks; includes awaited validation observer persistence. Excluded from workload duration and captured counters."
+          },
+          "scope": "New private source fixture, not a controlled whole-maintenance comparison to prior installed778ms stage. Does not resolve897.967ms maintenance, prior live5113/5460ms, /work603ms or any real provider/peer/full-path cause."
+        },
+        "resolution": "open",
+        "integration": "Not merged or deployed",
+        "next_action": "Protected ready PR, stable supervisor, independent exact gates and head/main CI; retain remaining full maintenance and whole-card acceptance."
+      }
     },
     {
       "id": "concern:benchmark-validation-boundary",
@@ -216972,7 +217078,32 @@
       "retested": "Source contract inspected; disposable parser validation and supported continuation admission pending. No claim that PA lost an admitted continuation.",
       "resolution": "open",
       "next_actor": "this same systemic session",
-      "next_action": "Validate strict final contract privately; admit one bounded same-session continuation with stable identity and verify queued state before ending. Preserve original completed handoff and all unknown effects."
+      "next_action": "Validate strict final contract privately; admit one bounded same-session continuation with stable identity and verify queued state before ending. Preserve original completed handoff and all unknown effects.",
+      "source_followup_20261029": {
+        "artifact": "docs/benchmarks/systemic-transcript-gc-entry-pairs-20261029.json",
+        "report": "403cc7aa-f943-4887-bb6e-12cffb70b92c",
+        "private_parser_validation": {
+          "old_rejected": true,
+          "old_error": "The JSON disposition was invalid: 7 validation errors for CardDispositionV1\ncontract\n  Field required [type=missing, input_value={'schema': 'pa.card-dispo... 162, 'references': []}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\noutcome\n  Field required [type=missing, input_value={'schema': 'pa.card-dispo... 162, 'references': []}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\nevidence.report_revision\n  Extra inputs are not permitted [type=extra_forbidden, input_value=162, input_type=int]\n    For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden\nschema\n  Extra inputs are not permitted [type=extra_forbidden, input_value='pa.card-disposition/v2', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden\ncard_id\n  Extra inputs are not permitted [type=extra_forbidden, input_value='fixture', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden\ncompletion_requirement_revision\n  Extra inputs are not permitted [type=extra_forbidden, input_value='17d034a6-efc7-4a9d-badc-d3fe012d0b57', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden\nsummary\n  Extra inputs are not permitted [type=extra_forbidden, input_value='Unfinished', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden",
+          "correct_accepted": true,
+          "correct": {
+            "contract": "pa.card-disposition/v2",
+            "lane": "active",
+            "outcome": "Unfinished performance work; a same-session continuation must be queued before ending.",
+            "evidence": {
+              "integration_required": true,
+              "pr_watch_id": null,
+              "watched_head_sha": null,
+              "merge_commit_sha": null,
+              "references": []
+            },
+            "completion_requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57"
+          },
+          "scope": "Disposable parser validation, no historical response/turn/receipt mutation. Both roots private before imports."
+        },
+        "resolution": "open",
+        "next_action": "Admit and verify exactly one same-session follow-up before ending; do not treat final disposition or progress as a queue receipt."
+      }
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -311875,6 +312006,16 @@
       "path": "docs/benchmarks/systemic-exact594-finalized-activation-20261029.raw.json.gz",
       "sha256": "a0dd7b92d7f10ab17e2b98b82985b869598d31330b345fd37f5a5b9c666c82c4",
       "bytes": 2769649
+    },
+    "all_prior_fields_preserved": true
+  },
+  "gc_entry_pair_stage": {
+    "artifact": "docs/benchmarks/systemic-transcript-gc-entry-pairs-20261029.json",
+    "sha256": "e42689c3bac707c1f921f6cda85442af10e3882f8bf46089e34108631676dfa6",
+    "raw": {
+      "path": "docs/benchmarks/systemic-transcript-gc-entry-pairs-20261029.raw.json.gz",
+      "sha256": "4a98d22377393023a997205f773e3b6375438d04746ad3457d605d5a459688c3",
+      "bytes": 2887303
     },
     "all_prior_fields_preserved": true
   }

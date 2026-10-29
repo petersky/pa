@@ -20,7 +20,6 @@ import zlib
 from collections import Counter, defaultdict
 from contextlib import contextmanager, nullcontext
 from datetime import datetime
-from glob import iglob
 from itertools import islice
 from pathlib import Path
 from typing import Any, Iterator
@@ -49,6 +48,35 @@ _AUDIT_TYPES = {
 
 def _canonical_json(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode()
+
+
+def _gc_object_entries(root: Path) -> Iterator[tuple[str, str]]:
+    """Match the original two-level hidden-inclusive glob without joining paths.
+
+    Directory reads finish before yielding, as with glob's name lists. Keep
+    directory symlinks, native name order and suppressed traversal errors;
+    entries ending in .zlib may themselves be directories (unlink must still
+    raise). The consumer retains its original 128-entry protection boundaries.
+    """
+    def names(directory, *, directories_only=False):
+        result = []
+        try:
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    try:
+                        if not directories_only or entry.is_dir():
+                            result.append(entry.name)
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+        return result
+
+    suffix = os.path.normcase(".zlib")
+    for directory in names(root, directories_only=True):
+        for name in names(os.path.join(root, directory)):
+            if os.path.normcase(name).endswith(suffix):
+                yield directory, name
 
 
 def _gc_candidate_hash(directory: str, name: str) -> str:
@@ -549,11 +577,11 @@ class TranscriptStorage:
                 return removed
         # Preserve hidden-name matching without constructing a full Path for
         # every live object, or parsing its parent and stem twice.
-        paths = iglob("*/*.zlib", root_dir=self.objects_dir, include_hidden=True)
+        paths = _gc_object_entries(self.objects_dir)
         while batch := list(islice(paths, 128)):
             digests = [
                 _gc_candidate_hash(directory, name)
-                for directory, name in map(os.path.split, batch)
+                for directory, name in batch
             ]
             # Keep live hashes inside SQLite instead of materializing every
             # retained row in Python. This bounded speculative filter can only
@@ -580,7 +608,7 @@ class TranscriptStorage:
                 ).fetchall()}
                 for path, digest in zip(batch, digests):
                     if digest not in live:
-                        (self.objects_dir / path).unlink(missing_ok=True)
+                        (self.objects_dir / path[0] / path[1]).unlink(missing_ok=True)
                         removed += 1
         return removed
 

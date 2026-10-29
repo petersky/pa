@@ -1,3 +1,19 @@
+# Bounded transcript GC traversal repair
+
+[Source evidence](benchmarks/systemic-transcript-gc-entry-pairs-20261029.json) and its lossless raw bundle preserve the complete preceding exact594 activation/retests, original failed stages and ten attachments. All **682 findings / 146 concerns remain open**.
+
+Retained-object collection now carries native directory/name pairs through filtering, avoiding a joined relative path followed by a split for every retained file. A full path is constructed only when unlinking an unreferenced object. Native traversal order, hidden/suffix/symlink matching, suppressed directory-read errors and propagated unlink errors remain. The **128-file enumeration, reader-pin and fresh publication recheck boundaries are unchanged**; no fresh health, migration, compaction or GC check was skipped, and no policy/deadline/threshold changed.
+
+Five alternating same-store source comparisons with **12,511 retained cold objects** measured scan/entry-pair medians **26.857 / 21.191 ms**, maxima **27.909 / 21.678 ms**. All file bytes remain unchanged, with identical **198 SQLite calls / zero returned rows** in each sample. This is bounded all-live collection work on this host, not a physical-disk or whole-maintenance claim. A first iterator-only candidate measured **26.796 / 26.412 ms** and was not adopted. A separate private tuple candidate supported the final source repair. Unit tests may have overlapped source benchmark setup; host load remains uncontrolled.
+
+**68 scoped tests pass**, with no skips. Native glob ordering/error-oracle tests supplement existing pin-after-128, publication/rollback, literal/hidden/symlink, unlink-error, connection, retained-content and maintenance regressions. Initial uv-cache sandbox denial and a test-command typo before collection remain recorded. A new private source mixed run retains **9,600 ordered events**, zero warnings/failures/timeouts/rejections, but **maintenance 897.967 ms** still exceeds 500 ms. Its full numeric output is retained; the first console output was truncated and is not a complete log source. It is a separate population from prior installed778ms and natural5113/5460ms runs; no whole-maintenance improvement or historical cause is inferred.
+
+The strict final disposition contract has been verified privately: the previous unsupported fields are rejected and the corrected `contract`/`outcome` payload is accepted. Report `403cc7aa-f943-4887-bb6e-12cffb70b92c` records the agent's omitted continuation. A same-session follow-up must have an actual admitted receipt before this unfinished task ends again; final JSON and progress are not queue receipts. No product parser weakening or historical receipt mutation occurred.
+
+Protected integration and actual activation/retests of this new source remain pending; the running exact594 build is unchanged. The main VACUUM cost, all substantive maintenance/shared-source work, `/work` attribution, peers/status/freshness/build/log/retention, real provider/startup/concurrency and remaining family/independent acceptance obligations remain.
+
+---
+
 # Exact PR #594 activation, final retests and continuation gap
 
 [Finalized evidence](benchmarks/systemic-exact594-finalized-activation-20261029.json) and the adjacent lossless raw bundle publish the completed October 26 retests without rerunning them. All **682 findings / 146 concerns remain open**, with every prior row, field, failure and attachment preserved.

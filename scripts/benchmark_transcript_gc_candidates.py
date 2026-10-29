@@ -18,6 +18,7 @@ import tempfile
 import textwrap
 import time
 from datetime import UTC, datetime
+from glob import iglob
 from pathlib import Path
 
 
@@ -44,6 +45,9 @@ def run(output: Path, *, baseline: str, count: int, pairs: int) -> dict:
                       and n.name == "collect_unreferenced_objects")
         baseline_code = textwrap.dedent("\n".join(source.splitlines()[method.lineno - 1:method.end_lineno]))
         namespace = vars(module).copy()
+        # Earlier immutable methods used this stdlib enumerator. Keep their
+        # globals independent from the candidate's tuple-based enumeration.
+        namespace["iglob"] = iglob
         exec(compile(baseline_code, "<archived-gc-baseline>", "exec"), namespace)
         functions = {"baseline": namespace["collect_unreferenced_objects"],
                      "candidate": module.TranscriptStorage.collect_unreferenced_objects}
