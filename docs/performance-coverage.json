@@ -326727,5 +326727,17 @@
     "measured": "90pairs180calls exactresults; ASCIIp95260.334\u2192.672ms/Unicode417.584\u2192.674ms; 99safetytests afterexpectedprivatefixtureflags, original7failures retained.",
     "retested": "Declaredsourcepopulations only; no nativeGC/deployedfullbranchacceptance",
     "remaining": "Everypriorrowfield/failure preserved; allcoverage/maintenance/payload/realpathpeerlogacceptance remainsOPEN."
+  },
+  "main620_deadline_fixture_20261029": {
+    "artifact": "docs/benchmarks/systemic-main620-deadline-20261029.json",
+    "rows": 708,
+    "concerns": 164,
+    "resolution": "OPEN",
+    "completion_requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+    "acceptance": "independent_agent_v1 schedulerowned/unaccepted",
+    "integration": "620GCsource mergedbc3637a1/equaltree1cac/headCI5firstsuccess; main40971123015firstFAIL4success1failure/NOretry.",
+    "implemented": "Testfixturedeadline scope only;43contracts pass with80msread positives/40msreadnegative; productionunchanged.",
+    "deployed": "620packagePREPAREDUNINSTALLED; no620handoff/workload. Active618a58/package266/PID72906.",
+    "remaining": "Everypriorrowfield/failure remainsOPEN; CIreadunderlyingdelayunassigned; no per-path/performance/wholePAacceptance."
   }
 }

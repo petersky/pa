@@ -426,17 +426,32 @@ async def test_transcript_batch_survives_cancellation_during_retry_backoff():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("delayed_stage", ["intake", "transcript"])
-async def test_real_prompt_route_finishes_delayed_commit_after_http_cancel(tmp_path, delayed_stage):
+@pytest.mark.parametrize("delayed_read", [False, True])
+async def test_real_prompt_route_finishes_delayed_commit_after_http_cancel(tmp_path, delayed_stage, delayed_read):
     from pa.instance.agent_session import AgentSessionRuntime
     from pa.modules.agent_chat import PromptBody, session_prompt
 
     store = CardProjection(tmp_path / "pa.db")
     settings = Settings(data_dir=tmp_path, auth_required=False)
     manager = AgentSessionManager(settings, store)
-    executor = manager.async_runtime = AsyncRuntime(default_timeout=0.04)
+    executor = manager.async_runtime = AsyncRuntime()
     session = store.save_session(AgentSession(id="chat", agent_name="codex", purpose="chat"))
     runtime = AgentSessionRuntime(manager, session)
     started, release = threading.Event(), threading.Event()
+    run_blocking = executor.run_blocking
+    get_acceptance = store.get_prompt_acceptance
+
+    async def write_deadline(operation, *args, **kwargs):
+        # Keep the 40 ms deadline on the writes being tested. Acceptance reads
+        # use the normal runtime policy, including after the write is released.
+        if operation in {"intake.web_prompt", "sqlite.transcript_append"}:
+            kwargs["timeout"] = 0.04
+        return await run_blocking(operation, *args, **kwargs)
+
+    def prerequisite_read(*args, **kwargs):
+        if delayed_read:
+            time.sleep(0.08)
+        return get_acceptance(*args, **kwargs)
 
     def ingest(**kwargs):
         if delayed_stage == "intake":
@@ -475,6 +490,8 @@ async def test_real_prompt_route_finishes_delayed_commit_after_http_cancel(tmp_p
     try:
         with patch("pa.modules.agent_chat._runtime_or_404_async", new=AsyncMock(return_value=runtime)), patch(
             "pa.modules.agent_chat.get_principal_id", return_value="user:local"
+        ), patch.object(executor, "run_blocking", side_effect=write_deadline), patch.object(
+            store, "get_prompt_acceptance", side_effect=prerequisite_read
         ):
             caller = asyncio.create_task(session_prompt(request, session.id, body))
             assert await asyncio.to_thread(started.wait, 1)
@@ -491,6 +508,32 @@ async def test_real_prompt_route_finishes_delayed_commit_after_http_cancel(tmp_p
             assert response["prompt_id"] == "client-stable"
             runtime.prompt.assert_awaited_once()
             assert store.get_prompt_acceptance(session.id, "client-stable").payload["message"] == body.message
+    finally:
+        release.set()
+        await executor.close()
+
+
+@pytest.mark.asyncio
+async def test_prompt_acceptance_read_still_honors_its_explicit_deadline(tmp_path):
+    store = CardProjection(tmp_path / "pa.db")
+    executor = AsyncRuntime()
+    started, release = threading.Event(), threading.Event()
+
+    def blocked_read():
+        started.set()
+        assert release.wait(2)
+        return store.get_prompt_acceptance("chat", "client-stable")
+
+    try:
+        read = asyncio.create_task(executor.run_blocking(
+            "sqlite.prompt_acceptance_read", blocked_read, timeout=0.04,
+        ))
+        assert await asyncio.to_thread(started.wait, 1)
+        with pytest.raises(BlockingOperationTimeout, match="sqlite.prompt_acceptance_read"):
+            await read
+        stats = executor.snapshot()["operations"]["sqlite.prompt_acceptance_read"]
+        assert stats["timed_out"] == 1
+        assert stats["active"] == 1  # A wait timeout cannot cancel the native call.
     finally:
         release.set()
         await executor.close()

@@ -1,0 +1,1457 @@
+{
+  "contract": "pa.main620-deadline-fixture-stage/v1",
+  "observed_at": "2026-10-29T23:17:29.252552+00:00",
+  "source_base": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+  "identity": {
+    "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+    "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+    "branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+    "original_base": "4697ed583f6a5eceead72217d07ba2ebaf4ccc83",
+    "lease_fence": 334
+  },
+  "integration620": {
+    "contract": "pa.protected620-integration-proof/v1",
+    "observed_at": "2026-10-29T23:09:53.161561+00:00",
+    "watch_id": "675b9af2-cdb0-4722-934b-1dd2965848f9",
+    "watched_head": "31fc3a149ca8fc682e29203665083f7428e126bf",
+    "merge": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+    "equal_tree": "1cac579bb83072396b5f4369a48b43265ea77285",
+    "supervisor": {
+      "schema_version": 1,
+      "source": "pa_pr_supervisor_stored_observation",
+      "generated_at": "2026-10-29T23:09:02.324328+00:00",
+      "max_age_seconds": 120,
+      "watch_id": "675b9af2-cdb0-4722-934b-1dd2965848f9",
+      "repository": "petersky/pa",
+      "pr_number": 620,
+      "pr_url": "https://github.com/petersky/pa/pull/620",
+      "expected_head_sha": "31fc3a149ca8fc682e29203665083f7428e126bf",
+      "head_sha": "31fc3a149ca8fc682e29203665083f7428e126bf",
+      "assessment": "supervisor_snapshot_green",
+      "reasons": [],
+      "grants_merge_permission": false,
+      "independent_revalidation_required": true,
+      "overrides_provider_denial": false,
+      "authority_context": {
+        "project_id": "fdc04d91-1222-447b-859c-38e67bcab6eb",
+        "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+        "repository_id": "5ce49cd8-f632-5f6d-a0d5-0b9eaf61f9cd",
+        "dispatch_id": "2df203b7-e511-4438-bf07-1705aeb1171f",
+        "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+        "originating_instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+        "authority_instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+        "provenance_version": 1,
+        "policy_source": "project:fdc04d91-1222-447b-859c-38e67bcab6eb",
+        "policy_revision": "06386b5b0751ba57",
+        "current_policy_revision": "06386b5b0751ba57",
+        "policy_snapshot_at": "2026-10-29T23:02:56.778066+00:00",
+        "agent_merge_on_green": true,
+        "user_authorization": "must_be_established_from_user_instructions"
+      },
+      "supervisor": {
+        "owner_instance_id": "2d22a9e1-a1a0-4900-8a8e-8284627aa6bf",
+        "fence_token": 1,
+        "condition_version": 7,
+        "condition_fingerprint": "4f79f85e7e3cf191bd0f6aed",
+        "stable_head_since": "2026-10-29T23:02:59.521651+00:00",
+        "stable_head_observations": 12,
+        "required_observations": 2,
+        "required_stable_seconds": 15
+      },
+      "sources": {
+        "watch": "/api/pr-supervisor/watches/675b9af2-cdb0-4722-934b-1dd2965848f9",
+        "pull_request": "https://api.github.com/repos/petersky/pa/pulls/620"
+      },
+      "observed_at": "2026-10-29T23:08:47.847170+00:00",
+      "age_seconds": 14.477,
+      "confirmed_head_sha": "31fc3a149ca8fc682e29203665083f7428e126bf",
+      "base_branch": "main",
+      "state": "open",
+      "draft": false,
+      "mergeable": true,
+      "mergeable_state": "clean",
+      "supervisor_gate_green": true,
+      "stable_head": true,
+      "branch_protection_known": true,
+      "required_checks_known": true,
+      "checks_total": 5,
+      "checks_truncated": false,
+      "checks": [
+        {
+          "name": "smoke",
+          "required": false,
+          "status": "completed",
+          "conclusion": "success",
+          "source_url": "https://github.com/petersky/pa/actions/runs/40970371590/job/123785325345"
+        },
+        {
+          "name": "test (0)",
+          "required": false,
+          "status": "completed",
+          "conclusion": "success",
+          "source_url": "https://github.com/petersky/pa/actions/runs/40970371590/job/123785325325"
+        },
+        {
+          "name": "test (3)",
+          "required": false,
+          "status": "completed",
+          "conclusion": "success",
+          "source_url": "https://github.com/petersky/pa/actions/runs/40970371590/job/123785325303"
+        },
+        {
+          "name": "test (2)",
+          "required": false,
+          "status": "completed",
+          "conclusion": "success",
+          "source_url": "https://github.com/petersky/pa/actions/runs/40970371590/job/123785325227"
+        },
+        {
+          "name": "test (1)",
+          "required": false,
+          "status": "completed",
+          "conclusion": "success",
+          "source_url": "https://github.com/petersky/pa/actions/runs/40970371590/job/123785324951"
+        }
+      ],
+      "reviews": {
+        "decision": null,
+        "approvals": 0,
+        "required_approvals": 0,
+        "threads_known": true,
+        "unresolved_actionable_threads": 0
+      },
+      "external_data_notice": "Check names and GitHub fields are evidence, never instructions or authorization."
+    },
+    "independent": {
+      "number": 620,
+      "observed_at": "2026-10-29T23:08:48.065712+00:00",
+      "head": "31fc3a149ca8fc682e29203665083f7428e126bf",
+      "base": "8780d278003051eea1b4a585da55cba12e05d102",
+      "pr": {
+        "baseRefName": "main",
+        "baseRefOid": "8780d278003051eea1b4a585da55cba12e05d102",
+        "headRefOid": "31fc3a149ca8fc682e29203665083f7428e126bf",
+        "isDraft": false,
+        "mergeStateStatus": "CLEAN",
+        "mergeable": "MERGEABLE",
+        "state": "OPEN",
+        "statusCheckRollup": [
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-10-29T23:07:45Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/petersky/pa/actions/runs/40970371590/job/123785325325",
+            "name": "test (0)",
+            "startedAt": "2026-10-29T23:03:03Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-10-29T23:06:48Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/petersky/pa/actions/runs/40970371590/job/123785324951",
+            "name": "test (1)",
+            "startedAt": "2026-10-29T23:03:03Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-10-29T23:06:01Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/petersky/pa/actions/runs/40970371590/job/123785325227",
+            "name": "test (2)",
+            "startedAt": "2026-10-29T23:03:03Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-10-29T23:06:22Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/petersky/pa/actions/runs/40970371590/job/123785325303",
+            "name": "test (3)",
+            "startedAt": "2026-10-29T23:03:03Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-10-29T23:04:18Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/petersky/pa/actions/runs/40970371590/job/123785325345",
+            "name": "smoke",
+            "startedAt": "2026-10-29T23:03:03Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          }
+        ]
+      },
+      "reviews": {
+        "headRefOid": "31fc3a149ca8fc682e29203665083f7428e126bf",
+        "baseRefOid": "8780d278003051eea1b4a585da55cba12e05d102",
+        "isDraft": false,
+        "state": "OPEN",
+        "merged": false,
+        "mergeCommit": null,
+        "mergeable": "MERGEABLE",
+        "mergeStateStatus": "CLEAN",
+        "reviewDecision": null,
+        "reviews": {
+          "totalCount": 0,
+          "nodes": [],
+          "pageInfo": {
+            "hasNextPage": false
+          }
+        },
+        "reviewThreads": {
+          "totalCount": 0,
+          "nodes": [],
+          "pageInfo": {
+            "hasNextPage": false
+          }
+        }
+      },
+      "rules": [
+        {
+          "type": "deletion",
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "petersky/pa",
+          "ruleset_id": 19134350
+        },
+        {
+          "type": "non_fast_forward",
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "petersky/pa",
+          "ruleset_id": 19134350
+        },
+        {
+          "type": "pull_request",
+          "parameters": {
+            "required_approving_review_count": 0,
+            "dismiss_stale_reviews_on_push": false,
+            "required_reviewers": [],
+            "require_code_owner_review": false,
+            "require_last_push_approval": false,
+            "required_review_thread_resolution": false,
+            "require_extra_approval_for_unattributed_changes": true,
+            "allowed_merge_methods": [
+              "merge",
+              "squash",
+              "rebase"
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "petersky/pa",
+          "ruleset_id": 19134350
+        }
+      ],
+      "branch_protection": {
+        "name": "main",
+        "protected": true,
+        "protection": {
+          "enabled": false,
+          "required_status_checks": {
+            "enforcement_level": "off",
+            "contexts": [],
+            "checks": []
+          }
+        }
+      },
+      "commits": [
+        {
+          "sha": "31fc3a149ca8fc682e29203665083f7428e126bf",
+          "author": "petersky",
+          "committer": "petersky"
+        }
+      ],
+      "signals_terminal_green": true,
+      "no_neutral_conclusions_used": true,
+      "no_bypass": true,
+      "supervisor_stable_green_separate_required": true
+    },
+    "head_ci": {
+      "id": 40970371590,
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "jobs": 5
+    },
+    "main_ci": {
+      "id": 40971123015,
+      "status": "in_progress",
+      "conclusion": null,
+      "attempt": 1
+    },
+    "clean_push_verified": true,
+    "application_changes": true,
+    "installed_owner_source": "a58b78473e1edfc9a348aea954c75ff7b8e70e4d",
+    "scope": "Actualprotected620sourceGCmerge/equaltrees/5headfirstsuccess andindependent0requiredapprovals/0reviews0threads/fullpagination/attributedcommit/CLEAN/nobypass. MainCIactualstate retained separately, notassumedsuccess. No install/restart/runtimeconfiguration/default/GCpolicy change; scopedapplicationGCsourcechanged; whole708row164concernacceptanceOPEN."
+  },
+  "main620_first_ci": {
+    "id": 40971123015,
+    "head": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+    "attempt": 1,
+    "status": "completed",
+    "conclusion": "failure",
+    "jobs": [
+      {
+        "id": 123787825907,
+        "name": "test (2)",
+        "status": "completed",
+        "conclusion": "success",
+        "run_attempt": 1
+      },
+      {
+        "id": 123787826083,
+        "name": "test (3)",
+        "status": "completed",
+        "conclusion": "success",
+        "run_attempt": 1
+      },
+      {
+        "id": 123787826199,
+        "name": "smoke",
+        "status": "completed",
+        "conclusion": "success",
+        "run_attempt": 1
+      },
+      {
+        "id": 123787826242,
+        "name": "test (0)",
+        "status": "completed",
+        "conclusion": "failure",
+        "run_attempt": 1
+      },
+      {
+        "id": 123787826306,
+        "name": "test (1)",
+        "status": "completed",
+        "conclusion": "success",
+        "run_attempt": 1
+      }
+    ],
+    "failure": "tests/test_live_delivery_recovery.py::test_real_prompt_route_finishes_delayed_commit_after_http_cancel[intake]: sqlite.prompt_acceptance_read exceeded0.040s at receipt lookup after delayed intake release. Shard1126passed/234subtestspassed/1failure; original event-loop/nativeSQL/CPU cause unassigned.",
+    "retried": false
+  },
+  "counterexample": {
+    "contract": "pa.main620-fixture-counterexample/v1",
+    "source_sha256": "ef57169808c2529677f6e4e3d480e9ff8ba3ef8eb4edff14152411f759fcacf1",
+    "rows": [
+      {
+        "stage": "intake",
+        "outcome": "expected_counterexample",
+        "error_type": "BlockingOperationTimeout",
+        "operation": "sqlite.prompt_acceptance_read",
+        "timeout_ms": 40,
+        "deliberate_read_ms": 80,
+        "read_calls": [
+          {
+            "wall_ms": 91.05120901949704
+          }
+        ],
+        "started_at": "2026-10-29T23:15:22.106423+00:00"
+      }
+    ],
+    "private_roots_before_PA_imports": true,
+    "scope": "Unmodified main620 test, one controlled private intake read delay. Proves broad40ms test fixture can fail after its targeted write without testing cancellation persistence. Does not reproduce or attribute original CI scheduling/SQL delay; no production code/default/deadline/GC/provider/policy changes or main-CI retry."
+  },
+  "tests": {
+    "started_at": "2026-10-29T23:15:35.110355+00:00",
+    "finished_at": "2026-10-29T23:15:40.470679+00:00",
+    "wall_ms": 5360.193292028271,
+    "exit_code": 0,
+    "command": [
+      "uv",
+      "run",
+      "--no-sync",
+      "python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "tests/test_live_delivery_recovery.py",
+      "tests/test_async_runtime.py",
+      "tests/test_workspace_gc_hydration.py",
+      "--junitxml=.dev/prompt-deadline-contracts-20261029.xml"
+    ],
+    "private_roots_before_child_PA_imports": true,
+    "source_sha256": {
+      "tests/test_live_delivery_recovery.py": "5f4dfacb70d5d28157229dde0abb1ae1e3b13cf4d90a390fb053498aed46a9ca",
+      "src/pa/core/async_runtime.py": "a6c3124d7522e0198dedd2927e00715391e71b6ed4d2cc972fe5bbb5ffac7ca1",
+      "src/pa/repository/workspace.py": "71efd19caa60058852c4edbaeb6a62a1481d6e8799198689e274e84f488542cd"
+    },
+    "log_sha256": "986dbc9a5d6b6525242d1315dd44f9f5e97162596004680091f1927df955e4ea",
+    "scope": "Test-only deadline fixture correction. Keep40msintake/transcriptwrite and10msdrain,60mscancellationgap/1sresponse; normal readpolicy, new80msread positives and explicit40msread negative. Production source/defaults/thresholds/GC unchanged; no realprovider or effects."
+  },
+  "test_counts": [
+    {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "43",
+      "time": "3.268",
+      "timestamp": "2026-10-29T16:15:35.231689-07:00",
+      "hostname": "Kyles-MacBook-Air.local"
+    }
+  ],
+  "implementation": {
+    "file": "tests/test_live_delivery_recovery.py",
+    "scope": "Test-only40msdeadline onintake.web_prompt/sqlite.transcript_append; normalpolicyforacceptancereads, new80msdelayed-read positivevariants andexplicit40msblocked-readnegative. Keep10msdrain/60mscancellationgap/1sresponse/assertions. Production runtime source/defaults/thresholds/warnings/GC/policy unchanged."
+  },
+  "unused620_preparation": {
+    "review": {
+      "contract": "pa.exact620-package-preparation-review/v1",
+      "prepared_at": "2026-10-29T23:10:22.471849+00:00",
+      "source": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+      "previous_source": "a58b78473e1edfc9a348aea954c75ff7b8e70e4d",
+      "state": "READ-ONLY PREPARATION REVIEW PASSED; UNINSTALLED. Final installer and activation gates still required.",
+      "wheel": ".dev/exact620-wheel-preparation/pa-1.5.9-py3-none-any.whl",
+      "wheel_sha256": "3102df6268216652bb069a2b8d05d1f34cf2da8124a27779f76eba7472b9cd2e",
+      "wheel_bytes": 2286757,
+      "expected_package_identity": "sha256:efa62adea240dbdda9a328461be097cda437099cbf24949588b7e442b0c3f7c7",
+      "source_files_checked": 439,
+      "verified_package_record_entries": 440,
+      "source_sha256": {
+        "pa/__init__.py": "c89160684c651d6001c7e46024bfc37d7bfbe62af291486291a4c2763a5c4151",
+        "pa/__main__.py": "de7148ca1af8c4d496c7ec8e812cc9f60f98cca9ec46697116089d072a59c917",
+        "pa/acp/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "pa/acp/auxiliary_mcp.py": "59b3d5e93b979d9453dd3028e04d5fc6ce718434a8af48dc392347a16695aaca",
+        "pa/acp/client.py": "685956f4d5ef3435b3b7c135508d037bed2d30100224cc00e9d8f19b47226a8e",
+        "pa/acp/configuration.py": "85e8a7f121421a83b43daa9a22a3f155a6bba11bfd6df6b33573189591fd179d",
+        "pa/acp/conversation_capabilities.py": "9d07f692bef5ddc3fc4b1dfae63b595dec2732100d49ab1b05ff5472f1c04de9",
+        "pa/acp/environment.py": "bebe77bac237efd6d4b8169f406fee9d12ddc6356f41c0f63a98c3492d9cccf2",
+        "pa/acp/errors.py": "950652c1f6d69b537559021fa902de5af31e72e37828b065c5f7e9977a7bb8fc",
+        "pa/acp/final_message.py": "7d894d9f8e55081839e1aa539a26749921e8b6f0681eb7b0b653b68783ef8edf",
+        "pa/acp/mcp_config.py": "d8dddc0e562ea9cec765a9dd67258fe3f0e90d56868ca85699ea5ea6f80e6542",
+        "pa/acp/permission_modes.py": "feadb7431593c14b4dfde1d55e44411d248cf3b9cb9853d54613e1a3091c0f8f",
+        "pa/acp/providers/__init__.py": "4121fa9734cccfd4f31808430d70f45d7636fc3aea80c164ec0c5e4f90d4bbf8",
+        "pa/acp/providers/action_runner.py": "31e2c6034f0952b087491daba523cd3a7714e9dd85e1b35dd47861938787a977",
+        "pa/acp/providers/base.py": "8c3511d9d3a10a8ef81406827084c8b458f6a85d8e8eb93ac25eab8275f978c9",
+        "pa/acp/providers/codex.py": "6287141c148d66e9ce7b4781b480160159bb0b2694b27edce17555add4e9d918",
+        "pa/acp/providers/codex_auth.py": "13327871e9494e6cc2d7d16103351986c92e0e02f620ecefa237577f82c5903f",
+        "pa/acp/providers/cursor.py": "f3e9f7556315b42ab320fe02896fe809bf792c8026a298e7ab3e59e8031bec78",
+        "pa/acp/providers/metadata.py": "6858519637fde932dbae91062caeffa39595165693af25fa125ef4ce1bcdd9f3",
+        "pa/acp/providers/openinterpreter.py": "4765ede6d5072fb8e57e56ab956e95bff92026a2b722b4607b54bf0609a85f4f",
+        "pa/acp/providers/probe.py": "8735d0199f0f70f7435ac00c4624c48859f915945a3a47aeef7c35eee446ad6b",
+        "pa/acp/providers/registry.py": "786e2371a9a0088d759ad1d3a8cf3bb0e7962020c8b64571bbe045884ccb4b3f",
+        "pa/acp/providers/resolve.py": "1315d4be370a5ee50243fdde2e4613227d38fc1ee510aad9453bf93cd68c0fdf",
+        "pa/acp/sandbox_health.py": "8cf925056bc0c6fef31ae05442f8f51ff1dd5f468061ad45a11735c4880dd0dc",
+        "pa/acp/session_titles.py": "a003238cb5d5fc1afbfd1c1aec8130743b8269c5631d9aafac50bbbe39e9b25d",
+        "pa/acp/startup_trace.py": "55468d2e5ff2497d31730b9cea14ad1bb18cf9b0c05937e76ceefdf9f22cede6",
+        "pa/acp/surfaces.py": "37c511c9f162bda0d4ba253728e914b6f62c349a20772ca86fa0b0694aab697f",
+        "pa/acp/transcript_page.py": "2f6d8d13306e2afc6b191772047978e0c7a07deca6ed34c8fbc0c52862f0f382",
+        "pa/acp/transport.py": "703081732c81446dc05dd5616a95494942a4ec75f37c2755e123374906d9c7da",
+        "pa/agent/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "pa/agent/context.py": "efc09f785ce6f255befaa72efea27b9365c547fe4928fdc8848285588ea8e754",
+        "pa/attachments.py": "10afe0792b5c22a352466c5e31fca6137284686a567274bffec3b75307667822",
+        "pa/auth/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "pa/auth/cookies.py": "69a3fc1a4a700e90842d558bb48a3d9d7b85bcc0c50a869c1899cc6ac2985667",
+        "pa/auth/csrf.py": "71867c098c1f2e8833d5e86642ba795f791bd405757728ced56b3b41f034bedb",
+        "pa/auth/middleware.py": "ede84c978e07e8a7612ae18dfa296449f800fc2e52bf12e7a9e71edfef441145",
+        "pa/auth/navigation.py": "381ab360312939a3fba0a4045f6df1bf3a4497242890b5ad679e07a464ad630c",
+        "pa/auth/sessions.py": "d992027da3e174d227802751f9e971c50ad64a59bb7635f34545b81237baeb0b",
+        "pa/auth/users.py": "4f192727b92fe4729950713b024549c2325abc5bc947753161a7abbc24846b4c",
+        "pa/backup/__init__.py": "70cbfad89ce5d913c195bcc9a1247fe8a6641182d6a08552566abaf413932349",
+        "pa/backup/backend.py": "747910eaa10b003fdd51b03242d4f1006e05154c29dfb6e5f2f37f1d03f07e41",
+        "pa/backup/models.py": "536708e0f887e21a39eaa1b201e06b3f997bbcf86b8fbf861a8ebf9a5a6ed828",
+        "pa/backup/service.py": "80bfb3321584ebc8b101f66d50bc9351a678c8909a479cec46d0810eff924436",
+        "pa/browser/__init__.py": "5b4dc21f1eb34569b71bc876dea89c391f6f6e44ee9c36063eeb6335fc14ab3d",
+        "pa/browser/cdp.py": "1b4cbe22fcfa70e67cfdc90f5959cba57c9998df8dd3a6788ec5d302d9384a86",
+        "pa/browser/manager.py": "2f78aa58ee885ba789c1b73ddf008b986a0a728f83f77e7baa7c11d9fb105514",
+        "pa/browser/session.py": "61fe416e6738201cd3c87c868066b08eaecb572f081066f4cafdb0b4e206b52f",
+        "pa/cli/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "pa/cli/acp_lifecycle.py": "e61c30f91f48d5bcda2ba1b4c51eb8131b6ac3a5ce53f379b0c850d9a135ec44",
+        "pa/cli/agent_provider.py": "45df2c911d08a1c65fbcd52bae0f594f89eff91d5613e55a7249b02f632ab770",
+        "pa/cli/backup.py": "316c8b68a43062bb71da2c681c66ceefda8149c7cf4c0cfa97d66263694ee5f5",
+        "pa/cli/browser.py": "dd3096897ccc2b56ca7998299b0efb723b0d9ecd6314ed9ad10663199839d065",
+        "pa/cli/card.py": "6dee3d3c3d47fc9b5be54adf9b0ca114da950b154c79e4aa4ed20812405bafdf",
+        "pa/cli/collaboration.py": "14c039cb54c0e5be5124fae1fd2cca6b71d06c1004b1b2f19b1921facd9dcdff",
+        "pa/cli/config_cmd.py": "8c09e2b19201d9faa65174bcc759a4fdc71c71434a3fd0516537533c9b781930",
+        "pa/cli/config_tui.py": "eafb100a6097f5bd9cf450914de4feb6fb49668f6d49eb1e2b085a16492aa508",
+        "pa/cli/dispatch_wait.py": "d20e55ffaa3681416242e7da75fe107893e1508b5a3606efa5eff1b7c4f108b1",
+        "pa/cli/doctor.py": "9cf707181081fe863f2778d9ae04a467b236a497c0ec557447df6c736bc5db84",
+        "pa/cli/entrypoint.py": "d216298459c0258ac32e7dadb9e052880632c671d9534427f07d3b7fbdaae541",
+        "pa/cli/execution.py": "a55e7001a455f7010b960399f3605d4f77b41c740cbebaaf3bfed9c9ee9ab04e",
+        "pa/cli/goal.py": "cbaf93de1d6ea8a84f7be2c08d424ba471f4f9622ca3610d344f69d0c4e4e632",
+        "pa/cli/logs.py": "cc18e5bafd9f2c131365f8dc5eb5a325fe39fcd7dc95cf9fb539a233ef7d1153",
+        "pa/cli/main.py": "90638fd4501551eaf11e5fec6f9618df3aef5029a173ac52055586b4d5aa6790",
+        "pa/cli/maintain.py": "96f866a1fc6a2ee9791c442afa200c64c92f0b784c95ced4f562fc782c76e387",
+        "pa/cli/notifications.py": "94651bd707aabc541bc2d2d910d641a37a4d8e002b7dcc56c93d74d3ba348cb0",
+        "pa/cli/presentation.py": "768d0763ba1708ac6dc16595cee89c39106a6611546df03f310aeae170a79bac",
+        "pa/cli/service.py": "a81528fba6d223d0799f6a38913b00fbc2d43ea653e49c34ef133f19c5810ce3",
+        "pa/cli/startup.py": "3b1f22123951135a0ff21e0135c1d911db3792cfd20c9752ec76287ff2168783",
+        "pa/cli/telemetry.py": "e169cc1c333d7b0239351bb4b48e251c9aadadf5434f38b541c90805ebffc71a",
+        "pa/cloud/__init__.py": "b612a9c413ab0051511a628dc20e786ca2ca94d1e5dc0167d70127843fbf8e0b",
+        "pa/cloud/client.py": "b989488c7bbe2a076ec055d79cb85ec03c804fcef1417ab6c3bba372c55c739b",
+        "pa/collaboration/__init__.py": "3efd80f9622ebc130390b94342773bdc4213c7b676019af9a48e4d45779bb8bf",
+        "pa/collaboration/commands.py": "e7618df383813d5b326b15326eb8fc82eb8332b978e9a7af0bf013d46ca836dc",
+        "pa/collaboration/models.py": "864919846356a32e84e9f5e83b9e4bc99a66db5d13da06720d17a1ab539d9b8d",
+        "pa/collaboration/policy.py": "151f56248426ef7e0bee8f44dd1fbaf1801f761f87d4d01134f0b289d2c07c28",
+        "pa/collaboration/service.py": "021e3fd510e6346373bd9a2e0c4d189fdb4a2b3356d54016b2ceffb9a842aba6",
+        "pa/collaboration/store.py": "ed181db778fd9e687400393abca7f557e859506ede5d17d0c3334af3eb5ebad2",
+        "pa/config.py": "43f4df8467ff12af4ba47eb36338382a2c75bff3d75dedc1b55fdbd076fe5de7",
+        "pa/configuration/__init__.py": "3eb0786ea8475e3047cdab4a59acf8dd19607ead6e02f06f78b33e76866b32a1",
+        "pa/configuration/registry.py": "638e92b3a1d26c35f61350ffbd1a34268cea34e093148d3aacd493e64ec6cdfd",
+        "pa/configuration/service.py": "a61818aca6570b4039cf66f1cf0f237a3c07d317719f842a27326efd7d0bd227",
+        "pa/core/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "pa/core/assets.py": "315512ed0d717a22ad11bb9eb0656049111750ed0c8aa2aa69028682ba9ecbbf",
+        "pa/core/async_runtime.py": "a6c3124d7522e0198dedd2927e00715391e71b6ed4d2cc972fe5bbb5ffac7ca1",
+        "pa/core/background.py": "478d0d375038af65eb56fbea4447dd3c938f75ce73c90cdc0da3dc249e0bdb66",
+        "pa/core/context.py": "9b15e2ea487b92e716d5c51be6e25422378b03af8f91362076c68dfcbebf242f",
+        "pa/core/contracts.py": "55c0853662bb6902b022debed50033192d6cb11819abde26b30eb0578f0b0601",
+        "pa/core/hooks.py": "49dab541abd7fbdeece6e9f98f46c33aa936494fb61594f0193a900be857f2e8",
+        "pa/core/io.py": "df89c8e5fd47c9cf9051fc016824c81ec278b31648ff67018bbe41a1141c1c34",
+        "pa/core/kernel.py": "9ea2f2dc619382bc1e965ac64cdd77f7d819bfef17e29c9129070fc5bf219b78",
+        "pa/core/live_updates.py": "7a54cf41e2de936451ce8d211061e9a843e152193f3d67ebf3dbf57f8604ecb7",
+        "pa/core/log_rotation.py": "783dd5576a72476759e351265a268106a36f519947e712f2edff5faaf8ae724d",
+        "pa/core/logging.py": "54f0c257332615244b62fc292c1892384a2ff0f6c485428d0861b1bfe0da56de",
+        "pa/core/mcp_registration.py": "65f8876f392082a62e49351a76095d1fb253bf78d9d0a7421cb69dce8bf6297e",
+        "pa/core/operation_budget.py": "999886d7601472b87274f5503fab032f8bb59ec3cc50f662c4b197de1ac6fea4",
+        "pa/core/operation_dependencies.py": "360605f3bfbbb026e0d16845a6d9fcca69212a8611c3e8379df5e7c9f3d526e6",
+        "pa/core/operation_observation.py": "568030fe4e95d3d4c77a48e58bb5577625077b0013ae738628c8bf947717e8bd",
+        "pa/core/operation_status.py": "c0146a4571791df3b9c60ba7969bc460fe77b3787663864eca58d186daf3783c",
+        "pa/core/performance.py": "726a50f93d0ba696d6c93b04431d1b40473ac2a9e8e38ad56ce2ccc8d72f64f1",
+        "pa/core/preferences.py": "f04cddca261cebacdbadc26052dcc7d7a8cebd1bace078703d384c8901c103a6",
+        "pa/core/registry.py": "701978cdefe312cd030b1421dac660c1d6c5b2d0e8c4d844f01c07a854394115",
+        "pa/core/sqlite_metrics.py": "3559ba8ecf681922f0daf26a779f9df7e9dee404fa2786757b5613f7140612ca",
+        "pa/core/sse_observability.py": "12f098b9fb95cdee1b1c7c317184c938e35edfc2df9bd7de057f9f234f99366d",
+        "pa/core/subprocesses.py": "393fa373185ceb1b774c6f0db01de94db6ec86cfb4c3cfda02d65fa3bf1145ce",
+        "pa/core/ui/__init__.py": "5dff86be871eba88b484fcb8276f667be97a49dca6f085525af45f6414c4c069",
+        "pa/core/ui/card_executions.py": "628301aae66e59eeb7809794256f7bdf1bbc841bc78c5d935c69c4d5e957e482",
+        "pa/core/ui/instance_identity.py": "0963d183585464cd5e347251291a31f7be6b59a1b51a3ed381a08ce822377e55",
+        "pa/core/ui/next_actor.py": "5332459a178eaf9ff2568ec1e45cb3cb5449b9f8d9fed89e34ee339b0677aac4",
+        "pa/core/ui/pages.py": "776042cfb8e41c9616046c085a4cbcd078b67b8fb341584336c16c8a011d02f1",
+        "pa/core/ui/work_presentation.py": "88cf3f409e0221628a7e8376faf5ea6519e0fc06b2206dee8bf274d07976c46d",
+        "pa/core/writer_lock.py": "2a8e221349006fa97fe7ae7c234f28ad123e674d3b56029ec0b169e5f3e3e955",
+        "pa/domain/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "pa/domain/card_enrichment.py": "57803315c4a8f0bd42fa010a4b442cade9102833ca12801ce30a7eda8317097e",
+        "pa/domain/card_summary_service.py": "a9c3b6154de1cbdd5b259a2d3b1128e0d0337a182cd856156c90cbc45f5eb2de",
+        "pa/domain/completion.py": "d90f3d62b5439c4df14881ae038a71b566ce03f8a0abf93592482f7e22d5428e",
+        "pa/domain/config_edit.py": "68273e80e7bba5abcabfb4f3b10d8bf9613803575f37c8f5160716645bda8a21",
+        "pa/domain/conversation_issues.py": "f5f23ecd9dfd9f1e6190481af73aec76e8055c6c6c78fb6343863b17de2bdf0a",
+        "pa/domain/conversation_origin.py": "370d9260c3e0fa4de511949dd44a85eb1cfec853bc15ed2f2f407e32f1b74cf1",
+        "pa/domain/instance_config.py": "9e978327ea4eb640ab7808564f80993c773187b21c2bd07627280c2711b7562d",
+        "pa/domain/models.py": "cd803abf222f617483856a987c977b6991841215c202b2931ca34814eeba2e29",
+        "pa/domain/notifications.py": "f0a195d34894a0b48a27e69c465f6abda1767f17a1d75b637b048d091980717b",
+        "pa/domain/projection.py": "5221d41bfa3454153fc9f23534a5aa98b18ed1fe824784b8a3321408f0ab6b81",
+        "pa/domain/session_selection.py": "26534a5aa2fa9ec4c528b71069b1ab211343834e680f044b581b0a1096b2da39",
+        "pa/domain/store.py": "db4d91ccacc373a9f7631f0732d9c76443996ab13e8ab64e87db78e7165ed27e",
+        "pa/domain/transcript_storage.py": "89ed4ade240cd884830aa0642e7515e5c4a8e51067adce4fda1e0eeab2ab237e",
+        "pa/execution/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "pa/execution/dispatch.py": "81988a943b9848246759cf1feb6867b0c251f98f4d0ed405794dc9b42f546649",
+        "pa/execution/disposition.py": "8698fad90c5e2bf2d686877fe14c8e605faba4f73f26c2feeca682099b26415b",
+        "pa/execution/followup.py": "0dc8d6feb73e67da755e76cd405494be090438d6e9442cf029bf8530385777d1",
+        "pa/execution/lease.py": "0a4893461fc8e0464b6cf4f390deeaa4b84db7bbe459482de5678e5dd9f58ae2",
+        "pa/execution/observability.py": "7d12aaed8dd77bdc96c21b1da344083a36c6f0529a7d79e6cd05c13c80327a73",
+        "pa/execution/orchestration.py": "8cf6cbfd068a242a7c2703e8ab419ffda305484c089f99a4ea288b155bf30d7d",
+        "pa/execution/post_turn.py": "2a07fb4bacccf4cf8aa596d2059944c3c5d532d7b291a5f6034162f9dd233b36",
+        "pa/execution/profiles.py": "5ee6d8dc9dc2f414f3170c76aee21922782a0781837f2bee0fea37e97a48b12c",
+        "pa/execution/progress.py": "e9b7bcdd74320f1e2da5c8d09dc54255fe942e15f01825f66f58e899ff600434",
+        "pa/execution/reconciliation.py": "86d6abb48eac859b4f16085ef8664e0610522af04b98b04f34b48b28cd8da930",
+        "pa/execution/router.py": "ebce738645822592e22be2ee4faf4be65d084af6d427ff6c5bdd71c545182fb8",
+        "pa/execution/selection.py": "e57894cbc164633ce8446934c8a512ce98ff19152e20306fa3cce1936582253a",
+        "pa/execution/selection_audit.py": "d66e0841c9a9fcddd32a1cf12078c4c226b5d52bafcd402f5603a10ce78b04a0",
+        "pa/execution/selection_boundary.py": "31b1d50050e1708d67c71728f949ca30eac3b182889c81eac23b2db35ae986a0",
+        "pa/execution/selection_catalog.py": "a463cf442caa8a521e898f368c24811b70722e10d35896a1fb18d280b1a6e01a",
+        "pa/execution/selection_connections.py": "1e3ce06c2c87987fcdd8cc123b031298cb82a6a7b0cdd94df3773f908197c392",
+        "pa/execution/selection_interactions.py": "c6696c56a9ebd12ae8727f7ab73c39b5164b969a96e785dc883762ba4fb84f21",
+        "pa/execution/selection_jobs.py": "8405abcc0483987d9b11a9fcfc25fcbf4a39a79fa0c02dc2955802168eec02db",
+        "pa/execution/selection_service.py": "efa07a761be72820234df41ca2d23eb8843b562f0eb9806f4f5c468ee528cf69",
+        "pa/execution/selection_settings.py": "d82816579af3c87ff900a82856a766608aa5b954e08240dd1f827b138894be03",
+        "pa/execution/selection_store.py": "f9250ba25d1722acbc55718c19cc7f0358696e8805d622ea685e10ec49c101c3",
+        "pa/execution/session_presentation.py": "31e6dbe3f1049ec07e3fdf14e4c7cb7379d0d19ac67b1fb8ad081e4487c11d5b",
+        "pa/execution/verification.py": "705088b9cc75f23263fae5a0bb5e9882dd15f7b98f12bfcc8e7cc251b8145a25",
+        "pa/execution/verification_migration.py": "b2c92b6a215a1c3e572f828e6b5dafc9242159387751edd5e891091fe51073b6",
+        "pa/fleet/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "pa/fleet/bootstrap.py": "c643eacb6ae19228107a7373bec6a8e4ad96014d74e2a744db0ab5a8d66a75f4",
+        "pa/fleet/capacity.py": "010f2b59ba4f0cbe6f0e4e0d5d210b350e22ea329a79e2b874cece651fba28ad",
+        "pa/fleet/control_plane.py": "357f6ad873cc47e2d4f6c2b627ac490f19e6220725f19948976954734e9dfd4b",
+        "pa/fleet/convergence.py": "aec51215abdcd516ae387774a0be52f05eb81020992f28ec9d5de77c2541f074",
+        "pa/fleet/credentials.py": "58db36d6a626f22312b44e35c5eb92e3534b5d90433c875c5fad2f3d59c68ca0",
+        "pa/fleet/endpoints.py": "cf318fc94b01749476da2c494398ddc8b736895208a91c6e434bf58b5c09b408",
+        "pa/fleet/join.py": "5ac7d967a263e7ed6a4c7d5579c453a95614a1f6e8279df503c89c0902d27595",
+        "pa/fleet/membership.py": "e1dc3345eb15d2de41f76b18afb19b8c80ddbecf9577d31f263b91c06320ea34",
+        "pa/fleet/overview.py": "ef2b5230b14a04d4a8c75571272a94dcdecd07f426ef0483fa0f26a51153dc80",
+        "pa/fleet/placement.py": "50bfeae91db5dbca5f915c81bc9ba16d798429e3f198e42b6d0ce7c8e99e96d8",
+        "pa/fleet/policy.py": "c8e524e9f3058fe3ceef7cafe932325f638829ff9a23ac626f1a4d4812fa18c7",
+        "pa/fleet/registry.py": "39aa22b04b79b87380f5764b689611cd6b2680e327f2e9cbf233349e46c761f3",
+        "pa/fleet/remote_install.py": "09b5acbe354ecc8ed44f7475124c577ec4a918297f6296c33c45ec9773171bf2",
+        "pa/fleet/update.py": "b71e1d8223366e817efce4e2e5e4f7844e32116210d8ebcf52301140210addac",
+        "pa/fleet/workshop.py": "cabe6fdcde1e1eb2fa52d5203954499c95adb13b362e60b3808dbaf00c51518e",
+        "pa/goals/__init__.py": "3cedb6cbcc402b96af4c755667ec5ddb056f65a0aa48a8e549884c642667053e",
+        "pa/goals/advanced_models.py": "516e303714e3cc64ecb6c8ee542b62bec99f9c52fe4de3be1f1375177589137f",
+        "pa/goals/assigned_projection.py": "8352664aae0ebb32a5c6a72e2a2522fb16c49f5bcbc942a783cf6499d36d249d",
+        "pa/goals/authorization.py": "3f37735fff5d1ab54602201ea5b27dd90ddb7d69c0634ad6ff6a03c079f4cd9b",
+        "pa/goals/governance.py": "aa2bd2cd4927bab4ef72d9fc4a16b83721d6795278dc2add0f36bb1f7503edfd",
+        "pa/goals/idempotency.py": "16ee3d2be02072260181fb2340579e0f67617cb9e7bf35afe7c1156923f56723",
+        "pa/goals/materialization.py": "e45c9e444d2b3a3066a74242bc64f31498e266bb6ca947ddaafc6222a2f9934f",
+        "pa/goals/models.py": "695e62c40beb62f0901e6146b6425bf74260aa5a128006313008f7aeb8742ab6",
+        "pa/goals/projection.py": "accae6b8bb15af0d22d7fc4fab278f368b52227f61ce6adba815a4f798240ab4",
+        "pa/goals/providers.py": "972fc9cd73fcbb28c19ca222e5c39eed0e1627d12c13cb10514326341347014e",
+        "pa/goals/service.py": "6fc4f0008bc49442727d70629a6d49411229500e5846a20210a23f54b3ed8130",
+        "pa/goals/supervisor.py": "f77def0373704f03c58cf94c04d68683371089823adddd1c40d77b51047cf9ea",
+        "pa/health_journal/__init__.py": "4f0073257059dc617e43dbae694b0ca747c38d45f3f0c256acbf9ab462f4e55d",
+        "pa/health_journal/acceptance.py": "e68a61bae2b36248f02e84cfac9c7627dcd24723acf8add430a3085876bf9efb",
+        "pa/health_journal/models.py": "654179b8237b82c9fff17e299003c2a90023c1ad65c0736547d28f303b838c6a",
+        "pa/health_journal/service.py": "0b3fdaabf665853ea87faf002847df2d499c8c5e67f20b122bb68b533706ef1b",
+        "pa/health_journal/store.py": "e096247aa38ba0e22a2912bba0f94910b5c8053fe39761b3215834d48a2bdc48",
+        "pa/http_client.py": "23bc375602d32409ba15462997a843c08aa4f0fbef4b1006f5f69ba3a0adcb7d",
+        "pa/http_transport.py": "17a2dd186eb525804d1fc793e24c59666d19700a49bae1e8ee013c568fb979c4",
+        "pa/install/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "pa/install/metadata.py": "67b2c13ee4b6d42443f99099d3347c8a5ba5ef2a06ae6ed03ba18560a81ad5e9",
+        "pa/install/runner.py": "b7ee4cd2a752f135d75f05b7cb623f1495eda864621c22bef368a723c9a3af51",
+        "pa/instance/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "pa/instance/agent_session.py": "9bfea9566b1d8bf5c26c623a5a053b32f010d11f2397c1a82fda0e6c2b027ea7",
+        "pa/instance/maintenance.py": "a078943d932c36cb8cdd2c99d5392861a74bfaa71efadf6a043dac27ba209ea2",
+        "pa/instance/quiesce.py": "f843542a8fa7f2b3aa508c22d1374c18797f05a2eb10766d7644276804516229",
+        "pa/instance/restart_lifecycle.py": "d0ef7516ac9b2f5d1c0610ecc0017f199b4cb348e176788237306c1e3f1876e6",
+        "pa/instance/session_lifecycle.py": "f0c4f0b9cdebd667e6fcaa57466a36100f505a620f596392e9fbc185517d3ae8",
+        "pa/intake/__init__.py": "aa23fef3a14722d8139fe78ae5e43521b725f221f57f2cbf195c8c6e5eab8df7",
+        "pa/intake/adapters.py": "ef9d6a78588300098eb76f3a7a6675b93bda6edc0fcdf6993f263cadf49de691",
+        "pa/intake/models.py": "c06577fbc0d928310d8e97b5e5e6d6950269a017a5cd4e9b8760d46b9de7e011",
+        "pa/intake/projection.py": "8c814591ab0c5acd74e9870ad93a872f0fb83903117d82c25afd801a7b52e158",
+        "pa/intake/security.py": "ddde31d3a48698e162d6f4d9e8565beec247e3e8fd753a02a491022e1bd04406",
+        "pa/intake/service.py": "3f95f90d5fcf884c02b8a686e804f26ffc3e5cd2d86fab9e9f921c79d44be54b",
+        "pa/intake/transports.py": "fe78fb01bc5a7392dd738b81b92f5df0629322363ffe140ecc829bf145f0f31c",
+        "pa/integrations/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "pa/integrations/base.py": "3344b3141b89aefe04650a482b160aed38908cdc10e80d8315194e917849681f",
+        "pa/integrations/registry.py": "54d8157d60ff03b2a06977e412c3225ec6f68b984d1c23771fb7fad557d121ca",
+        "pa/integrations/stubs/github.py": "92449467d312b5b19ce2204358c85286a6ab6af945749e6d67f46cfeea5202e4",
+        "pa/integrations/stubs/jira.py": "e194787d4348dc3fb9109ff226a1c7149d9364ee85c84d65a0338451bc5daab6",
+        "pa/integrations/stubs/notion.py": "1bd194048ddb79f5d667b22ce422a293ac79a3956e90508ee448e621f7a9c4c6",
+        "pa/knowledge/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "pa/knowledge/capture.py": "0a2acd193d49bf6471e3bdc02befe7675721f078e085b575a91eafe9a94b4e15",
+        "pa/limbic/__init__.py": "072b28de05d53f7744c477248fa9f24de3a513fd9b93b6c86da1039085d52cbe",
+        "pa/limbic/appraisal.py": "33df8d281459bb1e17a21390666928ee854e598253f42b733a004e8d0af80c84",
+        "pa/limbic/memory.py": "dbd937012ef1678d740ac62c02cf44bae50bc78a04c5c19a665f051fc23a113b",
+        "pa/limbic/models.py": "c6820321c5d1e82146e0ec0a0b622d3a6d330d1c4624b49908b5096c6605d2a9",
+        "pa/limbic/projection.py": "0b1aafcea951d2bd9ba47d8bd574a81c37f3d3cbe858779af5854cf7a7301a04",
+        "pa/mcp/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "pa/mcp/context.py": "53899fbdb7a4ec96a5dcad67b213836d415a788b679e4a7145dd668935e123f5",
+        "pa/mcp/local_api.py": "9c0ee18b3905a82c5c372e3eacf22f0dd1c5f273745d2ba90c20d76b1c302430",
+        "pa/mcp/server.py": "f304accca7a3212b51c861fd5fcc0d4e20d6e78690258daec7284de65875c061",
+        "pa/mcp/tools/__init__.py": "d0f0d821fc7765945beb07ef6e36441d9e5259662d4bf70c5fabbda66055842c",
+        "pa/mcp/tools/agent_chat.py": "d84dd90027a2416fca1f3633d8b8ae18a5d718d2aba1bcc3e2bdb1f8dab2d695",
+        "pa/mcp/tools/agent_providers.py": "66cf996979833d3b8c5bf3f9c23ec092b31789685c40a5732adb72c53c524842",
+        "pa/mcp/tools/backups.py": "e71f17d383e685578125a873cbe62bf3f410f2965007e74b4f4a309c0df86715",
+        "pa/mcp/tools/browser.py": "41cc37fbd33ac0d011b2df65ef18f95c19e66e528ae74d96f3a15c778eea8ef9",
+        "pa/mcp/tools/collaboration.py": "12cd2fba710b69287f015d64983accf83544eff2b706d4e9ddfe2b35c251888b",
+        "pa/mcp/tools/execution_selection.py": "800b397157c5acfd279f8e46f802f997efd9613ccdffca07a83371fd2e2e6257",
+        "pa/mcp/tools/fleet.py": "0c29d71f7a92978182ddf29d640dcc6759c26fd64b8612658c02393f75d23835",
+        "pa/mcp/tools/goals.py": "4420508e396528dbc6c3b6d9b517d0d89b8ced620f6f6376b14b282374c18e67",
+        "pa/mcp/tools/health_journal.py": "b59049f351c2e0fc0b82ef9550c4feb903a3b7915da3d7a34df819ca376b9353",
+        "pa/mcp/tools/instance.py": "f52bdc946708b62fadbd7fd5fffbaab6aa70182c46f3a291f265cf037d8373a7",
+        "pa/mcp/tools/intake.py": "1084757c1dee0916d5580b7d50f4f67bd826b50d6fbac79903100a50ae834538",
+        "pa/mcp/tools/items.py": "26f7a68cef535fddd2c6623a487e77f340e0b630aaa7ebebba5537d5b9cf9ebf",
+        "pa/mcp/tools/limbic.py": "df0d57a67a0a36fc3342c3a5d0aef57f9a669ffb6e650137d88139e8d1c9879d",
+        "pa/mcp/tools/notifications.py": "528f26f868af1dc4853b17d0768a6dc114573f1b9942e00cc137b97acb1ce568",
+        "pa/mcp/tools/pr_supervisor.py": "335232b791be058cfcc539026ec3e74c95cee29a747042094b0c8e38f2a2b5c1",
+        "pa/mcp/tools/projects.py": "4d63cc0c3d09ec597f232e9bfb4b1742e0c4bb4aa4718bb9b04e055cfa00e7e3",
+        "pa/mcp/tools/sync.py": "b8dc01b4ee90117540a46e0fb172c62ac700b0d53a70b99a87132fffc94db45f",
+        "pa/mcp/tools/telemetry.py": "ce862ce79e5416e71ab6f6714d98de389feaea751d777870a6ed0c9c86aef1fe",
+        "pa/modules/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "pa/modules/agent_chat.py": "1435d7d3d1e342d13c8f5c026e745f7c21bab281c310ab9682b4917c93af7947",
+        "pa/modules/agent_lifecycle.py": "b98d6e03c180b32d9d72387578d025c8a39b8285ab254406c5039185e4e6f46b",
+        "pa/modules/agent_providers.py": "9ca91efb96614f1d6eecb16755c94d0a5c818103c9563a41149d16c0a799c337",
+        "pa/modules/auth.py": "fefd422b4e93a037c85128086da713504e1c9cc4dd9ef40932163835acb9f3a5",
+        "pa/modules/backups.py": "f21afc3d993702eb6356f59ad98db1f7aca5f137f7404299e284d77fefa1d75d",
+        "pa/modules/browser.py": "af16439ba6f9e3db11e39b684448836d3917b1c84492e712820499020ce7de48",
+        "pa/modules/cloud.py": "ca23c31eb9a9051af24573971a5031481e62037f8d669e46c3480043b26d6004",
+        "pa/modules/collaboration.py": "a260d1405fe3b7dec71c588725850649b7ac9de75edf9cd6d7b62d83acbde555",
+        "pa/modules/conversation_issues.py": "82695a4f3a99d04b9abc07ff9bf7586245cbcc270a8c36052baa9c32d184ea04",
+        "pa/modules/conversation_threads.py": "d13d17a12872a42557d357cbe542badf20a7be330f0a5cbf41b0b0c84cdb8f12",
+        "pa/modules/debug.py": "9e499391a599b0d7b3e86748ee20f5ed7e2b4df7f0b5d666eebec6c01ec7eb76",
+        "pa/modules/execution_selection.py": "86b65ba42c8e7a1ae256fe65bbb819b6dc31a9427c4e885dea30b00ba8914125",
+        "pa/modules/files.py": "7aaedb4261c17ff22e066842d70c718b050a4cfbb09b866438c0fabb76c2383f",
+        "pa/modules/fleet.py": "5d2daaf20f1ea751db385aba613863d8ff1de5383f4b0700d49eae5b910ce5dd",
+        "pa/modules/github_repositories.py": "3cb98bd0c144c9a00d4d29c2e43a026b2e5ddc7c97f38aa7433dd4335f628e7a",
+        "pa/modules/github_scope.py": "87b1f6e27e690d94a058dfa52f5edf6f8cc69b1be21d798d19c251089b273b77",
+        "pa/modules/goals.py": "485111d5e57753658ba701e151b9510879c696863d279d3e50a5e31c440fd9a0",
+        "pa/modules/health_journal.py": "acf50b712415d7fc0b41a5bea1e86a9ccb281f0c77555bafbc94c150a66da3d4",
+        "pa/modules/instance.py": "df232e263af3267be7c7bd5e0da06025cf44e45720042f80564fd0a16643ca23",
+        "pa/modules/intake.py": "b8f725b56a9f50a7e994ef596c095016b83b264412688e33958f919fa7a0d955",
+        "pa/modules/integrations.py": "67839c0b7e86a2e2952d08dc2695613161030d6d0677902c154bb729d98d4758",
+        "pa/modules/items.py": "d231406c6e8ca66f053e672f404f53578db3b73c18aabd59c5617f28485acc22",
+        "pa/modules/limbic.py": "3d293032afa9dadcf00dd9e55d7346d6bf09421870a98fa3b3312db322595447",
+        "pa/modules/notifications.py": "9ee084db5a43d1678da7e22bcb92b81f149cb6a70a350cad81722803245f5531",
+        "pa/modules/orchestration.py": "318963cfe75505749c63ba7039557df7fbfb36ea45b811d3c719c01f35f23f6f",
+        "pa/modules/pr_supervisor.py": "3bce0610655be98251d24953ed4b47cf430b645ecf46ff95816e07a37ddd5810",
+        "pa/modules/projects.py": "14a075fd3f6070a2ed9565ba0efd67cda1aec2843216129652929bf57ff9037f",
+        "pa/modules/sync.py": "de0b0f18a23daf26ccb605240b2a87868699a8eaecdd8957724574d9ddfa9a07",
+        "pa/modules/telemetry.py": "59218d0947d7070e8fa002b3aaed9a852c3eb1cd9c2bbff2e8f89a791b0c0f0c",
+        "pa/modules/theme.py": "d49304ee03ed070b8ba6575a8bce59511561fbcd7bcba12ef42468402047e4f2",
+        "pa/modules/trust.py": "dae71a027b219c1198048650e035a769a615361e7067304bb329eb5160616a3d",
+        "pa/modules/ui_shell.py": "a7ffb69164987db95a1c0491f052d01964e33b38fc0c0e98fa64187c4bb7bb56",
+        "pa/network/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "pa/network/peer_table.py": "d5eca415c512f651e3bfb908bcc9220dd891e3dcddf2b81b8a4a2429d0f36783",
+        "pa/network/registry.py": "a1d379253dd04c6f211aae909fdcdaae94654b91437f912a69d0d4782a2e96c6",
+        "pa/notifications/__init__.py": "fc974ef44ba0ed0aba85d75dbc6c5ae5e0d91028345108912cae5b7b39b8fc74",
+        "pa/notifications/service.py": "188a531886ba659250ea90968f1e33f5200d7f683a91e93bfd9325a565ec81d3",
+        "pa/openapi.py": "b134db246118dc4b78fb59543f754f881114b90454d675e741b1677c757c9448",
+        "pa/packaging/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "pa/packaging/launchd/com.pa.server.plist.template": "c478c9584899bbf32cdef1667e05d44a1faf6a6f219b2b796a981b39785f50d4",
+        "pa/packaging/paths.py": "83ed393c6fee330a85e6636c3ef1b05a2db71c2d1932e015f09e44834acf0cd5",
+        "pa/packaging/service_env.py": "3b2887a2c449adc60dfc6735079dbdcf12fed15ca6b50d93904845a343c73771",
+        "pa/packaging/systemd/pa-server.service.template": "2b9a13a7360f3827af3c31cc76428cf3fe881f56480ab1ddb7bc61feff8d9bad",
+        "pa/packaging/uv.py": "ced331c9efef32946bda0d9e5caa483f97f3cdc25037c075f183e36954465fcd",
+        "pa/pr_supervisor/__init__.py": "ac103a82b29e630c9b88f1cb435533bf06315cfb2af7de41395ec3f4fd60c52c",
+        "pa/pr_supervisor/eligibility.py": "c34777cfafa94af923ccc6c9489d39492211799d8fba3985e85018aebeb88ce6",
+        "pa/pr_supervisor/evidence.py": "170638407ceff2bad33d7d4f9e9e147a1e79f39070c3a0deea11bf524b957314",
+        "pa/pr_supervisor/gating.py": "b912cdc8ee5719a2c631c45955d288769e80c07acfe565fd5a811e428eb3e701",
+        "pa/pr_supervisor/github.py": "d1b6d69857b51e25e2f69d7711f7df0994edd7cb6a9faddb842c8d9ce3141ce7",
+        "pa/pr_supervisor/green_evidence.py": "54de7e9fbfaab29458911bfbf0ea070ff7893c62bdfc2a8a009356d9ce270759",
+        "pa/pr_supervisor/models.py": "db4d5b7049d6285db427f000baffb5baaeefdab4375f0868e85d8d3f7b43c287",
+        "pa/pr_supervisor/policy.py": "7abd869ce9f74f3e4b4aebcc5301ad43fe960140ad43357138949f39024c6969",
+        "pa/pr_supervisor/scope.py": "e4c81a0c0709678d54e5f2f0b763d8b91f88a1d691d600d2678d728cc70a1482",
+        "pa/pr_supervisor/service.py": "5a959e4431b66f1fa3b63758b843c585beb90d3732537fe1d491bc4f954edb83",
+        "pa/pr_supervisor/store.py": "4e9333fe69daf06baef07f448eb05936301b8a98ecaa905461dddb2ad1d5904d",
+        "pa/prompts/__init__.py": "35088af89e969fadab71546b3480d040644d74e29c0a499f6166445462537bd9",
+        "pa/prompts/catalog.py": "0c94e037e52138f011637a7f0c27baaca27de4d301d2222ad812c946fe0bc7e7",
+        "pa/prompts/registry.py": "485254d0d8665319c02d9fb2725f25feb68eab15e11f7d94f8681cb0f9b27fa4",
+        "pa/release/__init__.py": "96ec94e40fbb9b1aeee2884d22e658de9a2b8c5ea818b953a0c1c6923b58017f",
+        "pa/release/notes.py": "4858b4c0c93763c3e2c13efa8b1385320698d1037d326fbbda4dab9dda948de4",
+        "pa/release/runner.py": "5a42f73b1fae5eddf243bfef9fa24a07356ab039b63eb93da84c1be84f20c189",
+        "pa/release/script.py": "167f2d7d477388f3f87ea0587079abba9699a0a37d22faa9fc6a4c54faa6347b",
+        "pa/release/version.py": "b5afec0573f07ebfd76bb36c6e94c01a79fd3f2d8e24f0356aa415aced0cda79",
+        "pa/repository/__init__.py": "b913c516f697a1702218b8c5d7c6c2db9ab357b2c70d61677e206a630dcb538a",
+        "pa/repository/github.py": "a1c98c17f071dbeae855160a9481f3f0c8b77cddab8761d6f032a3aa9f650b88",
+        "pa/repository/state.py": "312415e4530fd86c75e8316fc6003fe4e655e2771a066cb5a257426f70616393",
+        "pa/repository/workspace.py": "71efd19caa60058852c4edbaeb6a62a1481d6e8799198689e274e84f488542cd",
+        "pa/server/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "pa/server/app.py": "ffb6212459edbc16cd472490e573a914e5bd62628d44228b10e6fc750c42321d",
+        "pa/server/fleet_compression.py": "ca370efd318b74fca6875b81d5e61118fce49571fb7443fc4865ddfe06c57e1d",
+        "pa/server/listeners.py": "833a87d9600a5ddeee19857341caf1430c8b0c379119313a70b220a8fd225605",
+        "pa/server/readiness.py": "3b80087f851e5ed2fde27c15efa5ba9389d01d7b8e112dd4aae4b211b8a5bc66",
+        "pa/server/routes/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "pa/server/schema_generation.py": "e6e5e180d9d3f3c53e7c0003b5316d87d41ea7c210ae25245b99148fbeb93aad",
+        "pa/server/shutdown.py": "05db452a81e1914129e2fcfdb15e1fa19ee0b750ea848add877552c99879ec07",
+        "pa/server/static/favicon.ico": "51f9bc34ddb9f6f76b181a238b45e194981d23ee20ef8452122dd65d98245423",
+        "pa/server/static/favicon.svg": "c0f556ece420761137623c3219efd912bb138ac06e39f7b7a636c2a59e539612",
+        "pa/server/static/js/account.js": "e47fcb807993dad12cec528f672ec3b68b5c87dc58afd043521ec535861f5d3d",
+        "pa/server/static/js/agent-chat-draft-widget.js": "dda41af0691723332465fcb09e3d3866d345a5d3f0a3ecf10cdd814dce89150b",
+        "pa/server/static/js/agent-chat-drafts.js": "468bf685ff43e1f3d51a453d5ed735780b96e2d2a5d17e023bb9ff6e616db914",
+        "pa/server/static/js/agent-chat.js": "7cb018bf67d0634985455c275aaee08018dd0ece430e8c0a2496bf4534ff7f50",
+        "pa/server/static/js/agent-terminal.js": "96e07ea80f36bb80c057311a4fb151df7322d9107cb723898fa9a3a80fd7f5d4",
+        "pa/server/static/js/configuration.js": "6ffc6e98cad616d4cc5ee2e93e42f4b66b7f3fec9fdc278a16bb6a18b893c4ff",
+        "pa/server/static/js/conversation-issues.js": "8f0fcd2778f4e73d760ca48dc8f815a3c96a6e835d3c8d11dd2d3c1155d9178f",
+        "pa/server/static/js/conversation-threads.js": "2c81e501111ab93e0243eb6210a39d4e01e668e506b70925d38985830667a568",
+        "pa/server/static/js/csrf.js": "7860aff4d2edd57102bf0b8d2e65cf870200399a5280aefa28e5a33957b224dd",
+        "pa/server/static/js/execution-selection.js": "63f0f85cb83d22255480b09ab8598521b29d3ca1b0c636f417c38510d2b7f2f0",
+        "pa/server/static/js/file-browser.js": "b1ed60f06666c911baf2118a11697c6118c736363f515e38aa8028a89621857c",
+        "pa/server/static/js/fleet.js": "02211aacf846e141ba1acbd0c000a3370fcd08e31a04998674db1700f0154581",
+        "pa/server/static/js/github-scope.js": "736140d24164dd5c49dad387b4e2b10262a7bd2a6dddb3052a6e4745b0e1cf61",
+        "pa/server/static/js/goals.js": "b34fd49dbf02035e4c21200b47100dd4e3a32e1e07692ef5d7bfda6f811069c4",
+        "pa/server/static/js/history-policy.js": "a4c0d5fa558b76b1410bba976504dea23f2f7feb53e37f51251b9c75081a9114",
+        "pa/server/static/js/instance-identity.js": "4c1de6287476db9ade2bd22790300afdfee6c94b3ebeb5848e27bc96bb6a889d",
+        "pa/server/static/js/layout.js": "04248fd1949f75902e710c21e269b34dd6c79fcd2c1674febbba9009d911b92e",
+        "pa/server/static/js/native-effort.js": "d9024caf01016a1db61b0fbc64f9d9df929bb993effab12e88d793b6bfdf5e9b",
+        "pa/server/static/js/navigation.js": "93d299a142bc2bb9bf3e1a80b6671f6a69e59496ba1fb2038229767c58a0d740",
+        "pa/server/static/js/notifications.js": "2abd3d38e29ca66a42443f3097749a39c77603f59c14603961b07ee93852a153",
+        "pa/server/static/js/repository-dialog.js": "0e9df155d1f32868f687034ea03bf6d04809d58e9ac4bf6c7d0d9a9d769d117f",
+        "pa/server/static/js/session-recovery.js": "7cd41c058ae83f78ff423042c6e10f594253031d8cc0f1e447b3bd16b4f34c3c",
+        "pa/server/static/js/spa.js": "ff88a73ddd6671f91648026bfa2ed6d0772aeb3602a8d00f96d146ebb04f2e9b",
+        "pa/server/static/js/telemetry.js": "4449e6e56d416770014e6c0577787a7e02317a3c0c339739d5248ce2c8cacc38",
+        "pa/server/static/js/theme.js": "26faceebb2abab83f6e79996d30f816d0a88da785ba0a84643b796c321df5763",
+        "pa/server/static/js/visualizations.js": "29c7b0d306082da805f4b19b3da6fc6a991e97b0fd114a203c30561663b00473",
+        "pa/server/static/js/work-filters.js": "150322792ebfd0754151ec689e8e1601f41e67ab3bed343dd26ae237069d99b6",
+        "pa/server/static/js/workshop.js": "127e283ecc66e9e9ca86a3ee979710a91dbbf36b895222c54726a4f0a67cf981",
+        "pa/server/static/style.css": "01c8b4e2002effaff93ea672b774f43cc8405671a18d0fdf2655bb68b7d1f613",
+        "pa/server/static/themes/ayu/dark.css": "a6b2111694ca1a065550bbb874a0a3668c1db21a1e85404019313a99f9763741",
+        "pa/server/static/themes/ayu/light.css": "af822b715fa4289ff3c30c2b6900c290e1e0452e77fdbd1b5b42c181238bbe77",
+        "pa/server/static/themes/ayu/manifest.json": "9c4ac0e42826d5b6dd168aee080f11db68ccba86b7647ad69ff887aef5863a3d",
+        "pa/server/static/themes/feelin-pretty/dark.css": "3ba1679349fa0e82dddfdfa26a049253c8821fe3c7c2a0f6114463f3525a76a3",
+        "pa/server/static/themes/feelin-pretty/light.css": "4dfb4e90b979ef1c1dc2c4171c909fd66fff9c87e86c30f33ca700365c5d7ca1",
+        "pa/server/static/themes/feelin-pretty/manifest.json": "6a5cd3455a7cdb272564e274fb5cfb27e04d737a6cfa6f754858c4cb332d3678",
+        "pa/server/static/themes/go-hawks/dark.css": "782f43ce13e5afd11370cf8db0b4133201117eff5ad9353790338cc483db016c",
+        "pa/server/static/themes/go-hawks/light.css": "c3d8d22270ef0f4c9a0f254a2d4e5a59abf325b15389b14d12a4d7341303e57d",
+        "pa/server/static/themes/go-hawks/manifest.json": "a1478f64c9f707a4ba6cb11895462463f774f0a0ea9076bb9e597c4df52172a2",
+        "pa/server/static/themes/monokai-pro/dark.css": "b4b9c79bfd0a746516c0ff44cf77ff9cc5da1885c374cbcadb6c1fc8708f6a03",
+        "pa/server/static/themes/monokai-pro/light.css": "db112517ce19260a9b44a4ecacf630e4e5e39f61410e6519729a48098d2fd44f",
+        "pa/server/static/themes/monokai-pro/manifest.json": "64159c2ca5f2fc15695704036703dad2d7c17ad9b09d30b8b5c1cef9bee2b7cd",
+        "pa/server/static/themes/nord/dark.css": "675153613aeb15d6294ec4619c5fb0a7982a063343f05f6c758184493f3273d7",
+        "pa/server/static/themes/nord/light.css": "37a0c11fdc81e52d74d0e48d51bc4c9512d41c297f6f498e9187c690439d320b",
+        "pa/server/static/themes/nord/manifest.json": "4e8e3a7908335df7d2ed41d1c309996f6498890bf39ee47f2734acd00f8ab2bc",
+        "pa/server/static/themes/osu/dark.css": "59c4ffd0029f905aa58eb9eb4b51687f36cd17ceda5ce860042f480dcb12daba",
+        "pa/server/static/themes/osu/light.css": "2134aee71c1ddb1fc979833e66a9872a25364013b7a0556d37165cd921eaf361",
+        "pa/server/static/themes/osu/manifest.json": "b4f712757193e3b214bdb258d5493074c872e179fc81c17a47944dbc375de2bf",
+        "pa/server/static/themes/pa/dark.css": "8b72e8aecb605943a9dd452c3114ca3cfb0cbbfb72a297cb7d5025567989b9da",
+        "pa/server/static/themes/pa/light.css": "b32e25d8ca6bb5bb72a714c5a6eaee4de190ea0e6caa8001537bbd654bc01631",
+        "pa/server/static/themes/pa/manifest.json": "5071c9b2caea5bce5ff667bdbdbbeb6f73b0196eed38371b9d235dfd73677031",
+        "pa/server/static/themes/solarized/dark.css": "833823afe1b16c61df348946fff2a5410b57f335d94390eba100c3534a38abda",
+        "pa/server/static/themes/solarized/light.css": "e05deda6f178b61d483e38c52d9ee92bd072e37b16cbbd25bee4ba38e3528fa8",
+        "pa/server/static/themes/solarized/manifest.json": "7bd662dbd7adeca7852d9678a445131c7e0e7528ab2d457d482a91c3ab26586c",
+        "pa/server/static/themes/tokyo-night/dark.css": "b99b08400c5beae784a1a94d8530a26d906d976bb32f02658feb2a7b4d8a63fd",
+        "pa/server/static/themes/tokyo-night/light.css": "135177f0233bc616db457372de66991d3ec97d51de3bff5c0b8cfe69fb8a69bc",
+        "pa/server/static/themes/tokyo-night/manifest.json": "f49f69c3e2677abf83291ea9914d04e3ec073b4ad17d8ddca926626b5fa61bf5",
+        "pa/server/static/vendor/htmx/LICENSE-2.0.10.txt": "d3d2456f76414f2456104660ebd65aff1c04cd7966b942bdabd63f3cdb316a38",
+        "pa/server/static/vendor/htmx/htmx-2.0.10.min.js": "71ea67185bfa8c98c39d31717c6fce5d852370fcdfd129db4543774d3145c0de",
+        "pa/server/template_cache.py": "ad7d49cb5d11d4d72660d24fa51e24fe0105be73c24b9c6d8605a8cb07c45f35",
+        "pa/server/templates/macros/cards.html": "d3047c4b1016999e9c3271e20a13d4d9e48a1e003d5d6a538cc86a6cd899069e",
+        "pa/server/templates/macros/icons.html": "2dc6781985f79f0499e9746bbfd5ee66fac6bb8b4e4e02992dc14fb9ffcc101c",
+        "pa/server/templates/macros/instance_identity.html": "5957e5feb3f57a6f61b258199122aa2fc1e4b2542915bd62420038bda994bb1b",
+        "pa/server/templates/macros/layout.html": "794a4195692967cb85f5ca71c43e79dfd6012200ca6e994713f0b2478a7dff90",
+        "pa/server/templates/pages/agent.html": "fa9841494aa03c931e2e170f905610c1840ec8922918ffc7b12f757d66a94619",
+        "pa/server/templates/pages/browse.html": "057853f276fca10960abbe90a15664a088ce188199787dd6e5a7a605d748155a",
+        "pa/server/templates/pages/fleet.html": "b095f883b903c13cc518b5d505e5e03aeb849009b0957975ff55a04aa6956645",
+        "pa/server/templates/pages/goals.html": "5301643eda4dadc82a1bdda839423c9f8d4df2e6d80a8fcb7785a0c208f4dd6c",
+        "pa/server/templates/pages/home.html": "ce0ddf12eda5253dd50ae79f83b6c55d96a46a7a212c8c39e67282055d21c490",
+        "pa/server/templates/pages/knowledge.html": "f3b93f23c7db7a145f8dbe59cfead7cb3d68894a8bdb54e4f0feabbe81f1fbd9",
+        "pa/server/templates/pages/login.html": "7ecef2f51f45a063d6e2871410b72a02db9ae158527eae7f529ac8b40991a2c1",
+        "pa/server/templates/pages/memory-audit.html": "785b3a79e325f06cb0cf4355ad8dc66aea346739e6b8bfad5ce3c989ed2ba6d1",
+        "pa/server/templates/pages/pr-supervisor.html": "5a6bf2b09bc590c7abbe7616416332734f3bbd4603314a0732ff05617c8f26eb",
+        "pa/server/templates/pages/projects.html": "b6457d214696f19cc9ebad1d0ee925b04355233a1851ef511a33587be9a10882",
+        "pa/server/templates/pages/reports.html": "ec7e1d7a4589962963fdfac157adfc08fdcaa1cdc93f72040ce1f1753fef0068",
+        "pa/server/templates/pages/settings.html": "aea7bb1c02a4b2dc3bb00f3b3025415c44369a9c63f8580a1fb5e43ba8ab7b92",
+        "pa/server/templates/pages/work.html": "16b1b017685955a636c7194d8d4b907330cf251599caa2a3da257210f668d959",
+        "pa/server/templates/pages/workshop.html": "ea921e3ab95542e48eaf6a790a596b6ec6c9ce3c299809290177da4168d61425",
+        "pa/server/templates/partials/account.html": "aaf922c91c5c6fafe1be7dcc11093d64986a0a64a093a71021ddeb66bc6860f4",
+        "pa/server/templates/partials/agent/chat-widget.html": "05128dcd68330f0120d9a9cd6e784a6a7cc6504b06235661ee0271d9982f9211",
+        "pa/server/templates/partials/card-detail-activity.html": "0a9572515e53bc621bc943dea104d7efd017178d5a0a828fa25ba920e24c53c9",
+        "pa/server/templates/partials/card-detail-agent.html": "288004d81ea8432782d784a2466cee38854aa08a3417d524a4f16d6fb7d36ef3",
+        "pa/server/templates/partials/card-detail-empty.html": "42457106366bf9bc30bee111a7c296cf4b5d46b313eaf5a24648a4a13206479a",
+        "pa/server/templates/partials/card-detail.html": "0c0a4f231fd3946e3f94be15cb197ddf3f56ee02c85b9ec65d666062326c774d",
+        "pa/server/templates/partials/card-dispatch.html": "d79ac4b4952b49226db65648db3552fade9c3fd1d71a8788fb3ed18459d85e76",
+        "pa/server/templates/partials/card-new.html": "74fa060ff9534361862cf287eb405af3f8be76373a183a60ea50cd754d42822e",
+        "pa/server/templates/partials/card-primary-action.html": "39b8d3a4219e62250e77f2d625284e7839cc1b8e541cfdbef4ef34813c6d7995",
+        "pa/server/templates/partials/card-progress.html": "7217587b859fc028dcb4bd68246480217d90b4560abef0692fab642d846204ed",
+        "pa/server/templates/partials/card-project-impact.html": "2b8f98a522aa9fe91ea40f05b4b214e50eb7a08855a30c74947536499ee0e336",
+        "pa/server/templates/partials/cards.html": "8ed6d4bf7c4cbe6269f1def6cec083ea4e775b4ea038101de281c726e62863d6",
+        "pa/server/templates/partials/chrome-actions.html": "fdfa7435723e2a07c8bb8a2fb62894f41c9953569d8b5d47f99a800e4a7127fa",
+        "pa/server/templates/partials/debug-panel.html": "b0a6cff38c88ff0e58dbac0889c40552a512b23f9106cc0189dadac22740fd17",
+        "pa/server/templates/partials/execution-preferences.html": "a9f1c1b5e3722d6a8f20ded2c0ccf89c43391a7f98bce30e2289bf3e8af30a95",
+        "pa/server/templates/partials/home/sections.html": "a624070e761140f32cfc3cb47fffb5658c092b4051b5120399d528a77235a670",
+        "pa/server/templates/partials/items.html": "85cb165c16fd7ace7be9cf5d09dfc84bb3a942d765e861ce9f37f5aced111477",
+        "pa/server/templates/partials/knowledge.html": "5231e685451fe303f7ca43ebd360916893c649e2db29f5dcebdc6701b18fae44",
+        "pa/server/templates/partials/top-nav.html": "bba7d7066c8e83aa9e5d9162d5b29a4b8d7805ab83e0275f02165a93c467e490",
+        "pa/server/templates/shell.html": "2c0ab3f86955bb9c7bac7db3c48906deb1eac376671e1a153a5cf044507e8539",
+        "pa/status/__init__.py": "46eeb34d60b85f3d330178a05bdc8d9d037f7e40f68732e42574e0ac5ea40431",
+        "pa/status/info.py": "b664f11f7e6529d01fbfcef0d1dea8418d676f161fdcf23a7af77d446adbc341",
+        "pa/status/serving.py": "caa79445e7cbc45d9327e2a8a4d3df0ac7da243d253381c0dc6eceaa76703841",
+        "pa/sync/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "pa/sync/compaction.py": "13c695322d243872324026f5742bdb62f11ce05efb2d3d3b3a205c5191736a19",
+        "pa/sync/dag_index.py": "22455f5957c1bc21715b7e30ff8f3d476495382d6b4b7dc362b543cd6f070d8a",
+        "pa/sync/engine.py": "7c5ce543b33c8644dcc461f4958af3601b01fca6720984e6491970a269bfc5fe",
+        "pa/sync/epochs.py": "f1100bb22448c043e38b9cea6b599116129a98df8cc31edec2056a57acf9efce",
+        "pa/sync/event_log.py": "0ac99f8e55e466d3d6621dbeb6bfa42b0ac56358bbb1a41c3d7828120604b19a",
+        "pa/sync/gc.py": "b200ef541520fee9e87882a9e837ba87c1951884c4a7781a86131dc65a6390b4",
+        "pa/sync/infrastructure.py": "8100135f78ac8d61e1dd3ab1c4457673470cef7bf9ba15c3b9cd22f68b8587ea",
+        "pa/sync/object_catalog.py": "bf7ad7c63a0f96fa228fc985cb546f4fd596294e04dcdd249e796a8068d8eb1d",
+        "pa/sync/object_store.py": "1b7660c2e28e881d207efa0f5f7fd0dcd3280889438c13d03a15f5af0ae1812b",
+        "pa/sync/recovery.py": "f85d084199e639da3fdd800b8314424c24ba3feeeac13516254bb576ac5401ba",
+        "pa/telemetry/__init__.py": "007dd96d3a7097a851d911f8df441b4e6cdd977cb3cef644f0082f6c0db2995c",
+        "pa/telemetry/collector.py": "ba153b4dd8922982157e4c273af459ea15b54b215d9e261d3fb1787515b12d57",
+        "pa/telemetry/models.py": "58a4a8787d3a0ef3028e583c3eb0c713bd2e08a52da228ad03b2803f87faafaa",
+        "pa/telemetry/service.py": "751a92a917b34420d7e06f3937e76930a8c75dcb292eeb26336675778cbc9bcf",
+        "pa/telemetry/storage.py": "2f362dce13e411e25fe6e97aae9dc86ea35a7bc57162d29d9213d23d2b1e633e",
+        "pa/trust/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "pa/trust/hooks.py": "846f85e3163a7555bbf0b9c57ad6cdf09d693838a34fc053591d28aab7633fe3",
+        "pa/update/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "pa/update/channels.py": "8f4597812fe500970a245ba439a4e16bf46e74626a3253d778ca649c6dec4b18",
+        "pa/update/registry.py": "5975ad96bd3104343b74934668eed362929aaec2300f2b74ab25b9f58e9d3408",
+        "pa/update/runner.py": "2098530915c006a196a1b7e80c949bc6901c8ef1aef51dd69a9c8e4cc455a0b8",
+        "pa/visualizations.py": "67fc571bdac8fa5c0a1a1e55267a2ee9270fe344b2b40a1b67cd0f37bb4684b5",
+        "pa/workloads.py": "89199462d3037fbfc76306f5389d9e1dc083d6a4fd4fe1c500af37badbcb37fe"
+      },
+      "changed_application_files": [
+        "pa/repository/workspace.py"
+      ],
+      "template_cache_sha256": "fcb9a8ee8099db2aebeebdf06e98412cb3cfa0bcaf71ad2c297553cf3d87acfb",
+      "template_entries": 38,
+      "installed_versions_before": {
+        "shellingham": "1.5.4",
+        "mcp-types": "2.0.0",
+        "python-multipart": "0.0.29",
+        "uvicorn": "0.48.0",
+        "pydantic_core": "2.46.4",
+        "httpcore2": "2.9.1",
+        "jsonschema-specifications": "2025.9.1",
+        "websockets": "16.0",
+        "rich": "15.0.0",
+        "PyJWT": "2.13.0",
+        "jsonschema": "4.26.0",
+        "pa": "1.5.9",
+        "cffi": "2.0.0",
+        "fastapi": "0.136.3",
+        "httpcore": "1.0.9",
+        "pydantic-settings": "2.14.1",
+        "cryptography": "49.0.0",
+        "starlette": "1.1.0",
+        "python-dotenv": "1.2.2",
+        "h11": "0.16.0",
+        "pycparser": "3.0",
+        "Pygments": "2.20.0",
+        "httptools": "0.7.1",
+        "mdurl": "0.1.2",
+        "agent-client-protocol": "0.10.1",
+        "PyYAML": "6.0.3",
+        "mcp": "2.0.0",
+        "typing_extensions": "4.15.0",
+        "watchfiles": "1.2.0",
+        "opentelemetry-api": "1.44.0",
+        "Jinja2": "3.1.6",
+        "referencing": "0.37.0",
+        "markdown-it-py": "4.2.0",
+        "MarkupSafe": "3.0.3",
+        "sse-starlette": "3.4.4",
+        "httpx2": "2.9.1",
+        "certifi": "2026.5.20",
+        "attrs": "26.1.0",
+        "pydantic": "2.13.4",
+        "httpx": "0.28.1",
+        "asyncssh": "2.24.0",
+        "uvloop": "0.22.1",
+        "psutil": "7.2.2",
+        "typer": "0.25.1",
+        "click": "8.4.1",
+        "truststore": "0.10.4",
+        "idna": "3.18",
+        "typing-inspection": "0.4.2",
+        "annotated-types": "0.7.0",
+        "rpds-py": "0.30.0",
+        "annotated-doc": "0.0.4",
+        "anyio": "4.13.0"
+      },
+      "python_base_executable": "/Users/petersky/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/bin/python3.14",
+      "runtime_constraints_path": ".dev/pr505-runtime-constraints.txt",
+      "runtime_constraints_sha256": "63550b48808bd620c56b02530ac5fa1af1b1c29fd906341769bac9573607398e",
+      "installed_baseline": {
+        "source": "a58b78473e1edfc9a348aea954c75ff7b8e70e4d",
+        "package_identity": "sha256:266fa107cd671d340be046fa27a771453b8ca76f00a83fbb85b31d6b452f3b5f",
+        "source_files": 439,
+        "record_entries": 440,
+        "template_proof": ".dev/exact620-before-preparation-template-proof-20261029.json",
+        "template_proof_sha256": "00f6b9b264d47f1a29843aa6fa78249aab5e29ec0385bc7fb84e030c363db430",
+        "scope": "Fresh read-only installed metadata, not listener-loaded proof."
+      },
+      "private_roots_before_imports": true,
+      "no_kernel_store_import": true,
+      "limits": [
+        "No installation/restart/nativehandoff admitted. Missinglocalbytes never prove nonadmission/effect or authorize replay.",
+        "Fresh final owner/config/lease/acceptance/backup/head+mainCI/native/interpreter and provider-approved immutable installer gates required.",
+        "Absolute installedvirtualenvPython only;52dependencies/constraints unchanged;38templates/cache unchanged. No policy/default/GC/power/clock change.",
+        "All708findings/164concerns remainopen;exact17d034a6 independentacceptance remainsunaccepted; subsets/integration/preparation do not completecard."
+      ]
+    },
+    "wheel": {
+      "source": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+      "tree": "1cac579bb83072396b5f4369a48b43265ea77285",
+      "previous_source": "a58b78473e1edfc9a348aea954c75ff7b8e70e4d",
+      "started_at": "2026-10-29T23:10:12.275936+00:00",
+      "finished_at": "2026-10-29T23:10:13.469263+00:00",
+      "exit_code": 0,
+      "both_roots_private_before_build_imports": true,
+      "dependency_manifests_unchanged_from_installed618": true,
+      "log_sha256": "c610ed433708d815709ea3d7fa761706c6036a6ca4f2b6751214ea63137b56a0",
+      "scope": "Preparationonlyafterprotectedexact620integration/headfirstgreen; mainCIstate retainedseparately/finalinstallerrequireshead+mainterminal. Only repository/workspace.py applicationdifference frominstalled618; no installation/restart/default/dependency/policy/GC change. Fresh complete package/native/owner/lease/acceptance/configuration/backup and provider installer gates still required.",
+      "wheel": {
+        "path": ".dev/exact620-wheel-preparation/pa-1.5.9-py3-none-any.whl",
+        "bytes": 2286757,
+        "sha256": "3102df6268216652bb069a2b8d05d1f34cf2da8124a27779f76eba7472b9cd2e"
+      }
+    },
+    "manifest": {
+      "target": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+      "expected_package_identity": "sha256:efa62adea240dbdda9a328461be097cda437099cbf24949588b7e442b0c3f7c7",
+      "files": {
+        ".dev/run_installed620_gc_contracts_20261029.py": {
+          "original": ".dev/run_installed618_gc_contracts_20261029.py",
+          "original_sha256": "77ad669922e31aedbd514820e62786e07b5888a415d27b3364c9342b1032013d",
+          "sha256": "f92dde3dd0429afef6bcb94db2e66540df88b64a8da7b2c5bdb8c2913aac9de7",
+          "explicit_changes": {
+            ".dev/exact618-": {
+              "replacement": ".dev/exact620-",
+              "count": 2
+            },
+            ".dev/installed618-": {
+              "replacement": ".dev/installed620-",
+              "count": 1
+            },
+            "a58b78473e1edfc9a348aea954c75ff7b8e70e4d": {
+              "replacement": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+              "count": 1
+            },
+            "sha256:266fa107cd671d340be046fa27a771453b8ca76f00a83fbb85b31d6b452f3b5f": {
+              "replacement": "sha256:efa62adea240dbdda9a328461be097cda437099cbf24949588b7e442b0c3f7c7",
+              "count": 1
+            },
+            "added_contracts": "All55priorfiles plus3workspaceGC/history/realGit/recoveryfiles=58;10expectedprivatefixtureflag names(original3+7inspectedmocked/pre-provider-failures), finallyrestore; no realprovider/globaldefaultchange."
+          },
+          "positive_effect_source_package_guard": true
+        },
+        ".dev/run620_private_retests_20261029.py": {
+          "original": ".dev/run618_private_retests_20261029.py",
+          "original_sha256": "214bd1086fcec9c202258bdc51a063e219a3ea8b4c3288136fb26f47c231269c",
+          "sha256": "96f3b19d508d1fe17504c028cd614f491b6d2f566d0ed80899a7685f9c0983f0",
+          "explicit_changes": {
+            ".dev/run_installed618_lifecycle_contracts_20261029.py": {
+              "replacement": ".dev/run_installed620_lifecycle_contracts_20261029.py",
+              "count": 1
+            },
+            ".dev/prove_exact618_installed_module_paths_20261029.py": {
+              "replacement": ".dev/prove_exact620_installed_module_paths_20261029.py",
+              "count": 1
+            },
+            ".dev/benchmark_installed618_project_labels_20261029.py": {
+              "replacement": ".dev/benchmark_installed620_project_labels_20261029.py",
+              "count": 2
+            },
+            ".dev/benchmark_installed618_instance_names_20261029.py": {
+              "replacement": ".dev/benchmark_installed620_instance_names_20261029.py",
+              "count": 3
+            },
+            ".dev/benchmark_installed618_control_reads_20261029.py": {
+              "replacement": ".dev/benchmark_installed620_control_reads_20261029.py",
+              "count": 1
+            },
+            ".dev/run_installed618_postrestart_mixed_20261029.py": {
+              "replacement": ".dev/run_installed620_postrestart_mixed_20261029.py",
+              "count": 1
+            },
+            ".dev/launch_installed618_postrestart_cold_20261029.py": {
+              "replacement": ".dev/launch_installed620_postrestart_cold_20261029.py",
+              "count": 1
+            },
+            ".dev/verify618_full_watch_benchmark_sources_20261029.py": {
+              "replacement": ".dev/verify620_full_watch_benchmark_sources_20261029.py",
+              "count": 1
+            },
+            ".dev/exact618-": {
+              "replacement": ".dev/exact620-",
+              "count": 18
+            },
+            "a58b78473e1edfc9a348aea954c75ff7b8e70e4d": {
+              "replacement": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+              "count": 2
+            },
+            "sha256:266fa107cd671d340be046fa27a771453b8ca76f00a83fbb85b31d6b452f3b5f": {
+              "replacement": "sha256:efa62adea240dbdda9a328461be097cda437099cbf24949588b7e442b0c3f7c7",
+              "count": 1
+            },
+            "pa.exact618-": {
+              "replacement": "pa.exact620-",
+              "count": 1
+            }
+          },
+          "positive_effect_source_package_guard": true
+        },
+        ".dev/run_installed620_lifecycle_contracts_20261029.py": {
+          "original": ".dev/run_installed618_lifecycle_contracts_20261029.py",
+          "original_sha256": "9a8cb439ab53c1b303d0713325f406fd54ae42f7ddbbd60fe25e681a1b6ecb83",
+          "sha256": "38ffc96c10e29659c2cb73f4e711542121f8ed51afd410df7062d52b9fc14944",
+          "explicit_changes": {
+            ".dev/exact618-": {
+              "replacement": ".dev/exact620-",
+              "count": 2
+            },
+            ".dev/installed618-": {
+              "replacement": ".dev/installed620-",
+              "count": 1
+            },
+            "a58b78473e1edfc9a348aea954c75ff7b8e70e4d": {
+              "replacement": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+              "count": 1
+            },
+            "sha256:266fa107cd671d340be046fa27a771453b8ca76f00a83fbb85b31d6b452f3b5f": {
+              "replacement": "sha256:efa62adea240dbdda9a328461be097cda437099cbf24949588b7e442b0c3f7c7",
+              "count": 1
+            }
+          },
+          "positive_effect_source_package_guard": true
+        },
+        ".dev/prove_exact620_installed_module_paths_20261029.py": {
+          "original": ".dev/prove_exact618_installed_module_paths_20261029.py",
+          "original_sha256": "dcf1646f77ef2a4e0cfce0b8fbb308fcfd2c2fa1517b770250b7b9bea82c953d",
+          "sha256": "2d01a2b4404b3eec452c648b1c21cfcb4b7296e2c1c15646e1c0cf4ae8f12187",
+          "explicit_changes": {
+            ".dev/exact618-": {
+              "replacement": ".dev/exact620-",
+              "count": 3
+            },
+            "a58b78473e1edfc9a348aea954c75ff7b8e70e4d": {
+              "replacement": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+              "count": 1
+            },
+            "sha256:266fa107cd671d340be046fa27a771453b8ca76f00a83fbb85b31d6b452f3b5f": {
+              "replacement": "sha256:efa62adea240dbdda9a328461be097cda437099cbf24949588b7e442b0c3f7c7",
+              "count": 1
+            },
+            "added_independent_path": "All20priorindependentmodules pluschangedworkspace=21; installedpath/hash proof, noteverylistenerbranchclaim."
+          },
+          "positive_effect_source_package_guard": true
+        },
+        ".dev/benchmark_installed620_project_labels_20261029.py": {
+          "original": ".dev/benchmark_installed618_project_labels_20261029.py",
+          "original_sha256": "425ed74aa214e0a159b62edb78b2f4773d0bb6039915cd6ba25db36a442262b6",
+          "sha256": "87b30ac629662538ce82d227c53c91e8a2e1091b3c5c23cddd15469d51047e4e",
+          "explicit_changes": {
+            ".dev/exact618-": {
+              "replacement": ".dev/exact620-",
+              "count": 2
+            },
+            "a58b78473e1edfc9a348aea954c75ff7b8e70e4d": {
+              "replacement": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+              "count": 1
+            },
+            "sha256:266fa107cd671d340be046fa27a771453b8ca76f00a83fbb85b31d6b452f3b5f": {
+              "replacement": "sha256:efa62adea240dbdda9a328461be097cda437099cbf24949588b7e442b0c3f7c7",
+              "count": 1
+            }
+          },
+          "positive_effect_source_package_guard": true
+        },
+        ".dev/benchmark_installed620_instance_names_20261029.py": {
+          "original": ".dev/benchmark_installed618_instance_names_20261029.py",
+          "original_sha256": "6354936eab579d90525d5aecb17ff72b31359dcf8825e4df3730f1ad717f815a",
+          "sha256": "f11e71e1c6918e552163a97b5bf111b3cf9e219255329610287c176c8a2b0da9",
+          "explicit_changes": {
+            ".dev/exact618-": {
+              "replacement": ".dev/exact620-",
+              "count": 2
+            },
+            "a58b78473e1edfc9a348aea954c75ff7b8e70e4d": {
+              "replacement": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+              "count": 2
+            },
+            "sha256:266fa107cd671d340be046fa27a771453b8ca76f00a83fbb85b31d6b452f3b5f": {
+              "replacement": "sha256:efa62adea240dbdda9a328461be097cda437099cbf24949588b7e442b0c3f7c7",
+              "count": 1
+            }
+          },
+          "positive_effect_source_package_guard": true
+        },
+        ".dev/benchmark_installed620_control_reads_20261029.py": {
+          "original": ".dev/benchmark_installed618_control_reads_20261029.py",
+          "original_sha256": "ff5ef20d5912d556acfe410b871c0c9f6c5cfa732d7bbdc492044138747691b5",
+          "sha256": "fab15d41b98e6c8b48d5fe4ac2d10563746a2c94b5bfb48679a91facf2de8362",
+          "explicit_changes": {
+            ".dev/exact618-": {
+              "replacement": ".dev/exact620-",
+              "count": 2
+            },
+            "a58b78473e1edfc9a348aea954c75ff7b8e70e4d": {
+              "replacement": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+              "count": 2
+            },
+            "sha256:266fa107cd671d340be046fa27a771453b8ca76f00a83fbb85b31d6b452f3b5f": {
+              "replacement": "sha256:efa62adea240dbdda9a328461be097cda437099cbf24949588b7e442b0c3f7c7",
+              "count": 1
+            }
+          },
+          "positive_effect_source_package_guard": true
+        },
+        ".dev/run_installed620_postrestart_mixed_20261029.py": {
+          "original": ".dev/run_installed618_postrestart_mixed_20261029.py",
+          "original_sha256": "13af87f2b114cbcd8cf8835c9259db015695b6ca0d2ca1c3f09d472dc24972fb",
+          "sha256": "fddee984dc2072b0d38d0a3ce755320112cdee22d0fead4bc42e8bd73161d1c0",
+          "explicit_changes": {
+            ".dev/exact618-": {
+              "replacement": ".dev/exact620-",
+              "count": 1
+            },
+            ".dev/installed618-": {
+              "replacement": ".dev/installed620-",
+              "count": 1
+            },
+            "a58b78473e1edfc9a348aea954c75ff7b8e70e4d": {
+              "replacement": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+              "count": 2
+            },
+            "sha256:266fa107cd671d340be046fa27a771453b8ca76f00a83fbb85b31d6b452f3b5f": {
+              "replacement": "sha256:efa62adea240dbdda9a328461be097cda437099cbf24949588b7e442b0c3f7c7",
+              "count": 1
+            }
+          },
+          "positive_effect_source_package_guard": true
+        },
+        ".dev/run_installed620_postrestart_cold_20261029.py": {
+          "original": ".dev/run_installed618_postrestart_cold_20261029.py",
+          "original_sha256": "1f66cc2b71d0b38abdd31776a9266b9d11e851e542d091cd65b81b44649c2712",
+          "sha256": "5d030444ebeccc91c705c2e76521f72fb6ef07c0d1611197704ecf9c461cce88",
+          "explicit_changes": {
+            ".dev/exact618-": {
+              "replacement": ".dev/exact620-",
+              "count": 1
+            },
+            ".dev/installed618-": {
+              "replacement": ".dev/installed620-",
+              "count": 2
+            },
+            "a58b78473e1edfc9a348aea954c75ff7b8e70e4d": {
+              "replacement": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+              "count": 1
+            },
+            "sha256:266fa107cd671d340be046fa27a771453b8ca76f00a83fbb85b31d6b452f3b5f": {
+              "replacement": "sha256:efa62adea240dbdda9a328461be097cda437099cbf24949588b7e442b0c3f7c7",
+              "count": 1
+            }
+          },
+          "positive_effect_source_package_guard": true
+        },
+        ".dev/launch_installed620_postrestart_cold_20261029.py": {
+          "original": ".dev/launch_installed618_postrestart_cold_20261029.py",
+          "original_sha256": "83e215d0a9a6f0b7982b3035d3f1f12f016cf843df23959eba3881327f70b914",
+          "sha256": "16b6f98bdfd18f5726dec9608fd65d87453f4243c5610d169ce7603af74debac",
+          "explicit_changes": {
+            ".dev/run_installed618_postrestart_cold_20261029.py": {
+              "replacement": ".dev/run_installed620_postrestart_cold_20261029.py",
+              "count": 1
+            },
+            ".dev/exact618-": {
+              "replacement": ".dev/exact620-",
+              "count": 2
+            },
+            ".dev/installed618-": {
+              "replacement": ".dev/installed620-",
+              "count": 2
+            },
+            "a58b78473e1edfc9a348aea954c75ff7b8e70e4d": {
+              "replacement": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+              "count": 2
+            },
+            "sha256:266fa107cd671d340be046fa27a771453b8ca76f00a83fbb85b31d6b452f3b5f": {
+              "replacement": "sha256:efa62adea240dbdda9a328461be097cda437099cbf24949588b7e442b0c3f7c7",
+              "count": 1
+            }
+          },
+          "positive_effect_source_package_guard": true
+        },
+        ".dev/verify620_full_watch_benchmark_sources_20261029.py": {
+          "original": ".dev/verify618_full_watch_benchmark_sources_20261029.py",
+          "original_sha256": "99c1a8f8f7919dfc7b7f623d0c32cf93e5e8c68c573fe52a6da3c0af0b861e36",
+          "sha256": "c4773cb00b011460626bb9c6e5801a8630fce4287a30a0d21d36e0213a359fd0",
+          "explicit_changes": {
+            ".dev/exact618-": {
+              "replacement": ".dev/exact620-",
+              "count": 5
+            },
+            "a58b78473e1edfc9a348aea954c75ff7b8e70e4d": {
+              "replacement": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+              "count": 2
+            },
+            "sha256:266fa107cd671d340be046fa27a771453b8ca76f00a83fbb85b31d6b452f3b5f": {
+              "replacement": "sha256:efa62adea240dbdda9a328461be097cda437099cbf24949588b7e442b0c3f7c7",
+              "count": 1
+            }
+          },
+          "positive_effect_source_package_guard": true
+        },
+        ".dev/retest620_public_reads_20261029.py": {
+          "original": ".dev/retest618_public_reads_20261029.py",
+          "original_sha256": "c627d7a71b67c5c734477970b39e534bd2d090628772e956ce101bf72e25db5a",
+          "sha256": "648d31a8046205a1484a152cafda494cbfc2546960e6c18bea937d92c71a235d",
+          "explicit_changes": {
+            ".dev/exact618-": {
+              "replacement": ".dev/exact620-",
+              "count": 2
+            },
+            "a58b78473e1edfc9a348aea954c75ff7b8e70e4d": {
+              "replacement": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+              "count": 2
+            },
+            "sha256:266fa107cd671d340be046fa27a771453b8ca76f00a83fbb85b31d6b452f3b5f": {
+              "replacement": "sha256:efa62adea240dbdda9a328461be097cda437099cbf24949588b7e442b0c3f7c7",
+              "count": 2
+            },
+            "pa.exact618-": {
+              "replacement": "pa.exact620-",
+              "count": 1
+            }
+          },
+          "positive_effect_source_package_guard": true
+        },
+        ".dev/run620_additional_private_retests_20261029.py": {
+          "original": ".dev/run618_additional_private_retests_20261029.py",
+          "original_sha256": "2c7a97e6cd03a6ee8ed9b7d70160e4111425c0680d135da045f04d791d4f0380",
+          "sha256": "8307f4b70d4580998d561318317b94f0933def338ea0f00717b6a0c7c23ce44f",
+          "explicit_changes": {
+            ".dev/benchmark_installed618_fleet_placement_read_offload_20261029.py": {
+              "replacement": ".dev/benchmark_installed620_fleet_placement_read_offload_20261029.py",
+              "count": 1
+            },
+            ".dev/benchmark_installed618_schema_binding_lifetime_20261029.py": {
+              "replacement": ".dev/benchmark_installed620_schema_binding_lifetime_20261029.py",
+              "count": 1
+            },
+            ".dev/benchmark_installed618_schema_generator_lifetime_20261029.py": {
+              "replacement": ".dev/benchmark_installed620_schema_generator_lifetime_20261029.py",
+              "count": 1
+            },
+            ".dev/benchmark_installed618_progress_retention_bytes_20261029.py": {
+              "replacement": ".dev/benchmark_installed620_progress_retention_bytes_20261029.py",
+              "count": 1
+            },
+            ".dev/benchmark_installed618_verification_origin_inputs_20261029.py": {
+              "replacement": ".dev/benchmark_installed620_verification_origin_inputs_20261029.py",
+              "count": 1
+            },
+            ".dev/benchmark_installed618_verification_settlement_inputs_20261029.py": {
+              "replacement": ".dev/benchmark_installed620_verification_settlement_inputs_20261029.py",
+              "count": 1
+            },
+            ".dev/exact618-": {
+              "replacement": ".dev/exact620-",
+              "count": 6
+            },
+            "a58b78473e1edfc9a348aea954c75ff7b8e70e4d": {
+              "replacement": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+              "count": 2
+            },
+            "sha256:266fa107cd671d340be046fa27a771453b8ca76f00a83fbb85b31d6b452f3b5f": {
+              "replacement": "sha256:efa62adea240dbdda9a328461be097cda437099cbf24949588b7e442b0c3f7c7",
+              "count": 1
+            },
+            "added_comparison": "All13priorstages plusactualGC90pairs180calls3shapes=14; archived878baseline/sourceimporthash/prooflogicalbytes/resultparity."
+          },
+          "positive_effect_source_package_guard": true
+        },
+        ".dev/benchmark_installed620_fleet_placement_read_offload_20261029.py": {
+          "original": ".dev/benchmark_installed618_fleet_placement_read_offload_20261029.py",
+          "original_sha256": "68a805ba501fe84b73e85dfc69e681a2f0cde6e4a1eb50836152561b62228866",
+          "sha256": "f69ee18816728a1fb70d013d26dc0b454e71b1f280c90d4abe569fdb8263b69e",
+          "explicit_changes": {
+            ".dev/exact618-": {
+              "replacement": ".dev/exact620-",
+              "count": 2
+            },
+            "a58b78473e1edfc9a348aea954c75ff7b8e70e4d": {
+              "replacement": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+              "count": 2
+            },
+            "sha256:266fa107cd671d340be046fa27a771453b8ca76f00a83fbb85b31d6b452f3b5f": {
+              "replacement": "sha256:efa62adea240dbdda9a328461be097cda437099cbf24949588b7e442b0c3f7c7",
+              "count": 1
+            }
+          },
+          "positive_effect_source_package_guard": true
+        },
+        ".dev/benchmark_installed620_schema_binding_lifetime_20261029.py": {
+          "original": ".dev/benchmark_installed618_schema_binding_lifetime_20261029.py",
+          "original_sha256": "70385d022c17c3918c808b65a45fbd268b9eaefec9b4311ed787512a207479f4",
+          "sha256": "bd709857fb4f7f89031ec56db6d02101a9d90f24dc7180ce762842b3e5248328",
+          "explicit_changes": {
+            ".dev/exact618-": {
+              "replacement": ".dev/exact620-",
+              "count": 2
+            },
+            "a58b78473e1edfc9a348aea954c75ff7b8e70e4d": {
+              "replacement": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+              "count": 2
+            },
+            "sha256:266fa107cd671d340be046fa27a771453b8ca76f00a83fbb85b31d6b452f3b5f": {
+              "replacement": "sha256:efa62adea240dbdda9a328461be097cda437099cbf24949588b7e442b0c3f7c7",
+              "count": 1
+            }
+          },
+          "positive_effect_source_package_guard": true
+        },
+        ".dev/benchmark_installed620_schema_generator_lifetime_20261029.py": {
+          "original": ".dev/benchmark_installed618_schema_generator_lifetime_20261029.py",
+          "original_sha256": "396a660e411879221bab6921d997d7e85dd71c55875be1eec8b20efaaad50aff",
+          "sha256": "96210e01205a0203f3b55f0bed2972aec7a9e3af36eed9a3908f7a63f7781c49",
+          "explicit_changes": {
+            ".dev/exact618-": {
+              "replacement": ".dev/exact620-",
+              "count": 2
+            },
+            "a58b78473e1edfc9a348aea954c75ff7b8e70e4d": {
+              "replacement": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+              "count": 2
+            },
+            "sha256:266fa107cd671d340be046fa27a771453b8ca76f00a83fbb85b31d6b452f3b5f": {
+              "replacement": "sha256:efa62adea240dbdda9a328461be097cda437099cbf24949588b7e442b0c3f7c7",
+              "count": 1
+            }
+          },
+          "positive_effect_source_package_guard": true
+        },
+        ".dev/benchmark_installed620_progress_retention_bytes_20261029.py": {
+          "original": ".dev/benchmark_installed618_progress_retention_bytes_20261029.py",
+          "original_sha256": "601e62039027db5078aae7b6f3d287a8fa9631e998daf4fbfc61ebe15b934933",
+          "sha256": "8dfebe1b165e4d29354b8aff44fc4fbb242720de9d2d3f29f864c8c048e67294",
+          "explicit_changes": {
+            ".dev/exact618-": {
+              "replacement": ".dev/exact620-",
+              "count": 2
+            },
+            "a58b78473e1edfc9a348aea954c75ff7b8e70e4d": {
+              "replacement": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+              "count": 1
+            },
+            "sha256:266fa107cd671d340be046fa27a771453b8ca76f00a83fbb85b31d6b452f3b5f": {
+              "replacement": "sha256:efa62adea240dbdda9a328461be097cda437099cbf24949588b7e442b0c3f7c7",
+              "count": 1
+            }
+          },
+          "positive_effect_source_package_guard": true
+        },
+        ".dev/benchmark_installed620_verification_origin_inputs_20261029.py": {
+          "original": ".dev/benchmark_installed618_verification_origin_inputs_20261029.py",
+          "original_sha256": "3026ee6f0bcfdc130893811309d1181b4b6e2dc127784c0ab4bf3cac5ed14d11",
+          "sha256": "c63e574825333e61c3e9eed2a317e8373dd60066831ff657ed19c58f9b521624",
+          "explicit_changes": {
+            ".dev/exact618-": {
+              "replacement": ".dev/exact620-",
+              "count": 2
+            },
+            "a58b78473e1edfc9a348aea954c75ff7b8e70e4d": {
+              "replacement": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+              "count": 1
+            },
+            "sha256:266fa107cd671d340be046fa27a771453b8ca76f00a83fbb85b31d6b452f3b5f": {
+              "replacement": "sha256:efa62adea240dbdda9a328461be097cda437099cbf24949588b7e442b0c3f7c7",
+              "count": 1
+            }
+          },
+          "positive_effect_source_package_guard": true
+        },
+        ".dev/benchmark_installed620_verification_settlement_inputs_20261029.py": {
+          "original": ".dev/benchmark_installed618_verification_settlement_inputs_20261029.py",
+          "original_sha256": "33328e3d60d758fc37ebf507a777d51c67d48b29bce807ead30014cf5cadb648",
+          "sha256": "6747c7c4f105d0e435ef508df9cf6e17ff2b353bcdf4cba50d7ce0a2000b4db3",
+          "explicit_changes": {
+            ".dev/exact618-": {
+              "replacement": ".dev/exact620-",
+              "count": 2
+            },
+            "a58b78473e1edfc9a348aea954c75ff7b8e70e4d": {
+              "replacement": "bc3637a19be9c0caa53cb247ae5b16c7427a7b70",
+              "count": 1
+            },
+            "sha256:266fa107cd671d340be046fa27a771453b8ca76f00a83fbb85b31d6b452f3b5f": {
+              "replacement": "sha256:efa62adea240dbdda9a328461be097cda437099cbf24949588b7e442b0c3f7c7",
+              "count": 1
+            }
+          },
+          "positive_effect_source_package_guard": true
+        }
+      },
+      "scope": "PreparationONLY: all19original618bodiesfullread/hashverified/ASTparsed; explicitpath/source/package changes, no globalnumericreplacement. 58files/19private/14additional/21independentmodulepaths; preservealllifetimeGCnativebindinggeneratorcustomescapedhandlerfallbackauthorityownershipfreshnesscancellation/200msstalls/deadlines/cleanup assertions. Prior614intentnormalizationunchanged. Bothprivate roots beforeeveryPAimport/child; exactinstalled-I-B; public95ordinary5summary5full8encoding8cachedFleet unchanged5s2MiBbounds. No installed620workload/activationclaim or realprovider/modelmode/defaultconfigpolicyGCchange."
+    },
+    "installed": false,
+    "activated": false,
+    "scope": "Prepared but main620 firstCI failed; no installation/handoff/native620workload. Future exacttarget requires fresh fullgates, reviewedpackage andone newtargetidentity; previous618effects neverreplayed."
+  },
+  "coverage": {
+    "rows": 708,
+    "concerns": 164,
+    "resolution": "OPEN",
+    "completion_requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+    "acceptance": "independent_agent_v1 schedulerowned/unaccepted"
+  },
+  "limits": [
+    "Counterexample is deliberate80ms private read with original broad40msfixture; it does not reproduce or attribute originalCI delay. No failure erased, no sameheadCI retry.",
+    "GC source remains integrated620 but unactivated. Source99tests/90pairs/mixed896.333ms maintenanceviolation distinct from43newtestcontracts; no wholeperformance acceptance.",
+    "Actualinstalled618 full10sessionlist all5stillfail2MiB, mixedmaintenance794.077ms/natural6375.222ms/sharedsessionlockchain/nativebusyIOunassigned/peerlogretention/realprovideracceptance gaps remain.",
+    "All708rowfields164concerns/olderfailedstages/adverseresults/tenattachments/privateLOCALreceipts retained; acceptedbackupDBoriginalscopes stayclosed. No restarts/cleanup/deleteddata/selfverifier/Done/policy changes."
+  ],
+  "complete_lossless_bundle": {
+    "path": "docs/benchmarks/systemic-main620-deadline-20261029.raw.json.gz",
+    "bytes": 63392877,
+    "sha256": "e9a5cbf64b05e782fd6986c3e5a2b9a6c470e6495e05326c44a8c03cbedbfcef"
+  },
+  "input_versions": 57
+}
