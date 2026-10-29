@@ -55,7 +55,7 @@ def env(tmp_path):
     request.app.state.ctx.settings = settings
     request.app.state.ctx.services = {"dispatch_store": ledger, "instance_agent": manager}
     request.app.state.ctx.require_service = request.app.state.ctx.services.__getitem__
-    with patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime), patch(
+    with patch("pa.modules.agent_chat._runtime_or_404_async", new=AsyncMock(return_value=runtime)), patch(
         "pa.modules.agent_chat._record_web_intake", AsyncMock(return_value=None),
     ):
         yield SimpleNamespace(store=store, ledger=ledger, record=record,
@@ -395,7 +395,7 @@ async def test_crash_after_persisted_queue_before_acceptance_restores_fence(env)
     runtime._queue = snapshot.queued_prompts
     env.runtime = runtime
     env.manager._runtimes[stored.id] = runtime
-    with patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime):
+    with patch("pa.modules.agent_chat._runtime_or_404_async", new=AsyncMock(return_value=runtime)):
         receipt = await target(env)
     assert receipt["prompt_id"] == prompt_id and receipt["accepted"]
     assert len(runtime._queue) == 1 and not runtime._queue[0].admission_pending
@@ -626,7 +626,7 @@ async def test_post_acceptance_checkpoint_failure_recovers_same_prompt_once(
 
     env.runtime.connection = SimpleNamespace(connected=True)
     env.manager._quiescing = False
-    with patch("pa.modules.agent_chat._runtime_or_404", return_value=env.runtime), patch.object(
+    with patch("pa.modules.agent_chat._runtime_or_404_async", new=AsyncMock(return_value=env.runtime)), patch.object(
         env.runtime, "_run_prompt", AsyncMock(),
     ) as provider, patch.object(env.runtime, "admit_dispatch_prompt", AsyncMock()) as admit:
         replay = await target(env)  # Cached receipt must resume the pending handoff.

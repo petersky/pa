@@ -422,7 +422,7 @@ async def test_real_prompt_route_finishes_delayed_commit_after_http_cancel(tmp_p
         app=SimpleNamespace(state=SimpleNamespace(ctx=SimpleNamespace(settings=settings, services=services))))
     body = PromptBody(message="Exact accepted prompt", client_prompt_id="client-stable")
     try:
-        with patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime), patch(
+        with patch("pa.modules.agent_chat._runtime_or_404_async", new=AsyncMock(return_value=runtime)), patch(
             "pa.modules.agent_chat.get_principal_id", return_value="user:local"
         ):
             caller = asyncio.create_task(session_prompt(request, session.id, body))

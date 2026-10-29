@@ -375,37 +375,58 @@ def _runtime_or_404(request: Request, session_id: str):
     runtime = mgr.get(session_id)
     if not runtime or runtime._closed:
         session = mgr.store.get_session(session_id)
-        if session:
-            state = _durable_session_state(mgr, session)
-            detail = {
-                "code": "session_not_live",
-                "message": (
-                    "This PA session is closed. Durable history remains available."
-                    if state["reason"] == "session_closed"
-                    else "The PA session exists, but its provider thread is not live."
-                ),
-                "recoverable": state["recoverable"],
-                "durable_session": state,
-                **state["actions"],
-            }
-        else:
-            detail = {
-                "code": "session_deleted",
-                "message": "This PA session no longer exists.",
-                "recoverable": False,
-                "durable_session": {"exists": False, "reason": "pa_session_deleted"},
-                **_session_actions(session_id, recoverable=False),
-            }
-        logger.info(
-            "Agent session request rejected because runtime is not live",
-            extra={
-                "session_id": session_id,
-                "runtime_present": runtime is not None,
-                "runtime_closed": bool(runtime and runtime._closed),
-            },
-        )
-        raise HTTPException(status_code=404, detail=detail)
+        raise _runtime_unavailable_error(mgr, runtime, session_id, session)
     return runtime
+
+
+async def _runtime_or_404_async(request: Request, session_id: str):
+    # Live runtime actions retain loop ownership and require no storage read.
+    mgr = _require_session_traffic_ready(request)
+    runtime = mgr.get(session_id)
+    if not runtime or runtime._closed:
+        session = await _offload(
+            mgr, "sqlite.agent_session_read", mgr.store.get_session, session_id
+        )
+        # Startup/publication or shutdown may advance while storage is pending.
+        _require_session_traffic_ready(request)
+        runtime = mgr.get(session_id)
+        if runtime and not runtime._closed:
+            return runtime
+        raise _runtime_unavailable_error(mgr, runtime, session_id, session)
+    return runtime
+
+
+def _runtime_unavailable_error(mgr, runtime, session_id, session):
+    if session:
+        state = _durable_session_state(mgr, session)
+        detail = {
+            "code": "session_not_live",
+            "message": (
+                "This PA session is closed. Durable history remains available."
+                if state["reason"] == "session_closed"
+                else "The PA session exists, but its provider thread is not live."
+            ),
+            "recoverable": state["recoverable"],
+            "durable_session": state,
+            **state["actions"],
+        }
+    else:
+        detail = {
+            "code": "session_deleted",
+            "message": "This PA session no longer exists.",
+            "recoverable": False,
+            "durable_session": {"exists": False, "reason": "pa_session_deleted"},
+            **_session_actions(session_id, recoverable=False),
+        }
+    logger.info(
+        "Agent session request rejected because runtime is not live",
+        extra={
+            "session_id": session_id,
+            "runtime_present": runtime is not None,
+            "runtime_closed": bool(runtime and runtime._closed),
+        },
+    )
+    return HTTPException(status_code=404, detail=detail)
 
 
 from pa.execution.selection import (
@@ -1447,7 +1468,10 @@ async def request_restart_handoff(
 ) -> dict:
     """Restart after this turn and resume only the exact durable session."""
     mgr = _require_session_traffic_ready(request)
-    session = mgr.store.get_session(session_id)
+    session = await _offload(
+        mgr, "sqlite.agent_session_read", mgr.store.get_session, session_id
+    )
+    _require_session_traffic_ready(request)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     principal_id = get_principal_id(request)
@@ -1502,7 +1526,10 @@ async def edit_restart_handoff(
 ) -> dict:
     """Edit or remove a pending continuation before service quiescing begins."""
     mgr = _require_session_traffic_ready(request)
-    session = mgr.store.get_session(session_id)
+    session = await _offload(
+        mgr, "sqlite.agent_session_read", mgr.store.get_session, session_id
+    )
+    _require_session_traffic_ready(request)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     principal_id = get_principal_id(request)
@@ -1531,7 +1558,10 @@ async def retry_restart_handoff(
 ) -> dict:
     """Retry one repaired exact-session handoff without creating a new receipt."""
     mgr = _require_session_traffic_ready(request)
-    session = mgr.store.get_session(session_id)
+    session = await _offload(
+        mgr, "sqlite.agent_session_read", mgr.store.get_session, session_id
+    )
+    _require_session_traffic_ready(request)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     principal_id = get_principal_id(request)
@@ -1578,11 +1608,20 @@ def list_session_observability(request: Request, limit: int = 100) -> dict[str, 
 
 @router.get("/observability/v1/sessions/{session_id}")
 async def get_session_observability(request: Request, session_id: str) -> dict[str, Any]:
-    session = _manager(request).store.get_session(session_id)
-    if session:
-        return _observability(request, session)
-    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
-    dispatch = dispatch_store.by_session(session_id) if dispatch_store else None
+    manager = _manager(request)
+
+    def local_observation():
+        session = manager.store.get_session(session_id)
+        if session:
+            return _observability(request, session), None
+        dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+        return None, dispatch_store.by_session(session_id) if dispatch_store else None
+
+    observation, dispatch = await _offload(
+        manager, "agent.session_observability", local_observation
+    )
+    if observation is not None:
+        return observation
     if not dispatch:
         raise HTTPException(
             status_code=404,
@@ -2660,7 +2699,10 @@ async def recover_session(
     body: RecoverSessionBody | None = None,
 ) -> dict:
     mgr = _require_session_traffic_ready(request)
-    durable_session = mgr.store.get_session(session_id)
+    durable_session = await _offload(
+        mgr, "sqlite.agent_session_read", mgr.store.get_session, session_id
+    )
+    _require_session_traffic_ready(request)
     if not durable_session:
         raise HTTPException(status_code=404, detail="Session not found")
     principal_id = get_principal_id(request)
@@ -3022,7 +3064,7 @@ def unlink_session_card(request: Request, session_id: str, card_id: str) -> dict
 async def session_events(request: Request, session_id: str) -> StreamingResponse:
     from pa.server.shutdown import is_shutting_down, wait_for_shutdown_or
 
-    runtime = _runtime_or_404(request, session_id)
+    runtime = await _runtime_or_404_async(request, session_id)
     last_event_id = request.headers.get("Last-Event-ID")
     after_seq = 0
     if last_event_id:
@@ -3453,7 +3495,7 @@ async def _session_prompt_owned(request: Request, session_id: str, body: PromptB
     durable_session = None
     needs_recovery = False
     try:
-        runtime = _runtime_or_404(request, session_id)
+        runtime = await _runtime_or_404_async(request, session_id)
     except HTTPException as exc:
         detail = exc.detail if isinstance(exc.detail, dict) else {}
         if (
@@ -3827,7 +3869,7 @@ async def _session_prompt_owned(request: Request, session_id: str, body: PromptB
 
 @router.post("/sessions/{session_id}/cancel")
 async def session_cancel(request: Request, session_id: str) -> dict:
-    runtime = _runtime_or_404(request, session_id)
+    runtime = await _runtime_or_404_async(request, session_id)
     await runtime.cancel(pause_queue=False)
     return {"ok": True, "queue_paused": runtime.queue_paused}
 
@@ -4370,7 +4412,7 @@ async def session_permission(
     request_id: str,
     body: PermissionBody,
 ) -> dict:
-    runtime = _runtime_or_404(request, session_id)
+    runtime = await _runtime_or_404_async(request, session_id)
     ok = await runtime.respond_permission(
         request_id,
         allow=body.allow,
@@ -4386,7 +4428,7 @@ async def session_permission(
 
 @router.put("/sessions/{session_id}/model")
 async def session_model(request: Request, session_id: str, body: ModelBody) -> dict:
-    runtime = _runtime_or_404(request, session_id)
+    runtime = await _runtime_or_404_async(request, session_id)
     try:
         await runtime.set_model(body.model_id)
     except Exception as exc:
@@ -4396,7 +4438,7 @@ async def session_model(request: Request, session_id: str, body: ModelBody) -> d
 
 @router.put("/sessions/{session_id}/mode")
 async def session_mode(request: Request, session_id: str, body: ModeBody) -> dict:
-    runtime = _runtime_or_404(request, session_id)
+    runtime = await _runtime_or_404_async(request, session_id)
     try:
         await runtime.set_mode(body.mode_id)
     except Exception as exc:
@@ -4406,7 +4448,7 @@ async def session_mode(request: Request, session_id: str, body: ModeBody) -> dic
 
 @router.put("/sessions/{session_id}/config")
 async def session_config(request: Request, session_id: str, body: ConfigBody) -> dict:
-    runtime = _runtime_or_404(request, session_id)
+    runtime = await _runtime_or_404_async(request, session_id)
     try:
         await runtime.set_config(body.config_id, body.value)
     except Exception as exc:
@@ -4416,7 +4458,7 @@ async def session_config(request: Request, session_id: str, body: ConfigBody) ->
 
 @router.post("/sessions/{session_id}/queue/pause")
 async def queue_pause(request: Request, session_id: str) -> dict:
-    runtime = _runtime_or_404(request, session_id)
+    runtime = await _runtime_or_404_async(request, session_id)
     runtime.pause_queue()
     await _drain_runtime_transcripts(runtime)
     return {"queue_paused": True}
@@ -4424,7 +4466,7 @@ async def queue_pause(request: Request, session_id: str) -> dict:
 
 @router.post("/sessions/{session_id}/queue/resume")
 async def queue_resume(request: Request, session_id: str) -> dict:
-    runtime = _runtime_or_404(request, session_id)
+    runtime = await _runtime_or_404_async(request, session_id)
     runtime.resume_queue()
     await _drain_runtime_transcripts(runtime)
     return {"queue_paused": False}
@@ -4432,7 +4474,7 @@ async def queue_resume(request: Request, session_id: str) -> dict:
 
 @router.post("/sessions/{session_id}/queue/reorder")
 async def queue_reorder(request: Request, session_id: str, body: ReorderBody) -> dict:
-    runtime = _runtime_or_404(request, session_id)
+    runtime = await _runtime_or_404_async(request, session_id)
     queue = runtime.reorder_queue(body.prompt_ids)
     await _drain_runtime_transcripts(runtime)
     return {"queue": [q.public_dict() for q in queue]}
@@ -4440,7 +4482,7 @@ async def queue_reorder(request: Request, session_id: str, body: ReorderBody) ->
 
 @router.delete("/sessions/{session_id}/queue/{prompt_id}")
 async def queue_remove(request: Request, session_id: str, prompt_id: str) -> dict:
-    runtime = _runtime_or_404(request, session_id)
+    runtime = await _runtime_or_404_async(request, session_id)
     removed = runtime.remove_queued(prompt_id)
     if not removed:
         raise HTTPException(status_code=404, detail="Queued prompt not found")

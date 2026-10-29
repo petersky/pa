@@ -1,0 +1,2343 @@
+{
+  "contract": "pa.session-control-read-offload-stage/v1",
+  "observed_at": "2026-10-29T06:07:57.755251+00:00",
+  "identity": {
+    "instance": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "authority": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "session": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+    "card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+    "project": "fdc04d91-1222-447b-859c-38e67bcab6eb",
+    "repository": "https://github.com/petersky/pa",
+    "repository_id": "5ce49cd8-f632-5f6d-a0d5-0b9eaf61f9cd",
+    "worktree": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c",
+    "branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+    "original_base": "4697ed583f6a5eceead72217d07ba2ebaf4ccc83",
+    "source_base": "f103e237bd17cec59a29ef0c2083106c1af1177d",
+    "head": "00d2bd8419d558934519a86bde3767e9c177b04d",
+    "upstream": "00d2bd8419d558934519a86bde3767e9c177b04d",
+    "tree": "19f636078a63acb59713d437e772327458e8c97b",
+    "lease": "d24899f49011107365c237bbf09a300f63beb5a5c9658eac682770304ade52f2",
+    "fence": 334
+  },
+  "source_base": "00d2bd8419d558934519a86bde3767e9c177b04d",
+  "source_sha256": "1435d7d3d1e342d13c8f5c026e745f7c21bab281c310ab9682b4917c93af7947",
+  "source_state": "New control-read repair source tested, unmerged and uninstalled at this immutable stage. PR601 is protected merged; actual listener remains exact600. Whole-card acceptance OPEN.",
+  "preceding_integration": {
+    "observed_at": "2026-10-29T05:48:49.245155+00:00",
+    "head": "1dd11c2d4ae33da1fc17d91e8fc260982fa9fe20",
+    "merge": "00d2bd8419d558934519a86bde3767e9c177b04d",
+    "tree": "19f636078a63acb59713d437e772327458e8c97b",
+    "watch": "25faa9ce-e826-4833-af0e-cf32a07208f8",
+    "head_ci": 40824581703,
+    "main_ci": 40824970348,
+    "checks": "Five FIRST-ATTEMPT successes each, no retry",
+    "integration": "Protected merge; source/merge trees equal; independent protection/checks/reviews/pagination/attributed commit/CLEAN revalidated after stable supervisor green.",
+    "installation": "No PR601 installation/restart; current installed/loaded exact600f103/packagebec1.",
+    "findings": 687,
+    "concerns": 151,
+    "accepted": false,
+    "main_report": {
+      "report_id": "861aef1f-3d04-461d-8594-fc5b4260ccf2",
+      "revision": 180,
+      "hash": "f49fd6bf79f7dcefd62442d8535eb5b469326464e9878fcdfff3c21caf77edd7",
+      "source_instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+      "incarnation": "01422ec3-8a75-4967-91d1-4819d0ac72d8",
+      "delivery": "pending",
+      "created_at": "2026-10-29T05:47:48.795469+00:00"
+    },
+    "next_action": "Continue substantive remaining shared-cause work and exact activation/retests through fresh frozen/provider-approved gates when appropriate. Reuse actual same-session queued successor; no duplicate. Full original independent acceptance remains required."
+  },
+  "activated_build": {
+    "loaded_module_version": "1.5.9",
+    "source_revision": "f103e237bd17cec59a29ef0c2083106c1af1177d",
+    "package_identity": "sha256:bec1ae1f2cf54f298fb8b6de4bf165baf44629848d711eaf15db1d4d229538a6",
+    "pid": 69929,
+    "startup_id": "1087b192-4d53-4cb0-a482-9cdaf198ec34"
+  },
+  "repair": {
+    "finding": "Async restart/recovery authorization, missing-runtime lookups and single-session observability performed synchronous storage or presentation work on the event loop.",
+    "semantics": "Use the existing bounded native worker runtime for canonical session reads and one complete local observability build/fallback read. Live runtime actions stay on the loop without storage. Recheck traffic readiness and runtime publication after awaited reads. Preserve owner/admin checks, complete local/remote responses, error bodies, recovery/receipt identities and cancellation without starting effects.",
+    "contracts": {
+      "tests": 295,
+      "subtests": 7,
+      "result": {
+        "started_at": "2026-10-29T06:06:38.069726+00:00",
+        "finished_at": "2026-10-29T06:06:49.927319+00:00",
+        "exit_code": 0,
+        "source_sha256": "1435d7d3d1e342d13c8f5c026e745f7c21bab281c310ab9682b4917c93af7947",
+        "test_sha256": "3c5c7177cc8ac93b70cf571b3f7a442e1fab01da7366d59bb95737dd2fef8836",
+        "log_sha256": "3a5e9426f98aa732be502fc209d2794a80e6b4832c8ac96d7473c00b694c7ef7",
+        "scope": "Post-edit source contracts in private roots; no real handoff/recovery/provider or production data. First baseline/fixture failures preserved. Four inspected existing provider-start/connect-mocked fixtures receive their expected enabled flag only for that test; all roots private and no service defaults or real provider changed. Original deadlines/GC preserved."
+      },
+      "fixture_changes": "Existing async consumer mocks now target the async helper with AsyncMock; direct synchronous snapshot/error-reader tests stay unchanged. Assertions, waits, shutdown, deadlines and cleanup contracts retained."
+    },
+    "comparison": {
+      "contract": "pa.control-read-loop-progress/v1",
+      "observed_at": "2026-10-29T06:03:17.972414+00:00",
+      "baseline": "00d2bd8419d558934519a86bde3767e9c177b04d",
+      "source_sha256": "1435d7d3d1e342d13c8f5c026e745f7c21bab281c310ab9682b4917c93af7947",
+      "deliberate_read_delay_ms": 200,
+      "pairs": 3,
+      "rows": [
+        {
+          "pair": 0,
+          "variant": "baseline",
+          "operation": "request_restart_handoff",
+          "request_wall_ms": 210.29262500815094,
+          "heartbeat_gap_ms": {
+            "samples": 3,
+            "p50": 6.360791972838342,
+            "p95": 210.68570797797292,
+            "p99": 210.68570797797292,
+            "max": 210.68570797797292
+          },
+          "reader_runs_on_loop": true,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 0,
+          "variant": "baseline",
+          "operation": "edit_restart_handoff",
+          "request_wall_ms": 207.73675001692027,
+          "heartbeat_gap_ms": {
+            "samples": 3,
+            "p50": 6.2657499220222235,
+            "p95": 208.01879197824746,
+            "p99": 208.01879197824746,
+            "max": 208.01879197824746
+          },
+          "reader_runs_on_loop": true,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 0,
+          "variant": "baseline",
+          "operation": "retry_restart_handoff",
+          "request_wall_ms": 210.1040839916095,
+          "heartbeat_gap_ms": {
+            "samples": 3,
+            "p50": 6.3075420912355185,
+            "p95": 210.23908292409033,
+            "p99": 210.23908292409033,
+            "max": 210.23908292409033
+          },
+          "reader_runs_on_loop": true,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 0,
+          "variant": "baseline",
+          "operation": "recover_session",
+          "request_wall_ms": 210.0972500629723,
+          "heartbeat_gap_ms": {
+            "samples": 3,
+            "p50": 6.3379170605912805,
+            "p95": 210.29066597111523,
+            "p99": 210.29066597111523,
+            "max": 210.29066597111523
+          },
+          "reader_runs_on_loop": true,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 0,
+          "variant": "baseline",
+          "operation": "get_session_observability",
+          "request_wall_ms": 200.41462499648333,
+          "heartbeat_gap_ms": {
+            "samples": 3,
+            "p50": 5.879833945073187,
+            "p95": 200.63187496270984,
+            "p99": 200.63187496270984,
+            "max": 200.63187496270984
+          },
+          "reader_runs_on_loop": true,
+          "response_sha256": "0b285deb2c33aa73ce60409b1ffa504b5cc14931ee29cd591921dd8d6fe66ab5"
+        },
+        {
+          "pair": 0,
+          "variant": "baseline",
+          "operation": "queue_pause",
+          "request_wall_ms": 201.41779200639576,
+          "heartbeat_gap_ms": {
+            "samples": 3,
+            "p50": 6.425500032491982,
+            "p95": 201.60733407828957,
+            "p99": 201.60733407828957,
+            "max": 201.60733407828957
+          },
+          "reader_runs_on_loop": true,
+          "response_sha256": "557ff21fd7824c1ea9607f5868cd29b1f58c82d7fc4acd32d15d0fa51632b321"
+        },
+        {
+          "pair": 0,
+          "variant": "candidate",
+          "operation": "request_restart_handoff",
+          "request_wall_ms": 211.1905829515308,
+          "heartbeat_gap_ms": {
+            "samples": 36,
+            "p50": 6.29620801191777,
+            "p95": 6.320749991573393,
+            "p99": 6.327582988888025,
+            "max": 6.327582988888025
+          },
+          "reader_runs_on_loop": false,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 0,
+          "variant": "candidate",
+          "operation": "edit_restart_handoff",
+          "request_wall_ms": 210.85045801009983,
+          "heartbeat_gap_ms": {
+            "samples": 37,
+            "p50": 6.313040968962014,
+            "p95": 6.408874993212521,
+            "p99": 6.421292084269226,
+            "max": 6.421292084269226
+          },
+          "reader_runs_on_loop": false,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 0,
+          "variant": "candidate",
+          "operation": "retry_restart_handoff",
+          "request_wall_ms": 210.20170801784843,
+          "heartbeat_gap_ms": {
+            "samples": 37,
+            "p50": 6.330665899440646,
+            "p95": 6.400792044587433,
+            "p99": 6.411833921447396,
+            "max": 6.411833921447396
+          },
+          "reader_runs_on_loop": false,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 0,
+          "variant": "candidate",
+          "operation": "recover_session",
+          "request_wall_ms": 210.90554201509804,
+          "heartbeat_gap_ms": {
+            "samples": 37,
+            "p50": 6.349749979563057,
+            "p95": 6.4338750671595335,
+            "p99": 6.446541985496879,
+            "max": 6.446541985496879
+          },
+          "reader_runs_on_loop": false,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 0,
+          "variant": "candidate",
+          "operation": "get_session_observability",
+          "request_wall_ms": 208.5987499449402,
+          "heartbeat_gap_ms": {
+            "samples": 37,
+            "p50": 6.00875006057322,
+            "p95": 6.373499985784292,
+            "p99": 6.397958029992878,
+            "max": 6.397958029992878
+          },
+          "reader_runs_on_loop": false,
+          "response_sha256": "0b285deb2c33aa73ce60409b1ffa504b5cc14931ee29cd591921dd8d6fe66ab5"
+        },
+        {
+          "pair": 0,
+          "variant": "candidate",
+          "operation": "queue_pause",
+          "request_wall_ms": 201.94841700140387,
+          "heartbeat_gap_ms": {
+            "samples": 35,
+            "p50": 6.309665972366929,
+            "p95": 6.365458015352488,
+            "p99": 6.415833020582795,
+            "max": 6.415833020582795
+          },
+          "reader_runs_on_loop": false,
+          "response_sha256": "557ff21fd7824c1ea9607f5868cd29b1f58c82d7fc4acd32d15d0fa51632b321"
+        },
+        {
+          "pair": 1,
+          "variant": "candidate",
+          "operation": "request_restart_handoff",
+          "request_wall_ms": 202.377583947964,
+          "heartbeat_gap_ms": {
+            "samples": 35,
+            "p50": 6.321665947325528,
+            "p95": 6.379792001098394,
+            "p99": 6.383916945196688,
+            "max": 6.383916945196688
+          },
+          "reader_runs_on_loop": false,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 1,
+          "variant": "candidate",
+          "operation": "edit_restart_handoff",
+          "request_wall_ms": 202.19062501564622,
+          "heartbeat_gap_ms": {
+            "samples": 36,
+            "p50": 6.183583056554198,
+            "p95": 6.4092500833794475,
+            "p99": 6.420749938115478,
+            "max": 6.420749938115478
+          },
+          "reader_runs_on_loop": false,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 1,
+          "variant": "candidate",
+          "operation": "retry_restart_handoff",
+          "request_wall_ms": 210.6501249363646,
+          "heartbeat_gap_ms": {
+            "samples": 38,
+            "p50": 6.153583992272615,
+            "p95": 6.398041965439916,
+            "p99": 6.435625022277236,
+            "max": 6.435625022277236
+          },
+          "reader_runs_on_loop": false,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 1,
+          "variant": "candidate",
+          "operation": "recover_session",
+          "request_wall_ms": 210.91166604310274,
+          "heartbeat_gap_ms": {
+            "samples": 37,
+            "p50": 6.319957901723683,
+            "p95": 6.407708046026528,
+            "p99": 6.45191699732095,
+            "max": 6.45191699732095
+          },
+          "reader_runs_on_loop": false,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 1,
+          "variant": "candidate",
+          "operation": "get_session_observability",
+          "request_wall_ms": 206.64458302780986,
+          "heartbeat_gap_ms": {
+            "samples": 37,
+            "p50": 6.282416987232864,
+            "p95": 6.370916962623596,
+            "p99": 6.397083052434027,
+            "max": 6.397083052434027
+          },
+          "reader_runs_on_loop": false,
+          "response_sha256": "0b285deb2c33aa73ce60409b1ffa504b5cc14931ee29cd591921dd8d6fe66ab5"
+        },
+        {
+          "pair": 1,
+          "variant": "candidate",
+          "operation": "queue_pause",
+          "request_wall_ms": 202.68520794343203,
+          "heartbeat_gap_ms": {
+            "samples": 35,
+            "p50": 6.336290971376002,
+            "p95": 6.402791012078524,
+            "p99": 6.42233295366168,
+            "max": 6.42233295366168
+          },
+          "reader_runs_on_loop": false,
+          "response_sha256": "557ff21fd7824c1ea9607f5868cd29b1f58c82d7fc4acd32d15d0fa51632b321"
+        },
+        {
+          "pair": 1,
+          "variant": "baseline",
+          "operation": "request_restart_handoff",
+          "request_wall_ms": 210.11758397798985,
+          "heartbeat_gap_ms": {
+            "samples": 3,
+            "p50": 6.327667040750384,
+            "p95": 210.37658292334527,
+            "p99": 210.37658292334527,
+            "max": 210.37658292334527
+          },
+          "reader_runs_on_loop": true,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 1,
+          "variant": "baseline",
+          "operation": "edit_restart_handoff",
+          "request_wall_ms": 208.4419169696048,
+          "heartbeat_gap_ms": {
+            "samples": 3,
+            "p50": 6.284791976213455,
+            "p95": 208.5860000224784,
+            "p99": 208.5860000224784,
+            "max": 208.5860000224784
+          },
+          "reader_runs_on_loop": true,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 1,
+          "variant": "baseline",
+          "operation": "retry_restart_handoff",
+          "request_wall_ms": 210.11408302001655,
+          "heartbeat_gap_ms": {
+            "samples": 3,
+            "p50": 6.211542058736086,
+            "p95": 210.3339999448508,
+            "p99": 210.3339999448508,
+            "max": 210.3339999448508
+          },
+          "reader_runs_on_loop": true,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 1,
+          "variant": "baseline",
+          "operation": "recover_session",
+          "request_wall_ms": 206.2079169554636,
+          "heartbeat_gap_ms": {
+            "samples": 3,
+            "p50": 6.053457967936993,
+            "p95": 206.4008329762146,
+            "p99": 206.4008329762146,
+            "max": 206.4008329762146
+          },
+          "reader_runs_on_loop": true,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 1,
+          "variant": "baseline",
+          "operation": "get_session_observability",
+          "request_wall_ms": 203.9615830872208,
+          "heartbeat_gap_ms": {
+            "samples": 3,
+            "p50": 6.399459089152515,
+            "p95": 204.23566596582532,
+            "p99": 204.23566596582532,
+            "max": 204.23566596582532
+          },
+          "reader_runs_on_loop": true,
+          "response_sha256": "0b285deb2c33aa73ce60409b1ffa504b5cc14931ee29cd591921dd8d6fe66ab5"
+        },
+        {
+          "pair": 1,
+          "variant": "baseline",
+          "operation": "queue_pause",
+          "request_wall_ms": 208.85508402716368,
+          "heartbeat_gap_ms": {
+            "samples": 3,
+            "p50": 6.400750018656254,
+            "p95": 209.08820803742856,
+            "p99": 209.08820803742856,
+            "max": 209.08820803742856
+          },
+          "reader_runs_on_loop": true,
+          "response_sha256": "557ff21fd7824c1ea9607f5868cd29b1f58c82d7fc4acd32d15d0fa51632b321"
+        },
+        {
+          "pair": 2,
+          "variant": "baseline",
+          "operation": "request_restart_handoff",
+          "request_wall_ms": 206.6732089733705,
+          "heartbeat_gap_ms": {
+            "samples": 3,
+            "p50": 6.22012501116842,
+            "p95": 206.9123750552535,
+            "p99": 206.9123750552535,
+            "max": 206.9123750552535
+          },
+          "reader_runs_on_loop": true,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 2,
+          "variant": "baseline",
+          "operation": "edit_restart_handoff",
+          "request_wall_ms": 206.89204207155854,
+          "heartbeat_gap_ms": {
+            "samples": 3,
+            "p50": 6.458916934207082,
+            "p95": 207.13258301839232,
+            "p99": 207.13258301839232,
+            "max": 207.13258301839232
+          },
+          "reader_runs_on_loop": true,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 2,
+          "variant": "baseline",
+          "operation": "retry_restart_handoff",
+          "request_wall_ms": 206.1488329200074,
+          "heartbeat_gap_ms": {
+            "samples": 3,
+            "p50": 6.3186249462887645,
+            "p95": 206.34366699960083,
+            "p99": 206.34366699960083,
+            "max": 206.34366699960083
+          },
+          "reader_runs_on_loop": true,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 2,
+          "variant": "baseline",
+          "operation": "recover_session",
+          "request_wall_ms": 205.4908750578761,
+          "heartbeat_gap_ms": {
+            "samples": 3,
+            "p50": 6.343250046484172,
+            "p95": 205.732166999951,
+            "p99": 205.732166999951,
+            "max": 205.732166999951
+          },
+          "reader_runs_on_loop": true,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 2,
+          "variant": "baseline",
+          "operation": "get_session_observability",
+          "request_wall_ms": 209.2097500571981,
+          "heartbeat_gap_ms": {
+            "samples": 3,
+            "p50": 6.349415984004736,
+            "p95": 209.42225004546344,
+            "p99": 209.42225004546344,
+            "max": 209.42225004546344
+          },
+          "reader_runs_on_loop": true,
+          "response_sha256": "0b285deb2c33aa73ce60409b1ffa504b5cc14931ee29cd591921dd8d6fe66ab5"
+        },
+        {
+          "pair": 2,
+          "variant": "baseline",
+          "operation": "queue_pause",
+          "request_wall_ms": 202.14379206299782,
+          "heartbeat_gap_ms": {
+            "samples": 3,
+            "p50": 6.389459013007581,
+            "p95": 202.35762500669807,
+            "p99": 202.35762500669807,
+            "max": 202.35762500669807
+          },
+          "reader_runs_on_loop": true,
+          "response_sha256": "557ff21fd7824c1ea9607f5868cd29b1f58c82d7fc4acd32d15d0fa51632b321"
+        },
+        {
+          "pair": 2,
+          "variant": "candidate",
+          "operation": "request_restart_handoff",
+          "request_wall_ms": 207.13883300777525,
+          "heartbeat_gap_ms": {
+            "samples": 36,
+            "p50": 6.329167052172124,
+            "p95": 6.41045905649662,
+            "p99": 6.5024999203160405,
+            "max": 6.5024999203160405
+          },
+          "reader_runs_on_loop": false,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 2,
+          "variant": "candidate",
+          "operation": "edit_restart_handoff",
+          "request_wall_ms": 201.53754204511642,
+          "heartbeat_gap_ms": {
+            "samples": 36,
+            "p50": 6.306541967205703,
+            "p95": 6.41416700091213,
+            "p99": 6.425041938200593,
+            "max": 6.425041938200593
+          },
+          "reader_runs_on_loop": false,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 2,
+          "variant": "candidate",
+          "operation": "retry_restart_handoff",
+          "request_wall_ms": 210.84158297162503,
+          "heartbeat_gap_ms": {
+            "samples": 37,
+            "p50": 6.330000003799796,
+            "p95": 6.37787498999387,
+            "p99": 6.390542024746537,
+            "max": 6.390542024746537
+          },
+          "reader_runs_on_loop": false,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 2,
+          "variant": "candidate",
+          "operation": "recover_session",
+          "request_wall_ms": 202.83679210115224,
+          "heartbeat_gap_ms": {
+            "samples": 35,
+            "p50": 6.326416973024607,
+            "p95": 6.413582945242524,
+            "p99": 6.424583029001951,
+            "max": 6.424583029001951
+          },
+          "reader_runs_on_loop": false,
+          "response_sha256": "565ee6fe06c29e05a70598176ea6d767a2ccdef380d6d2b131950763bdbf41f8"
+        },
+        {
+          "pair": 2,
+          "variant": "candidate",
+          "operation": "get_session_observability",
+          "request_wall_ms": 210.67974995821714,
+          "heartbeat_gap_ms": {
+            "samples": 36,
+            "p50": 6.303125061094761,
+            "p95": 6.38929195702076,
+            "p99": 6.391667062416673,
+            "max": 6.391667062416673
+          },
+          "reader_runs_on_loop": false,
+          "response_sha256": "0b285deb2c33aa73ce60409b1ffa504b5cc14931ee29cd591921dd8d6fe66ab5"
+        },
+        {
+          "pair": 2,
+          "variant": "candidate",
+          "operation": "queue_pause",
+          "request_wall_ms": 205.57741599623114,
+          "heartbeat_gap_ms": {
+            "samples": 37,
+            "p50": 6.32258306723088,
+            "p95": 6.383624975569546,
+            "p99": 6.416082964278758,
+            "max": 6.416082964278758
+          },
+          "reader_runs_on_loop": false,
+          "response_sha256": "557ff21fd7824c1ea9607f5868cd29b1f58c82d7fc4acd32d15d0fa51632b321"
+        }
+      ],
+      "summary": {
+        "request_restart_handoff": {
+          "baseline": {
+            "request_wall_ms": {
+              "samples": 3,
+              "p50": 210.11758397798985,
+              "p95": 210.29262500815094,
+              "p99": 210.29262500815094,
+              "max": 210.29262500815094
+            },
+            "heartbeat_max_gap_ms": {
+              "samples": 3,
+              "p50": 210.37658292334527,
+              "p95": 210.68570797797292,
+              "p99": 210.68570797797292,
+              "max": 210.68570797797292
+            }
+          },
+          "candidate": {
+            "request_wall_ms": {
+              "samples": 3,
+              "p50": 207.13883300777525,
+              "p95": 211.1905829515308,
+              "p99": 211.1905829515308,
+              "max": 211.1905829515308
+            },
+            "heartbeat_max_gap_ms": {
+              "samples": 3,
+              "p50": 6.383916945196688,
+              "p95": 6.5024999203160405,
+              "p99": 6.5024999203160405,
+              "max": 6.5024999203160405
+            }
+          }
+        },
+        "edit_restart_handoff": {
+          "baseline": {
+            "request_wall_ms": {
+              "samples": 3,
+              "p50": 207.73675001692027,
+              "p95": 208.4419169696048,
+              "p99": 208.4419169696048,
+              "max": 208.4419169696048
+            },
+            "heartbeat_max_gap_ms": {
+              "samples": 3,
+              "p50": 208.01879197824746,
+              "p95": 208.5860000224784,
+              "p99": 208.5860000224784,
+              "max": 208.5860000224784
+            }
+          },
+          "candidate": {
+            "request_wall_ms": {
+              "samples": 3,
+              "p50": 202.19062501564622,
+              "p95": 210.85045801009983,
+              "p99": 210.85045801009983,
+              "max": 210.85045801009983
+            },
+            "heartbeat_max_gap_ms": {
+              "samples": 3,
+              "p50": 6.421292084269226,
+              "p95": 6.425041938200593,
+              "p99": 6.425041938200593,
+              "max": 6.425041938200593
+            }
+          }
+        },
+        "retry_restart_handoff": {
+          "baseline": {
+            "request_wall_ms": {
+              "samples": 3,
+              "p50": 210.1040839916095,
+              "p95": 210.11408302001655,
+              "p99": 210.11408302001655,
+              "max": 210.11408302001655
+            },
+            "heartbeat_max_gap_ms": {
+              "samples": 3,
+              "p50": 210.23908292409033,
+              "p95": 210.3339999448508,
+              "p99": 210.3339999448508,
+              "max": 210.3339999448508
+            }
+          },
+          "candidate": {
+            "request_wall_ms": {
+              "samples": 3,
+              "p50": 210.6501249363646,
+              "p95": 210.84158297162503,
+              "p99": 210.84158297162503,
+              "max": 210.84158297162503
+            },
+            "heartbeat_max_gap_ms": {
+              "samples": 3,
+              "p50": 6.411833921447396,
+              "p95": 6.435625022277236,
+              "p99": 6.435625022277236,
+              "max": 6.435625022277236
+            }
+          }
+        },
+        "recover_session": {
+          "baseline": {
+            "request_wall_ms": {
+              "samples": 3,
+              "p50": 206.2079169554636,
+              "p95": 210.0972500629723,
+              "p99": 210.0972500629723,
+              "max": 210.0972500629723
+            },
+            "heartbeat_max_gap_ms": {
+              "samples": 3,
+              "p50": 206.4008329762146,
+              "p95": 210.29066597111523,
+              "p99": 210.29066597111523,
+              "max": 210.29066597111523
+            }
+          },
+          "candidate": {
+            "request_wall_ms": {
+              "samples": 3,
+              "p50": 210.90554201509804,
+              "p95": 210.91166604310274,
+              "p99": 210.91166604310274,
+              "max": 210.91166604310274
+            },
+            "heartbeat_max_gap_ms": {
+              "samples": 3,
+              "p50": 6.446541985496879,
+              "p95": 6.45191699732095,
+              "p99": 6.45191699732095,
+              "max": 6.45191699732095
+            }
+          }
+        },
+        "get_session_observability": {
+          "baseline": {
+            "request_wall_ms": {
+              "samples": 3,
+              "p50": 203.9615830872208,
+              "p95": 209.2097500571981,
+              "p99": 209.2097500571981,
+              "max": 209.2097500571981
+            },
+            "heartbeat_max_gap_ms": {
+              "samples": 3,
+              "p50": 204.23566596582532,
+              "p95": 209.42225004546344,
+              "p99": 209.42225004546344,
+              "max": 209.42225004546344
+            }
+          },
+          "candidate": {
+            "request_wall_ms": {
+              "samples": 3,
+              "p50": 208.5987499449402,
+              "p95": 210.67974995821714,
+              "p99": 210.67974995821714,
+              "max": 210.67974995821714
+            },
+            "heartbeat_max_gap_ms": {
+              "samples": 3,
+              "p50": 6.397083052434027,
+              "p95": 6.397958029992878,
+              "p99": 6.397958029992878,
+              "max": 6.397958029992878
+            }
+          }
+        },
+        "queue_pause": {
+          "baseline": {
+            "request_wall_ms": {
+              "samples": 3,
+              "p50": 202.14379206299782,
+              "p95": 208.85508402716368,
+              "p99": 208.85508402716368,
+              "max": 208.85508402716368
+            },
+            "heartbeat_max_gap_ms": {
+              "samples": 3,
+              "p50": 202.35762500669807,
+              "p95": 209.08820803742856,
+              "p99": 209.08820803742856,
+              "max": 209.08820803742856
+            }
+          },
+          "candidate": {
+            "request_wall_ms": {
+              "samples": 3,
+              "p50": 202.68520794343203,
+              "p95": 205.57741599623114,
+              "p99": 205.57741599623114,
+              "max": 205.57741599623114
+            },
+            "heartbeat_max_gap_ms": {
+              "samples": 3,
+              "p50": 6.416082964278758,
+              "p95": 6.42233295366168,
+              "p99": 6.42233295366168,
+              "max": 6.42233295366168
+            }
+          }
+        }
+      },
+      "runtime": {
+        "failed_operations": {
+          "capacity": 64,
+          "scope": "Last completed failed worker/native-async invocations and executor submission failures, including short failures. Worker caller timeouts/cancellations are not completion failures; their existing counters remain separate. Failed-only percentiles use the last 256 failures per operation and are omitted until a failure completes. Static categories are not root causes; no messages, arbitrary codes, exception names, arguments, SQL or payloads retained.",
+          "observations": []
+        },
+        "failed_requests": {
+          "capacity": 64,
+          "count": 0,
+          "scope": "Last completed HTTP 4xx/5xx responses, including failed SSE responses; normal SSE lifetimes remain excluded. Route templates and numeric status only, no response bodies, error codes, IDs or query strings.",
+          "observations": []
+        },
+        "sqlite_timing_scope": "Statement wall and thread CPU include execute and lazy fetch calls; commit is separate. Inclusive nested calls can overlap. Wall minus CPU is unclassified off-CPU time, not proof of lock wait or physical disk I/O. No SQL, parameters or result values retained.",
+        "async_backend_initialization": {
+          "state": "not_started"
+        },
+        "slow_operations": {
+          "capacity": 64,
+          "scope": "last completed slow worker invocations; queue time separate from elapsed",
+          "lock_note": "measured lock sections are inclusive; nested hold intervals may overlap",
+          "lock_events_note": "last64 measured sections per slow invocation; total includes evicted sections; outer hold is the union of outermost measured sections, not CPU time; hold includes unlock and scheduling around it; release_ms separates that interval and is not pure unlock CPU or proven held time",
+          "observations": []
+        },
+        "slow_lock_timelines": {
+          "capacity": 64,
+          "events_per_invocation": 64,
+          "observations": []
+        },
+        "executor": {
+          "max_workers": 1,
+          "max_queue": 64,
+          "active": 0,
+          "queued": 0,
+          "closing": false
+        },
+        "event_loop": {
+          "samples": 0,
+          "latest_lag_ms": 0.0,
+          "p95_lag_ms": 0.0,
+          "max_lag_ms": 0.0,
+          "pre_window_lag_ms": {
+            "samples": 0,
+            "max": null,
+            "p50": null,
+            "p95": null,
+            "p99": null
+          }
+        },
+        "requests": {
+          "window": "last_256_non_sse_requests_per_route",
+          "count": 0,
+          "average_ms": 0.0,
+          "max_ms": 0.0,
+          "slow": [],
+          "latency_ms": {
+            "samples": 0,
+            "max": null,
+            "p50": null,
+            "p95": null,
+            "p99": null
+          },
+          "response_bytes": 0,
+          "excluded_sse_requests": 0,
+          "routes": {}
+        },
+        "owned_mutations": {
+          "pending": 0
+        },
+        "work": {
+          "window": "last_256_observations_per_metric",
+          "metrics": {}
+        },
+        "active_operations": [],
+        "operations": {
+          "agent.session_observability": {
+            "submitted": 3,
+            "completed": 3,
+            "failed": 0,
+            "timed_out": 0,
+            "cancelled": 0,
+            "rejected": 0,
+            "active": 0,
+            "queued": 0,
+            "max_active": 1,
+            "max_queued": 1,
+            "total_queue_ms": 0.172,
+            "total_wait_ms": 625.7218330865726,
+            "max_wait_ms": 210.62320796772838,
+            "total_lock_wait_ms": 0.0,
+            "total_runtime_ms": 625.314,
+            "max_runtime_ms": 210.531,
+            "slow_calls": 0,
+            "sqlite_busy_failures": 0,
+            "filesystem_totals": {
+              "file_lock_wait_ms": 0.0,
+              "file_lock_hold_ms": 0.0,
+              "file_lock_release_ms": 0.0,
+              "atomic_write_calls": 0,
+              "atomic_write_bytes": 0,
+              "file_fsync_calls": 0,
+              "file_fsync_ms": 0.0,
+              "directory_fsync_calls": 0,
+              "directory_fsync_ms": 0.0,
+              "fsync_failures": 0,
+              "atomic_replace_ms": 0.0,
+              "object_get_calls": 0,
+              "object_get_bytes": 0,
+              "object_get_ms": 0.0,
+              "object_put_files": 0,
+              "object_put_bytes": 0
+            },
+            "runtime_ms": {
+              "samples": 3,
+              "max": 210.531,
+              "p50": 208.342,
+              "p95": 210.531,
+              "p99": 210.531
+            },
+            "queue_ms": {
+              "samples": 3,
+              "max": 0.099,
+              "p50": 0.055,
+              "p95": 0.099,
+              "p99": 0.099
+            },
+            "python_lock_wait_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "python_lock_hold_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "worker_service_ms": {
+              "samples": 3,
+              "max": 210.116,
+              "p50": 207.943,
+              "p95": 210.116,
+              "p99": 210.116
+            },
+            "executor_dispatch_ms": {
+              "samples": 3,
+              "max": 0.172,
+              "p50": 0.133,
+              "p95": 0.172,
+              "p99": 0.172
+            },
+            "completion_delivery_ms": {
+              "samples": 3,
+              "max": 0.352,
+              "p50": 0.322,
+              "p95": 0.352,
+              "p99": 0.352
+            },
+            "thread_cpu_ms": {
+              "samples": 3,
+              "max": 0.131,
+              "p50": 0.097,
+              "p95": 0.131,
+              "p99": 0.131
+            },
+            "outer_lock_hold_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "python_lock_release_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "outer_lock_release_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_statement_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_commit_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_statement_thread_cpu_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_commit_thread_cpu_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_calls": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_rows": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_aggregate_items": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_aggregate_bytes": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_lock_wait_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "file_lock_hold_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "file_lock_release_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "atomic_write_calls": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "atomic_write_bytes": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_fsync_calls": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_fsync_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "directory_fsync_calls": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "directory_fsync_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "fsync_failures": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "atomic_replace_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "object_get_calls": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_get_bytes": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_get_ms": {
+              "samples": 3,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "object_put_files": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_put_bytes": {
+              "samples": 3,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            }
+          },
+          "sqlite.agent_session_read": {
+            "submitted": 15,
+            "completed": 15,
+            "failed": 0,
+            "timed_out": 0,
+            "cancelled": 0,
+            "rejected": 0,
+            "active": 0,
+            "queued": 0,
+            "max_active": 1,
+            "max_queued": 1,
+            "total_queue_ms": 0.882,
+            "total_wait_ms": 3098.8589582266286,
+            "max_wait_ms": 210.9823749633506,
+            "total_lock_wait_ms": 0.0,
+            "total_runtime_ms": 3096.91,
+            "max_runtime_ms": 210.789,
+            "slow_calls": 0,
+            "sqlite_busy_failures": 0,
+            "filesystem_totals": {
+              "file_lock_wait_ms": 0.0,
+              "file_lock_hold_ms": 0.0,
+              "file_lock_release_ms": 0.0,
+              "atomic_write_calls": 0,
+              "atomic_write_bytes": 0,
+              "file_fsync_calls": 0,
+              "file_fsync_ms": 0.0,
+              "directory_fsync_calls": 0,
+              "directory_fsync_ms": 0.0,
+              "fsync_failures": 0,
+              "atomic_replace_ms": 0.0,
+              "object_get_calls": 0,
+              "object_get_bytes": 0,
+              "object_get_ms": 0.0,
+              "object_put_files": 0,
+              "object_put_bytes": 0
+            },
+            "runtime_ms": {
+              "samples": 15,
+              "max": 210.789,
+              "p50": 206.674,
+              "p95": 210.789,
+              "p99": 210.789
+            },
+            "queue_ms": {
+              "samples": 15,
+              "max": 0.15,
+              "p50": 0.056,
+              "p95": 0.15,
+              "p99": 0.15
+            },
+            "python_lock_wait_ms": {
+              "samples": 15,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "python_lock_hold_ms": {
+              "samples": 15,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "worker_service_ms": {
+              "samples": 15,
+              "max": 210.143,
+              "p50": 206.264,
+              "p95": 210.143,
+              "p99": 210.143
+            },
+            "executor_dispatch_ms": {
+              "samples": 15,
+              "max": 0.429,
+              "p50": 0.166,
+              "p95": 0.429,
+              "p99": 0.429
+            },
+            "completion_delivery_ms": {
+              "samples": 15,
+              "max": 0.401,
+              "p50": 0.268,
+              "p95": 0.401,
+              "p99": 0.401
+            },
+            "thread_cpu_ms": {
+              "samples": 15,
+              "max": 0.125,
+              "p50": 0.1,
+              "p95": 0.125,
+              "p99": 0.125
+            },
+            "outer_lock_hold_ms": {
+              "samples": 15,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "python_lock_release_ms": {
+              "samples": 15,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "outer_lock_release_ms": {
+              "samples": 15,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_statement_ms": {
+              "samples": 15,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_commit_ms": {
+              "samples": 15,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_statement_thread_cpu_ms": {
+              "samples": 15,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_commit_thread_cpu_ms": {
+              "samples": 15,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "sqlite_calls": {
+              "samples": 15,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_rows": {
+              "samples": 15,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_aggregate_items": {
+              "samples": 15,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "sqlite_aggregate_bytes": {
+              "samples": 15,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_lock_wait_ms": {
+              "samples": 15,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "file_lock_hold_ms": {
+              "samples": 15,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "file_lock_release_ms": {
+              "samples": 15,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "atomic_write_calls": {
+              "samples": 15,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "atomic_write_bytes": {
+              "samples": 15,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_fsync_calls": {
+              "samples": 15,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "file_fsync_ms": {
+              "samples": 15,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "directory_fsync_calls": {
+              "samples": 15,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "directory_fsync_ms": {
+              "samples": 15,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "fsync_failures": {
+              "samples": 15,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "atomic_replace_ms": {
+              "samples": 15,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "object_get_calls": {
+              "samples": 15,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_get_bytes": {
+              "samples": 15,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_get_ms": {
+              "samples": 15,
+              "max": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "p99": 0.0
+            },
+            "object_put_files": {
+              "samples": 15,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            },
+            "object_put_bytes": {
+              "samples": 15,
+              "max": 0,
+              "p50": 0,
+              "p95": 0,
+              "p99": 0
+            }
+          }
+        }
+      },
+      "complete_response_bytes_equal": true,
+      "scope": "Private deterministic 200ms read with native manager offload/AsyncRuntime, six endpoint families and three alternating pairs. Requests still perform the same delayed read; loop responsiveness is the comparison, not request speedup. No real restart/recovery/provider/effect or production state. Startup gate is held ready in both variants; authorization and startup semantics have separate contracts. Normal GC/host load unchanged. Not historical-cause, live traffic, whole-Kernel or whole-PA acceptance."
+    },
+    "mixed": {
+      "started_at": "2026-10-29T06:03:42.826614+00:00",
+      "source_modules": {
+        "pa.modules.agent_chat": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/modules/agent_chat.py",
+          "sha256": "1435d7d3d1e342d13c8f5c026e745f7c21bab281c310ab9682b4917c93af7947"
+        }
+      },
+      "both_roots_private_before_imports": true,
+      "exit_code": 0,
+      "finished_at": "2026-10-29T06:04:08.558734+00:00",
+      "log_sha256": "4bcd519464ab5e63779616610fad834c693ac8d8dee7e39fb44a22a2ead989e1",
+      "log_bytes": 382961,
+      "events": 9600,
+      "warnings": {},
+      "threshold_violations": {
+        "maintenance.run": 1
+      },
+      "maintenance": {
+        "samples": 1,
+        "max_ms": 854.706,
+        "p50_ms": 854.706,
+        "p95_ms": 854.706,
+        "p99_ms": 854.706
+      },
+      "import_attestation": {
+        "modules": {
+          "pa.modules.agent_chat": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/modules/agent_chat.py",
+            "sha256": "1435d7d3d1e342d13c8f5c026e745f7c21bab281c310ab9682b4917c93af7947"
+          }
+        },
+        "before_workload": true,
+        "unchanged_after_workload": true
+      },
+      "scope": "Changed-module imports and unchanged hashes before/after mixed workload; does not establish every changed branch executes. Dedicated control-read contracts and native executor comparison exercise the repair; the mixed inventory may not execute every branch. Both roots private before all PA imports; unchanged waits/deadlines/GC; no real provider or production state."
+    },
+    "source_inventory": [
+      {
+        "line": 2772,
+        "owner": "_session_snapshot",
+        "async_owner": false
+      },
+      {
+        "line": 3025,
+        "owner": "session_events",
+        "async_owner": true
+      },
+      {
+        "line": 3456,
+        "owner": "_session_prompt_owned",
+        "async_owner": true
+      },
+      {
+        "line": 3830,
+        "owner": "session_cancel",
+        "async_owner": true
+      },
+      {
+        "line": 4373,
+        "owner": "session_permission",
+        "async_owner": true
+      },
+      {
+        "line": 4389,
+        "owner": "session_model",
+        "async_owner": true
+      },
+      {
+        "line": 4399,
+        "owner": "session_mode",
+        "async_owner": true
+      },
+      {
+        "line": 4409,
+        "owner": "session_config",
+        "async_owner": true
+      },
+      {
+        "line": 4419,
+        "owner": "queue_pause",
+        "async_owner": true
+      },
+      {
+        "line": 4427,
+        "owner": "queue_resume",
+        "async_owner": true
+      },
+      {
+        "line": 4435,
+        "owner": "queue_reorder",
+        "async_owner": true
+      },
+      {
+        "line": 4443,
+        "owner": "queue_remove",
+        "async_owner": true
+      }
+    ]
+  },
+  "fresh_health_diagnostic": {
+    "observed_at": "2026-10-29T05:50:45.375114+00:00",
+    "source_sha256": "89ed4ade240cd884830aa0642e7515e5c4a8e51067adce4fda1e0eeab2ab237e",
+    "objects": 12511,
+    "samples": [
+      {
+        "wall_ms": 28.422542,
+        "thread_cpu_ms": 28.42375,
+        "health": {
+          "schema_version": 1,
+          "events": 12511,
+          "audit_evidence": 0,
+          "objects": 12511,
+          "uncompressed_bytes": 82774177,
+          "compressed_bytes": 996501,
+          "references": 12511,
+          "deduplicated_references": 0,
+          "missing_objects": 0,
+          "journal_mode": "wal",
+          "integrity": "ok",
+          "redaction_policy": "canonical-v1",
+          "hot_payload_limit": 2048
+        }
+      },
+      {
+        "wall_ms": 27.503958,
+        "thread_cpu_ms": 27.504834,
+        "health": {
+          "schema_version": 1,
+          "events": 12511,
+          "audit_evidence": 0,
+          "objects": 12511,
+          "uncompressed_bytes": 82774177,
+          "compressed_bytes": 996501,
+          "references": 12511,
+          "deduplicated_references": 0,
+          "missing_objects": 0,
+          "journal_mode": "wal",
+          "integrity": "ok",
+          "redaction_policy": "canonical-v1",
+          "hot_payload_limit": 2048
+        }
+      },
+      {
+        "wall_ms": 27.933709,
+        "thread_cpu_ms": 27.934833,
+        "health": {
+          "schema_version": 1,
+          "events": 12511,
+          "audit_evidence": 0,
+          "objects": 12511,
+          "uncompressed_bytes": 82774177,
+          "compressed_bytes": 996501,
+          "references": 12511,
+          "deduplicated_references": 0,
+          "missing_objects": 0,
+          "journal_mode": "wal",
+          "integrity": "ok",
+          "redaction_policy": "canonical-v1",
+          "hot_payload_limit": 2048
+        }
+      },
+      {
+        "wall_ms": 28.401,
+        "thread_cpu_ms": 28.399625,
+        "health": {
+          "schema_version": 1,
+          "events": 12511,
+          "audit_evidence": 0,
+          "objects": 12511,
+          "uncompressed_bytes": 82774177,
+          "compressed_bytes": 996501,
+          "references": 12511,
+          "deduplicated_references": 0,
+          "missing_objects": 0,
+          "journal_mode": "wal",
+          "integrity": "ok",
+          "redaction_policy": "canonical-v1",
+          "hot_payload_limit": 2048
+        }
+      },
+      {
+        "wall_ms": 30.27325,
+        "thread_cpu_ms": 30.272542,
+        "health": {
+          "schema_version": 1,
+          "events": 12511,
+          "audit_evidence": 0,
+          "objects": 12511,
+          "uncompressed_bytes": 82774177,
+          "compressed_bytes": 996501,
+          "references": 12511,
+          "deduplicated_references": 0,
+          "missing_objects": 0,
+          "journal_mode": "wal",
+          "integrity": "ok",
+          "redaction_policy": "canonical-v1",
+          "hot_payload_limit": 2048
+        }
+      }
+    ],
+    "profile": [
+      {
+        "file": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/domain/transcript_storage.py",
+        "line": 615,
+        "function": "metrics",
+        "primitive_calls": 1,
+        "calls": 1,
+        "own_ms": 0.31332800000000005,
+        "cumulative_ms": 48.499291
+      },
+      {
+        "file": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/domain/transcript_storage.py",
+        "line": 629,
+        "function": "_missing_referenced_objects",
+        "primitive_calls": 1,
+        "calls": 1,
+        "own_ms": 15.904326,
+        "cumulative_ms": 40.399334
+      },
+      {
+        "file": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/core/sqlite_metrics.py",
+        "line": 99,
+        "function": "_observe",
+        "primitive_calls": 214,
+        "calls": 214,
+        "own_ms": 0.25052800000000003,
+        "cumulative_ms": 13.208949
+      },
+      {
+        "file": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/core/sqlite_metrics.py",
+        "line": 122,
+        "function": "execute",
+        "primitive_calls": 109,
+        "calls": 109,
+        "own_ms": 0.050264,
+        "cumulative_ms": 13.050464000000002
+      },
+      {
+        "file": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/core/sqlite_metrics.py",
+        "line": 70,
+        "function": "execute",
+        "primitive_calls": 109,
+        "calls": 109,
+        "own_ms": 0.062092,
+        "cumulative_ms": 12.918957
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<function ObservedCursor.execute at 0x1035c8510>",
+        "primitive_calls": 109,
+        "calls": 109,
+        "own_ms": 12.607954000000001,
+        "cumulative_ms": 12.607954000000001
+      },
+      {
+        "file": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/domain/transcript_storage.py",
+        "line": 679,
+        "function": "referenced_hashes",
+        "primitive_calls": 1,
+        "calls": 1,
+        "own_ms": 0.28524900000000003,
+        "cumulative_ms": 9.10425
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<method 'fullmatch' of 're.Pattern' objects>",
+        "primitive_calls": 12511,
+        "calls": 12511,
+        "own_ms": 4.2201260000000005,
+        "cumulative_ms": 4.2201260000000005
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<built-in method posix.scandir>",
+        "primitive_calls": 256,
+        "calls": 256,
+        "own_ms": 4.098962,
+        "cumulative_ms": 4.1589540000000005
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<method 'add' of 'set' objects>",
+        "primitive_calls": 25022,
+        "calls": 25022,
+        "own_ms": 1.888127,
+        "cumulative_ms": 1.888127
+      },
+      {
+        "file": "/Users/petersky/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/lib/python3.14/json/__init__.py",
+        "line": 304,
+        "function": "loads",
+        "primitive_calls": 99,
+        "calls": 99,
+        "own_ms": 0.06841900000000001,
+        "cumulative_ms": 1.824209
+      },
+      {
+        "file": "/Users/petersky/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/lib/python3.14/json/decoder.py",
+        "line": 340,
+        "function": "decode",
+        "primitive_calls": 99,
+        "calls": 99,
+        "own_ms": 0.11029300000000002,
+        "cumulative_ms": 1.732243
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<built-in method builtins.len>",
+        "primitive_calls": 38598,
+        "calls": 38598,
+        "own_ms": 1.52179,
+        "cumulative_ms": 1.52179
+      },
+      {
+        "file": "/Users/petersky/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/lib/python3.14/json/decoder.py",
+        "line": 351,
+        "function": "raw_decode",
+        "primitive_calls": 99,
+        "calls": 99,
+        "own_ms": 1.510253,
+        "cumulative_ms": 1.510253
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<built-in method posix.fspath>",
+        "primitive_calls": 512,
+        "calls": 1280,
+        "own_ms": 0.111637,
+        "cumulative_ms": 1.446825
+      },
+      {
+        "file": "/Users/petersky/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/lib/python3.14/pathlib/__init__.py",
+        "line": 190,
+        "function": "__fspath__",
+        "primitive_calls": 513,
+        "calls": 513,
+        "own_ms": 0.101832,
+        "cumulative_ms": 1.441615
+      },
+      {
+        "file": "/Users/petersky/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/lib/python3.14/pathlib/__init__.py",
+        "line": 251,
+        "function": "__str__",
+        "primitive_calls": 513,
+        "calls": 513,
+        "own_ms": 0.27241600000000005,
+        "cumulative_ms": 1.339783
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<method 'update' of 'set' objects>",
+        "primitive_calls": 98,
+        "calls": 98,
+        "own_ms": 0.9900010000000001,
+        "cumulative_ms": 0.9900010000000001
+      },
+      {
+        "file": "/Users/petersky/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/lib/python3.14/pathlib/__init__.py",
+        "line": 341,
+        "function": "drive",
+        "primitive_calls": 256,
+        "calls": 256,
+        "own_ms": 0.176745,
+        "cumulative_ms": 0.95032
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<built-in method posix.stat>",
+        "primitive_calls": 256,
+        "calls": 256,
+        "own_ms": 0.7765000000000001,
+        "cumulative_ms": 0.7765000000000001
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<method 'is_symlink' of 'posix.DirEntry' objects>",
+        "primitive_calls": 12511,
+        "calls": 12511,
+        "own_ms": 0.6803520000000001,
+        "cumulative_ms": 0.6803520000000001
+      },
+      {
+        "file": "/Users/petersky/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/lib/python3.14/pathlib/__init__.py",
+        "line": 172,
+        "function": "__truediv__",
+        "primitive_calls": 256,
+        "calls": 256,
+        "own_ms": 0.053212,
+        "cumulative_ms": 0.5734290000000001
+      },
+      {
+        "file": "/Users/petersky/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/lib/python3.14/pathlib/__init__.py",
+        "line": 330,
+        "function": "_raw_path",
+        "primitive_calls": 256,
+        "calls": 256,
+        "own_ms": 0.08879500000000001,
+        "cumulative_ms": 0.552664
+      },
+      {
+        "file": "/Users/petersky/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/lib/python3.14/pathlib/__init__.py",
+        "line": 157,
+        "function": "with_segments",
+        "primitive_calls": 256,
+        "calls": 256,
+        "own_ms": 0.13617800000000002,
+        "cumulative_ms": 0.520217
+      },
+      {
+        "file": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/core/sqlite_metrics.py",
+        "line": 83,
+        "function": "fetchone",
+        "primitive_calls": 105,
+        "calls": 105,
+        "own_ms": 0.063784,
+        "cumulative_ms": 0.514913
+      },
+      {
+        "file": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/core/sqlite_metrics.py",
+        "line": 76,
+        "function": "_read",
+        "primitive_calls": 105,
+        "calls": 105,
+        "own_ms": 0.091173,
+        "cumulative_ms": 0.45112900000000006
+      },
+      {
+        "file": "<frozen posixpath>",
+        "line": 72,
+        "function": "join",
+        "primitive_calls": 256,
+        "calls": 256,
+        "own_ms": 0.26510300000000003,
+        "cumulative_ms": 0.44717000000000007
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<built-in method builtins.next>",
+        "primitive_calls": 4,
+        "calls": 8,
+        "own_ms": 0.005831,
+        "cumulative_ms": 0.39420900000000003
+      },
+      {
+        "file": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/domain/transcript_storage.py",
+        "line": 155,
+        "function": "_conn",
+        "primitive_calls": 4,
+        "calls": 4,
+        "own_ms": 0.005542,
+        "cumulative_ms": 0.39154200000000006
+      },
+      {
+        "file": "/Users/petersky/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/lib/python3.14/contextlib.py",
+        "line": 136,
+        "function": "__enter__",
+        "primitive_calls": 2,
+        "calls": 4,
+        "own_ms": 0.003043,
+        "cumulative_ms": 0.379792
+      },
+      {
+        "file": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/core/sqlite_metrics.py",
+        "line": 45,
+        "function": "derived_connection",
+        "primitive_calls": 4,
+        "calls": 4,
+        "own_ms": 0.008376000000000001,
+        "cumulative_ms": 0.369209
+      },
+      {
+        "file": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/domain/transcript_storage.py",
+        "line": 134,
+        "function": "_new_connection",
+        "primitive_calls": 1,
+        "calls": 1,
+        "own_ms": 0.0037920000000000002,
+        "cumulative_ms": 0.350792
+      },
+      {
+        "file": "/Users/petersky/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/lib/python3.14/pathlib/__init__.py",
+        "line": 135,
+        "function": "__init__",
+        "primitive_calls": 256,
+        "calls": 256,
+        "own_ms": 0.19637500000000002,
+        "cumulative_ms": 0.31530100000000005
+      },
+      {
+        "file": "/Users/petersky/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/lib/python3.14/pathlib/__init__.py",
+        "line": 281,
+        "function": "_parse_path",
+        "primitive_calls": 256,
+        "calls": 256,
+        "own_ms": 0.12166600000000001,
+        "cumulative_ms": 0.22091100000000002
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<function ObservedCursor.fetchone at 0x1035c8720>",
+        "primitive_calls": 105,
+        "calls": 105,
+        "own_ms": 0.172461,
+        "cumulative_ms": 0.172461
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<method '__exit__' of 'posix.ScandirIterator' objects>",
+        "primitive_calls": 256,
+        "calls": 256,
+        "own_ms": 0.16887,
+        "cumulative_ms": 0.16887
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<built-in method time.thread_time>",
+        "primitive_calls": 428,
+        "calls": 428,
+        "own_ms": 0.11654800000000001,
+        "cumulative_ms": 0.11654800000000001
+      },
+      {
+        "file": "/Users/petersky/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/lib/python3.14/pathlib/__init__.py",
+        "line": 261,
+        "function": "_format_parsed_parts",
+        "primitive_calls": 256,
+        "calls": 256,
+        "own_ms": 0.048353,
+        "cumulative_ms": 0.08749300000000002
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<built-in method builtins.isinstance>",
+        "primitive_calls": 1124,
+        "calls": 1124,
+        "own_ms": 0.08188100000000001,
+        "cumulative_ms": 0.08188100000000001
+      },
+      {
+        "file": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/core/sqlite_metrics.py",
+        "line": 128,
+        "function": "cursor",
+        "primitive_calls": 109,
+        "calls": 109,
+        "own_ms": 0.051159,
+        "cumulative_ms": 0.08124300000000001
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<built-in method _sqlite3.connect>",
+        "primitive_calls": 1,
+        "calls": 1,
+        "own_ms": 0.068042,
+        "cumulative_ms": 0.08108300000000002
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<method 'match' of 're.Pattern' objects>",
+        "primitive_calls": 198,
+        "calls": 198,
+        "own_ms": 0.07695300000000001,
+        "cumulative_ms": 0.07695300000000001
+      },
+      {
+        "file": "/Users/petersky/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/lib/python3.14/pathlib/__init__.py",
+        "line": 632,
+        "function": "__new__",
+        "primitive_calls": 256,
+        "calls": 256,
+        "own_ms": 0.044078,
+        "cumulative_ms": 0.06873800000000001
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<method 'startswith' of 'str' objects>",
+        "primitive_calls": 611,
+        "calls": 611,
+        "own_ms": 0.055066000000000004,
+        "cumulative_ms": 0.055066000000000004
+      },
+      {
+        "file": "<frozen posixpath>",
+        "line": 42,
+        "function": "_get_sep",
+        "primitive_calls": 256,
+        "calls": 256,
+        "own_ms": 0.034302000000000006,
+        "cumulative_ms": 0.051513
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<method 'encode' of 'str' objects>",
+        "primitive_calls": 99,
+        "calls": 99,
+        "own_ms": 0.051494000000000005,
+        "cumulative_ms": 0.051494000000000005
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<method 'split' of 'str' objects>",
+        "primitive_calls": 256,
+        "calls": 256,
+        "own_ms": 0.050926,
+        "cumulative_ms": 0.050926
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<built-in method posix._path_splitroot_ex>",
+        "primitive_calls": 256,
+        "calls": 256,
+        "own_ms": 0.048319,
+        "cumulative_ms": 0.048319
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<built-in method time.perf_counter>",
+        "primitive_calls": 428,
+        "calls": 428,
+        "own_ms": 0.044787,
+        "cumulative_ms": 0.044787
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<method 'endswith' of 'str' objects>",
+        "primitive_calls": 512,
+        "calls": 512,
+        "own_ms": 0.043346,
+        "cumulative_ms": 0.043346
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<method 'join' of 'str' objects>",
+        "primitive_calls": 256,
+        "calls": 256,
+        "own_ms": 0.03914,
+        "cumulative_ms": 0.03914
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<method 'get' of '_contextvars.ContextVar' objects>",
+        "primitive_calls": 423,
+        "calls": 423,
+        "own_ms": 0.034299,
+        "cumulative_ms": 0.034299
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<function ObservedConnection.cursor at 0x1035c8bf0>",
+        "primitive_calls": 109,
+        "calls": 109,
+        "own_ms": 0.030084000000000003,
+        "cumulative_ms": 0.030084000000000003
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<method 'extend' of 'list' objects>",
+        "primitive_calls": 256,
+        "calls": 256,
+        "own_ms": 0.025975,
+        "cumulative_ms": 0.025975
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<method 'disable' of '_lsprof.Profiler' objects>",
+        "primitive_calls": 1,
+        "calls": 1,
+        "own_ms": 0.025292000000000002,
+        "cumulative_ms": 0.025292000000000002
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<built-in method __new__ of type object at 0x10466c908>",
+        "primitive_calls": 256,
+        "calls": 256,
+        "own_ms": 0.02466,
+        "cumulative_ms": 0.02466
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<method 'end' of 're.Match' objects>",
+        "primitive_calls": 198,
+        "calls": 198,
+        "own_ms": 0.023785,
+        "cumulative_ms": 0.023785
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<method 'append' of 'list' objects>",
+        "primitive_calls": 258,
+        "calls": 258,
+        "own_ms": 0.022842,
+        "cumulative_ms": 0.022842
+      },
+      {
+        "file": "~",
+        "line": 0,
+        "function": "<method '__enter__' of 'posix.ScandirIterator' objects>",
+        "primitive_calls": 256,
+        "calls": 256,
+        "own_ms": 0.021805,
+        "cumulative_ms": 0.021805
+      },
+      {
+        "file": "/Users/petersky/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/lib/python3.14/contextlib.py",
+        "line": 145,
+        "function": "__exit__",
+        "primitive_calls": 2,
+        "calls": 4,
+        "own_ms": 0.0037500000000000003,
+        "cumulative_ms": 0.018333000000000002
+      }
+    ],
+    "health": {
+      "schema_version": 1,
+      "events": 12511,
+      "audit_evidence": 0,
+      "objects": 12511,
+      "uncompressed_bytes": 82774177,
+      "compressed_bytes": 996501,
+      "references": 12511,
+      "deduplicated_references": 0,
+      "missing_objects": 0,
+      "journal_mode": "wal",
+      "integrity": "ok",
+      "redaction_policy": "canonical-v1",
+      "hot_payload_limit": 2048
+    },
+    "scope": "Private disposable fresh health calls, actual AsyncRuntime worker owns connections. Five unprofiled timer samples; separate cProfile diagnostic includes profiling overhead. Both roots private before PA imports. Full SQL/quick_check/event-derived-reference/existence behavior unchanged; no production data/provider/faults, policy/deadline changes or causal/off-CPU/physicalIO inference."
+  },
+  "negative_stages": [
+    "First 24-test launch: 23 async tests lacked pytest asyncio markers; no behavioral async baseline was measured. Corrected markers before product changes: 9 failed/15 passed, including eight actual event-loop read/build failures and one static inventory guard. Static guard was later replaced by behavioral consumers.",
+    "First loop benchmark missed the native lifecycle lock on its constructed manager; failed before numeric rows were persisted. Unknown partial timing values are not reconstructed. Corrected and final complete comparisons are separate retained populations.",
+    "First broader suite: 153 passed and four existing mocked-provider fixtures failed under the harness-wide disabled-agent flag. Exact four corrected private fixtures passed. Final 163 tests, then expanded 295 tests/7 subtests pass; only inspected provider-start/connect-mocked cases receive their expected private test flag. No real provider or service default changed.",
+    "Host Python3.9 source AST inventory failed at Python3.14 syntax before producing inventory. Corrected Python3.14 inventory retained. One compound uv health launch failed on sandbox cache access before child startup; standalone provider-approved launch succeeded. No boundary was bypassed.",
+    "Earlier source mixed maintenance844.751ms and final854.706ms are both retained. Neither is performance acceptance. Prior PR601 source809.492ms and all preceding natural/installed/source failures remain in the lossless prior bundle."
+  ],
+  "local_only_custody": {
+    ".dev/session-control602-mocked-fixture-corrections-20261029.log": {
+      "bytes": 98,
+      "sha256": "f3c4cdf48008c7e202b864f4f2fb73719a70152d7a94e1bef5430e7760e328db",
+      "scope": "Raw logs and first fixture copies remain LOCAL, untrusted and hash-only."
+    },
+    ".dev/session-control602-source-mixed100-20261029.log": {
+      "bytes": 382951,
+      "sha256": "1589b999f40a4adff0508ac653d9f4d9aa3a4c43b4f7186d99ba7883b84d69d4",
+      "scope": "Raw logs and first fixture copies remain LOCAL, untrusted and hash-only."
+    },
+    ".dev/session-control602-source-mixed100-final-20261029.log": {
+      "bytes": 382961,
+      "sha256": "4bcd519464ab5e63779616610fad834c693ac8d8dee7e39fb44a22a2ead989e1",
+      "scope": "Raw logs and first fixture copies remain LOCAL, untrusted and hash-only."
+    },
+    ".dev/session-control602-baseline-contracts-corrected-20261029.log": {
+      "bytes": 11529,
+      "sha256": "2ea8bb60c0cfba597823b48cef2d6684a957f03a0a64fec8a5360d69d24770b0",
+      "scope": "Raw logs and first fixture copies remain LOCAL, untrusted and hash-only."
+    },
+    ".dev/session-control602-broader-contracts-20261029.log": {
+      "bytes": 39391,
+      "sha256": "196ac3289ddfdb4f4900cfb19b61e3a5e21f4d6c81661d8e9cd4b53365ca6ecd",
+      "scope": "Raw logs and first fixture copies remain LOCAL, untrusted and hash-only."
+    },
+    ".dev/session-control602-compatibility-contracts-20261029.log": {
+      "bytes": 440,
+      "sha256": "3a5e9426f98aa732be502fc209d2794a80e6b4832c8ac96d7473c00b694c7ef7",
+      "scope": "Raw logs and first fixture copies remain LOCAL, untrusted and hash-only."
+    },
+    ".dev/session-control602-final-contracts-20261029.log": {
+      "bytes": 260,
+      "sha256": "b01b53e0e365b5d77b7f3b0e7e411275e412189e5ceaf9992e49b93ee1628b31",
+      "scope": "Raw logs and first fixture copies remain LOCAL, untrusted and hash-only."
+    },
+    ".dev/session-control602-source-contracts-20261029.log": {
+      "bytes": 99,
+      "sha256": "bddbf4aa29f843a3d3685115bee9535a9e5b9b37cfad678482613267e5faf4d4",
+      "scope": "Raw logs and first fixture copies remain LOCAL, untrusted and hash-only."
+    },
+    ".dev/session-control602-baseline-contracts-20261029.log": {
+      "bytes": 10963,
+      "sha256": "2c7ea913b832f9130981e901f7b0b0d2bff6a1cd675cce8212d065a69433dfc9",
+      "scope": "Raw logs and first fixture copies remain LOCAL, untrusted and hash-only."
+    },
+    ".dev/test_live_delivery_recovery.py.before602-fixture-20261029": {
+      "bytes": 20201,
+      "sha256": "e88ce757fc4bfbb4e40ae9f051d0e6b5743baf56098f59696c91348e9ef7be49",
+      "scope": "Raw logs and first fixture copies remain LOCAL, untrusted and hash-only."
+    },
+    ".dev/agent_chat.before602-control-20261029.py": {
+      "bytes": 186051,
+      "sha256": "3b9f0a1462d1c76a10b9ba4b46422acc9c880ec5227e82bfbcddb94d1b33d136",
+      "scope": "Raw logs and first fixture copies remain LOCAL, untrusted and hash-only."
+    },
+    ".dev/test_agent_chat_sse.py.before602-fixture-20261029": {
+      "bytes": 78978,
+      "sha256": "a03a01f9fbaa1841ddda1f85685f99d61f8ea6e8970dc21f8d0f9af1907bdd48",
+      "scope": "Raw logs and first fixture copies remain LOCAL, untrusted and hash-only."
+    },
+    ".dev/test_dispatch_followup_identity.py.before602-fixture-20261029": {
+      "bytes": 33077,
+      "sha256": "b89dd7be22263437514efe90a7a6e7bebad8eaac7cd3957a38feacc3738991fa",
+      "scope": "Raw logs and first fixture copies remain LOCAL, untrusted and hash-only."
+    },
+    ".dev/test_agent_chat_drafts.py.before602-fixture-20261029": {
+      "bytes": 32593,
+      "sha256": "3a146a9538d4e77a6202fe461f3b616c2ce7233f1d24dc326ec552fd467eaf01",
+      "scope": "Raw logs and first fixture copies remain LOCAL, untrusted and hash-only."
+    },
+    ".dev/test_chat_images.py.before602-fixture-20261029": {
+      "bytes": 38766,
+      "sha256": "9ce310887ca8e98a852fb7e85faed7336a2b6a587abccf3315d1e75f5ef1239d",
+      "scope": "Raw logs and first fixture copies remain LOCAL, untrusted and hash-only."
+    },
+    ".dev/test_agent_control_read_offload.first-20261029.py": {
+      "bytes": 7513,
+      "sha256": "e6c746c6b6be14ece80744791abea123874a1ef7d387ab95da1bc2efa9b9e5c1",
+      "scope": "Raw logs and first fixture copies remain LOCAL, untrusted and hash-only."
+    },
+    ".dev/benchmark_agent_control_read_offload.first-20261029.py": {
+      "bytes": 7862,
+      "sha256": "65ada3c24616e6490559bf07e4b060d3c1ecd2f9bb3a0b528e4a2da02af9a164",
+      "scope": "Raw logs and first fixture copies remain LOCAL, untrusted and hash-only."
+    }
+  },
+  "limits": [
+    "All689 findings/152concerns OPEN. Original687 rows/fields and ten attachments preserved exactly; source repair is not activation or independent acceptance.",
+    "Private six-family, three-pair comparison deliberately sleeps200ms per read using the native manager executor. Complete responses match; max heartbeat210.685708 to6.502500ms. Request work remains about200ms; no request speedup, historical contribution, physicalIO or whole-HTTP claim.",
+    "Final mixed100 retains9600 ordered events, zero worker warnings/failures/timeouts/rejections, but854.706ms maintenance threshold remains. Module path/hash proof does not prove every changed branch ran; dedicated contracts and private comparison cover the change.",
+    "Fresh-health five unprofiled private12511-object calls take27.504 to30.273ms. Separate cProfile48.499ms includes overhead. Different object counts/concurrency from mixed/live maintenance; no sole disk/GC/GIL/scheduling attribution and no fresh health/migration/compaction/GC policy skipped.",
+    "PR600 positive activation/scoped subsets stay complete with five full-detail2MiB collector failures; full-body schema remains unverified. No blind retries, raised observer bounds or dropped durable/output data. PR601 and this repair have no installation/restart.",
+    "All older runtime populations/windows/log tails/fixtures stay separate; inclusive natural maintenance spans overlap and must never be summed. OffCPU remains unclassified.",
+    "Accepted backup0331/b527 andDB89957 original scopes remain closed. Cached peer stale/probe_failed/current build/log/retention gaps, logging/statusloss, missingobject, screenshot and ambiguous555/0b79/f403/d448/413 effects remain; no forced refresh/replay or answerednotification change.",
+    "Full realKernel/provider/MCP/placement/workspace/admission/startup/drain/concurrency, remaining maintenance/payload/call/write amplification and scheduler-owned independent_agent_v1 exact17d034a6 acceptance remain open. No fabricated milestones/Done/CAS loops/cleanup."
+  ],
+  "lossless_raw": {
+    "path": "docs/benchmarks/systemic-pr601-integration-control-reads-20261029.raw.json.gz",
+    "sha256": "bc305c8ddfcbfadc009260d04b47b0427b0e069b513d7e32c2e50b43b7643dcb",
+    "bytes": 6277726
+  }
+}
