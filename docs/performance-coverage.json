@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-29T04:10:48.703640+00:00",
-  "completion": "OPEN: all 684 findings / 148 concerns. Exact PR597 activation and scoped retests complete; installed 762.740 ms / source 911.797 ms / natural 5062.863 ms maintenance and all broader obligations remain. Receipt candidate unmerged and uninstalled; independent acceptance pending.",
+  "as_of": "2026-10-29T04:34:37.960191+00:00",
+  "completion": "OPEN: all 685 findings / 149 concerns. PR598 protected merged/main green but uninstalled; native project-label source repair tested/unmerged/uninstalled. Loaded695b46e7. All residuals, first failures and independent acceptance remain.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -217583,6 +217583,25 @@
       "resolution": "open",
       "next_actor": "this same systemic session",
       "next_action": "Supervised integration and exact activation/retests, then remaining maintenance/shared-source and full inventory acceptance. No whole-maintenance or historical cause closure."
+    },
+    {
+      "id": "concern:session-list-project-label-hydration",
+      "kind": "concern",
+      "finding": "Session list repeatedly hydrates full Project models and repository metadata to display id/title labels",
+      "family": "session",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_native_call_and_materialization_amplification_private_fixture_live_share_unverified",
+      "cause": "Each selected session calls native get_project and full normalized repository/model conversion although the response uses only id/title; shared projects repeat that work.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-pr598-integration-project-labels-20261029.json"
+      },
+      "implemented": "Per-invocation lazy native first-read labels keyed by realm/project, copied separately per response row. Full validation/normalization remains on first read; custom getter/converter paths remain per-row; subsequent calls re-read.",
+      "merged": [],
+      "deployed": "Source uninstalled. PR598 integrated but uninstalled; listener still695b46e7.",
+      "retested": "70 scoped contracts pass. Complete shared/unique250-row comparisons retain response bytes; corrected mixed100 retains9600ordered events/zero worker warnings but maintenance844.624ms. First observer failure and886.644ms stage retained.",
+      "resolution": "open",
+      "next_actor": "this same systemic session/card",
+      "next_action": "Supervised integration, measured remaining shared causes, then fresh exact batch activation/retests and independent whole-card acceptance. No blanket closure."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -315313,6 +315332,23 @@
       "status": "Receipt candidate source tested; unmerged/uninstalled",
       "resolution": "open",
       "next_action": "Supervised integration, exact activation/retests, substantive remaining shared maintenance/source repairs and independent acceptance."
+    },
+    {
+      "row_id": "concern:session-list-project-label-hydration",
+      "artifact": "docs/benchmarks/systemic-pr598-integration-project-labels-20261029.json",
+      "status": "Source tested; unmerged/uninstalled",
+      "resolution": "open"
+    }
+  ],
+  "integration_history": [
+    {
+      "pr": 598,
+      "artifact": "docs/benchmarks/systemic-pr598-integration-project-labels-20261029.json",
+      "source_head": "f40374d23590a62ae6acd94452b399027d26e91a",
+      "merge": "aa14cd1ede6115940b8a25402017804d49ea4d4f",
+      "trees_equal": true,
+      "installed": false,
+      "accepted": false
     }
   ]
 }

@@ -221,6 +221,20 @@ def _session_project_payload(request: Request, session: AgentSession) -> dict | 
     return {"id": project.id, "title": project.title}
 
 
+def _session_project_list_label(request, session, labels):
+    if labels is None or not session.project_id:
+        return _session_project_payload(request, session)
+    key = (session.realm_id, session.project_id)
+    if key not in labels:
+        # Only display labels share the first native read in this invocation.
+        # Keep full Project validation/repository normalization on that read;
+        # subsequent requests always read again, including missing projects.
+        labels[key] = _session_project_payload(request, session)
+    label = labels[key]
+    # Each response row owns its label, as on the independent-read path.
+    return dict(label) if label is not None else None
+
+
 def _session_reconciliation(request: Request, session_id: str) -> dict[str, Any]:
     store = request.app.state.ctx.services.get("dispatch_store")
     if isinstance(store, DispatchStore):
@@ -1789,6 +1803,19 @@ def list_agent_sessions(
         })
     watch_summaries = None
     card_summaries = None
+    project_labels = None
+    if request is not None:
+        project_store = request.app.state.ctx.store
+        if (
+            isinstance(project_store, CardProjection)
+            and inspect.isfunction(CardProjection.get_project)
+            and inspect.isfunction(CardProjection._row_to_project)
+            and inspect.getattr_static(project_store, "get_project") is CardProjection.get_project
+            and inspect.getattr_static(project_store, "_row_to_project") is CardProjection._row_to_project
+        ):
+            # Native display labels form a first-read view per project for one
+            # list response. Custom getters/converters retain per-row calls.
+            project_labels = {}
     if request is not None and detail == "summary":
         from pa.pr_supervisor.store import PRSupervisorStore
         store = request.app.state.ctx.store
@@ -1806,6 +1833,7 @@ def list_agent_sessions(
             summary=detail == "summary",
             watch_summaries=watch_summaries,
             card_summaries=card_summaries,
+            project_labels=project_labels,
         )
         for item in bounded
     ]
@@ -2105,6 +2133,7 @@ def _session_list_item(
     summary: bool = False,
     watch_summaries: dict[str, list[dict]] | None = None,
     card_summaries: dict[str, list[dict]] | None = None,
+    project_labels: dict[tuple[str, str], dict | None] | None = None,
 ) -> dict:
     from pa.domain.conversation_origin import conversation_origin
     config, confirmed = normalized_session_config_json(
@@ -2190,7 +2219,7 @@ def _session_list_item(
         "metrics_json": session.metrics_json or {},
         "card_id": session.card_id,
         "project_id": session.project_id,
-        "project": _session_project_payload(request, session),
+        "project": _session_project_list_label(request, session, project_labels),
         "cards": [
             {
                 **card,
