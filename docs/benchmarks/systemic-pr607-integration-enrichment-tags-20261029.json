@@ -1,0 +1,1082 @@
+{
+  "contract": "pa.pr607-integration-enrichment-tag-stage/v1",
+  "observed_at": "2026-10-29T17:44:44.471810+00:00",
+  "identity": {
+    "instance": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "authority": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "session": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+    "card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+    "project": "fdc04d91-1222-447b-859c-38e67bcab6eb",
+    "repository": "https://github.com/petersky/pa",
+    "repository_id": "5ce49cd8-f632-5f6d-a0d5-0b9eaf61f9cd",
+    "worktree": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c",
+    "branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+    "original_base": "4697ed583f6a5eceead72217d07ba2ebaf4ccc83",
+    "source_base": "40f1b539d4561e892a04d803ae8bc1ad05daa6ab",
+    "head": "dd56ac85d4707631a9d4612d71659ffda55edab4",
+    "upstream": "dd56ac85d4707631a9d4612d71659ffda55edab4",
+    "tree": "f70915669827d17a1f61ff3c772476cf91206d89",
+    "lease": "d24899f49011107365c237bbf09a300f63beb5a5c9658eac682770304ade52f2",
+    "fence": 334
+  },
+  "protected_integration": {
+    "contract": "pa.protected-integration-proof/v1",
+    "observed_at": "2026-10-29T17:39:43.636802+00:00",
+    "pr": 607,
+    "base": "40f1b539d4561e892a04d803ae8bc1ad05daa6ab",
+    "watched_head": "73530a7f03fa90834633d4370c04de9914456bb4",
+    "merge": "dd56ac85d4707631a9d4612d71659ffda55edab4",
+    "parents": [
+      "40f1b539d4561e892a04d803ae8bc1ad05daa6ab",
+      "73530a7f03fa90834633d4370c04de9914456bb4"
+    ],
+    "tree": "f70915669827d17a1f61ff3c772476cf91206d89",
+    "source_merge_trees_equal": true,
+    "branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+    "clean": true,
+    "upstream": "dd56ac85d4707631a9d4612d71659ffda55edab4",
+    "divergence": [
+      0,
+      0
+    ],
+    "remote_branch": "dd56ac85d4707631a9d4612d71659ffda55edab4\trefs/heads/pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+    "ci": {
+      "head": {
+        "run": 40922024661,
+        "head_sha": "73530a7f03fa90834633d4370c04de9914456bb4",
+        "attempt": 1,
+        "status": "completed",
+        "conclusion": "success",
+        "jobs": [
+          {
+            "id": 123617519961,
+            "name": "test (2)",
+            "status": "completed",
+            "conclusion": "success",
+            "run_attempt": 1
+          },
+          {
+            "id": 123617520531,
+            "name": "test (3)",
+            "status": "completed",
+            "conclusion": "success",
+            "run_attempt": 1
+          },
+          {
+            "id": 123617520673,
+            "name": "test (0)",
+            "status": "completed",
+            "conclusion": "success",
+            "run_attempt": 1
+          },
+          {
+            "id": 123617520766,
+            "name": "test (1)",
+            "status": "completed",
+            "conclusion": "success",
+            "run_attempt": 1
+          },
+          {
+            "id": 123617520798,
+            "name": "smoke",
+            "status": "completed",
+            "conclusion": "success",
+            "run_attempt": 1
+          }
+        ]
+      },
+      "main": {
+        "run": 40922715976,
+        "head_sha": "dd56ac85d4707631a9d4612d71659ffda55edab4",
+        "attempt": 1,
+        "status": "completed",
+        "conclusion": "success",
+        "jobs": [
+          {
+            "id": 123619960455,
+            "name": "smoke",
+            "status": "completed",
+            "conclusion": "success",
+            "run_attempt": 1
+          },
+          {
+            "id": 123619960960,
+            "name": "test (0)",
+            "status": "completed",
+            "conclusion": "success",
+            "run_attempt": 1
+          },
+          {
+            "id": 123619960989,
+            "name": "test (1)",
+            "status": "completed",
+            "conclusion": "success",
+            "run_attempt": 1
+          },
+          {
+            "id": 123619961214,
+            "name": "test (2)",
+            "status": "completed",
+            "conclusion": "success",
+            "run_attempt": 1
+          },
+          {
+            "id": 123619961396,
+            "name": "test (3)",
+            "status": "completed",
+            "conclusion": "success",
+            "run_attempt": 1
+          }
+        ]
+      }
+    },
+    "watch": {
+      "observed_at": "2026-10-29T17:35:34.876594Z",
+      "id": "7bbb995e-e8ad-44f1-a019-f83c31146487",
+      "status": "merged",
+      "head_sha": "73530a7f03fa90834633d4370c04de9914456bb4",
+      "merge": "dd56ac85d4707631a9d4612d71659ffda55edab4",
+      "stable_head_observations": 9,
+      "last_error": null,
+      "retired_at": "2026-10-29T17:35:34.925052Z",
+      "state": {
+        "checks": [
+          {
+            "name": "smoke",
+            "status": "completed",
+            "conclusion": "success",
+            "required": false,
+            "details_url": "https://github.com/petersky/pa/actions/runs/40922024661/job/123617520798",
+            "title": null,
+            "summary": null,
+            "text": null
+          },
+          {
+            "name": "test (1)",
+            "status": "completed",
+            "conclusion": "success",
+            "required": false,
+            "details_url": "https://github.com/petersky/pa/actions/runs/40922024661/job/123617520766",
+            "title": null,
+            "summary": null,
+            "text": null
+          },
+          {
+            "name": "test (0)",
+            "status": "completed",
+            "conclusion": "success",
+            "required": false,
+            "details_url": "https://github.com/petersky/pa/actions/runs/40922024661/job/123617520673",
+            "title": null,
+            "summary": null,
+            "text": null
+          },
+          {
+            "name": "test (3)",
+            "status": "completed",
+            "conclusion": "success",
+            "required": false,
+            "details_url": "https://github.com/petersky/pa/actions/runs/40922024661/job/123617520531",
+            "title": null,
+            "summary": null,
+            "text": null
+          },
+          {
+            "name": "test (2)",
+            "status": "completed",
+            "conclusion": "success",
+            "required": false,
+            "details_url": "https://github.com/petersky/pa/actions/runs/40922024661/job/123617519961",
+            "title": null,
+            "summary": null,
+            "text": null
+          }
+        ],
+        "stable_green_evidence": {
+          "green": true,
+          "head_sha": "73530a7f03fa90834633d4370c04de9914456bb4",
+          "fingerprint": "3f7eeae29118d6efdb8ab5d3",
+          "policy_revision": "06386b5b0751ba57",
+          "observed_at": "2026-10-29T17:35:03.509616+00:00",
+          "checks": [
+            {
+              "name": "smoke",
+              "required": false,
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/petersky/pa/actions/runs/40922024661/job/123617520798"
+            },
+            {
+              "name": "test (0)",
+              "required": false,
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/petersky/pa/actions/runs/40922024661/job/123617520673"
+            },
+            {
+              "name": "test (1)",
+              "required": false,
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/petersky/pa/actions/runs/40922024661/job/123617520766"
+            },
+            {
+              "name": "test (2)",
+              "required": false,
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/petersky/pa/actions/runs/40922024661/job/123617519961"
+            },
+            {
+              "name": "test (3)",
+              "required": false,
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/petersky/pa/actions/runs/40922024661/job/123617520531"
+            }
+          ],
+          "observations": 9,
+          "stable_head_since": "2026-10-29T17:31:03.015051+00:00"
+        },
+        "supervisor_state": "retired_after_merge",
+        "retirement": {
+          "reason": "github_merge_observed",
+          "retired_at": "2026-10-29T17:35:34.925052+00:00",
+          "terminal_status": "merged"
+        },
+        "card_disposition": {
+          "contract": "pa.card-disposition/v1",
+          "reason_code": "verification_pending",
+          "missing_requirements": [
+            "active",
+            "verified",
+            "acceptance"
+          ],
+          "status": "downgraded",
+          "reason": "Integration recorded; awaiting active, verified, acceptance.",
+          "requested_lane": "done",
+          "applied_lane": "waiting",
+          "watch_id": "7bbb995e-e8ad-44f1-a019-f83c31146487"
+        }
+      },
+      "scope": "Whitelisted final merged/retired evidence. Original watch with full prompts remains LOCAL/hash-only. Integration is not whole-card acceptance."
+    },
+    "installed": false,
+    "actual_loaded_source": "40f1b539d4561e892a04d803ae8bc1ad05daa6ab",
+    "scope": "Protected source integration only;606 remains installed/active. No merge/install/restart replay or whole-card acceptance. Worktree retained for continuing scope."
+  },
+  "installed_target": "60640f1/package586b2cfa/PID11660/startupa1b4ce18;607andnewtagsourceUNINSTALLED",
+  "source_tag_repair": {
+    "semantics": "Read complete realm tag vocabulary with SELECT DISTINCT json_each(tags), Python sorted order, preserving empty strings/case/Unicode/duplicates and existing empty-realm semantics. Skip unused tag vocabulary only when tags are protected. All request messages/schema/project/capability context byte-equal; no provider/default/policy/admission/write/durability changes. Other enrichment synchronous catalog/card reads and update remain open.",
+    "contracts": {
+      "stage": "broader",
+      "started_at": "2026-10-29T17:42:22.334609+00:00",
+      "finished_at": "2026-10-29T17:42:27.603966+00:00",
+      "exit_code": 0,
+      "source_hashes": {
+        "src/pa/domain/card_enrichment.py": "57803315c4a8f0bd42fa010a4b442cade9102833ca12801ce30a7eda8317097e",
+        "src/pa/domain/projection.py": "5221d41bfa3454153fc9f23534a5aa98b18ed1fe824784b8a3321408f0ab6b81",
+        "tests/test_card_enrichment_tag_catalog.py": "ddeefe0186cb25d305220e9e6bb3a69a1dad573264a1ef6f90442f16acbe1958"
+      },
+      "log_sha256": "82d31c1d5132a3e21cc0c1e245602a12deea4937aca7c3b8ef5cd45560e31d71",
+      "private_roots_before_imports": true,
+      "scope": "Private native card/tag catalog; no provider, production or policy effects. Baseline firstfailure retained."
+    },
+    "comparison": {
+      "contract": "pa.enrichment-tag-catalog-comparison/v1",
+      "started_at": "2026-10-29T17:42:54.525813+00:00",
+      "baseline": "dd56ac85d4707631a9d4612d71659ffda55edab4",
+      "source_hashes": {
+        "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/domain/card_enrichment.py": "57803315c4a8f0bd42fa010a4b442cade9102833ca12801ce30a7eda8317097e",
+        "src/pa/domain/projection.py": "5221d41bfa3454153fc9f23534a5aa98b18ed1fe824784b8a3321408f0ab6b81"
+      },
+      "cards": 100,
+      "body_bytes_per_card": 65536,
+      "pairs": 30,
+      "private_roots_before_imports": true,
+      "rows": [
+        {
+          "pair": 0,
+          "variant": "candidate",
+          "fields": "tags_offered",
+          "request_ms": 28.211291995830834,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 0,
+          "variant": "baseline",
+          "fields": "tags_offered",
+          "request_ms": 11.275916011072695,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 1,
+          "variant": "baseline",
+          "fields": "tags_locked",
+          "request_ms": 13.743332936428487,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 1,
+          "variant": "candidate",
+          "fields": "tags_locked",
+          "request_ms": 0.16854202840477228,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 2,
+          "variant": "candidate",
+          "fields": "tags_offered",
+          "request_ms": 0.9569170651957393,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 2,
+          "variant": "baseline",
+          "fields": "tags_offered",
+          "request_ms": 11.3880829885602,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 3,
+          "variant": "baseline",
+          "fields": "tags_locked",
+          "request_ms": 13.812499935738742,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 3,
+          "variant": "candidate",
+          "fields": "tags_locked",
+          "request_ms": 0.18695800099521875,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 4,
+          "variant": "candidate",
+          "fields": "tags_offered",
+          "request_ms": 0.9630409767851233,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 4,
+          "variant": "baseline",
+          "fields": "tags_offered",
+          "request_ms": 11.988084064796567,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 5,
+          "variant": "baseline",
+          "fields": "tags_locked",
+          "request_ms": 13.820125022903085,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 5,
+          "variant": "candidate",
+          "fields": "tags_locked",
+          "request_ms": 0.19658298697322607,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 6,
+          "variant": "candidate",
+          "fields": "tags_offered",
+          "request_ms": 1.0223330464214087,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 6,
+          "variant": "baseline",
+          "fields": "tags_offered",
+          "request_ms": 22.82387507148087,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 7,
+          "variant": "baseline",
+          "fields": "tags_locked",
+          "request_ms": 22.497416008263826,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 7,
+          "variant": "candidate",
+          "fields": "tags_locked",
+          "request_ms": 0.19858404994010925,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 8,
+          "variant": "candidate",
+          "fields": "tags_offered",
+          "request_ms": 0.9973329724743962,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 8,
+          "variant": "baseline",
+          "fields": "tags_offered",
+          "request_ms": 18.291749991476536,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 9,
+          "variant": "baseline",
+          "fields": "tags_locked",
+          "request_ms": 14.406000031158328,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 9,
+          "variant": "candidate",
+          "fields": "tags_locked",
+          "request_ms": 0.18241594079881907,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 10,
+          "variant": "candidate",
+          "fields": "tags_offered",
+          "request_ms": 1.0133750038221478,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 10,
+          "variant": "baseline",
+          "fields": "tags_offered",
+          "request_ms": 23.648875067010522,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 11,
+          "variant": "baseline",
+          "fields": "tags_locked",
+          "request_ms": 25.43533395510167,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 11,
+          "variant": "candidate",
+          "fields": "tags_locked",
+          "request_ms": 0.170209095813334,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 12,
+          "variant": "candidate",
+          "fields": "tags_offered",
+          "request_ms": 0.9670419385656714,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 12,
+          "variant": "baseline",
+          "fields": "tags_offered",
+          "request_ms": 15.439833048731089,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 13,
+          "variant": "baseline",
+          "fields": "tags_locked",
+          "request_ms": 22.243916988372803,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 13,
+          "variant": "candidate",
+          "fields": "tags_locked",
+          "request_ms": 0.17462496180087328,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 14,
+          "variant": "candidate",
+          "fields": "tags_offered",
+          "request_ms": 0.9545829379931092,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 14,
+          "variant": "baseline",
+          "fields": "tags_offered",
+          "request_ms": 21.844582981429994,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 15,
+          "variant": "baseline",
+          "fields": "tags_locked",
+          "request_ms": 19.24441708251834,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 15,
+          "variant": "candidate",
+          "fields": "tags_locked",
+          "request_ms": 0.1652089413255453,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 16,
+          "variant": "candidate",
+          "fields": "tags_offered",
+          "request_ms": 0.962416990660131,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 16,
+          "variant": "baseline",
+          "fields": "tags_offered",
+          "request_ms": 22.319499985314906,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 17,
+          "variant": "baseline",
+          "fields": "tags_locked",
+          "request_ms": 18.213875009678304,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 17,
+          "variant": "candidate",
+          "fields": "tags_locked",
+          "request_ms": 0.1811670372262597,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 18,
+          "variant": "candidate",
+          "fields": "tags_offered",
+          "request_ms": 0.9485420305281878,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 18,
+          "variant": "baseline",
+          "fields": "tags_offered",
+          "request_ms": 23.29504198860377,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 19,
+          "variant": "baseline",
+          "fields": "tags_locked",
+          "request_ms": 21.816750057041645,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 19,
+          "variant": "candidate",
+          "fields": "tags_locked",
+          "request_ms": 0.1655840314924717,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 20,
+          "variant": "candidate",
+          "fields": "tags_offered",
+          "request_ms": 0.970749999396503,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 20,
+          "variant": "baseline",
+          "fields": "tags_offered",
+          "request_ms": 27.62170892674476,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 21,
+          "variant": "baseline",
+          "fields": "tags_locked",
+          "request_ms": 22.31287502218038,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 21,
+          "variant": "candidate",
+          "fields": "tags_locked",
+          "request_ms": 0.16991596203297377,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 22,
+          "variant": "candidate",
+          "fields": "tags_offered",
+          "request_ms": 0.9722079848870635,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 22,
+          "variant": "baseline",
+          "fields": "tags_offered",
+          "request_ms": 27.13920793030411,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 23,
+          "variant": "baseline",
+          "fields": "tags_locked",
+          "request_ms": 29.81241699308157,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 23,
+          "variant": "candidate",
+          "fields": "tags_locked",
+          "request_ms": 0.16945810057222843,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 24,
+          "variant": "candidate",
+          "fields": "tags_offered",
+          "request_ms": 0.9921250166371465,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 24,
+          "variant": "baseline",
+          "fields": "tags_offered",
+          "request_ms": 29.677208047360182,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 25,
+          "variant": "baseline",
+          "fields": "tags_locked",
+          "request_ms": 22.166957962326705,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 25,
+          "variant": "candidate",
+          "fields": "tags_locked",
+          "request_ms": 0.18416601233184338,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 26,
+          "variant": "candidate",
+          "fields": "tags_offered",
+          "request_ms": 0.9894580580294132,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 26,
+          "variant": "baseline",
+          "fields": "tags_offered",
+          "request_ms": 32.260249950923026,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 27,
+          "variant": "baseline",
+          "fields": "tags_locked",
+          "request_ms": 24.064292083494365,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 27,
+          "variant": "candidate",
+          "fields": "tags_locked",
+          "request_ms": 0.1667090691626072,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 28,
+          "variant": "candidate",
+          "fields": "tags_offered",
+          "request_ms": 1.118415966629982,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 28,
+          "variant": "baseline",
+          "fields": "tags_offered",
+          "request_ms": 30.846499954350293,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69533,
+          "context_sha256": "6b41a877da4c3d80cb6a4fae6beb5d791a3a58e14819225092a5423af6429a06"
+        },
+        {
+          "pair": 29,
+          "variant": "baseline",
+          "fields": "tags_locked",
+          "request_ms": 28.619625023566186,
+          "models": 100,
+          "logical_body_bytes": 6553600,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        },
+        {
+          "pair": 29,
+          "variant": "candidate",
+          "fields": "tags_locked",
+          "request_ms": 0.16775005497038364,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "context_bytes": 69022,
+          "context_sha256": "2070befc1c189ec07d8a469245faf1e14e1e23ae520f6c9125e0369bee5a5882"
+        }
+      ],
+      "scope": "Complete enrichment context parity on a private native tag catalog.\n\nLogical hydrated body bytes are not physical disk I/O. No provider is invoked;\nthis compares request preparation, not deployed/historical performance.\n",
+      "finished_at": "2026-10-29T17:42:55.241021+00:00",
+      "complete_context_bytes_equal": true,
+      "summary": {
+        "baseline": {
+          "samples": 30,
+          "models": 3000,
+          "logical_body_bytes": 196608000,
+          "p50_ms": 22.243916988372803,
+          "p95_ms": 29.81241699308157,
+          "p99_ms": 30.846499954350293,
+          "max_ms": 32.260249950923026
+        },
+        "candidate": {
+          "samples": 30,
+          "models": 0,
+          "logical_body_bytes": 0,
+          "p50_ms": 0.19858404994010925,
+          "p95_ms": 1.0223330464214087,
+          "p99_ms": 1.118415966629982,
+          "max_ms": 28.211291995830834
+        }
+      }
+    },
+    "percentile_method": "Lower empirical order statistic floor((samples-1)*p); max separately retained, including candidate28.211ms first-call outlier. Logical hydrated body bytes are not physicalIO.",
+    "mixed": {
+      "started_at": "2026-10-29T17:43:33.843679+00:00",
+      "source_modules": {
+        "pa.domain.card_enrichment": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/domain/card_enrichment.py",
+          "sha256": "57803315c4a8f0bd42fa010a4b442cade9102833ca12801ce30a7eda8317097e"
+        },
+        "pa.domain.projection": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/domain/projection.py",
+          "sha256": "5221d41bfa3454153fc9f23534a5aa98b18ed1fe824784b8a3321408f0ab6b81"
+        },
+        "pa.modules.collaboration": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/modules/collaboration.py",
+          "sha256": "a260d1405fe3b7dec71c588725850649b7ac9de75edf9cd6d7b62d83acbde555"
+        },
+        "pa.execution.verification": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/execution/verification.py",
+          "sha256": "a1dd365734c34f3b08b3d58e4e3ed6839088601e0b2eefd9f5a6aea0bff1d507"
+        },
+        "pa.modules.browser": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/modules/browser.py",
+          "sha256": "af16439ba6f9e3db11e39b684448836d3917b1c84492e712820499020ce7de48"
+        },
+        "pa.modules.fleet": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/modules/fleet.py",
+          "sha256": "5d2daaf20f1ea751db385aba613863d8ff1de5383f4b0700d49eae5b910ce5dd"
+        },
+        "pa.server.schema_generation": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/server/schema_generation.py",
+          "sha256": "e6e5e180d9d3f3c53e7c0003b5316d87d41ea7c210ae25245b99148fbeb93aad"
+        }
+      },
+      "both_roots_private_before_imports": true,
+      "exit_code": 0,
+      "finished_at": "2026-10-29T17:43:59.440058+00:00",
+      "log_sha256": "4f1278771e35cdb554c9aabc3ba98cc637baf31f8657a12c235cc4aba845d311",
+      "log_bytes": 382972,
+      "events": 9600,
+      "warnings": {},
+      "threshold_violations": {
+        "maintenance.run": 1
+      },
+      "maintenance": {
+        "samples": 1,
+        "max_ms": 876.869,
+        "p50_ms": 876.869,
+        "p95_ms": 876.869,
+        "p99_ms": 876.869
+      },
+      "import_attestation": {
+        "modules": {
+          "pa.domain.card_enrichment": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/domain/card_enrichment.py",
+            "sha256": "57803315c4a8f0bd42fa010a4b442cade9102833ca12801ce30a7eda8317097e"
+          },
+          "pa.domain.projection": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/domain/projection.py",
+            "sha256": "5221d41bfa3454153fc9f23534a5aa98b18ed1fe824784b8a3321408f0ab6b81"
+          },
+          "pa.modules.collaboration": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/modules/collaboration.py",
+            "sha256": "a260d1405fe3b7dec71c588725850649b7ac9de75edf9cd6d7b62d83acbde555"
+          },
+          "pa.execution.verification": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/execution/verification.py",
+            "sha256": "a1dd365734c34f3b08b3d58e4e3ed6839088601e0b2eefd9f5a6aea0bff1d507"
+          },
+          "pa.modules.browser": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/modules/browser.py",
+            "sha256": "af16439ba6f9e3db11e39b684448836d3917b1c84492e712820499020ce7de48"
+          },
+          "pa.modules.fleet": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/modules/fleet.py",
+            "sha256": "5d2daaf20f1ea751db385aba613863d8ff1de5383f4b0700d49eae5b910ce5dd"
+          },
+          "pa.server.schema_generation": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/server/schema_generation.py",
+            "sha256": "e6e5e180d9d3f3c53e7c0003b5316d87d41ea7c210ae25245b99148fbeb93aad"
+          }
+        },
+        "before_workload": true,
+        "unchanged_after_workload": true
+      },
+      "scope": "Seven source/integrated module imports and unchanged hashes before/after workload do not prove every branch executes. Separate complete100card/30pair tag-catalog comparison exercises the repair. Private roots before every PA import; no production state/provider/network/default/deadline/GC change."
+    }
+  },
+  "limits": [
+    "PR607 protected merged exact73530a7f to dd56ac85/equalf709tree. Stable9 merged/retiredwatch/errornull; head40922024661/main40922715976 each5FIRST-ATTEMPTsuccess. Branchclean0:0/restored/pushed/lsremoteverified; no bypass or repeated605/606/607merge.",
+    "607UNINSTALLED. Actual60640f1/package586b2cfa/PID11660/startupa1b4ce18/config86968/lease334/nativeInteractive4/nice0/absoluteinstalledinterpreter remains positively activated/scopedretested. Original6068d78310bcompleteattempt1; priorpendingcontinuationtext ishistorical, neverrearm/reinstall/restart. Metadata439source/440RECORD/38templates/52unchangeddependencies/Python3.14.2/cachefcb9a8 unchanged.",
+    "606662tests/9subtests/19private+5additional stages PASS; mixed1009600ordered/0warnings/failures/timeouts/rejections retainsmaintenance700.942ms. 95ordinaryGETs/5summary/8encoding/8cachedFleetpass; all5full10sessionlists FAIL underoriginal5s/2MiB, fullbody/schema unverified/serverwindow2466711B. No blindrerun/raisedbounds/deletion.",
+    "60740broader tests incl13targeted guardedasyncsessionreads PASS;4baselinefailures retained;12complete controlledresponses equal/same200msreads maxheartbeat206.410to6.169ms. Sourcemixed892.315msmaintenance remains. Logicalbyte/GC/sourcehash proofs do notestablish everybranch, physicalIO, historicalcausation or deployedacceptance.",
+    "Cached natural606maintenance17:15:45.354228\u201317:15:59.195477Z internal13839.610mswall/5743.483CPU; transcriptretention2664.471/migrationfreshhealth1669.821/projection4495.653 inclVACUUM2922.496/transcript4692.571 inclVACUUM4154.372/finalhealth301.773ms. NestedspansNEVERSUM. No trigger/policychange/skippedfreshhealth/integrity/compaction. Disk/offCPU/busy/GC ownersunknown; historical5494.349/2607.588 andmixed700.942/892.315 distinct.",
+    "Actual607Linuxhead/main artifacts snapshot4.180/3.828ms/unrelated7.131/7.416ms with200msworkers/drainstart0.018/0.032ms/mixedWHOLE93.443/92.912ms with40msworkers NOTlagp95. Gen0/gen1 overlaps andoriginal218.784msfirstGCfailure/customcycles/offCPU unknowns remain.",
+    "34static asyncstore-read candidates require individualnative semantics/concurrency/cancellation/measurement; not34confirmedbottlenecks. Continue substantive maintenance/sharedsource/provider/session/workspace/queue/payload/call/writeamplification repairs and fullrealKernel/provider/MCP/placement/admission/startup/drain/concurrency acceptance.",
+    "All700findings/158concerns OPEN, prior697fields/history/firstfailures/negativeinterruptedstages/tenattachments retained losslessly. Schedulerowns EXACTindependent_agent_v1 revision17d034a6-efc7-4a9d-badc-d3fe012d0b57 unaccepted; integration satisfied/activeverifiedacceptance missing. No selfverifier/fabricatedmilestones/Done/CASloops/cleanup/default/config/GC/power/clock/model/mode/permissionchange.",
+    "Acceptedbackup0331/b527 andDB89957 originalscopes CLOSED. CachedMacmini stale/probe_failed/currentbuild/log/retentionunknown/otherpeersolder0d6638cc. No manualbackup/forcedpeerrefresh/update/restart/staleOct17admission/secretsfallback. Missingobject1/2842decodedB,/work603.818ms/statusfail2396/dropped5640760B/sourceFDrotationlog/screenshotgaps/ambiguous5550b79f403d448HTTP413effects remain. Answereda99notification untouched/noquote/edit/rearm/redelivery/consentinference.",
+    "Complete12,616,356B2a44410b priorbundle embedded losslessly, including final607protectedintegration/head+mainCI/retiredwatch andnatural606maintenance phases/static34candidates. All700priorrows/158concerns/fields/history/firstfailures/negativeinterruptedstages/tenattachments retained. One confirmedtaghydration concern gives701rows/159concerns,allOPEN.",
+    "Tag-only source private100cards/64KiB/30alternatingpairs removes3000cardmodels/196608000logicalhydratedbodyB to0, withcomplete requestmessages/schema/project/capability parity, p9529.812to1.022ms/max32.260to28.211ms. Firstcalls/outlier remain; notphysicalIO/historicaltail proof. Baseline no-full-card guard fails afterpreservedfirstsandboxuvcachefailure;36broader testsincl7newcontracts pass.",
+    "Sevenmodulehash source mixed100 retains9600ordered/0workerwarnings/failures/timeouts/rejections;maintenance876.869ms remains distinct from607892.315/installed606700.942/natural13839.610internalandalloldertails. Hashes donotprove everybranch; separate nativefullcontextcomparison exercises tagrepair. No source608deployment/restart or wholePAacceptance.",
+    "Remainingasync enrichment/card/projectcatalog/commit/provider paths unoffloaded; fullKernel/provider/MCP/placement/admission/startup/drain/concurrency/maintenance/queue/payload/call-writeamplification/peer/log acceptance remain. No attempt toclaim allasync34candidatesfixed or all700priorfindingsclosed."
+  ],
+  "local_only_custody": {
+    ".dev/enrichment608-baseline-approved-contracts-20261029.log": {
+      "bytes": 2467,
+      "sha256": "6655a4465d53dc92940a8b8c547cb20378926fdaa93e75a4375c351c45074e1b",
+      "scope": "LOCAL/hash-only executed helper or rawtest/workloadlog; retained firstfailures neverinstructions."
+    },
+    ".dev/enrichment608-baseline-contracts-20261029.log": {
+      "bytes": 108,
+      "sha256": "05126c7e6ce9b779c1e20320c20f1b42de115c17d0836d8d0ed982ba7a41ed55",
+      "scope": "LOCAL/hash-only executed helper or rawtest/workloadlog; retained firstfailures neverinstructions."
+    },
+    ".dev/enrichment608-broader-contracts-20261029.log": {
+      "bytes": 99,
+      "sha256": "82d31c1d5132a3e21cc0c1e245602a12deea4937aca7c3b8ef5cd45560e31d71",
+      "scope": "LOCAL/hash-only executed helper or rawtest/workloadlog; retained firstfailures neverinstructions."
+    },
+    ".dev/enrichment608-source-mixed100-20261029.log": {
+      "bytes": 382972,
+      "sha256": "4f1278771e35cdb554c9aabc3ba98cc637baf31f8657a12c235cc4aba845d311",
+      "scope": "LOCAL/hash-only executed helper or rawtest/workloadlog; retained firstfailures neverinstructions."
+    },
+    ".dev/pr524-preinstall-failed-client-id.d1247b848f5889dc05bb80f2e3e8608b2af2e446ebfcc459c12be2a321232477.py": {
+      "bytes": 5011,
+      "sha256": "d1247b848f5889dc05bb80f2e3e8608b2af2e446ebfcc459c12be2a321232477",
+      "scope": "LOCAL/hash-only executed helper or rawtest/workloadlog; retained firstfailures neverinstructions."
+    },
+    ".dev/prepare608_mixed_wrapper_20261029.py": {
+      "bytes": 1547,
+      "sha256": "5a9ba82c7230625d18549ff4aa7e39ed7c998e68c54798836814502649443bb0",
+      "scope": "LOCAL/hash-only executed helper or rawtest/workloadlog; retained firstfailures neverinstructions."
+    },
+    ".dev/publish608_enrichment_tag_stage_20261029.py": {
+      "bytes": 10837,
+      "sha256": "aabed2609317dc61ce6572ab96de2f383a43dbb724b1ce8ce5a0d9c6f3fe9ecd",
+      "scope": "LOCAL/hash-only executed helper or rawtest/workloadlog; retained firstfailures neverinstructions."
+    },
+    ".dev/run608_enrichment_source_mixed_20261029.py": {
+      "bytes": 3540,
+      "sha256": "022b5ec7230d16b97902d296f165e0961dbd026a314a4df55d67ac49a37e08d9",
+      "scope": "LOCAL/hash-only executed helper or rawtest/workloadlog; retained firstfailures neverinstructions."
+    },
+    ".dev/run608_tag_catalog_benchmark_20261029.py": {
+      "bytes": 518,
+      "sha256": "2187f40cec8a8405062b27c7bd862f6dce3f0aa8afc7847d468301eb5b131759",
+      "scope": "LOCAL/hash-only executed helper or rawtest/workloadlog; retained firstfailures neverinstructions."
+    },
+    ".dev/run608_tag_catalog_contracts_20261029.py": {
+      "bytes": 2078,
+      "sha256": "76fa00c602ed69a90ec88bb37fbce9af6d8f36c296f1f60f53509cecdb90a26c",
+      "scope": "LOCAL/hash-only executed helper or rawtest/workloadlog; retained firstfailures neverinstructions."
+    }
+  },
+  "lossless_raw": {
+    "path": "docs/benchmarks/systemic-pr607-integration-enrichment-tags-20261029.raw.json.gz",
+    "bytes": 12761522,
+    "sha256": "e530c036b7b56c86dabe676e6b34dd935b0d6f2f4e47d4c90d28a2099f21ef92"
+  }
+}

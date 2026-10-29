@@ -3204,6 +3204,20 @@ class CardProjection:
             ).fetchone()
         return int(row["count"] if row else 0)
 
+    def list_card_tags(self, *, realm_id: str) -> list[str]:
+        """Complete distinct tag vocabulary without hydrating retained cards."""
+        query = "SELECT DISTINCT tag.value FROM cards, json_each(cards.tags) AS tag"
+        params: list[str] = []
+        if realm_id:
+            query += " WHERE cards.realm_id = ?"
+            params.append(realm_id)
+        with self._conn() as conn:
+            rows = conn.execute(query, params).fetchall()
+        # Match the card-model vocabulary exactly, including empty strings,
+        # case and Unicode ordering; enrichment's complete context is not a
+        # bounded typeahead page or a filter that drops empty labels.
+        return sorted(row["value"] for row in rows)
+
     def list_card_filter_facets(self, *, realm_id: str) -> dict[str, list[str]]:
         """Distinct filter values without loading card bodies."""
         with self._conn() as conn:

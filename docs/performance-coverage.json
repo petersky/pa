@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-29T17:28:40.425870+00:00",
-  "completion": "OPEN: all700findings/158concerns. Exact606active/scopedretested, maintenance/full-list/currentruntime/peer/workspace tails remain. Newcollaborationreadsource unmerged/uninstalled; independentacceptance remainsopen.",
+  "as_of": "2026-10-29T17:44:44.471810+00:00",
+  "completion": "OPEN: all701findings/159concerns.607protectedintegrated/uninstalled;606active/scopedretestedwithmaintenance/full-list/remote/gaps. Newtagsource tested/unintegrated;independentacceptance unaccepted.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -219590,6 +219590,46 @@
       "resolution": "open",
       "next_actor": "This same systemic session/card",
       "next_action": "Preserve exact source/activation/branch distinctions and complete remaining live/provider/concurrency acceptance; no policy/default/GC changes."
+    },
+    {
+      "id": "concern:enrichment-tag-card-hydration",
+      "kind": "concern",
+      "finding": "Card enrichment hydrates complete retained cards only to collect tag vocabulary",
+      "family": "card_enrichment",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_native_call_amplification_historical_share_unverified",
+      "cause": "enrichment_request reads every fullcard inrealm, evenwhentagsprotected. Controlled100card/30pair test observes3000models/196608000logicalbodyB; notphysicalIO/historicalslowcauseproof.",
+      "implemented": "Read complete realm tag vocabulary with SELECT DISTINCT json_each(tags), Python sorted order, preserving empty strings/case/Unicode/duplicates and existing empty-realm semantics. Skip unused tag vocabulary only when tags are protected. All request messages/schema/project/capability context byte-equal; no provider/default/policy/admission/write/durability changes. Other enrichment synchronous catalog/card reads and update remain open.",
+      "merged": [],
+      "deployed": "Sourceonly/uninstalled;60640f1remainsactive.607integrated/uninstalled.",
+      "retested": {
+        "artifact": "docs/benchmarks/systemic-pr607-integration-enrichment-tags-20261029.json",
+        "tests": "36passincluding7nativeparity/nohydration/freshnesscontracts;1baselineguardfailure afterpreservedsandboxuvcachefailure",
+        "comparison": {
+          "baseline": {
+            "samples": 30,
+            "models": 3000,
+            "logical_body_bytes": 196608000,
+            "p50_ms": 22.243916988372803,
+            "p95_ms": 29.81241699308157,
+            "p99_ms": 30.846499954350293,
+            "max_ms": 32.260249950923026
+          },
+          "candidate": {
+            "samples": 30,
+            "models": 0,
+            "logical_body_bytes": 0,
+            "p50_ms": 0.19858404994010925,
+            "p95_ms": 1.0223330464214087,
+            "p99_ms": 1.118415966629982,
+            "max_ms": 28.211291995830834
+          }
+        },
+        "mixed_maintenance_ms": 876.869
+      },
+      "resolution": "open",
+      "next_actor": "This same systemic session/card",
+      "next_action": "ProtectedreadyPR/supervisor/exacthead+mainCI integration; future reviewed activation and scopedretest; keepremainingasynccatalog/write/provider/wholePAacceptance open."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -317391,6 +317431,12 @@
       "artifact": "docs/benchmarks/systemic-exact606-activation-collaboration-reads-20261029.json",
       "status": "Source tested;unmerged/uninstalled",
       "resolution": "open"
+    },
+    {
+      "row_id": "concern:enrichment-tag-card-hydration",
+      "artifact": "docs/benchmarks/systemic-pr607-integration-enrichment-tags-20261029.json",
+      "status": "Native source tested; unmerged/uninstalled",
+      "resolution": "open"
     }
   ],
   "integration_history": [
@@ -317482,6 +317528,16 @@
       "deployed": true,
       "accepted": false,
       "residuals": "Installedmaintenance700.942ms/fivefull-listcollectornegatives/currentactualmaintenance13841.292msandpeer/workspacefailures/wholecriteriaopen."
+    },
+    {
+      "pr": 607,
+      "artifact": "docs/benchmarks/systemic-pr607-integration-enrichment-tags-20261029.json",
+      "merge": "dd56ac85d4707631a9d4612d71659ffda55edab4",
+      "watched_head": "73530a7f03fa90834633d4370c04de9914456bb4",
+      "watch": "7bbb995e-e8ad-44f1-a019-f83c31146487",
+      "deployed": false,
+      "accepted": false,
+      "residuals": "606actualmaintenance13.84s/full-listnegatives/remote-gaps;607uninstalled;allwholecriteriaopen."
     }
   ],
   "coverage_stage_history": [
