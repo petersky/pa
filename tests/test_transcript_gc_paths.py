@@ -2,6 +2,7 @@
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from glob import iglob
 from pathlib import Path
 
 import pytest
@@ -27,6 +28,29 @@ def orphaned(storage, count=257):
     with storage.retain_objects():
         assert storage.prune(["expired"], keep_audit=False) == count
     return texts
+
+
+@pytest.mark.parametrize("deny_directory", [False, True])
+def test_entry_pairs_match_native_glob_order_and_traversal_errors(tmp_path, monkeypatch, deny_directory):
+    root = tmp_path / "literal [root] ?"
+    for relative in ["ab/a.zlib", "ab/.zlib", ".hidden/雪.zlib", "ab/UPPER.ZLIB",
+                     "ab/ignored.tmp", "blocked/b.zlib", "ab/directory.zlib/ignored"]:
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"private traversal fixture")
+    (root / "root-file.zlib").write_bytes(b"not a second-level object")
+    scan = module.os.scandir
+
+    def observed(path):
+        if deny_directory and Path(path) == root / "blocked":
+            raise PermissionError("private unreadable-directory fixture")
+        return scan(path)
+
+    monkeypatch.setattr(module.os, "scandir", observed)
+    expected = list(iglob("*/*.zlib", root_dir=root, include_hidden=True))
+    actual = [module.os.path.join(*parts) for parts in module._gc_object_entries(root)]
+    assert actual == expected
+    assert all(not name.startswith("blocked/") for name in actual) == deny_directory
 
 
 def after_first_live_query(storage, monkeypatch, action):
@@ -88,7 +112,7 @@ def test_stale_positive_only_defers_collection_until_next_pass(tmp_path, monkeyp
 def test_speculation_during_uncommitted_publication_rechecks_after_lock(tmp_path, monkeypatch, rollback):
     storage = storage_at(tmp_path / "uncommitted")
     enumerating, published, release, speculated = (threading.Event() for _ in range(4))
-    original_glob, original_prepare = module.iglob, storage._prepare_object
+    original_glob, original_prepare = module._gc_object_entries, storage._prepare_object
 
     def enumerated(*args, **kwargs):
         # Let GC pass its initial reader-pin check before starting the writer.
@@ -104,7 +128,7 @@ def test_speculation_during_uncommitted_publication_rechecks_after_lock(tmp_path
             raise ValueError("disposable publication failure")
         return result
 
-    monkeypatch.setattr(module, "iglob", enumerated)
+    monkeypatch.setattr(module, "_gc_object_entries", enumerated)
     monkeypatch.setattr(storage, "_prepare_object", prepare)
     after_first_live_query(storage, monkeypatch, speculated.set)
     with ThreadPoolExecutor(2) as pool:
@@ -191,7 +215,7 @@ def test_reader_pin_acquired_between_batches_preserves_remaining_bytes(tmp_path,
         except BaseException as exc:
             errors.append(exc)
 
-    original = module.iglob
+    original = module._gc_object_entries
 
     def enumerated(*args, **kwargs):
         for index, path in enumerate(original(*args, **kwargs)):
@@ -200,7 +224,7 @@ def test_reader_pin_acquired_between_batches_preserves_remaining_bytes(tmp_path,
                 assert ready.wait(5)
             yield path
 
-    monkeypatch.setattr(module, "iglob", enumerated)
+    monkeypatch.setattr(module, "_gc_object_entries", enumerated)
     thread = threading.Thread(target=reader)
     thread.start()
     try:
@@ -210,7 +234,7 @@ def test_reader_pin_acquired_between_batches_preserves_remaining_bytes(tmp_path,
         release.set()
         thread.join(5)
     assert not thread.is_alive() and not errors
-    monkeypatch.setattr(module, "iglob", original)
+    monkeypatch.setattr(module, "_gc_object_entries", original)
     assert storage.collect_unreferenced_objects() == 129
 
 
@@ -229,7 +253,7 @@ def test_new_reference_published_during_enumeration_survives_batch_recheck(tmp_p
         finally:
             published.set()
 
-    original = module.iglob
+    original = module._gc_object_entries
 
     def enumerated(*args, **kwargs):
         for index, path in enumerate(original(*args, **kwargs)):
@@ -238,7 +262,7 @@ def test_new_reference_published_during_enumeration_survives_batch_recheck(tmp_p
                 assert published.wait(5)
             yield path
 
-    monkeypatch.setattr(module, "iglob", enumerated)
+    monkeypatch.setattr(module, "_gc_object_entries", enumerated)
     thread = threading.Thread(target=writer)
     thread.start()
     try:

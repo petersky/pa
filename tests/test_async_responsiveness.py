@@ -834,45 +834,55 @@ class MixedLoadLoopLagTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         self.runtime.reset_lag_samples()
-        loaders = [
-            asyncio.create_task(self.client.get(path))
-            for path in (
-                "/partials/cards",
-                "/api/telemetry/live",
-                "/api/notifications",
-                "/api/fleet/instances",
-            )
-            for _ in range(3)
-        ]
-        await asyncio.sleep(0)
+        with DeadlineEvidence("mixed-hot-path-loop-lag") as evidence:
+            original = self.runtime.run_blocking
 
-        async def probe() -> float:
-            started = time.perf_counter()
-            await asyncio.sleep(0.005)
-            return (time.perf_counter() - started) * 1000
+            async def observed(operation, call, *args, **kwargs):
+                return await original(operation, evidence.wrap(call), *args, **kwargs)
 
-        ready_started = time.perf_counter()
-        ready = await self.client.get("/api/ready")
-        ready_ms = (time.perf_counter() - ready_started) * 1000
-        probe_ms = await probe()
-        responses = await asyncio.gather(*loaders)
-        deadline = time.perf_counter() + 0.2
-        while (
-            self.runtime.snapshot()["event_loop"]["samples"] < 16
-            and time.perf_counter() < deadline
-        ):
-            await asyncio.sleep(0.01)
+            self.runtime.run_blocking = observed
+            self.addCleanup(setattr, self.runtime, "run_blocking", original)
+            evidence.begin(time.monotonic())
+            loaders = [
+                asyncio.create_task(self.client.get(path))
+                for path in (
+                    "/partials/cards",
+                    "/api/telemetry/live",
+                    "/api/notifications",
+                    "/api/fleet/instances",
+                )
+                for _ in range(3)
+            ]
+            await asyncio.sleep(0)
 
-        self.assertTrue(all(item.status_code == 200 for item in responses))
-        self.assertEqual(ready.status_code, 200)
-        self.assertLess(probe_ms, 20)
-        self.assertLess(ready_ms, 20)
-        lag = self.runtime.snapshot()["event_loop"]
-        # 40ms of card/notification work is injected off-loop. Loop lag must
-        # stay below that stall; a 20ms p95 is inside GitHub xdist jitter.
-        self.assertGreaterEqual(lag["samples"], 8)
-        self.assertLess(lag["p95_lag_ms"], 40)
-        self.assertLess(lag["max_lag_ms"], 40)
+            async def probe() -> float:
+                started = time.perf_counter()
+                await asyncio.sleep(0.005)
+                return (time.perf_counter() - started) * 1000
+
+            ready_started = time.perf_counter()
+            ready = await self.client.get("/api/ready")
+            ready_ms = (time.perf_counter() - ready_started) * 1000
+            probe_ms = await probe()
+            responses = await asyncio.gather(*loaders)
+            deadline = time.perf_counter() + 0.2
+            while (
+                self.runtime.snapshot()["event_loop"]["samples"] < 16
+                and time.perf_counter() < deadline
+            ):
+                await asyncio.sleep(0.01)
+
+            evidence.finish(time.monotonic())
+            self.assertTrue(all(item.status_code == 200 for item in responses))
+            self.assertEqual(ready.status_code, 200)
+            self.assertLess(probe_ms, 20)
+            self.assertLess(ready_ms, 20)
+            lag = self.runtime.snapshot()["event_loop"]
+            # 40ms of card/notification work is injected off-loop. Loop lag must
+            # stay below that stall; a 20ms p95 is inside GitHub xdist jitter.
+            self.assertGreaterEqual(lag["samples"], 8)
+            self.assertLess(lag["p95_lag_ms"], 40, evidence.describe())
+            self.assertLess(lag["max_lag_ms"], 40, evidence.describe())
 
     async def test_on_loop_stall_is_visible_in_lag_samples(self) -> None:
         self.runtime.reset_lag_samples()

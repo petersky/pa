@@ -1,3 +1,51 @@
+# PR #595 first CI failures and bounded correction
+
+[Complete stage](benchmarks/systemic-pr595-first-ci-correction-20261029.json) and lossless raw bundle retain first run `40808115107`, attempt 1, exact head `a7f9d08c`, all five terminal jobs and the complete original log archive/hash. Three jobs passed; two shards failed. Every preceding finding remains open (**682 / 146 concerns**).
+
+Shard 3 had 1,048 passes / 155 subtests / one existing skip and two failures. An older GC directory-walk test still patched removed `iglob`; it now hooks the new entry iterator with the same forced stall, waits, append deadline, release and orphan-deletion assertions. The independent mixed hot-path test observed **207.144 ms p95 loop lag against unchanged 40 ms**. The cause is unclassified. Bounded test CPU/GC/worker evidence is added without changing its twelve requests, injected 40 ms sleeps, concurrency, 20/40 ms limits, sampling waits, normal GC, cancellation or cleanup.
+
+Shard 0 had 1,050 passes / 449 subtests / one existing skip and an unchanged **200 ms snapshot timeout**. Actual numeric evidence records **245.465 ms request wall / 3.615 ms loop CPU**, no recorded GC overlap, worker start **0.322 ms** after request start and worker incomplete at evidence publication. This is not a busy/holder/GIL/disk/GC attribution. Original synthetic checkout `db183e51` parents and equal source tree are verified. The snapshot test remains unchanged; later passing probes cannot erase this failure.
+
+The corrected private database API and mixed-lag contracts pass **13 tests**, no skips; the bounded mixed span is **89.296 ms / 4.011 ms loop CPU**, six worker calls, no recorded GC overlap. It is a different host/workload population and does not explain the Linux failures. The corrected head must pass its own complete CI and protected supervisor/independent gates; no blind retry or merged/deployed acceptance is claimed.
+
+One cached owner Fleet GET at `02:45:22 UTC` retains fresh reachability but stale Macmini status/sync with `probe_failed`; its last successful status metadata is older and does not establish a current loaded build. The other two peers have fresh required fields on older `0d6638cc` loaded builds. The read did not force a refresh or mutate peers. Every peer log/build/failure and local dropped-log/retention concern remains.
+
+---
+
+# Bounded transcript GC traversal repair
+
+[Source evidence](benchmarks/systemic-transcript-gc-entry-pairs-20261029.json) and its lossless raw bundle preserve the complete preceding exact594 activation/retests, original failed stages and ten attachments. All **682 findings / 146 concerns remain open**.
+
+Retained-object collection now carries native directory/name pairs through filtering, avoiding a joined relative path followed by a split for every retained file. A full path is constructed only when unlinking an unreferenced object. Native traversal order, hidden/suffix/symlink matching, suppressed directory-read errors and propagated unlink errors remain. The **128-file enumeration, reader-pin and fresh publication recheck boundaries are unchanged**; no fresh health, migration, compaction or GC check was skipped, and no policy/deadline/threshold changed.
+
+Five alternating same-store source comparisons with **12,511 retained cold objects** measured scan/entry-pair medians **26.857 / 21.191 ms**, maxima **27.909 / 21.678 ms**. All file bytes remain unchanged, with identical **198 SQLite calls / zero returned rows** in each sample. This is bounded all-live collection work on this host, not a physical-disk or whole-maintenance claim. A first iterator-only candidate measured **26.796 / 26.412 ms** and was not adopted. A separate private tuple candidate supported the final source repair. Unit tests may have overlapped source benchmark setup; host load remains uncontrolled.
+
+**68 scoped tests pass**, with no skips. Native glob ordering/error-oracle tests supplement existing pin-after-128, publication/rollback, literal/hidden/symlink, unlink-error, connection, retained-content and maintenance regressions. Initial uv-cache sandbox denial and a test-command typo before collection remain recorded. A new private source mixed run retains **9,600 ordered events**, zero warnings/failures/timeouts/rejections, but **maintenance 897.967 ms** still exceeds 500 ms. Its full numeric output is retained; the first console output was truncated and is not a complete log source. It is a separate population from prior installed778ms and natural5113/5460ms runs; no whole-maintenance improvement or historical cause is inferred.
+
+The strict final disposition contract has been verified privately: the previous unsupported fields are rejected and the corrected `contract`/`outcome` payload is accepted. Report `403cc7aa-f943-4887-bb6e-12cffb70b92c` records the agent's omitted continuation. A same-session follow-up must have an actual admitted receipt before this unfinished task ends again; final JSON and progress are not queue receipts. No product parser weakening or historical receipt mutation occurred.
+
+Protected integration and actual activation/retests of this new source remain pending; the running exact594 build is unchanged. The main VACUUM cost, all substantive maintenance/shared-source work, `/work` attribution, peers/status/freshness/build/log/retention, real provider/startup/concurrency and remaining family/independent acceptance obligations remain.
+
+---
+
+# Exact PR #594 activation, final retests and continuation gap
+
+[Finalized evidence](benchmarks/systemic-exact594-finalized-activation-20261029.json) and the adjacent lossless raw bundle publish the completed October 26 retests without rerunning them. All **682 findings / 146 concerns remain open**, with every prior row, field, failure and attachment preserved.
+
+Exact `6d241622` / package `19d96e7b` remains loaded in PID `83048`, startup `1dd674ab-06cb-42b4-ab65-42677354dc75`. The original managed handoff is positively `continuation_delivered` / effect `complete` at `2026-10-26T02:04:58.243261Z`. Historical pending labels in retained artifacts are historical observations. No merge, installation or restart was repeated.
+
+The completed installed proof covers 439 source files, 440 RECORD entries, 38 templates, Python 3.14.2, all 52 dependency versions/cache/configuration and named import paths. All **95 ordinary GETs passed**, maximum **104.988 ms**, with zero 500 ms violations; eight full encoding checks passed. Eight cached Fleet reads retained **80 fresh / 16 stale required fields** (`probe_failed`), not distinct incidents. The earlier `/work` **603.818 ms** outlier remains unclassified and is not erased by these passes.
+
+Installed lifecycle contracts passed **28 tests / 64 subtests**. Actual lease, dispatch and watch matching preserved decisions and order. The sequential private mixed run retained **9,600 ordered events**, zero worker warnings/failures/timeouts/rejections, but **maintenance 778.373 ms** still violated the unchanged 500 ms observation. Ten fake create/drain/combined cold starts, five late 100,000-row/500-selected batches, reference guards and thirty watch-read pairs completed. These are scoped subsets, not full real Kernel/provider/MCP/placement/admission/startup/drain/concurrency acceptance.
+
+October 26 natural maintenance was **5,460.096 ms inclusive**. A separate naturally completed October 28 run was **5,113.587 ms inclusive / 2,725.843 ms thread CPU**; its projection VACUUM span was **3,500.115 ms / 1,340.393 ms CPU**, and object collection **227.235 ms / 91.878 ms CPU**. Inclusive spans overlap and must never be summed. Off-CPU time remains unclassified. Every fresh migration/final health/GC/compaction check and existing policy remains. The new October 29 native **106-operation / 44-route** population is separate; all names already exist in the matrix. Older populations, lifetime maxima, bounded windows, fixtures and log tails remain separate.
+
+The interruption in unfinished work was an agent workflow error: the completed restart continuation had no admitted successor prompt. The emitted final also used unsupported `schema`/`summary`/`card_id` fields instead of the strict `contract`/`outcome` contract. Native follow-up turn history confirms completion and original handoff delivery; no dispatch turn-end evaluation exists for that follow-up, so parser rejection alone is not established as the idle-state cause. The agent must validate the final contract and durably append a same-session continuation before ending unfinished work. No claim that PA lost an admitted prompt, no new worker/card/verifier and no completion-policy relaxation.
+
+The next measured repair targets retained-object traversal in maintenance, preserving 128-file enumeration/recheck boundaries and all pin/publication/path/error semantics. No source speedup is claimed before a private alternating comparison. Full remaining shared-source, foreground/background, real provider/startup/concurrency, peer freshness/status/build/log/retention and independently accepted backup/database scope boundaries remain. The scheduler owns final acceptance under revision `17d034a6-efc7-4a9d-badc-d3fe012d0b57`; accepted is false.
+
+---
+
 # PR #594 first CI failure and authority-read follow-up
 
 [Immutable follow-up evidence](benchmarks/systemic-pr594-first-ci-browser-followup-20261026.json) and the adjacent lossless raw bundle preserve every preceding input, first-attempt failure, negative stage and ten attachments. All **681 findings / 145 concerns remain open**; all preceding 680 rows and fields remain unchanged.
