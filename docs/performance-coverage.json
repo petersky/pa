@@ -326713,5 +326713,19 @@
     "package": "sha256:266fa107cd671d340be046fa27a771453b8ca76f00a83fbb85b31d6b452f3b5f",
     "source_integration_install_activation_retest_distinct": true,
     "remaining": "All rows stayOPEN; see completeowner102operation32route inventory andfullfirstretest failures/adversepopulations. No blanketacceptance."
+  },
+  "workspace_gc_hydration_source_20261029": {
+    "artifact": "docs/benchmarks/systemic-workspace-gc-hydration-20261029.json",
+    "rows": 708,
+    "concerns": 164,
+    "resolution": "OPEN",
+    "all_previous_fields_unchanged": true,
+    "completion_requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+    "policy": "independent_agent_v1",
+    "acceptance": "schedulerowned/unaccepted",
+    "implemented": "Scopedsourcecandidateonly; currentownerstillinstalled618a58",
+    "measured": "90pairs180calls exactresults; ASCIIp95260.334\u2192.672ms/Unicode417.584\u2192.674ms; 99safetytests afterexpectedprivatefixtureflags, original7failures retained.",
+    "retested": "Declaredsourcepopulations only; no nativeGC/deployedfullbranchacceptance",
+    "remaining": "Everypriorrowfield/failure preserved; allcoverage/maintenance/payload/realpathpeerlogacceptance remainsOPEN."
   }
 }
