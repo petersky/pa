@@ -14,7 +14,7 @@ async def run(root):
  cls=next(n for n in ast.parse(source).body if isinstance(n,ast.ClassDef) and n.name=='CollaborationService');ns=dict(vars(module))
  for n in cls.body:
   if getattr(n,'name',None) in ['request_transition','execute_command']:exec(compile(ast.Module(body=[n],type_ignores=[]),'<archived615-collaboration>','exec'),ns)
- rows=[]
+ rows=[];snapshots=[]
  for bounded in [True,False]:
   path=root/str(bounded);path.mkdir();service=module.CollaborationService(SimpleNamespace(data_dir=path,instance_id='fixture'),SimpleNamespace());executor=AsyncRuntime(max_workers=1)
   if bounded:service.bind_runtime(SimpleNamespace(async_runtime=executor))
@@ -38,9 +38,11 @@ async def run(root):
        start=time.perf_counter();result=await (ns[callname](service,session,request) if variant=='baseline' else getattr(service,callname)(session,request));elapsed=(time.perf_counter()-start)*1000
       await asyncio.sleep(.01);done=True;await pulse
       body=result.model_dump_json();expected=expected or body;assert body==expected and result.duplicate and len(threads)==1 and (threads[0]==owner)==(variant=='baseline')
-      rows.append(dict(bounded=bounded,family=family,pair=pair,variant=variant,request_ms=elapsed,max_loop_gap_ms=max(ticks),read_on_loop=threads[0]==owner,result_sha256=hashlib.sha256(body.encode()).hexdigest()))
+      assert service._receipt_guards=={}
+      rows.append(dict(bounded=bounded,family=family,pair=pair,variant=variant,request_ms=elapsed,max_loop_gap_ms=max(ticks),read_on_loop=threads[0]==owner,result_sha256=hashlib.sha256(body.encode()).hexdigest(),guard_entries_after_call=0))
+    snapshots.append(dict(bounded=bounded,after_family=family,executor_snapshot=executor.snapshot(),scope='Cumulative executor counters for this private fixture; only candidate calls use executor. Deliberate200msread included. Fallback uses asyncio thread pool and has no native operation metrics.'))
   finally:await executor.close()
- return dict(baseline=baseline,baseline_sha256=hashlib.sha256(source.encode()).hexdigest(),candidate_source_sha256=hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest(),rows=rows)
+ return dict(baseline=baseline,baseline_sha256=hashlib.sha256(source.encode()).hexdigest(),candidate_source_sha256=hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest(),rows=rows,candidate_cumulative_executor_snapshots=snapshots)
 with tempfile.TemporaryDirectory(prefix='pa616-collab-pairs-') as tmp:
  root=Path(tmp);os.environ.update(PA_DATA_DIR=str(root/'data'),PA_WORKSPACE_ROOT=str(root/'workspaces'),PA_AGENT_ENABLED='false');v=asyncio.run(run(root))
 v.update(observed_at=datetime.now(timezone.utc).isoformat(),scope='Twelve alternating private pairs:3perfamily/executor; complete native receipt duplicate results match. Deliberate200msread preserved, request latency not removed, loop progress compared. No provider/configuration/admission/notification effects, production mutation, policy/default/GC/deadline change, physicalIO/historicalcause/hardware/wholePAacceptance. Bothrootsprivatebeforeimports/children. Sourcecandidateuninstalled.')

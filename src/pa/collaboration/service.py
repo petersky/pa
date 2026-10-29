@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
@@ -61,10 +62,29 @@ class CollaborationService:
         self.store = CollaborationStore(settings.data_dir)
         self.manager: Any | None = None
         self.notifier: Any | None = None
+        self._receipt_guards: dict[tuple[str, str, str], tuple[asyncio.Lock, int]] = {}
 
     def bind_runtime(self, manager: Any, *, notifier: Any | None = None) -> None:
         self.manager = manager
         self.notifier = notifier
+
+    @asynccontextmanager
+    async def _receipt_guard(self, family: str, session_id: str, key: str):
+        # The off-loop read introduces an await before the durable receipt is
+        # saved. Matching callers must re-read after its owner finishes; other
+        # sessions, keys and receipt families can still progress independently.
+        identity = (family, session_id, key)
+        lock, users = self._receipt_guards.get(identity, (asyncio.Lock(), 0))
+        self._receipt_guards[identity] = (lock, users + 1)
+        try:
+            async with lock:
+                yield
+        finally:
+            _, users = self._receipt_guards[identity]
+            if users == 1:
+                del self._receipt_guards[identity]
+            else:
+                self._receipt_guards[identity] = (lock, users - 1)
 
     async def _read_receipt(self, operation: str, call: Any, *args: Any) -> Any:
         """Keep authority-ledger reads off-loop; effects stay with the caller."""
@@ -470,6 +490,12 @@ class CollaborationService:
         return allowed, reason
 
     async def request_transition(
+        self, session: Any, request: ModeTransitionRequest
+    ) -> ModeTransitionResult:
+        async with self._receipt_guard("mode", session.id, request.idempotency_key):
+            return await self._request_transition_owned(session, request)
+
+    async def _request_transition_owned(
         self, session: Any, request: ModeTransitionRequest
     ) -> ModeTransitionResult:
         prior = await self._read_receipt(
@@ -965,6 +991,12 @@ class CollaborationService:
         return applied
 
     async def execute_command(
+        self, session: Any, request: ExecuteCommandRequest
+    ) -> CommandResult:
+        async with self._receipt_guard("command", session.id, request.idempotency_key):
+            return await self._execute_command_owned(session, request)
+
+    async def _execute_command_owned(
         self, session: Any, request: ExecuteCommandRequest
     ) -> CommandResult:
         prior = await self._read_receipt(

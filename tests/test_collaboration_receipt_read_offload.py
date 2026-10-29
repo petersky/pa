@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 import pytest_asyncio
 
-from pa.collaboration.models import CommandResult, ExecuteCommandRequest, ModeTransitionRequest, ModeTransitionResult
+from pa.collaboration.models import CommandResult, ExecuteCommandRequest, ModeTransitionRequest, ModeTransitionResult, TransitionStatus
 from pa.collaboration.service import CollaborationService
 from pa.collaboration.store import IdempotencyConflict
 from pa.core.async_runtime import AsyncRuntime
@@ -30,6 +30,7 @@ async def env(tmp_path, request):
         yield SimpleNamespace(service=service, session=session, executor=executor, requests={'transition':transition, 'command':command}, results={'transition':result, 'command':cmd})
     finally:
         await executor.close()
+        assert service._receipt_guards == {}
 
 
 def route(env, family):
@@ -114,3 +115,100 @@ async def test_read_error_propagates_before_any_effect(env, family):
         with pytest.raises(RuntimeError, match='private receipt read failed'):
             await invoke(env.session, env.requests[family])
         notify.assert_not_awaited(); mode_save.assert_not_called(); command_save.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('family', ['transition', 'command'])
+@pytest.mark.parametrize('conflicting', [False, True])
+async def test_matching_first_requests_share_one_durable_effect(env, family, conflicting):
+    invoke, method = route(env, family)
+    # Use a new, absent key and a stale request: only private durable receipts
+    # and a mocked notification are involved, never provider configuration.
+    request = env.requests[family].model_copy(update={'idempotency_key':'absent'})
+    other = request.model_copy(update=({'purpose':'conflict'} if family == 'transition' else {'arguments':'conflict'}) if conflicting else {})
+    env.session.config_json = {}
+    if env.service.manager is not None:
+        env.service.manager.get = lambda sid: None
+    entered, release, finished = threading.Event(), threading.Event(), threading.Event()
+    read = getattr(env.service.store, method)
+    reads = []
+    def blocked(*args):
+        result = read(*args); reads.append(result)
+        if len(reads) == 1:
+            entered.set()
+            try: assert release.wait(5)
+            finally: finished.set()
+        return result
+    with patch.object(env.service.store, method, side_effect=blocked), patch.object(env.service, '_validate_provenance', return_value=(TransitionStatus.STALE,'Private stale request',None)), patch.object(env.service, '_validate_command_provenance', return_value='Private stale request'), patch.object(env.service, '_notify', new_callable=AsyncMock) as notify:
+        first = asyncio.create_task(invoke(env.session, request))
+        second = None
+        try:
+            assert await asyncio.to_thread(entered.wait, 2)
+            second = asyncio.create_task(invoke(env.session, other))
+            # The second caller joins the same key before the first read ends.
+            for _ in range(10):
+                if next(iter(env.service._receipt_guards.values()))[1] == 2: break
+                await asyncio.sleep(0)
+            assert next(iter(env.service._receipt_guards.values()))[1] == 2
+            assert len(reads) == 1 and reads[0] is None
+            release.set()
+            result = await asyncio.wait_for(first, 3)
+            if conflicting:
+                with pytest.raises(IdempotencyConflict): await second
+            else:
+                duplicate = await asyncio.wait_for(second, 3)
+                assert duplicate == result.model_copy(update={'duplicate':True})
+            assert len(reads) == 2 and reads[1] is not None
+            notify.assert_awaited_once()
+        finally:
+            release.set(); await asyncio.to_thread(finished.wait, 2)
+            for task in (first, second):
+                if task is not None and not task.done(): task.cancel()
+            await asyncio.gather(*(task for task in (first, second) if task is not None), return_exceptions=True)
+    assert env.service._receipt_guards == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('family', ['transition', 'command'])
+async def test_cancelled_waiter_releases_key_reference_without_reading(env, family):
+    invoke, method = route(env, family)
+    entered, release, finished = threading.Event(), threading.Event(), threading.Event()
+    read = getattr(env.service.store, method)
+    reads = []
+    def blocked(*args):
+        reads.append(args); entered.set()
+        try:
+            assert release.wait(5)
+            return read(*args)
+        finally: finished.set()
+    with patch.object(env.service.store, method, side_effect=blocked):
+        owner = asyncio.create_task(invoke(env.session, env.requests[family])); waiter = None
+        try:
+            assert await asyncio.to_thread(entered.wait, 2)
+            waiter = asyncio.create_task(invoke(env.session, env.requests[family]))
+            for _ in range(10):
+                if next(iter(env.service._receipt_guards.values()))[1] == 2: break
+                await asyncio.sleep(0)
+            assert next(iter(env.service._receipt_guards.values()))[1] == 2
+            waiter.cancel()
+            with pytest.raises(asyncio.CancelledError): await waiter
+            assert next(iter(env.service._receipt_guards.values()))[1] == 1
+            assert len(reads) == 1
+            release.set(); assert (await owner).duplicate
+        finally:
+            release.set(); await asyncio.to_thread(finished.wait, 2)
+            for task in (owner, waiter):
+                if task is not None and not task.done(): task.cancel()
+            await asyncio.gather(*(task for task in (owner, waiter) if task is not None), return_exceptions=True)
+    assert env.service._receipt_guards == {}
+
+
+@pytest.mark.asyncio
+async def test_receipt_guards_do_not_block_other_keys_sessions_or_families(env):
+    async with env.service._receipt_guard('mode', 'session', 'key'):
+        for identity in [('mode','session','other'), ('mode','other','key'), ('command','session','key')]:
+            async def enter():
+                async with env.service._receipt_guard(*identity): return True
+            assert await asyncio.wait_for(enter(), 1)
+        assert len(env.service._receipt_guards) == 1
+    assert env.service._receipt_guards == {}
