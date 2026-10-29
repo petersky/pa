@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -44,6 +45,24 @@ def _session_or_404(request: Request, session_id: str):
     manager = _manager(request)
     runtime = manager.get(session_id)
     session = runtime.session if runtime else manager.store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail={"code": "session_not_found"})
+    return session
+
+
+async def _session_or_404_async(request: Request, session_id: str):
+    manager = _manager(request)
+    runtime = manager.get(session_id)
+    if runtime:
+        session = runtime.session
+    else:
+        executor = request.app.state.ctx.services.get("async_runtime")
+        if executor:
+            session = await executor.run_blocking(
+                "collaboration.session_read", manager.store.get_session, session_id
+            )
+        else:
+            session = await asyncio.to_thread(manager.store.get_session, session_id)
     if not session:
         raise HTTPException(status_code=404, detail={"code": "session_not_found"})
     return session
@@ -126,7 +145,7 @@ def get_collaboration_state(request: Request, session_id: str) -> dict[str, Any]
 async def request_collaboration_transition(
     request: Request, session_id: str, body: ModeTransitionRequest
 ) -> dict[str, Any]:
-    session = _session_or_404(request, session_id)
+    session = await _session_or_404_async(request, session_id)
     principal = _require_session_access(request, session)
     if body.session_id != session_id:
         raise HTTPException(status_code=422, detail={"code": "session_id_mismatch"})
@@ -175,7 +194,7 @@ def get_session_commands(request: Request, session_id: str) -> dict[str, Any]:
 async def execute_session_command(
     request: Request, session_id: str, body: CommandExecutionBody
 ) -> dict[str, Any]:
-    session = _session_or_404(request, session_id)
+    session = await _session_or_404_async(request, session_id)
     principal = _require_session_access(request, session)
     command_request = ExecuteCommandRequest(
         session_id=session_id,
