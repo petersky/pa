@@ -6781,3 +6781,10 @@ Supported logs read:2026-10-17T15:41:26Z–16:11:45Z;12543records/6781652bytes, 
 | `sync.ref_read` | 14 | 736.6 | 2271.4 | 2271.4 | 2271.4 |
 | `workspace.lease_renew` | 4 | 618.5 | 1586.8 | 1586.8 | 1586.8 |
 | `workspace.project_provision` | 6 | 5284.9 | 13819.4 | 13819.4 | 13819.4 |
+
+
+Exact618 activation and first retests (2026-10-29)
+
+Original handoff completed once; source `a58b7847`, package `266fa107`, actual PID 72906. Installed 918 tests and 9 subtests, 19 private stages and 13 additional stages passed. Mixed workload retained 9,600 ordered events with no worker warnings, but maintenance took 794.077 ms. Live ordinary 95 requests had zero failures/500 ms violations (max 93.081 ms); summary, encoding and cached Fleet checks passed. All five full 10-session lists failed the unchanged 2 MiB bound: Content-Length 2,630,430; complete JSON/schema unverified. No rerun, threshold change, shortened page or dropped durable data.
+
+The complete new [activation artifact](benchmarks/systemic-installed618-activation-20261029.json) and adjacent full raw bundle preserve every prior row/field/failure. New owner inventory retains all 102 operations, 21 prefix families and 32 route groups with counters, bytes and separate bounded percentiles/lifetime maxima. Natural maintenance was 6.376 s; projection VACUUM 3.839 s overlaps first session lock hold by 3.315 s and paired lock wait by 3.315 s. The shared lock chain and overlap are confirmed; successful native busy waiting versus physical I/O/scheduling remains unseparated. Workspace GC 1.684 s and sync reconcile 589 ms remain. All 708 findings/164 concerns and broader real-path/peer/log/acceptance obligations stay open; independent acceptance remains scheduler-owned.
