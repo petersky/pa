@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-29T18:19:40.776226+00:00",
-  "completion": "OPEN: all701findings159concerns. Exact608active/scopedretested withmaintenance/full-list/live/peer tails. Newprogressbyte-source tested/unmerged/uninstalled;Unicodep95/max worse; independentacceptance unaccepted.",
+  "as_of": "2026-10-29T18:49:08.155395+00:00",
+  "completion": "OPEN: all702findings160concerns.609protectedintegrated/uninstalled;608active/scopedretested withmaintenance/full-list/live/peer tails. Newpacket-origin/leafdiagnostic source tested/unmerged/uninstalled; independentacceptance unaccepted.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -211995,7 +211995,15 @@
       },
       "resolution": "open",
       "next_actor": "Same systemic session, existing release authority and ordinary independent scheduler",
-      "next_action": "Review/integrate source, retain backup stable-build window and existing rollout authority. After separately authorized exact activation, collect supported leaf windows with representative valid branches and diagnose actual cost; preserve aggregate and all historical failures."
+      "next_action": "Review/integrate source, retain backup stable-build window and existing rollout authority. After separately authorized exact activation, collect supported leaf windows with representative valid branches and diagnose actual cost; preserve aggregate and all historical failures.",
+      "verification_origin_stage_20261029": {
+        "artifact": "docs/benchmarks/systemic-pr609-integration-verification-origins-20261029.json",
+        "fixed_new_phases": 17,
+        "static_verification_call_sites": 67,
+        "old_unclassified": "53samples/max541.008msworker454.964msCPU remain unassigned; no retroclassification",
+        "status": "Sourceonly/uninstalled",
+        "resolution": "open"
+      }
     },
     {
       "id": "concern:health-canonical-ci-completion-observer",
@@ -219654,6 +219662,76 @@
           "resolution": "open"
         }
       ]
+    },
+    {
+      "id": "concern:verification-packet-origin-history-copy",
+      "kind": "concern",
+      "finding": "Verification packet planning copies retained dispatch plans/history to read scalar origin identities",
+      "family": "verification",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_source_and_private_native_copy_amplification_historical_share_unverified",
+      "cause": "Native ordinary100/health50 private packet planning repeatedly deep-copies complete dispatches for scalar IDs/realm/control lookup.9030fullsnapshots/8880000logical nested plan steps across30pairs per shape; not physicalIO or proof of historical541mshealth cause.",
+      "implemented": "Packet planning reads fresh detached dispatch identity/control projections, retaining list card/realm filters/order/limit101 and all origin/watch/realm/retry-control guards. Full DispatchStore readers and full PR watch proof validation remain unchanged. Unsupported origin-reader adapters use the original full readers; session-only watch fallback remains full. Seventeen additional fixed diagnostic phases label66previouslyunlabelled verification worker calls; the existingwatch label remains, all67sites covered. Aggregate warnings/deadlines/cancellation/workeroccupancy/admission/authority/receipt/lease/acceptance policies unchanged.",
+      "merged": [],
+      "deployed": "Sourceonly/uninstalled; actual6083fd/package07e/PID20833 remainsactive at18:45:43Z.609integrated/uninstalled.",
+      "retested": {
+        "artifact": "docs/benchmarks/systemic-pr609-integration-verification-origins-20261029.json",
+        "contracts": "246tests68subtests pass, including20neworigin/proof/realm/window/fallback/freshness/publication/metric contracts; priorcandidate26testsoverlap",
+        "comparison": {
+          "ordinary100": {
+            "baseline": {
+              "latency_ms": {
+                "samples": 30,
+                "p50_ms": 173.8879579352215,
+                "p95_ms": 194.59037494380027,
+                "p99_ms": 198.80708295386285,
+                "max_ms": 201.96025003679097
+              },
+              "full_dispatch_snapshots": 6000,
+              "copied_nested_plan_steps": 5940000
+            },
+            "candidate": {
+              "latency_ms": {
+                "samples": 30,
+                "p50_ms": 1.38412497472018,
+                "p95_ms": 1.5609579859301448,
+                "p99_ms": 2.109666937030852,
+                "max_ms": 3.2277090940624475
+              },
+              "full_dispatch_snapshots": 0,
+              "copied_nested_plan_steps": 0
+            }
+          },
+          "health50": {
+            "baseline": {
+              "latency_ms": {
+                "samples": 30,
+                "p50_ms": 94.16670899372548,
+                "p95_ms": 97.73858299013227,
+                "p99_ms": 98.21004106197506,
+                "max_ms": 101.18491703178734
+              },
+              "full_dispatch_snapshots": 3030,
+              "copied_nested_plan_steps": 2940000
+            },
+            "candidate": {
+              "latency_ms": {
+                "samples": 30,
+                "p50_ms": 3.475041943602264,
+                "p95_ms": 3.820041078142822,
+                "p99_ms": 3.968584001995623,
+                "max_ms": 4.041625070385635
+              },
+              "full_dispatch_snapshots": 0,
+              "copied_nested_plan_steps": 0
+            }
+          }
+        },
+        "source_mixed_maintenance_ms": 857.815
+      },
+      "resolution": "open",
+      "next_actor": "This same systemic session/card",
+      "next_action": "ProtectedreadyPR/durablewatch/exacthead+mainCI integration; future reviewedactivation/installedretest and fullrealKernel/provider/concurrency acceptance. Keep all remaining packet/watch/session/maintenance/control-plane paths and historicaltails open."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -317467,6 +317545,12 @@
       "artifact": "docs/benchmarks/systemic-exact608-activation-progress-bytes-20261029.json",
       "status": "Sourceonly canonical-byte copy reduction;Unicodep95/max adverse;unmerged/uninstalled",
       "resolution": "open"
+    },
+    {
+      "row_id": "concern:verification-packet-origin-history-copy",
+      "artifact": "docs/benchmarks/systemic-pr609-integration-verification-origins-20261029.json",
+      "status": "Source tested/unmerged/uninstalled; no fullPA acceptance",
+      "resolution": "open"
     }
   ],
   "integration_history": [
@@ -317578,6 +317662,16 @@
       "deployed": true,
       "accepted": false,
       "residuals": "Installedmaintenance765.255ms/full-list5failures/live6158.234ms/session2439.923ms; fullscope open."
+    },
+    {
+      "pr": 609,
+      "artifact": "docs/benchmarks/systemic-pr609-integration-verification-origins-20261029.json",
+      "merge": "4bc5b353603813a79adbc4c2360644d6b3b3308f",
+      "watched_head": "71cc59d457671ed6298bc91be2134cb60d3976a1",
+      "watch": "c7e97c3d-1eb8-43e6-bfb7-ef6137f37ac0",
+      "deployed": false,
+      "accepted": false,
+      "residuals": "Head/main fivefirstattemptsuccess;609uninstalled/608active;all broadercriteriaopen."
     }
   ],
   "coverage_stage_history": [

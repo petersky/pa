@@ -217,6 +217,18 @@ class DispatchSessionRetry(BaseModel):
     generation: int = Field(ge=1)
 
 
+@dataclass(frozen=True)
+class VerificationOrigin:
+    """Detached packet-planning inputs, without retained plans or history."""
+
+    dispatch_id: str
+    idempotency_key: str | None
+    session_id: str | None
+    card_id: str | None
+    realm_id: str
+    control_operations: dict[str, str]
+
+
 class DispatchRecord(BaseModel):
     dispatch_id: str = Field(default_factory=lambda: str(uuid4()))
     mutation_id: str
@@ -2225,6 +2237,44 @@ class DispatchStore:
         with measured_lock(self._index_lock):
             record = self._records.get(dispatch_id)
             return self._snapshot(record) if record else None
+
+    @staticmethod
+    def _verification_origin(record: DispatchRecord) -> VerificationOrigin:
+        return VerificationOrigin(
+            record.dispatch_id, record.idempotency_key, record.session_id,
+            record.card_id, record.realm_id, copy.deepcopy(record.control_operations),
+        )
+
+    def verification_origin(self, dispatch_id: str) -> VerificationOrigin | None:
+        """Read fresh packet identity/control inputs without a full snapshot."""
+        self._require_readable()
+        self._yield_to_index_writer()
+        with measured_lock(self._index_lock):
+            record = self._records.get(dispatch_id)
+            return self._verification_origin(record) if record else None
+
+    def verification_card_origins(
+        self, *, card_id: str, realm_id: str, limit: int = 101,
+    ) -> list[VerificationOrigin]:
+        """Preserve list's card/realm window and order for packet planning.
+
+        Published records are replaced after commit. As in list(), capture the
+        references under the index lock, then filter/sort outside it. Only the
+        detached scalar/control projection escapes; no retained payload is
+        copied or borrowed by the planner.
+        """
+        self._require_readable()
+        self._yield_to_index_writer()
+        with measured_lock(self._index_lock):
+            self._refresh_queue_positions_locked()
+            records = list(self._records.values())
+        selected = sorted(
+            (record for record in records
+             if (not card_id or record.card_id == card_id)
+             and (not realm_id or record.realm_id == realm_id)),
+            key=lambda record: record.updated_at, reverse=True,
+        )[:limit]
+        return [self._verification_origin(record) for record in selected]
 
     def public_status(self, dispatch_id: str) -> dict[str, Any] | None:
         """Detached presentation projection without copying plans or history."""
