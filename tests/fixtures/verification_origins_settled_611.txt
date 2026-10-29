@@ -1,0 +1,21 @@
+def origins_settled(self, packet):
+    if packet['pending_repair_controls']:
+        return False
+    for key in packet['origin_dispatches']:
+        record = self.ctx.services['dispatch_store'].get(key)
+        if record is None or record.state not in TERMINAL_DISPATCH_STATES:
+            return False
+        from pa.execution.followup import dispatch_followup_pending
+        if dispatch_followup_pending(record):
+            return False
+        pre_session = (record.state in {'failed', 'cancelled'} and not record.session_id
+                       and not record.prompt_acknowledged_at and not record.initial_prompt_operation)
+        if pre_session:
+            continue
+        if record.state == 'completed' and (not record.acknowledged_at or record.completion_delivery_class != 'acknowledged'):
+            return False
+        if record.reconciliation_state not in RECONCILIATION_TERMINAL_STATES:
+            return False
+        if record.state in {'failed', 'cancelled'} and record.recoverable:
+            return False
+    return True

@@ -10,6 +10,7 @@ import json
 import sqlite3
 import time
 import httpx
+from inspect import getattr_static
 from contextlib import contextmanager
 from pathlib import Path
 from datetime import UTC, datetime
@@ -17,7 +18,7 @@ from urllib.parse import quote, urlencode
 
 from pa.domain.completion import CompletionConflict
 from pa.domain.models import CardLane
-from pa.execution.dispatch import TERMINAL_DISPATCH_STATES
+from pa.execution.dispatch import DispatchStore, TERMINAL_DISPATCH_STATES
 from pa.execution.reconciliation import RECONCILIATION_TERMINAL_STATES
 from pa.execution.disposition import decide_card_disposition, disposition_for_merged_watch
 from pa.health_journal.models import digest, encode
@@ -429,18 +430,28 @@ class VerificationService:
     def origins_settled(self, packet):
         if packet['pending_repair_controls']:
             return False
+        ledger = self.ctx.services['dispatch_store']
+        read_settlement = getattr(ledger, 'verification_settlement', None)
+        if isinstance(ledger, DispatchStore) and (
+                getattr_static(ledger, 'get') is not DispatchStore.get
+                or getattr_static(ledger, '_snapshot') is not getattr_static(DispatchStore, '_snapshot')):
+            # Custom getters/converters keep their original full-read contract.
+            read_settlement = None
+        projected = callable(read_settlement)
         for key in packet['origin_dispatches']:
-            record = self.ctx.services['dispatch_store'].get(key)
+            record = read_settlement(key) if projected else ledger.get(key)
             if record is None or record.state not in TERMINAL_DISPATCH_STATES:
                 return False
             from pa.execution.followup import dispatch_followup_pending
-            if dispatch_followup_pending(record):
+            if (record.followup_pending if projected else dispatch_followup_pending(record)):
                 return False
             pre_session = (record.state in {'failed', 'cancelled'} and not record.session_id
-                           and not record.prompt_acknowledged_at and not record.initial_prompt_operation)
+                           and not (record.prompt_acknowledged if projected else record.prompt_acknowledged_at)
+                           and not (record.initial_prompt_present if projected else record.initial_prompt_operation))
             if pre_session:
                 continue
-            if record.state == 'completed' and (not record.acknowledged_at or record.completion_delivery_class != 'acknowledged'):
+            if record.state == 'completed' and (not (record.completion_acknowledged if projected else record.acknowledged_at)
+                                                or record.completion_delivery_class != 'acknowledged'):
                 return False
             if record.reconciliation_state not in RECONCILIATION_TERMINAL_STATES:
                 return False
