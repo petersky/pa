@@ -326699,5 +326699,19 @@
       },
       "accepted": false
     }
-  ]
+  ],
+  "installed618_activation_first_retests_20261029": {
+    "artifact": "docs/benchmarks/systemic-installed618-activation-20261029.json",
+    "rows": 708,
+    "concerns": 164,
+    "all_prior_row_fields_unchanged": true,
+    "resolution": "OPEN",
+    "completion_requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+    "policy": "independent_agent_v1",
+    "acceptance": "schedulerowned/unaccepted",
+    "loaded_source": "a58b78473e1edfc9a348aea954c75ff7b8e70e4d",
+    "package": "sha256:266fa107cd671d340be046fa27a771453b8ca76f00a83fbb85b31d6b452f3b5f",
+    "source_integration_install_activation_retest_distinct": true,
+    "remaining": "All rows stayOPEN; see completeowner102operation32route inventory andfullfirstretest failures/adversepopulations. No blanketacceptance."
+  }
 }
