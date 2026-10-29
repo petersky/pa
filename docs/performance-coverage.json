@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-29T07:13:58.867912+00:00",
-  "completion": "OPEN: all694findings/154concerns. PR603 includes Fleetread offload and temporaryschema binding lifetime repair; first8eheadCIfailed218.784msGCpause, no retry/merge. New mixedmaintenance864.917ms and installed602full-list/maintenance residuals remain. Independent acceptance missing.",
+  "as_of": "2026-10-29T07:39:30.263932+00:00",
+  "completion": "OPEN: all695findings/155concerns. PR603 protectedintegrated/head+mainCI5successeseach/uninstalled. Newnativegeneratorrelease source86tests/19subtests/complete6schemaspass;maintenance858.873ms and allactivation/fullacceptancegapsremain.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -218901,6 +218901,26 @@
       "resolution": "open",
       "next_actor": "this same systemic session/card",
       "next_action": "Protected supervised exact-new-head CI/integration; further actual GC retained-graph attribution/repair and full independent acceptance. No blind rerun or GC/deadline policy change."
+    },
+    {
+      "id": "concern:openapi-generator-method-map-cycle",
+      "kind": "concern",
+      "family": "startup",
+      "finding": "Native schema-generator method map retains the completed generator and definitions until collection",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "private_native_self_reference_confirmed_latency_contribution_unverified",
+      "cause": "Two complete484-route private calls each leave a generator with56bound methods retaining that same instance and314definitions. Observer records only weakrefs after native initialization; no explicit collection. OriginalLinuxCI218.784msGCpause allocation-owner linkage remains unverified.",
+      "implemented": false,
+      "merged": [],
+      "deployed": "Actual listener602abe51586/package3f67; no repair implemented for this native map.",
+      "retested": "Two private Darwin3.14.2source observations with nativeGC2000/10/0; no collector/policy change, schema/method-map cleanup or source mutation. Not full-heap attribution or live acceptance.",
+      "measurement": {
+        "local_artifact": ".dev/pr603-owned-generator-lifetime-probe-20261029.json",
+        "sha256": "83fee96b6574d86770612733f05ce4aca131b76961e67716211d263eeb88522c"
+      },
+      "resolution": "open",
+      "next_actor": "this same systemic session/card",
+      "next_action": "Evaluate lifetime-safe dispatch/ownership preserving custom generator subclasses and escaped native schema handlers. Do not blindly clear method maps or alter GC policies to get green; measure complete response/native error parity and allocation effects before a substantive repair."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -309381,6 +309401,17 @@
         "deployed": "Uninstalled; no performance closure",
         "resolution": "open"
       }
+    },
+    "concern:openapi-generator-method-map-cycle": {
+      "artifact": "docs/benchmarks/systemic-pr603-integration-generator-release-20261029.json",
+      "source_fix": "For the exact version-verified native Pydantic/FastAPI generator classes, store unbound native functions with a weak owner in an internal mutable dispatch map. Lookup returns an ordinary bound method retaining the owner normally; escaped native methods and public custom schema handlers remain callable. Arbitrary custom bases/subclasses keep native dictionaries. Unknown versions use unchanged fallback. Never clear an active/completed native method map, force collection, change GC/default/deadline policies or skip full schema/readiness validation.",
+      "source_sha256": "e6e5e180d9d3f3c53e7c0003b5316d87d41ea7c210ae25245b99148fbeb93aad",
+      "retested": "86tests/19subtestspass;6complete484path/578735B outputs match; nativeafter-returnretention1to0withoutGCpolicychange;escapednative/publichandlers/customsubclass/versionfallback/mappingmutationcontracts pass.",
+      "deployed": "Uninstalledsource;actual602abe/package3f67.",
+      "new_residual": "Maintenance858.873ms;custom/nativeothercyclesandhistoricalGCallocationowner/fullactivationacceptance remainopen.",
+      "resolution": "open",
+      "next_actor": "this samecard/session",
+      "next_action": "Protectedsourceintegration, futureexactbatchactivation/scopedretests and remainingmeasuredrepairs/fullindependentacceptance."
     }
   },
   "f7e8_loaded_stage": {
@@ -316667,6 +316698,12 @@
       "artifact": "docs/benchmarks/systemic-pr603-schema-lifetime-20261029.json",
       "status": "Measured source repair; unmerged/uninstalled; firstCI failure retained",
       "resolution": "open"
+    },
+    {
+      "row_id": "concern:openapi-generator-method-map-cycle",
+      "artifact": "docs/benchmarks/systemic-pr603-integration-generator-release-20261029.json",
+      "status": "Source tested; unmerged/uninstalled",
+      "resolution": "open"
     }
   ],
   "integration_history": [
@@ -316717,6 +316754,15 @@
       "deployed": true,
       "accepted": false,
       "scope": "Exact activation/scoped subsets complete; whole-card missing acceptance remains."
+    },
+    {
+      "pr": 603,
+      "artifact": "docs/benchmarks/systemic-pr603-integration-generator-release-20261029.json",
+      "merge": "f46364419707e63cb36561fddf86c7d81280f7fe",
+      "watched_head": "66fe66d42dd5cfc888f49dc8b623144eea5b7ba3",
+      "watch": "c46a64cd-d0dc-4a91-8004-677e84b68576",
+      "deployed": false,
+      "accepted": false
     }
   ]
 }

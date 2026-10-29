@@ -1,0 +1,454 @@
+{
+  "contract": "pa.native-schema-generator-release-stage/v1",
+  "observed_at": "2026-10-29T07:39:30.263932+00:00",
+  "identity": {
+    "instance": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "authority": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "session": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+    "card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+    "project": "fdc04d91-1222-447b-859c-38e67bcab6eb",
+    "repository": "https://github.com/petersky/pa",
+    "repository_id": "5ce49cd8-f632-5f6d-a0d5-0b9eaf61f9cd",
+    "worktree": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c",
+    "branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+    "original_base": "4697ed583f6a5eceead72217d07ba2ebaf4ccc83",
+    "source_base": "abe51586f2b1220e981f94b765e005d1d1de7763",
+    "head": "f46364419707e63cb36561fddf86c7d81280f7fe",
+    "upstream": "f46364419707e63cb36561fddf86c7d81280f7fe",
+    "tree": "cb87a7ec54a3b183d6c5b9f1660fe4125b60b73e",
+    "lease": "d24899f49011107365c237bbf09a300f63beb5a5c9658eac682770304ade52f2",
+    "fence": 334
+  },
+  "preceding_integration": {
+    "pr": 603,
+    "url": "https://github.com/petersky/pa/pull/603",
+    "head": "f46364419707e63cb36561fddf86c7d81280f7fe",
+    "upstream": "f46364419707e63cb36561fddf86c7d81280f7fe",
+    "clean": true,
+    "divergence": "0/0",
+    "tree": "cb87a7ec54a3b183d6c5b9f1660fe4125b60b73e",
+    "watched_head": "66fe66d42dd5cfc888f49dc8b623144eea5b7ba3",
+    "merge": "f46364419707e63cb36561fddf86c7d81280f7fe",
+    "base": "abe51586f2b1220e981f94b765e005d1d1de7763",
+    "watch": "c46a64cd-d0dc-4a91-8004-677e84b68576",
+    "supervisor": "12stableobservations;retiredmerged07:19:24.400615Z/errornull",
+    "independent": "5terminalsuccesschecks/protectionknown/0requiredapprovals/0reviews/0threads/fullpagination/2attributedcommits/CLEAN/nobypass",
+    "head_ci": 40834186523,
+    "main_ci": 40834670305,
+    "ci": "Each5FIRST-ATTEMPTsuccesses/no retries; numeric artifacts/rawZIPs retained separately from first8ehead failure. Protectedmerge ALREADY COMPLETE; never repeat.",
+    "state": "Dedicated branch fast-forwarded to exactmerge/restored/pushed/lsremoteverified. Source+mergetreeequal. No install/restart requested for603; no worktree cleanup."
+  },
+  "actual_loaded": {
+    "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "process_id": 81195,
+    "install_revision": "abe51586f2b1220e981f94b765e005d1d1de7763",
+    "runtime_revision": "abe51586f2b1220e981f94b765e005d1d1de7763",
+    "runtime_build": {
+      "loaded_module_version": "1.5.9",
+      "source_revision": "abe51586f2b1220e981f94b765e005d1d1de7763",
+      "package_identity": "sha256:3f67186d0c5361b7580dfb85243dab21a15e75894fd9bc6004eb1b05b900a402",
+      "pid": 81195,
+      "startup_id": "59957880-e4f1-4849-86f5-73a8ed2674d4"
+    },
+    "sync": {
+      "realm_id": "default",
+      "head": "5c9f62ff6e630d9383f00f7bb0aa3cb499763ccc854667c8d134ed22a59ef65f",
+      "projection_head": "5c9f62ff6e630d9383f00f7bb0aa3cb499763ccc854667c8d134ed22a59ef65f",
+      "consistent": true,
+      "error": null
+    },
+    "scope": "Fresh supported owner status only after protected603integration; no install/restart/config/GC/policy effect. Other status/configuration fields omitted."
+  },
+  "source_base": "f46364419707e63cb36561fddf86c7d81280f7fe",
+  "source_sha256": "e6e5e180d9d3f3c53e7c0003b5316d87d41ea7c210ae25245b99148fbeb93aad",
+  "new_source_repair": {
+    "finding": "The native Pydantic/FastAPI generator method map retains its owner and314definition entries after complete schema generation.",
+    "semantics": "For the exact version-verified native Pydantic/FastAPI generator classes, store unbound native functions with a weak owner in an internal mutable dispatch map. Lookup returns an ordinary bound method retaining the owner normally; escaped native methods and public custom schema handlers remain callable. Arbitrary custom bases/subclasses keep native dictionaries. Unknown versions use unchanged fallback. Never clear an active/completed native method map, force collection, change GC/default/deadline policies or skip full schema/readiness validation.",
+    "cause_classification": "confirmed_native_internal_method_map_self_reference_private_release_measured_historical_gc_contribution_unverified",
+    "source_state": "Measured source repair; unmerged/uninstalled at this immutable stage. No new activation request exists.",
+    "contracts": {
+      "baseline": {
+        "started_at": "2026-10-29T07:30:50.150874+00:00",
+        "finished_at": "2026-10-29T07:30:50.541324+00:00",
+        "exit_code": 1,
+        "source_sha256": "5db13f313160926c7c012554473c5ff81c24bfcbbb41cb7dc174f218dc4d7a9a",
+        "test_sha256": "36aa484d160731eaf6aa91631806ecca05dad9410fb82c24fab612ea80ea709a",
+        "log_sha256": "d50a1acd1655493da85de81c9c96094e12768ed65ec25acd12aa7c98b0f6b887",
+        "thresholds": [
+          2000,
+          10,
+          0
+        ],
+        "scope": "BothPArootsprivatebeforeimports. Native reference-lifetime/schema/escaped-handler/custom-subclass contracts. No explicitcollection/disable/freeze/GCpolicy or deadline/assertion change; no production/provider/network."
+      },
+      "first_source": {
+        "started_at": "2026-10-29T07:31:28.962963+00:00",
+        "finished_at": "2026-10-29T07:31:29.248022+00:00",
+        "exit_code": 1,
+        "source_sha256": "9640e2095aacefdd2091469ea5d4b69b228b302aea607400cb7be881b3fa9526",
+        "test_sha256": "36aa484d160731eaf6aa91631806ecca05dad9410fb82c24fab612ea80ea709a",
+        "log_sha256": "aba40b92b66a6b9ece543d869b2bcb23cbe362cbded13626830216933dfc41be",
+        "thresholds": [
+          2000,
+          10,
+          0
+        ],
+        "scope": "BothPArootsprivatebeforeimports. Native reference-lifetime/schema/escaped-handler/custom-subclass contracts. No explicitcollection/disable/freeze/GCpolicy or deadline/assertion change; no production/provider/network."
+      },
+      "corrected": {
+        "started_at": "2026-10-29T07:33:03.039909+00:00",
+        "finished_at": "2026-10-29T07:33:03.314188+00:00",
+        "exit_code": 0,
+        "source_sha256": "e6e5e180d9d3f3c53e7c0003b5316d87d41ea7c210ae25245b99148fbeb93aad",
+        "test_sha256": "36aa484d160731eaf6aa91631806ecca05dad9410fb82c24fab612ea80ea709a",
+        "log_sha256": "580ff8d6754afc97775463e57c50000e811f60878d7b48367eb18a935bfb4550",
+        "thresholds": [
+          2000,
+          10,
+          0
+        ],
+        "scope": "BothPArootsprivatebeforeimports. Native reference-lifetime/schema/escaped-handler/custom-subclass contracts. No explicitcollection/disable/freeze/GCpolicy or deadline/assertion change; no production/provider/network."
+      },
+      "broader": {
+        "started_at": "2026-10-29T07:34:31.931603+00:00",
+        "finished_at": "2026-10-29T07:34:37.711231+00:00",
+        "exit_code": 0,
+        "source_sha256": "e6e5e180d9d3f3c53e7c0003b5316d87d41ea7c210ae25245b99148fbeb93aad",
+        "test_sha256": "4368b2ff9a973dd604069e453bdfc1b2a2c165afc5807d48f0666115a2e370cb",
+        "log_sha256": "f513e3ae413698bc5b36c0ae84c85cb6f8d67eb1b1de060eb69c5069de4aa901",
+        "tests": [
+          "tests/test_schema_generator_lifetime.py",
+          "tests/test_schema_binding_lifetime.py",
+          "tests/test_schema_generation.py",
+          "tests/test_schema_owned_filter.py",
+          "tests/test_schema_scalar_defaults.py",
+          "tests/test_openapi_contract.py",
+          "tests/test_mcp_domain_schemas.py",
+          "tests/test_async_responsiveness.py",
+          "tests/test_fleet_placement_read_offload.py"
+        ],
+        "deadline_evidence": [
+          {
+            "contract": "pa.test-deadline-evidence/v1",
+            "python": "3.14.2",
+            "platform": "Darwin",
+            "source_sha": null,
+            "gc_thresholds": [
+              2000,
+              10,
+              0
+            ],
+            "loop_thread_id": 8276681088,
+            "request_wall_ms": 3.1599580543115735,
+            "request_loop_thread_cpu_ms": 2.636124999999989,
+            "gc_events_total": 0,
+            "gc_events_retained": 0,
+            "gc_events_dropped": 0,
+            "request_gc_overlaps": [],
+            "worker_calls_started": 1,
+            "worker_calls_total": 1,
+            "worker_calls_incomplete": 0,
+            "worker_events_dropped": 0,
+            "worker_intervals": [
+              {
+                "wall_ms": 210.0575000513345,
+                "thread_cpu_ms": 0.049041999999999995,
+                "thread_id": 6196932608,
+                "start_relative_ms": -4.3825419852510095,
+                "end_relative_ms": 205.6749580660835
+              }
+            ],
+            "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+          },
+          {
+            "contract": "pa.test-deadline-evidence/v1",
+            "python": "3.14.2",
+            "platform": "Darwin",
+            "source_sha": null,
+            "gc_thresholds": [
+              2000,
+              10,
+              0
+            ],
+            "loop_thread_id": 8276681088,
+            "request_wall_ms": 99.90529192145914,
+            "request_loop_thread_cpu_ms": 3.901166999999983,
+            "gc_events_total": 0,
+            "gc_events_retained": 0,
+            "gc_events_dropped": 0,
+            "request_gc_overlaps": [],
+            "worker_calls_started": 6,
+            "worker_calls_total": 6,
+            "worker_calls_incomplete": 0,
+            "worker_events_dropped": 0,
+            "worker_intervals": [
+              {
+                "wall_ms": 48.93987497780472,
+                "thread_cpu_ms": 0.051916,
+                "thread_id": 6230585344,
+                "start_relative_ms": 0.26179198175668716,
+                "end_relative_ms": 49.20166695956141
+              },
+              {
+                "wall_ms": 48.67354198358953,
+                "thread_cpu_ms": 0.011208,
+                "thread_id": 6382022656,
+                "start_relative_ms": 0.43770798947662115,
+                "end_relative_ms": 49.11124997306615
+              },
+              {
+                "wall_ms": 48.605458927340806,
+                "thread_cpu_ms": 0.020708,
+                "thread_id": 6398849024,
+                "start_relative_ms": 0.5738330073654652,
+                "end_relative_ms": 49.17929193470627
+              },
+              {
+                "wall_ms": 40.20266607403755,
+                "thread_cpu_ms": 0.013417,
+                "thread_id": 6415675392,
+                "start_relative_ms": 1.2255419278517365,
+                "end_relative_ms": 41.42820800188929
+              },
+              {
+                "wall_ms": 43.57504192739725,
+                "thread_cpu_ms": 0.021208000000000005,
+                "thread_id": 6415675392,
+                "start_relative_ms": 41.66524996981025,
+                "end_relative_ms": 85.2402918972075
+              },
+              {
+                "wall_ms": 50.02041708212346,
+                "thread_cpu_ms": 0.016165999999999993,
+                "thread_id": 6382022656,
+                "start_relative_ms": 49.448957899585366,
+                "end_relative_ms": 99.46937498170882
+              }
+            ],
+            "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+          }
+        ],
+        "native_thresholds": [
+          2000,
+          10,
+          0
+        ],
+        "scope": "Both PA roots private before imports; schema/fullAPI/native runtime contracts. Original waits/deadlines/assertions/normal GC retained. No live provider/network/service data. Not a full Linux CI reproduction."
+      }
+    },
+    "comparison": {
+      "baseline": "f46364419707e63cb36561fddf86c7d81280f7fe",
+      "source_sha256": "e6e5e180d9d3f3c53e7c0003b5316d87d41ea7c210ae25245b99148fbeb93aad",
+      "started_at": "2026-10-29T07:35:06.069156+00:00",
+      "native_thresholds": [
+        2000,
+        10,
+        0
+      ],
+      "rows": [
+        {
+          "pair": 0,
+          "variant": "baseline",
+          "schema_wall_ms": 112.92683391366154,
+          "schema_thread_cpu_ms": 112.92016699999996,
+          "generators_created": 1,
+          "alive_after_return": 1,
+          "retained_definitions": 314,
+          "self_bound_methods": 56,
+          "schema_bytes": 578735,
+          "schema_sha256": "c4cd83ae5c76d7269b91ac3c83d5c3d07db9ce7d60f1f87b6edbb7879f3769d0",
+          "paths": 484
+        },
+        {
+          "pair": 0,
+          "variant": "candidate",
+          "schema_wall_ms": 89.90974992047995,
+          "schema_thread_cpu_ms": 89.91137500000002,
+          "generators_created": 1,
+          "alive_after_return": 0,
+          "retained_definitions": 0,
+          "self_bound_methods": 0,
+          "schema_bytes": 578735,
+          "schema_sha256": "c4cd83ae5c76d7269b91ac3c83d5c3d07db9ce7d60f1f87b6edbb7879f3769d0",
+          "paths": 484
+        },
+        {
+          "pair": 1,
+          "variant": "candidate",
+          "schema_wall_ms": 89.7276250179857,
+          "schema_thread_cpu_ms": 89.72954199999994,
+          "generators_created": 1,
+          "alive_after_return": 0,
+          "retained_definitions": 0,
+          "self_bound_methods": 0,
+          "schema_bytes": 578735,
+          "schema_sha256": "c4cd83ae5c76d7269b91ac3c83d5c3d07db9ce7d60f1f87b6edbb7879f3769d0",
+          "paths": 484
+        },
+        {
+          "pair": 1,
+          "variant": "baseline",
+          "schema_wall_ms": 112.13870800565928,
+          "schema_thread_cpu_ms": 112.140291,
+          "generators_created": 1,
+          "alive_after_return": 1,
+          "retained_definitions": 314,
+          "self_bound_methods": 56,
+          "schema_bytes": 578735,
+          "schema_sha256": "c4cd83ae5c76d7269b91ac3c83d5c3d07db9ce7d60f1f87b6edbb7879f3769d0",
+          "paths": 484
+        },
+        {
+          "pair": 2,
+          "variant": "baseline",
+          "schema_wall_ms": 89.82470806222409,
+          "schema_thread_cpu_ms": 89.81649999999996,
+          "generators_created": 1,
+          "alive_after_return": 1,
+          "retained_definitions": 314,
+          "self_bound_methods": 56,
+          "schema_bytes": 578735,
+          "schema_sha256": "c4cd83ae5c76d7269b91ac3c83d5c3d07db9ce7d60f1f87b6edbb7879f3769d0",
+          "paths": 484
+        },
+        {
+          "pair": 2,
+          "variant": "candidate",
+          "schema_wall_ms": 91.92958299536258,
+          "schema_thread_cpu_ms": 91.93074999999995,
+          "generators_created": 1,
+          "alive_after_return": 0,
+          "retained_definitions": 0,
+          "self_bound_methods": 0,
+          "schema_bytes": 578735,
+          "schema_sha256": "c4cd83ae5c76d7269b91ac3c83d5c3d07db9ce7d60f1f87b6edbb7879f3769d0",
+          "paths": 484
+        }
+      ],
+      "scope": "Complete private PA schemas with native generator lifetime observations.\n\nCompare exact archived source with candidate using three alternating pairs.\nBoth PA roots are private before imports; no listener/provider/network/service\nstate, forced collection, GC policy or deadline changes. Observer cost included.\n",
+      "private_roots_before_imports": true,
+      "finished_at": "2026-10-29T07:35:06.679539+00:00",
+      "complete_schema_bytes_equal": true,
+      "gc_policy_unchanged": true,
+      "limits": "Only exact version-verified Pydantic/FastAPI generator classes use the weak internal dispatch map; arbitrary custom bases/subclasses retain native dicts and may retain cycles. Escaped bound methods and public handlers retain their owner normally. Native instance after-return lifetime is measured; other framework cycles, historical CI GC allocation ownership, live activation and whole-card acceptance remain unverified."
+    },
+    "mixed": {
+      "started_at": "2026-10-29T07:36:09.125529+00:00",
+      "source_modules": {
+        "pa.modules.fleet": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/modules/fleet.py",
+          "sha256": "5d2daaf20f1ea751db385aba613863d8ff1de5383f4b0700d49eae5b910ce5dd"
+        },
+        "pa.server.schema_generation": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/server/schema_generation.py",
+          "sha256": "e6e5e180d9d3f3c53e7c0003b5316d87d41ea7c210ae25245b99148fbeb93aad"
+        }
+      },
+      "both_roots_private_before_imports": true,
+      "exit_code": 0,
+      "finished_at": "2026-10-29T07:36:35.000988+00:00",
+      "log_sha256": "068ff8bef0fd8319b381c92b3f01bd6b3d5b5e46dd264e3c1f54df954e8d44f4",
+      "log_bytes": 382958,
+      "events": 9600,
+      "warnings": {},
+      "threshold_violations": {
+        "maintenance.run": 1
+      },
+      "maintenance": {
+        "samples": 1,
+        "max_ms": 858.873,
+        "p50_ms": 858.873,
+        "p95_ms": 858.873,
+        "p99_ms": 858.873
+      },
+      "import_attestation": {
+        "modules": {
+          "pa.modules.fleet": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/modules/fleet.py",
+            "sha256": "5d2daaf20f1ea751db385aba613863d8ff1de5383f4b0700d49eae5b910ce5dd"
+          },
+          "pa.server.schema_generation": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/server/schema_generation.py",
+            "sha256": "e6e5e180d9d3f3c53e7c0003b5316d87d41ea7c210ae25245b99148fbeb93aad"
+          }
+        },
+        "before_workload": true,
+        "unchanged_after_workload": true
+      },
+      "scope": "Changed-module imports and unchanged hashes before/after mixed workload; does not establish every changed branch executes. Dedicated control-read contracts and native executor comparison exercise the repair; the mixed inventory may not execute every branch. Both roots private before all PA imports; unchanged waits/deadlines/GC; no real provider or production state."
+    }
+  },
+  "first_failures": [
+    "Baseline6contracts:2native-generator release failures/4behavioralpasses. Firstpatch:directmethodreleasefixed but completeFastAPIgenerationstillretainedgenerator,1failure/5passes. Firstsource9640e209 andtest36aa484d retained.",
+    "Firstprivate referrer diagnostic failed importingtests because directscript sys.path lackedverifiedreporoot. No fixtureappwascreated. Exactfailedhelper preserved; correctedprivatehelper addsverifiedrootafterbothPArootsprivate. Boundedreference-shape output recordsno values/fullframes.",
+    "Correcteddiagnostic shows56nativeboundmethods anddictdispatch:FastAPI usesits knownspecializedGenerateJsonSchema class, excluded byfirstexactPydantic-onlyguard. Correctedsource explicitly includesexactFastAPIclass under0.136.3andPydantic2.13.4fences; arbitrarycustomclassesretainnativefallback. Same6contracts thenpass; finalexpanded9areincludedin86tests/19subtests.",
+    "Firstfixturebytes recoveredfromscopedinverseedits andverifiedagainstoriginal36aa484dSHA256. No testresult reconstructed. Rawlogs/sourcecopies/helpersLOCAL/hash-only.",
+    "Initialsandbox uv-cache/GitHubnetworkdenials retained before approvedexactcalls; no credentials or sandbox fallback. Allolder invalidcProfile/import/symlink/marker/native-lock/fixture/metadata-recorder/GraphQL/Python/ps failures stay in previouslosslessbundle."
+  ],
+  "limits": [
+    "Committedprevious694rows/154concerns andtenattachments unchanged; exactlateprobeoverlayrow is appendedunchanged as695/155. Current status override andrepair history separately record this newsourceimplementation; originalrowfields remain intact. Everyfinding remainsOPEN.",
+    "Sixprivatealternatingcomplete484-path/578735B generatoroutputs match. Baseline1generatorremainsalive with56self-boundmethods/314definitionentries; candidate0withoutforcedcollection. This proves nativeafter-return ownershiprelease, not that all314outputdefinitions or processmemorybytes disappear; returnedJSON mayretainshareddata.",
+    "Escaped bound methods/public custom schema handlers keep their generator alive normally. Internal dispatch lookup returnsfreshboundmethods; private mappingobject identity/cachedboundmethodidentity are not an external API claim. Custom bases/subclasses preserve native dictionaries and can retaincycles. Otherframework/class/application-ownedcycles mayremain.",
+    "SmallDarwin3.14.2nativeGC2000/10/0fixture differs fromLinux3.14.10observed2000/10/10; no GCpolicy changed. Timings include constructorweakrefobservercost and do not establish general speedup, originalCI218.784msGCallocationownership or wholePAacceptance.",
+    "Newsource mixed100 retains9600ordered events,0workerwarnings/failures/timeouts/rejections,butmaintenance858.873ms remains. Prior864.917/818.589/801.547/854.706/844.751andalloldertails retainedseparately. Modulehashmatching doesnotproveeverychangedbranch.",
+    "PR603 protectedmergedf4636441 fromexact66fe66d4/equalcb87a7ectrees/watchc46retiredmerged12stableobservations;head40834186523/main40834670305each5FIRST-ATTEMPTsuccesses. Actual8eheadCI40832580943failed218.784msGCpause/twoactualZIPs/correction186 remain. Passinglaterpopulations arenot historicalcausalproof; neverrepeatprotectedmerges.",
+    "Actualservice remains602abe51586/package3f67/PID81195/startup59957880 fromsupportedstatus; original602handoffpositivelycomplete/oneinstallation/519tests7subtests/19privatestagescomplete. 603andnewsourceuninstalled. No rearm/reinstall/restart/newhandoff request.",
+    "Installed602maintenance801.547ms and5full10session-list2MiBcollector failures/fullschemaUNVERIFIED/metadata2417641B/bodyread0 remain. No blindrerun, raisedobserverbound or output/durabledata deletion.95ordinary200GET/8encoding/8cachedFleetpasses are limited602evidence.",
+    "Remainingmaintenance/sharedsource/provider/session/workspace/queue/payload/call/writeamplification andfullrealKernel/provider/MCP/placement/admission/startup/drain/concurrencyacceptance remain. Capacitysnapshots expire reservations andneedseparateownership/cancellation/fenceproof.",
+    "Acceptedbackup0331/b527andDB89957originalscopesCLOSED;lastsupportedbackup9/8verified/1limited/unpaused,next08:18:02.824206Z. CachedMacmini stale/probe_failed/currentbuild/log/retentionunknown/otherpeersolder0d6638cc;unsortedhistorynotnewincidentpopulation or absenceproof. No manualbackup/forcedpeerrefresh/update/restart/staleOct17admission/secretsfallback.",
+    "Missingobject1/2842decodedB,/work603.818ms,cumulative2396statusfailures/5640760droppedB,sourceFD/rotation/log/screenshotgaps andambiguous555/0b79/f403/d448/HTTP413effects remain. No absenceinference/replay. Answerednotificationa99ee1dbdelivered/resolvedv4untouched/noquote/change/withdraw/rearm/redelivery/consentinference.",
+    "Scheduler owns independent_agent_v1 acceptance exact17d034a6-efc7-4a9d-badc-d3fe012d0b57/unaccepted. Integratedsatisfied;active/verified/acceptance missing. No self-verifier/fabricatedmilestones/Done/CASloops/cleanup. Rawfullprompts/privateanswers/logs/ZIPsLOCAL/untrusted/hash-only."
+  ],
+  "local_only_custody": {
+    ".dev/generator604-corrected-source-contracts-20261029.log": {
+      "bytes": 98,
+      "sha256": "580ff8d6754afc97775463e57c50000e811f60878d7b48367eb18a935bfb4550",
+      "scope": "LOCAL/untrusted/hash-only raw log or exact archived first source/fixture/helper."
+    },
+    ".dev/generator604-source-contracts-20261029.log": {
+      "bytes": 1623,
+      "sha256": "aba40b92b66a6b9ece543d869b2bcb23cbe362cbded13626830216933dfc41be",
+      "scope": "LOCAL/untrusted/hash-only raw log or exact archived first source/fixture/helper."
+    },
+    ".dev/generator604-baseline-contracts-20261029.log": {
+      "bytes": 2727,
+      "sha256": "d50a1acd1655493da85de81c9c96094e12768ed65ec25acd12aa7c98b0f6b887",
+      "scope": "LOCAL/untrusted/hash-only raw log or exact archived first source/fixture/helper."
+    },
+    ".dev/generator604-broader-contracts-20261029.log": {
+      "bytes": 1350,
+      "sha256": "f513e3ae413698bc5b36c0ae84c85cb6f8d67eb1b1de060eb69c5069de4aa901",
+      "scope": "LOCAL/untrusted/hash-only raw log or exact archived first source/fixture/helper."
+    },
+    ".dev/generator604-source-mixed100-20261029.log": {
+      "bytes": 382958,
+      "sha256": "068ff8bef0fd8319b381c92b3f01bd6b3d5b5e46dd264e3c1f54df954e8d44f4",
+      "scope": "LOCAL/untrusted/hash-only raw log or exact archived first source/fixture/helper."
+    },
+    ".dev/schema_generation.before604-generator-map-20261029.py": {
+      "bytes": 8079,
+      "sha256": "5db13f313160926c7c012554473c5ff81c24bfcbbb41cb7dc174f218dc4d7a9a",
+      "scope": "LOCAL/untrusted/hash-only raw log or exact archived first source/fixture/helper."
+    },
+    ".dev/schema_generation.604-first-method-map-20261029.py": {
+      "bytes": 10051,
+      "sha256": "9640e2095aacefdd2091469ea5d4b69b228b302aea607400cb7be881b3fa9526",
+      "scope": "LOCAL/untrusted/hash-only raw log or exact archived first source/fixture/helper."
+    },
+    ".dev/inspect604_generator_referrers.first-import-failure-20261029.py": {
+      "bytes": 2136,
+      "sha256": "93124b4ce331ea66aa9a3944269badd3edd57f660f88a9515b23ed55053afb24",
+      "scope": "LOCAL/untrusted/hash-only raw log or exact archived first source/fixture/helper."
+    },
+    ".dev/test_schema_generator_lifetime.first-20261029.py": {
+      "bytes": 3861,
+      "sha256": "36aa484d160731eaf6aa91631806ecca05dad9410fb82c24fab612ea80ea709a",
+      "scope": "LOCAL/untrusted/hash-only raw log or exact archived first source/fixture/helper."
+    }
+  },
+  "lossless_raw": {
+    "path": "docs/benchmarks/systemic-pr603-integration-generator-release-20261029.raw.json.gz",
+    "bytes": 8463143,
+    "sha256": "b2dc77438c5295cb3a3a3c9c9255b639d23284c877b4f860e099c3d4fea26d08"
+  }
+}
