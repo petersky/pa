@@ -133,7 +133,7 @@ def measured_lock(lock, *, name: str = "unnamed", filesystem: bool = False, trac
             observation.lock_events.append({
                 # Only fixed subsystem labels may enter diagnostics, never
                 # caller-controlled identifiers, paths or lock representations.
-                "name": name if name in {"projection.mutation", "transcript.write", "sync.refs", "sync.refs_file"} else "unnamed",
+                "name": name if name in {"projection.mutation", "transcript.write", "sync.refs", "sync.refs_file", "collaboration.store"} else "unnamed",
                 "started_at_monotonic": round(started, 6),
                 "acquired_at_monotonic": round(acquired, 6),
                 "release_started_at_monotonic": round(release_started, 6),

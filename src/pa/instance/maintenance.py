@@ -41,8 +41,20 @@ def _maintenance_phase(phases: _PhaseTimes, name: str) -> Iterator[None]:
         })
         phase["calls"] += 1
         phase["errors"] += errors
-        phase["wall_ms"] += (time.perf_counter_ns() - wall) / 1_000_000
+        finished = time.perf_counter_ns()
+        phase["wall_ms"] += (finished - wall) / 1_000_000
         phase["thread_cpu_ms"] += (time.thread_time_ns() - cpu) / 1_000_000
+        # Fixed-name, bounded intervals align cached maintenance with worker
+        # and lock observations from this process. Repeated calls retain an
+        # enclosing interval, including gaps; this is not summed lock hold.
+        phase["started_at_monotonic"] = min(
+            phase.get("started_at_monotonic", wall / 1_000_000_000),
+            wall / 1_000_000_000,
+        )
+        phase["finished_at_monotonic"] = max(
+            phase.get("finished_at_monotonic", finished / 1_000_000_000),
+            finished / 1_000_000_000,
+        )
 
 
 @contextmanager

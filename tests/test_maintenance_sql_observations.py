@@ -2,6 +2,7 @@
 import json
 import sqlite3
 import threading
+import time
 from contextlib import closing
 from unittest.mock import patch
 
@@ -28,9 +29,11 @@ def test_integrity_checkpoint_and_compaction_are_observed_without_changing_rows(
     seed(path)
     observation = OperationObservation()
     token = current_observation.set(observation)
+    started = time.perf_counter()
     try:
         result = _maintain_database(path)
     finally:
+        finished = time.perf_counter()
         current_observation.reset(token)
 
     assert result["status"] == "ok"
@@ -50,6 +53,12 @@ def test_integrity_checkpoint_and_compaction_are_observed_without_changing_rows(
     # must include them and remain safe to serialize in the cached status API.
     assert json.loads(json.dumps(result)) == result
     assert result['phases']['total']['wall_ms'] >= result['phases']['vacuum']['wall_ms']
+    # The cached result can be aligned with this process's existing worker and
+    # lock timelines, including close/total finalized after the return value.
+    total = result['phases']['total']
+    assert started <= total['started_at_monotonic'] <= total['finished_at_monotonic'] <= finished
+    for phase in result['phases'].values():
+        assert total['started_at_monotonic'] <= phase['started_at_monotonic'] <= phase['finished_at_monotonic'] <= total['finished_at_monotonic']
     with closing(sqlite3.connect(path)) as conn:
         assert conn.execute("SELECT COUNT(*),MIN(id),MAX(id) FROM fixture").fetchone() == (
             300, 700, 999
