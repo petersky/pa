@@ -568,12 +568,20 @@ class WorkspaceManager:
             ).fetchone()
         return self._row(row) if row else None
 
-    def list(self, *, card_id: str | None = None) -> list[WorkspaceLease]:
+    def list(
+        self, *, card_id: str | None = None, include_cleaned: bool = True,
+    ) -> list[WorkspaceLease]:
         query = "SELECT * FROM workspace_leases"
         params: tuple[str, ...] = ()
         if card_id is not None:
             query += " WHERE card_id=?"
             params = (card_id,)
+        if not include_cleaned:
+            # GC ignores cleaned leases; avoid decoding their retained proofs.
+            query += (
+                " AND state <> 'cleaned'" if card_id is not None
+                else " WHERE state <> 'cleaned'"
+            )
         query += " ORDER BY created_at"
         with self._connect() as conn:
             rows = conn.execute(query, params).fetchall()
@@ -1341,15 +1349,15 @@ class WorkspaceManager:
             "retained": 0,
         }
         candidates: dict[str, list[WorkspaceLease]] = {}
-        for lease in self.list():
+        for lease in self.list(include_cleaned=False):
             if lease.state == "cleaned":
                 continue
             if (
-                (lease.card_id and not self._card_completion_eligible(lease.card_id))
-                or lease.session_id in active_session_ids
+                lease.session_id in active_session_ids
                 or not lease.completed
                 or not lease.merged
                 or lease.expires_at > now
+                or (lease.card_id and not self._card_completion_eligible(lease.card_id))
             ):
                 result["retained"] += 1
                 continue
