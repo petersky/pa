@@ -196,12 +196,8 @@ def enrichment_request(ctx: Any, card: Any, explicit_fields: Collection[str], *,
             }
         )
     capabilities = sorted(advertised_capability_catalog(ctx))
-    existing_tags = sorted(
-        {
-            tag
-            for item in ctx.store.list_cards(realm_id=card.realm_id)
-            for tag in item.tags
-        }
+    existing_tags = (
+        ctx.store.list_card_tags(realm_id=card.realm_id) if "tags" in fields else []
     )
     aliases = {"body": "description"}
     properties = {}
