@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-29T05:06:48.405209+00:00",
-  "completion": "OPEN: all686 findings/150 concerns. PR599 activated and scoped retests retained; five full-detail collector size failures and maintenance violations remain. New full-watch source repair tested; unmerged/uninstalled; all broader obligations remain.",
+  "as_of": "2026-10-29T05:38:02.829768+00:00",
+  "completion": "OPEN: all687 findings/151concerns. PR600 activated/scoped retests retained with5full-detail collector size failures and maintenance thresholds. New origin-name repair source tested; unmerged/uninstalled. Full broader acceptance remains.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -217621,6 +217621,25 @@
       "resolution": "open",
       "next_actor": "this same systemic session/card",
       "next_action": "Protected source integration, remaining maintenance/payload/shared causes, future exact activation and independent acceptance. Preserve full-list2MiB negative result and all historical tails."
+    },
+    {
+      "id": "concern:session-origin-name-read-amplification",
+      "kind": "concern",
+      "finding": "Selected session rows repeatedly enumerate the Fleet directory for display names",
+      "family": "session",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_private_native_call_amplification_live_share_unverified",
+      "cause": "Each list row resolves its origin display name by freshly listing/filtering/counting/sorting native Fleet membership and checking the membership file stat, even for the same origin/snapshot.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-exact600-activation-origin-names-20261029.json"
+      },
+      "implemented": "Only selected session-list display labels share the first full native current_instance_name read per (origin instance ID, snapshot name) in one response. Next response reads afresh; unknown/removed/empty fallbacks remain distinct. Custom instance/subclass registry readers and custom display resolvers stay per row. Other current_instance_name callers and every authority path remain unchanged; no fleet/config/permission/default/mode/GC policy changed.",
+      "merged": [],
+      "deployed": "Source uninstalled; listener exactf103/packagebec1 fromPR600.",
+      "retested": "89 source contracts pass; shared/unique complete responses identical; mixed100retains9600ordered events and809.492msmaintenance violation.",
+      "resolution": "open",
+      "next_actor": "this same systemic session/card",
+      "next_action": "Protected supervised source integration; remaining substantive shared causes, future exact activation/retests and normal independent acceptance. Preserve size failures and every old tail."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -315363,6 +315382,12 @@
       "artifact": "docs/benchmarks/systemic-exact599-activation-full-watch-filter-20261029.json",
       "status": "Source tested; unmerged/uninstalled",
       "resolution": "open"
+    },
+    {
+      "row_id": "concern:session-origin-name-read-amplification",
+      "artifact": "docs/benchmarks/systemic-exact600-activation-origin-names-20261029.json",
+      "status": "Source tested; unmerged/uninstalled",
+      "resolution": "open"
     }
   ],
   "integration_history": [
@@ -315381,6 +315406,14 @@
       "pr": 599,
       "artifact": "docs/benchmarks/systemic-exact599-activation-full-watch-filter-20261029.json",
       "source": "d783f8f78caff10f85811dab4b713493030fda98",
+      "loaded": true,
+      "accepted": false,
+      "public_collector_failures": 5
+    },
+    {
+      "pr": 600,
+      "artifact": "docs/benchmarks/systemic-exact600-activation-origin-names-20261029.json",
+      "source": "f103e237bd17cec59a29ef0c2083106c1af1177d",
       "loaded": true,
       "accepted": false,
       "public_collector_failures": 5
