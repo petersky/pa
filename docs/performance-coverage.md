@@ -1,3 +1,7 @@
+Exact PR #596 is installed, loaded and scoped-retested. All **684 findings /148 concerns remain OPEN**. The [new immutable evidence](benchmarks/systemic-exact596-activation-expired-compaction-20261029.json) preserves the complete preceding inputs, negative stages and separate runtime populations. The installed mixed scenario retains 9,600 ordered events with zero worker warnings or failures, but maintenance takes `764.783 ms`. Natural startup maintenance takes `5324.784 ms`; inclusive phases overlap and off-CPU time remains unclassified.
+
+A scoped expired-progress source repair filters and normalizes once. Its bounded 48-event comparison is `0.852 →0.580 ms` median; a separate stored-history fixture above current ingress limits is `411.924 →16.676 ms`. It preserves SQL calls and durability/receipt semantics. Neither establishes whole-maintenance or historical-cause acceptance. All prior text follows unchanged.
+
 # Performance coverage: exact PR595 activation and dispatch compaction
 
 All **683 findings / 147 concerns remain open**. [Complete immutable activation, source and numeric evidence](benchmarks/systemic-exact595-activation-dispatch-compaction-20261029.json) losslessly retains preceding inputs, failures, negative stages and attachment custody. Existing ledger rows and fields are unchanged; one new concern records measured dispatch compaction amplification.
