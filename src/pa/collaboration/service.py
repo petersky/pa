@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 from datetime import UTC, datetime, timedelta
@@ -64,6 +65,15 @@ class CollaborationService:
     def bind_runtime(self, manager: Any, *, notifier: Any | None = None) -> None:
         self.manager = manager
         self.notifier = notifier
+
+    async def _read_receipt(self, operation: str, call: Any, *args: Any) -> Any:
+        """Keep authority-ledger reads off-loop; effects stay with the caller."""
+        from pa.core.async_runtime import AsyncRuntime
+
+        executor = getattr(self.manager, "async_runtime", None)
+        if isinstance(executor, AsyncRuntime):
+            return await executor.run_blocking(operation, call, *args)
+        return await asyncio.to_thread(call, *args)
 
     def resolve_dispatch_policy(
         self,
@@ -462,7 +472,10 @@ class CollaborationService:
     async def request_transition(
         self, session: Any, request: ModeTransitionRequest
     ) -> ModeTransitionResult:
-        prior = self.store.get_mode_request(session.id, request.idempotency_key)
+        prior = await self._read_receipt(
+            "collaboration.mode_receipt_read", self.store.get_mode_request,
+            session.id, request.idempotency_key,
+        )
         fingerprint = request_fingerprint(request)
         if prior:
             if prior[0] != fingerprint:
@@ -954,7 +967,10 @@ class CollaborationService:
     async def execute_command(
         self, session: Any, request: ExecuteCommandRequest
     ) -> CommandResult:
-        prior = self.store.get_command_result(session.id, request.idempotency_key)
+        prior = await self._read_receipt(
+            "collaboration.command_receipt_read", self.store.get_command_result,
+            session.id, request.idempotency_key,
+        )
         payload = request.model_dump(mode="json", exclude={"idempotency_key"})
         fingerprint = request_fingerprint(payload)
         if prior:

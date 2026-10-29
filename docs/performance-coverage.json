@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-29T20:49:50.034055+00:00",
-  "completion": "OPEN:704findings162concerns. Exact614activated;881tests9subtests19private11additionalpass, maintenance840.356ms andfivefull-list2MiBfailures. Exact17d independentacceptance/fullrealpaths pending.",
+  "as_of": "2026-10-29T21:03:26.950378+00:00",
+  "completion": "OPEN:707findings163concerns.615protectedintegrated;614activated/isolatedsubsetsverified butmaintenance/full-list/realpathacceptancefailuresremain. Sourceinternalreceipt-readrepairunmerged/uninstalled; exact17dindependentacceptance absent.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -219943,6 +219943,321 @@
       "resolution": "open",
       "next_actor": "This same systemic session/card",
       "next_action": "Ready PR/durable supervisor/exacthead+main protected integration; future reviewedactivation/installedretests and fullremaining performance acceptance. Fullsession snapshots, maintenance/payload/provider/peer/log gaps remain open."
+    },
+    {
+      "id": "concern:collaboration-internal-receipt-read-loop",
+      "kind": "concern",
+      "finding": "Internal collaboration transition/command receipt reads can block the event loop",
+      "family": "collaboration",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_controlled_native_read_loop_blocking_historical_share_unverified",
+      "cause": "Native private already-committed receipt paths with deliberate200msread show204\u2013211msloopgaps. Twelve paired native/fallback comparisons preservecomplete duplicate results andreadlatency;largestloopgap214.635\u21926.548ms. Not historical stall attribution/real provider or actual policy effects.",
+      "implemented": "Only the two initial CollaborationStore receipt reads in request_transition/execute_command move off-loop, via bound native AsyncRuntime or unbound asyncio.to_thread. Original duplicate/fingerprint/conflict/provenance/policy/catalog/notification/provider/write effects stay on caller path. Cancellation/read errors do not reach effects. No mode/model/permission/default/policy/GC/deadline changes.",
+      "merged": [],
+      "deployed": "Sourcecandidateunmerged/uninstalled;actual614341/package7c7e/PID50504/config86968 remainsloaded.615docs-onlymerge requires no reinstall.",
+      "retested": {
+        "contracts": "56existing/newtestsPASS including16newcases;first52casesuitelogretained",
+        "comparison": {
+          "baseline": "7d4052fda87864e775cdabca53778f48bb658599",
+          "baseline_sha256": "6de437d514baf002a81511b8081b8cf87c5b93d1cfdd64c42f89704c85036021",
+          "candidate_source_sha256": "f76c8e78fe03d66ac7e08c7e62fc34fbec73d772086f7c841983a8db2927f342",
+          "rows": [
+            {
+              "bounded": true,
+              "family": "transition",
+              "pair": 0,
+              "variant": "baseline",
+              "request_ms": 212.65549992676824,
+              "max_loop_gap_ms": 213.05837505497038,
+              "read_on_loop": true,
+              "result_sha256": "3a995b1adb534c92e98b2c710ba57bad837eefc07d86c7d938591432d150ff5d"
+            },
+            {
+              "bounded": true,
+              "family": "transition",
+              "pair": 0,
+              "variant": "candidate",
+              "request_ms": 216.08525002375245,
+              "max_loop_gap_ms": 6.537583074532449,
+              "read_on_loop": false,
+              "result_sha256": "3a995b1adb534c92e98b2c710ba57bad837eefc07d86c7d938591432d150ff5d"
+            },
+            {
+              "bounded": true,
+              "family": "transition",
+              "pair": 1,
+              "variant": "candidate",
+              "request_ms": 210.21466702222824,
+              "max_loop_gap_ms": 6.439332966692746,
+              "read_on_loop": false,
+              "result_sha256": "3a995b1adb534c92e98b2c710ba57bad837eefc07d86c7d938591432d150ff5d"
+            },
+            {
+              "bounded": true,
+              "family": "transition",
+              "pair": 1,
+              "variant": "baseline",
+              "request_ms": 207.3185829212889,
+              "max_loop_gap_ms": 207.99862500280142,
+              "read_on_loop": true,
+              "result_sha256": "3a995b1adb534c92e98b2c710ba57bad837eefc07d86c7d938591432d150ff5d"
+            },
+            {
+              "bounded": true,
+              "family": "transition",
+              "pair": 2,
+              "variant": "baseline",
+              "request_ms": 208.45658297184855,
+              "max_loop_gap_ms": 209.07424995675683,
+              "read_on_loop": true,
+              "result_sha256": "3a995b1adb534c92e98b2c710ba57bad837eefc07d86c7d938591432d150ff5d"
+            },
+            {
+              "bounded": true,
+              "family": "transition",
+              "pair": 2,
+              "variant": "candidate",
+              "request_ms": 211.06174995657057,
+              "max_loop_gap_ms": 6.3994580414146185,
+              "read_on_loop": false,
+              "result_sha256": "3a995b1adb534c92e98b2c710ba57bad837eefc07d86c7d938591432d150ff5d"
+            },
+            {
+              "bounded": true,
+              "family": "command",
+              "pair": 0,
+              "variant": "baseline",
+              "request_ms": 213.7726249638945,
+              "max_loop_gap_ms": 214.1003340948373,
+              "read_on_loop": true,
+              "result_sha256": "457d937aa4c11adcdb5caae6089dc8424913e01b3553239845b4247d2d19e8a4"
+            },
+            {
+              "bounded": true,
+              "family": "command",
+              "pair": 0,
+              "variant": "candidate",
+              "request_ms": 212.40895800292492,
+              "max_loop_gap_ms": 6.447750027291477,
+              "read_on_loop": false,
+              "result_sha256": "457d937aa4c11adcdb5caae6089dc8424913e01b3553239845b4247d2d19e8a4"
+            },
+            {
+              "bounded": true,
+              "family": "command",
+              "pair": 1,
+              "variant": "candidate",
+              "request_ms": 205.67104103974998,
+              "max_loop_gap_ms": 6.423542043194175,
+              "read_on_loop": false,
+              "result_sha256": "457d937aa4c11adcdb5caae6089dc8424913e01b3553239845b4247d2d19e8a4"
+            },
+            {
+              "bounded": true,
+              "family": "command",
+              "pair": 1,
+              "variant": "baseline",
+              "request_ms": 213.9542499789968,
+              "max_loop_gap_ms": 214.63516703806818,
+              "read_on_loop": true,
+              "result_sha256": "457d937aa4c11adcdb5caae6089dc8424913e01b3553239845b4247d2d19e8a4"
+            },
+            {
+              "bounded": true,
+              "family": "command",
+              "pair": 2,
+              "variant": "baseline",
+              "request_ms": 210.14787501189858,
+              "max_loop_gap_ms": 210.68445802666247,
+              "read_on_loop": true,
+              "result_sha256": "457d937aa4c11adcdb5caae6089dc8424913e01b3553239845b4247d2d19e8a4"
+            },
+            {
+              "bounded": true,
+              "family": "command",
+              "pair": 2,
+              "variant": "candidate",
+              "request_ms": 213.52808293886483,
+              "max_loop_gap_ms": 6.445500068366528,
+              "read_on_loop": false,
+              "result_sha256": "457d937aa4c11adcdb5caae6089dc8424913e01b3553239845b4247d2d19e8a4"
+            },
+            {
+              "bounded": false,
+              "family": "transition",
+              "pair": 0,
+              "variant": "baseline",
+              "request_ms": 206.8086250219494,
+              "max_loop_gap_ms": 207.27591693866998,
+              "read_on_loop": true,
+              "result_sha256": "0094dcf9524d28d987b14688cd9c93744c87c3761958f46011245478e1557640"
+            },
+            {
+              "bounded": false,
+              "family": "transition",
+              "pair": 0,
+              "variant": "candidate",
+              "request_ms": 209.06000002287328,
+              "max_loop_gap_ms": 6.523209041915834,
+              "read_on_loop": false,
+              "result_sha256": "0094dcf9524d28d987b14688cd9c93744c87c3761958f46011245478e1557640"
+            },
+            {
+              "bounded": false,
+              "family": "transition",
+              "pair": 1,
+              "variant": "candidate",
+              "request_ms": 211.9102500146255,
+              "max_loop_gap_ms": 6.547790952026844,
+              "read_on_loop": false,
+              "result_sha256": "0094dcf9524d28d987b14688cd9c93744c87c3761958f46011245478e1557640"
+            },
+            {
+              "bounded": false,
+              "family": "transition",
+              "pair": 1,
+              "variant": "baseline",
+              "request_ms": 211.28633292391896,
+              "max_loop_gap_ms": 211.51575003750622,
+              "read_on_loop": true,
+              "result_sha256": "0094dcf9524d28d987b14688cd9c93744c87c3761958f46011245478e1557640"
+            },
+            {
+              "bounded": false,
+              "family": "transition",
+              "pair": 2,
+              "variant": "baseline",
+              "request_ms": 213.80087500438094,
+              "max_loop_gap_ms": 214.172541978769,
+              "read_on_loop": true,
+              "result_sha256": "0094dcf9524d28d987b14688cd9c93744c87c3761958f46011245478e1557640"
+            },
+            {
+              "bounded": false,
+              "family": "transition",
+              "pair": 2,
+              "variant": "candidate",
+              "request_ms": 214.05933296773583,
+              "max_loop_gap_ms": 6.456082919612527,
+              "read_on_loop": false,
+              "result_sha256": "0094dcf9524d28d987b14688cd9c93744c87c3761958f46011245478e1557640"
+            },
+            {
+              "bounded": false,
+              "family": "command",
+              "pair": 0,
+              "variant": "baseline",
+              "request_ms": 209.31679208297282,
+              "max_loop_gap_ms": 210.05295892246068,
+              "read_on_loop": true,
+              "result_sha256": "7a8b3acb2464bd4e859e47091b6073671b7fb067297b6b127a357b329e2081f1"
+            },
+            {
+              "bounded": false,
+              "family": "command",
+              "pair": 0,
+              "variant": "candidate",
+              "request_ms": 205.42254205793142,
+              "max_loop_gap_ms": 6.453958107158542,
+              "read_on_loop": false,
+              "result_sha256": "7a8b3acb2464bd4e859e47091b6073671b7fb067297b6b127a357b329e2081f1"
+            },
+            {
+              "bounded": false,
+              "family": "command",
+              "pair": 1,
+              "variant": "candidate",
+              "request_ms": 204.40541696734726,
+              "max_loop_gap_ms": 6.45345903467387,
+              "read_on_loop": false,
+              "result_sha256": "7a8b3acb2464bd4e859e47091b6073671b7fb067297b6b127a357b329e2081f1"
+            },
+            {
+              "bounded": false,
+              "family": "command",
+              "pair": 1,
+              "variant": "baseline",
+              "request_ms": 208.8148749899119,
+              "max_loop_gap_ms": 209.3745410675183,
+              "read_on_loop": true,
+              "result_sha256": "7a8b3acb2464bd4e859e47091b6073671b7fb067297b6b127a357b329e2081f1"
+            },
+            {
+              "bounded": false,
+              "family": "command",
+              "pair": 2,
+              "variant": "baseline",
+              "request_ms": 204.96854092925787,
+              "max_loop_gap_ms": 205.45120805036277,
+              "read_on_loop": true,
+              "result_sha256": "7a8b3acb2464bd4e859e47091b6073671b7fb067297b6b127a357b329e2081f1"
+            },
+            {
+              "bounded": false,
+              "family": "command",
+              "pair": 2,
+              "variant": "candidate",
+              "request_ms": 210.55824996437877,
+              "max_loop_gap_ms": 6.5228750463575125,
+              "read_on_loop": false,
+              "result_sha256": "7a8b3acb2464bd4e859e47091b6073671b7fb067297b6b127a357b329e2081f1"
+            }
+          ],
+          "observed_at": "2026-10-29T21:00:50.642936+00:00",
+          "scope": "Twelve alternating private pairs:3perfamily/executor; complete native receipt duplicate results match. Deliberate200msread preserved, request latency not removed, loop progress compared. No provider/configuration/admission/notification effects, production mutation, policy/default/GC/deadline change, physicalIO/historicalcause/hardware/wholePAacceptance. Bothrootsprivatebeforeimports/children. Sourcecandidateuninstalled."
+        },
+        "mixed": {
+          "events": 9600,
+          "warnings": {},
+          "threshold_violations": {
+            "maintenance.run": 1
+          },
+          "maintenance": {
+            "samples": 1,
+            "max_ms": 843.54,
+            "p50_ms": 843.54,
+            "p95_ms": 843.54,
+            "p99_ms": 843.54
+          },
+          "module_hashes": 10,
+          "nonzero_failed_timedout_rejected": []
+        }
+      },
+      "resolution": "open",
+      "next_actor": "This same systemic session/card",
+      "next_action": "ProtectedsourcePR/supervisor/exacthead+maingreen, reviewedfutureactivation/retests. Broaderinternalcollaborationreads/writes/policy/apply/commands andfullrealacceptance remainopen."
+    },
+    {
+      "id": "runtime:collaboration.mode_receipt_read",
+      "kind": "runtime_operation",
+      "finding": "collaboration.mode_receipt_read",
+      "family": "collaboration",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "new_source_offload_operation_label",
+      "implemented": "Only the two initial CollaborationStore receipt reads in request_transition/execute_command move off-loop, via bound native AsyncRuntime or unbound asyncio.to_thread. Original duplicate/fingerprint/conflict/provenance/policy/catalog/notification/provider/write effects stay on caller path. Cancellation/read errors do not reach effects. No mode/model/permission/default/policy/GC/deadline changes.",
+      "measurement": "Declaredboundexecutorlabel executed by native/fallbackscopedfixtures; no per-operation quantitative runtime snapshot captured. Not a live/process-baseline observation or measuredzero.",
+      "merged": [],
+      "deployed": "Unmerged/uninstalledsource",
+      "retested": "56tests/12pairedfixtures, broadmixeddoesnotexerciseeverynewreceiptbranch",
+      "resolution": "open",
+      "next_actor": "This session/card",
+      "next_action": "Capture bounded operation counters/queue/service/CPU and production activation/retests under representative nonduplicate/concurrent paths without changing receipts/admission/policies."
+    },
+    {
+      "id": "runtime:collaboration.command_receipt_read",
+      "kind": "runtime_operation",
+      "finding": "collaboration.command_receipt_read",
+      "family": "collaboration",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "new_source_offload_operation_label",
+      "implemented": "Only the two initial CollaborationStore receipt reads in request_transition/execute_command move off-loop, via bound native AsyncRuntime or unbound asyncio.to_thread. Original duplicate/fingerprint/conflict/provenance/policy/catalog/notification/provider/write effects stay on caller path. Cancellation/read errors do not reach effects. No mode/model/permission/default/policy/GC/deadline changes.",
+      "measurement": "Declaredboundexecutorlabel executed by native/fallbackscopedfixtures; no per-operation quantitative runtime snapshot captured. Not a live/process-baseline observation or measuredzero.",
+      "merged": [],
+      "deployed": "Unmerged/uninstalledsource",
+      "retested": "56tests/12pairedfixtures, broadmixeddoesnotexerciseeverynewreceiptbranch",
+      "resolution": "open",
+      "next_actor": "This session/card",
+      "next_action": "Capture bounded operation counters/queue/service/CPU and production activation/retests under representative nonduplicate/concurrent paths without changing receipts/admission/policies."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -317774,6 +318089,13 @@
       "artifact": "docs/benchmarks/systemic-pr613-integration-prior-intent-20261029.json",
       "status": "Source tested/unmerged/uninstalled; no wholePA acceptance",
       "resolution": "open"
+    },
+    {
+      "artifact": "docs/benchmarks/systemic-pr615-integration-collaboration-receipts-20261029.json",
+      "row_id": "concern:collaboration-internal-receipt-read-loop",
+      "implemented": "Only the two initial CollaborationStore receipt reads in request_transition/execute_command move off-loop, via bound native AsyncRuntime or unbound asyncio.to_thread. Original duplicate/fingerprint/conflict/provenance/policy/catalog/notification/provider/write effects stay on caller path. Cancellation/read errors do not reach effects. No mode/model/permission/default/policy/GC/deadline changes.",
+      "status": "Sourceonly/unmerged/uninstalled",
+      "accepted": false
     }
   ],
   "integration_history": [
@@ -319854,6 +320176,16 @@
       "main_ci": 40945767318,
       "head_main": "5firstattemptsuccess each/no retries",
       "application_reinstalled": false,
+      "accepted": false
+    },
+    {
+      "pr": 615,
+      "artifact": "docs/benchmarks/systemic-pr615-integration-collaboration-receipts-20261029.json",
+      "head": "4c3fdbf04d004f78493d66fd5cbb55995116813d",
+      "merge": "7d4052fda87864e775cdabca53778f48bb658599",
+      "watch": "c40b07b0-edd7-42d4-a561-03eec1cb9be0",
+      "head_ci": 40952841664,
+      "main_ci": 40953539491,
       "accepted": false
     }
   ],
