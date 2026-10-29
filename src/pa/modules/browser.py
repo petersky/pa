@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
@@ -26,6 +27,7 @@ from pa.browser.session import (
 )
 from pa.core.context import AppContext
 from pa.core.contracts import Module
+from pa.core.async_runtime import AsyncRuntime
 
 router = APIRouter(prefix="/agent/sessions/{session_id}/browser")
 automation_router = APIRouter(prefix="/browser")
@@ -202,7 +204,17 @@ async def browser_type(request: Request, session_id: str, body: TypeBody) -> dic
     return {"ok": True}
 
 
-def _scope(request: Request, agent_session_id: str) -> BrowserScope:
+async def _read_session(request: Request, session_id: str):
+    ctx = request.app.state.ctx
+    runtime = ctx.services.get("async_runtime")
+    if isinstance(runtime, AsyncRuntime):
+        return await runtime.run_blocking(
+            "browser.session_read", ctx.store.get_session, session_id
+        )
+    return await asyncio.to_thread(ctx.store.get_session, session_id)
+
+
+async def _scope(request: Request, agent_session_id: str) -> BrowserScope:
     try:
         UUID(agent_session_id)
     except ValueError as exc:
@@ -214,7 +226,7 @@ def _scope(request: Request, agent_session_id: str) -> BrowserScope:
             },
         ) from exc
     ctx = request.app.state.ctx
-    stored = ctx.store.get_session(agent_session_id)
+    stored = await _read_session(request, agent_session_id)
     principal = get_principal_id(request)
     if not stored or getattr(stored, "principal_id", None) != principal:
         raise HTTPException(
@@ -322,7 +334,7 @@ async def browser_automation(
     request: Request, operation: str, body: AutomationBody
 ) -> dict[str, Any]:
     manager = _browser_sessions(request)
-    scope = _scope(request, body.agent_session_id)
+    scope = await _scope(request, body.agent_session_id)
     try:
         if operation == "attach":
             return await manager.attach(
@@ -358,9 +370,7 @@ async def browser_automation(
                     "invalid_share_target",
                     "authorized_session_id must be a full canonical session UUID.",
                 ) from exc
-            target_session = request.app.state.ctx.store.get_session(
-                body.authorized_session_id
-            )
+            target_session = await _read_session(request, body.authorized_session_id)
             if (
                 not target_session
                 or getattr(target_session, "principal_id", None) != scope.principal_id
