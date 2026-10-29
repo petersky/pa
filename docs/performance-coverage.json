@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-29T17:44:44.471810+00:00",
-  "completion": "OPEN: all701findings/159concerns.607protectedintegrated/uninstalled;606active/scopedretestedwithmaintenance/full-list/remote/gaps. Newtagsource tested/unintegrated;independentacceptance unaccepted.",
+  "as_of": "2026-10-29T18:19:40.776226+00:00",
+  "completion": "OPEN: all701findings159concerns. Exact608active/scopedretested withmaintenance/full-list/live/peer tails. Newprogressbyte-source tested/unmerged/uninstalled;Unicodep95/max worse; independentacceptance unaccepted.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -213428,7 +213428,15 @@
       "finding": "Accepted/late ingestion serializes all retained progress payloads to recalculate retention byte totals",
       "implemented": false,
       "next_action": "Measure safe normalized byte accounting or selected-row aggregate under delivery updates/removals/reload, preserve exact existing encoding/count/age/byte/protected history/receipt semantics and rollback. No cache/SQL aggregate repair implemented in this patch.",
-      "report": "cb5fe055-0ddc-4512-973b-c5bde2f611df"
+      "report": "cb5fe055-0ddc-4512-973b-c5bde2f611df",
+      "followup_stage_history": [
+        {
+          "artifact": "docs/benchmarks/systemic-exact608-activation-progress-bytes-20261029.json",
+          "observed_at": "2026-10-29T18:19:40.776226+00:00",
+          "status": "608active/scopedretested;newprogressbyte-source tested/unmerged/uninstalled;adverse tails/fullscope remain",
+          "resolution": "open"
+        }
+      ]
     },
     {
       "id": "concern:ci562-provider-startup-latency",
@@ -218983,7 +218991,15 @@
       },
       "resolution": "open",
       "next_actor": "This same systemic session/card",
-      "next_action": "Protected readyPR/durablewatch/exacthead+mainCI integration; future reviewed exact activation/installedtests; continue remaining systemic acceptance without policy/default/GC changes."
+      "next_action": "Protected readyPR/durablewatch/exacthead+mainCI integration; future reviewed exact activation/installedtests; continue remaining systemic acceptance without policy/default/GC changes.",
+      "followup_stage_history": [
+        {
+          "artifact": "docs/benchmarks/systemic-exact608-activation-progress-bytes-20261029.json",
+          "observed_at": "2026-10-29T18:19:40.776226+00:00",
+          "status": "608active/scopedretested;newprogressbyte-source tested/unmerged/uninstalled;adverse tails/fullscope remain",
+          "resolution": "open"
+        }
+      ]
     },
     {
       "id": "runtime:browser.session_read",
@@ -219629,7 +219645,15 @@
       },
       "resolution": "open",
       "next_actor": "This same systemic session/card",
-      "next_action": "ProtectedreadyPR/supervisor/exacthead+mainCI integration; future reviewed activation and scopedretest; keepremainingasynccatalog/write/provider/wholePAacceptance open."
+      "next_action": "ProtectedreadyPR/supervisor/exacthead+mainCI integration; future reviewed activation and scopedretest; keepremainingasynccatalog/write/provider/wholePAacceptance open.",
+      "followup_stage_history": [
+        {
+          "artifact": "docs/benchmarks/systemic-exact608-activation-progress-bytes-20261029.json",
+          "observed_at": "2026-10-29T18:19:40.776226+00:00",
+          "status": "608active/scopedretested;newprogressbyte-source tested/unmerged/uninstalled;adverse tails/fullscope remain",
+          "resolution": "open"
+        }
+      ]
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -317437,6 +317461,12 @@
       "artifact": "docs/benchmarks/systemic-pr607-integration-enrichment-tags-20261029.json",
       "status": "Native source tested; unmerged/uninstalled",
       "resolution": "open"
+    },
+    {
+      "row_id": "concern:progress-retention-event-json-amplification",
+      "artifact": "docs/benchmarks/systemic-exact608-activation-progress-bytes-20261029.json",
+      "status": "Sourceonly canonical-byte copy reduction;Unicodep95/max adverse;unmerged/uninstalled",
+      "resolution": "open"
     }
   ],
   "integration_history": [
@@ -317538,6 +317568,16 @@
       "deployed": false,
       "accepted": false,
       "residuals": "606actualmaintenance13.84s/full-listnegatives/remote-gaps;607uninstalled;allwholecriteriaopen."
+    },
+    {
+      "pr": 608,
+      "artifact": "docs/benchmarks/systemic-exact608-activation-progress-bytes-20261029.json",
+      "merge": "3fdad48f1d0caa9127af2f9e383003493adf0e99",
+      "watched_head": "9eb93f725998727a5aebad49c0453fa65916c90b",
+      "watch": "6113ba06-be99-4123-8612-b9eb3b179831",
+      "deployed": true,
+      "accepted": false,
+      "residuals": "Installedmaintenance765.255ms/full-list5failures/live6158.234ms/session2439.923ms; fullscope open."
     }
   ],
   "coverage_stage_history": [

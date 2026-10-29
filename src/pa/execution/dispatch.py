@@ -3848,6 +3848,19 @@ class DispatchStore:
         self._retention_actions += len(removed)
         return result
 
+    @staticmethod
+    def _progress_event_byte_size(event: DispatchProgressEventV1) -> int:
+        # model_dump_json decodes the serializer's UTF-8 bytes to text. Retention
+        # only needs their length, so avoid decoding and encoding every retained
+        # payload again. Use the current hydrated model, never stored byte_size:
+        # legacy defaults and delivery updates can change its canonical size.
+        if (
+            type(event) is not DispatchProgressEventV1
+            and type(event).model_dump_json is not BaseModel.model_dump_json
+        ):
+            return len(event.model_dump_json().encode())
+        return len(event.__pydantic_serializer__.to_json(event))
+
     def ingest_progress(
         self, event: DispatchProgressEventV1, *, delivered: bool = False
     ) -> ProgressIngestResult:
@@ -3970,7 +3983,7 @@ class DispatchStore:
                 if len(record.progress_events) <= MAX_PROGRESS_EVENTS:
                     if retained_bytes is None:
                         retained_bytes = sum(
-                            len(item.model_dump_json().encode())
+                            self._progress_event_byte_size(item)
                             for item in record.progress_events
                         )
                     if retained_bytes <= self.MAX_PROGRESS_BYTES_PER_DISPATCH:
@@ -3984,7 +3997,7 @@ class DispatchStore:
                     ]
                 )
                 if retained_bytes is not None:
-                    retained_bytes -= len(candidate.model_dump_json().encode())
+                    retained_bytes -= self._progress_event_byte_size(candidate)
             record.progress_seen_keys.append(sanitized.idempotency_key)
             record.progress_seen_keys = record.progress_seen_keys[
                 -MAX_PROGRESS_SEEN_KEYS:
