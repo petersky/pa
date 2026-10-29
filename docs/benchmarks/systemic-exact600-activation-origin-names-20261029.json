@@ -1,0 +1,2283 @@
+{
+  "contract": "pa.exact600-activation-origin-name-repair/v1",
+  "observed_at": "2026-10-29T05:38:02.829768+00:00",
+  "source_base": "f103e237bd17cec59a29ef0c2083106c1af1177d",
+  "source_state": "Exact PR600 activated and scoped retests retained. New origin-name repair source tested; unmerged/uninstalled at this immutable stage. Whole-card acceptance OPEN.",
+  "activated_build": {
+    "loaded_module_version": "1.5.9",
+    "source_revision": "f103e237bd17cec59a29ef0c2083106c1af1177d",
+    "package_identity": "sha256:bec1ae1f2cf54f298fb8b6de4bf165baf44629848d711eaf15db1d4d229538a6",
+    "pid": 69929,
+    "startup_id": "1087b192-4d53-4cb0-a482-9cdaf198ec34"
+  },
+  "configuration_revision": "86968d122a80e240ea560052f275872c5d22699a35b218618200da9e62fc1767",
+  "handoff": {
+    "identity": {
+      "version": 1,
+      "owner": "restart",
+      "realm_id": "default",
+      "idempotency_key": "systemic-exactf103e237-full-watch-managed-restart-20261029-v1",
+      "operation": "agent_restart_handoff",
+      "request_fingerprint": null
+    },
+    "status": "continuation_delivered",
+    "accepted": true,
+    "committed": true,
+    "projected": null,
+    "effect": "complete",
+    "phase": "succeeded",
+    "phase_version": 6,
+    "attempt": 1,
+    "reason_code": "continuation_delivered",
+    "next_action": null,
+    "effect_state": "confirmed",
+    "worker_state": "absent",
+    "domain_stage": "continuation_delivered",
+    "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+    "handoff_id": "f69e730b-72c2-55fd-9ddf-48e8920d729a",
+    "continuation_prompt_id": "restart-handoff:f69e730b-72c2-55fd-9ddf-48e8920d729a",
+    "idempotency_key": "systemic-exactf103e237-full-watch-managed-restart-20261029-v1",
+    "owner": "restart",
+    "realm_id": "default",
+    "operation": "agent_restart_handoff",
+    "durable": true,
+    "recovery_state": "continuation_delivered",
+    "recovery_action": null,
+    "result": {
+      "handoff_id": "f69e730b-72c2-55fd-9ddf-48e8920d729a",
+      "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+      "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "project_id": "fdc04d91-1222-447b-859c-38e67bcab6eb",
+      "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+      "status": "continuation_delivered",
+      "failure_stage": null,
+      "error": null,
+      "attempts": 1,
+      "created_at": "2026-10-29T05:28:25.331923+00:00",
+      "updated_at": "2026-10-29T05:31:17.628685+00:00",
+      "delivered_at": "2026-10-29T05:31:17.628685+00:00"
+    }
+  },
+  "metadata": {
+    "contract": "pa.exact600-installed-metadata-attestation/v1",
+    "observed_at": "2026-10-29T05:31:33.307638+00:00",
+    "stage": "postrestart",
+    "source": "f103e237bd17cec59a29ef0c2083106c1af1177d",
+    "package_identity": "sha256:bec1ae1f2cf54f298fb8b6de4bf165baf44629848d711eaf15db1d4d229538a6",
+    "source_files_verified": 439,
+    "record_entries_verified": 440,
+    "templates_verified": 38,
+    "template_cache_sha256": "fcb9a8ee8099db2aebeebdf06e98412cb3cfa0bcaf71ad2c297553cf3d87acfb",
+    "python_base_executable": "/Users/petersky/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/bin/python3.14",
+    "unchanged_dependency_versions": 52,
+    "private_roots_before_pa_imports": true,
+    "no_kernel_or_store_import": true,
+    "scope": "Read-only installed source, RECORD, interpreter, dependency and template-cache proof. No PA service state, credentials, Kernel, Store or workspace construction. Does not establish which modules/branches the listener executed; actual loaded owner/PID proof is separate.",
+    "manifest": {
+      ".dev/exact600-postrestart-20261029-source.json": "e0a79d8102afb9d606bebe0034f4bb788cf49a0633f71d580e08aac1d6bb2479",
+      ".dev/exact600-postrestart-20261029-artifact.json": "55eafc6fb0ad09c2dede991624712946f44357a9cec14b484fb5e0998a6c04ad",
+      ".dev/exact600-postrestart-20261029-records.json": "dc1411f9dc212f975e0ae0c652de7695bc180740a69a1b44fb27d312b0a4337b"
+    }
+  },
+  "native_process": {
+    "observed_at": "2026-10-29T05:31:35.587265+00:00",
+    "pid": 69929,
+    "supervisor_pid": 69926,
+    "ps": "69929 69926 Wed Oct 28 22:28:34 2026      31  0 /Users/petersky/.local/share/uv/tools/pa/bin/python3",
+    "launchctl": [
+      "state = running",
+      "program = /Users/petersky/.local/share/uv/tools/pa/bin/pa",
+      "pid = 69926",
+      "state = active",
+      "state = active",
+      "spawn type = interactive (4)"
+    ],
+    "scope": "Actual loaded owner identity paired with native process/interpreter/class; no policy/service/configuration/power/clock change."
+  },
+  "installed_gc": {
+    "tests": 216,
+    "exit_code": 0
+  },
+  "private_stages": {
+    "contract": "pa.exact600-private-retests/v1",
+    "source": "f103e237bd17cec59a29ef0c2083106c1af1177d",
+    "started_at": "2026-10-29T05:32:01.379648+00:00",
+    "stages": [
+      {
+        "name": "module_paths",
+        "arguments": [
+          "/Users/petersky/.local/share/uv/tools/pa/bin/python3",
+          "-I",
+          "-B",
+          ".dev/prove_exact600_installed_module_paths_20261029.py"
+        ],
+        "started_at": "2026-10-29T05:32:01.380085+00:00",
+        "script_sha256": "49ea800046bebe1909133753b762f112846961b5006ccf05248897e702f2e837",
+        "exit_code": 0,
+        "finished_at": "2026-10-29T05:32:02.117671+00:00",
+        "elapsed_seconds": 0.7373602910665795,
+        "log_path": ".dev/exact600-private-stage-module_paths-20261029.log",
+        "log_sha256": "e7cd91726c084a6a45f21077b77144ee60a1bae91f2917c441ef3e8214de146a"
+      },
+      {
+        "name": "lifecycle_contracts",
+        "arguments": [
+          "/Users/petersky/.local/share/uv/tools/pa/bin/python3",
+          "-I",
+          "-B",
+          ".dev/run_installed600_lifecycle_contracts_20261029.py"
+        ],
+        "started_at": "2026-10-29T05:32:02.118017+00:00",
+        "script_sha256": "33e7900b33b31c01932244c63cd16d69aff8efc0a3f3a49c4a77b12bfe1bc4fd",
+        "exit_code": 0,
+        "finished_at": "2026-10-29T05:32:02.621638+00:00",
+        "elapsed_seconds": 0.5033138330327347,
+        "log_path": ".dev/exact600-private-stage-lifecycle_contracts-20261029.log",
+        "log_sha256": "12d2acad85c3976f8e79b66c01ac7c975fb2db786429e68973ee898aa4c7db2b"
+      },
+      {
+        "name": "lease_matching",
+        "arguments": [
+          "/Users/petersky/.local/share/uv/tools/pa/bin/python3",
+          "-I",
+          "-B",
+          "scripts/benchmark_lifecycle_lease_matching.py",
+          "--output",
+          ".dev/exact600-installed-lease-matching-20261029.json"
+        ],
+        "started_at": "2026-10-29T05:32:02.621983+00:00",
+        "script_sha256": "31980a579238e3ccff14aa31661c27706bdcb27c2a0704122dd3094826696367",
+        "exit_code": 0,
+        "finished_at": "2026-10-29T05:32:03.062724+00:00",
+        "elapsed_seconds": 0.44015729194507003,
+        "log_path": ".dev/exact600-private-stage-lease_matching-20261029.log",
+        "log_sha256": "e31e47eb38e608a2b4bb607c47fb49d3ced80c8252b477bc4175d3902c27e729"
+      },
+      {
+        "name": "dispatch_matching",
+        "arguments": [
+          "/Users/petersky/.local/share/uv/tools/pa/bin/python3",
+          "-I",
+          "-B",
+          "scripts/benchmark_lifecycle_dispatch_matching.py",
+          "--output",
+          ".dev/exact600-installed-dispatch-matching-20261029.json"
+        ],
+        "started_at": "2026-10-29T05:32:03.063256+00:00",
+        "script_sha256": "e5df807bb4cefb9261d4143a3ee2ba62cda32bdab1a4e2821d0a7933b14cff36",
+        "exit_code": 0,
+        "finished_at": "2026-10-29T05:32:04.046464+00:00",
+        "elapsed_seconds": 0.9827363749500364,
+        "log_path": ".dev/exact600-private-stage-dispatch_matching-20261029.log",
+        "log_sha256": "cb6cbd21d4570a14ec24652382e4ccdd22d29f4277b1ca0bb5ce54be0c4c9ba8"
+      },
+      {
+        "name": "watch_matching",
+        "arguments": [
+          "/Users/petersky/.local/share/uv/tools/pa/bin/python3",
+          "-I",
+          "-B",
+          "scripts/benchmark_lifecycle_watch_matching.py",
+          "--output",
+          ".dev/exact600-installed-watch-matching-20261029.json"
+        ],
+        "started_at": "2026-10-29T05:32:04.047017+00:00",
+        "script_sha256": "18e49b2b8300f6394b0fa2f34f779e7ade908d3a40d16aa2330111bbdacb708a",
+        "exit_code": 0,
+        "finished_at": "2026-10-29T05:32:04.709165+00:00",
+        "elapsed_seconds": 0.6616721670143306,
+        "log_path": ".dev/exact600-private-stage-watch_matching-20261029.log",
+        "log_sha256": "6a8c47fda7d98cbe0d369eaf0514be6c8a154b5cd0bc98757b34ecc5f81f18dd"
+      },
+      {
+        "name": "project_labels_shared",
+        "arguments": [
+          "/Users/petersky/.local/share/uv/tools/pa/bin/python3",
+          "-I",
+          "-B",
+          ".dev/benchmark_installed600_project_labels_20261029.py",
+          "--output",
+          ".dev/exact600-installed-project-labels-shared-20261029.json"
+        ],
+        "started_at": "2026-10-29T05:32:04.709505+00:00",
+        "script_sha256": "86bf39f4eee6373259842fed0b87dbc6e8db3d77f4a9e1ed1700239806720122",
+        "exit_code": 0,
+        "finished_at": "2026-10-29T05:32:05.848423+00:00",
+        "elapsed_seconds": 1.138698959024623,
+        "log_path": ".dev/exact600-private-stage-project_labels_shared-20261029.log",
+        "log_sha256": "9ff4e7de6d7271efe0df841956d8e9e473d81d2d852bb05f842131205e9b9f43"
+      },
+      {
+        "name": "project_labels_unique",
+        "arguments": [
+          "/Users/petersky/.local/share/uv/tools/pa/bin/python3",
+          "-I",
+          "-B",
+          ".dev/benchmark_installed600_project_labels_20261029.py",
+          "--projects",
+          "250",
+          "--output",
+          ".dev/exact600-installed-project-labels-unique-20261029.json"
+        ],
+        "started_at": "2026-10-29T05:32:05.848910+00:00",
+        "script_sha256": "86bf39f4eee6373259842fed0b87dbc6e8db3d77f4a9e1ed1700239806720122",
+        "exit_code": 0,
+        "finished_at": "2026-10-29T05:32:07.188035+00:00",
+        "elapsed_seconds": 1.3390004580141976,
+        "log_path": ".dev/exact600-private-stage-project_labels_unique-20261029.log",
+        "log_sha256": "1985e23eb90b1a7d0c32c44d32b002aabadb02aa3c119a5dd60b3081959f6742"
+      },
+      {
+        "name": "full_watches",
+        "arguments": [
+          "/Users/petersky/.local/share/uv/tools/pa/bin/python3",
+          "-I",
+          "-B",
+          "scripts/benchmark_session_full_watches.py",
+          "--output",
+          ".dev/exact600-installed-full-watches-20261029.json"
+        ],
+        "started_at": "2026-10-29T05:32:07.188503+00:00",
+        "script_sha256": "0e08209a99facfa392d67299804b596888086bc7b4faaa9d6f2c18694d061340",
+        "exit_code": 0,
+        "finished_at": "2026-10-29T05:32:09.106115+00:00",
+        "elapsed_seconds": 1.9172564999898896,
+        "log_path": ".dev/exact600-private-stage-full_watches-20261029.log",
+        "log_sha256": "cac6b6151f0637216575decc61135bd3c033144887b9100a7403e29b95dd26c8"
+      },
+      {
+        "name": "full_watches_all_related",
+        "arguments": [
+          "/Users/petersky/.local/share/uv/tools/pa/bin/python3",
+          "-I",
+          "-B",
+          "scripts/benchmark_session_full_watches.py",
+          "--all-related",
+          "--output",
+          ".dev/exact600-installed-full-watches-all-related-20261029.json"
+        ],
+        "started_at": "2026-10-29T05:32:09.106647+00:00",
+        "script_sha256": "0e08209a99facfa392d67299804b596888086bc7b4faaa9d6f2c18694d061340",
+        "exit_code": 0,
+        "finished_at": "2026-10-29T05:32:13.250580+00:00",
+        "elapsed_seconds": 4.14385283307638,
+        "log_path": ".dev/exact600-private-stage-full_watches_all_related-20261029.log",
+        "log_sha256": "0f5c65811b09f52f47ff80ca9818016433fe6432b11c2a4bc5e5a72b3303e04a"
+      },
+      {
+        "name": "mixed100",
+        "arguments": [
+          "/Users/petersky/.local/share/uv/tools/pa/bin/python3",
+          "-I",
+          "-B",
+          ".dev/run_installed600_postrestart_mixed_20261029.py"
+        ],
+        "started_at": "2026-10-29T05:32:13.250916+00:00",
+        "script_sha256": "8dc394df9b3b7a79e2bc345015129e7f3fa9240a092138c8900509da72698635",
+        "exit_code": 0,
+        "finished_at": "2026-10-29T05:32:43.924141+00:00",
+        "elapsed_seconds": 30.673332958016545,
+        "log_path": ".dev/exact600-private-stage-mixed100-20261029.log",
+        "log_sha256": "c7dd5a0a6a4c241c9cab23d921e1b4f52677f0caae786edecdd651dbb163a871"
+      },
+      {
+        "name": "cold10",
+        "arguments": [
+          "/Users/petersky/.local/share/uv/tools/pa/bin/python3",
+          "-I",
+          "-B",
+          ".dev/launch_installed600_postrestart_cold_20261029.py"
+        ],
+        "started_at": "2026-10-29T05:32:43.924685+00:00",
+        "script_sha256": "af12e62d5f291aadecc70fcbe19c5309e98f4920edf9268dd3e42de2eff9171e",
+        "exit_code": 0,
+        "finished_at": "2026-10-29T05:32:45.088789+00:00",
+        "elapsed_seconds": 1.1639051251113415,
+        "log_path": ".dev/exact600-private-stage-cold10-20261029.log",
+        "log_sha256": "5aa3b9824ed9f788806d72b9a7b9d2cf5b5e08fc78c251c399caff085c542cd9"
+      },
+      {
+        "name": "late_cursor",
+        "arguments": [
+          "/Users/petersky/.local/share/uv/tools/pa/bin/python3",
+          "-I",
+          "-B",
+          ".dev/benchmark_installed_late_cursor_20261025.py",
+          "--review",
+          ".dev/exact600-package-review-20261029.json",
+          "--output",
+          ".dev/exact600-installed-late-cursor-20261029.json"
+        ],
+        "started_at": "2026-10-29T05:32:45.089206+00:00",
+        "script_sha256": "97f5a51875e6e203c8095bdd4f9353967f768f8ba8805c3ab7bb41fb2493156f",
+        "exit_code": 0,
+        "finished_at": "2026-10-29T05:32:46.625435+00:00",
+        "elapsed_seconds": 1.5356643749400973,
+        "log_path": ".dev/exact600-private-stage-late_cursor-20261029.log",
+        "log_sha256": "903576c7f3f45aec1a434f427f9491c0f645012729dbfaa776f8063b108d5c42"
+      },
+      {
+        "name": "reference_guard",
+        "arguments": [
+          "/Users/petersky/.local/share/uv/tools/pa/bin/python3",
+          "-I",
+          "-B",
+          "scripts/benchmark_reference_type_guard.py",
+          "--output",
+          ".dev/exact600-installed-reference-guard-20261029.json"
+        ],
+        "started_at": "2026-10-29T05:32:46.625944+00:00",
+        "script_sha256": "184dbd9e56762edb95acedf3b16888a40af0151d8a2f6cb5ceb28a200088e840",
+        "exit_code": 0,
+        "finished_at": "2026-10-29T05:32:50.969799+00:00",
+        "elapsed_seconds": 4.3433778749313205,
+        "log_path": ".dev/exact600-private-stage-reference_guard-20261029.log",
+        "log_sha256": "09b32eda1660a90f7ab2b1948aeaa0ac9c0bc8acac3bb7414aef121f33a540b4"
+      },
+      {
+        "name": "watch_read",
+        "arguments": [
+          "/Users/petersky/.local/share/uv/tools/pa/bin/python3",
+          "-I",
+          "-B",
+          "scripts/benchmark_lifecycle_watch_links.py",
+          "--output",
+          ".dev/exact600-installed-watch-read-20261029.json"
+        ],
+        "started_at": "2026-10-29T05:32:50.970238+00:00",
+        "script_sha256": "94f88ab65a140558be1369b5c650a4e78c254be9b99e968ef3e305abdc568be0",
+        "exit_code": 0,
+        "finished_at": "2026-10-29T05:32:51.878843+00:00",
+        "elapsed_seconds": 0.9080423329723999,
+        "log_path": ".dev/exact600-private-stage-watch_read-20261029.log",
+        "log_sha256": "c6be50ad461ccd9e6b934df7ce057703eac47ffe20f9f77abee2f4c6ea907915"
+      },
+      {
+        "name": "full_watch_source_hashes",
+        "arguments": [
+          "/Users/petersky/.local/share/uv/tools/pa/bin/python3",
+          "-I",
+          "-B",
+          ".dev/verify600_full_watch_benchmark_sources_20261029.py"
+        ],
+        "started_at": "2026-10-29T05:32:51.879253+00:00",
+        "script_sha256": "fbacd4af406d103ca0419739d4d399df55ce48599a5ee2ef8006d0991197f6fb",
+        "exit_code": 0,
+        "finished_at": "2026-10-29T05:32:51.903179+00:00",
+        "elapsed_seconds": 0.02377858303952962,
+        "log_path": ".dev/exact600-private-stage-full_watch_source_hashes-20261029.log",
+        "log_sha256": "eaeb097b4c7990c35c2aabd8840da89fc8cce60639f8cba469db4287c2862bcb"
+      }
+    ],
+    "scope": "Sequential private installed Python 3.14.2 stages; both roots isolated before every PA import including child metadata. No production workload/fault injection/store writes. Each stage retains its exact scope and independent populations. No idle-host/full real provider/Kernel/network/peer/admission/startup/drain or whole-card acceptance inferred.",
+    "finished_at": "2026-10-29T05:32:51.903637+00:00",
+    "all_stages_passed": true
+  },
+  "installed_mixed": {
+    "events": 9600,
+    "warnings": {},
+    "thresholds": {
+      "maintenance.run": 1
+    },
+    "maintenance": {
+      "samples": 1,
+      "max_ms": 758.695,
+      "p50_ms": 758.695,
+      "p95_ms": 758.695,
+      "p99_ms": 758.695
+    }
+  },
+  "public": {
+    "ordinary_samples": 95,
+    "ordinary_failures": 0,
+    "ordinary_violations_500ms": 0,
+    "ordinary_max_ms": 66.51274999603629,
+    "session_lists": {
+      "summary": {
+        "route": "/api/agent/sessions?view=all&limit=250&detail=summary",
+        "samples": [
+          {
+            "attempt": 0,
+            "observed_at": "2026-10-29T05:33:07.411457+00:00",
+            "ok": true,
+            "status": 200,
+            "elapsed_ms": 163.62366604153067,
+            "decoded_bytes": 1161388,
+            "rows": 250,
+            "schema_valid": true,
+            "correlation_id": "19a3b866-d890-4d22-a571-918294dbed05"
+          },
+          {
+            "attempt": 1,
+            "observed_at": "2026-10-29T05:33:07.575123+00:00",
+            "ok": true,
+            "status": 200,
+            "elapsed_ms": 184.49120793957263,
+            "decoded_bytes": 1161388,
+            "rows": 250,
+            "schema_valid": true,
+            "correlation_id": "d3123d9f-dbc5-48e8-861b-368aeefbe79d"
+          },
+          {
+            "attempt": 2,
+            "observed_at": "2026-10-29T05:33:07.760031+00:00",
+            "ok": true,
+            "status": 200,
+            "elapsed_ms": 127.91508296504617,
+            "decoded_bytes": 1161388,
+            "rows": 250,
+            "schema_valid": true,
+            "correlation_id": "eb5a326a-7520-4f75-88c8-1c66abf18a93"
+          },
+          {
+            "attempt": 3,
+            "observed_at": "2026-10-29T05:33:07.888373+00:00",
+            "ok": true,
+            "status": 200,
+            "elapsed_ms": 143.75795796513557,
+            "decoded_bytes": 1161388,
+            "rows": 250,
+            "schema_valid": true,
+            "correlation_id": "867d8064-34a3-4fca-8f06-085092090a84"
+          },
+          {
+            "attempt": 4,
+            "observed_at": "2026-10-29T05:33:08.032539+00:00",
+            "ok": true,
+            "status": 200,
+            "elapsed_ms": 184.24145900644362,
+            "decoded_bytes": 1161388,
+            "rows": 250,
+            "schema_valid": true,
+            "correlation_id": "4754e040-76b9-4aa2-8486-07551f5359c0"
+          }
+        ],
+        "failures": 0,
+        "violations_500ms": 0,
+        "latency_ms": {
+          "samples": 5,
+          "max": 184.491,
+          "p50": 163.624,
+          "p95": 184.491,
+          "p99": 184.491
+        }
+      },
+      "full": {
+        "route": "/api/agent/sessions?view=all&limit=10&detail=full",
+        "samples": [
+          {
+            "attempt": 0,
+            "observed_at": "2026-10-29T05:33:08.217419+00:00",
+            "ok": false,
+            "error_type": "AssertionError",
+            "elapsed_ms": 32.67187508754432
+          },
+          {
+            "attempt": 1,
+            "observed_at": "2026-10-29T05:33:08.250104+00:00",
+            "ok": false,
+            "error_type": "AssertionError",
+            "elapsed_ms": 31.50425001513213
+          },
+          {
+            "attempt": 2,
+            "observed_at": "2026-10-29T05:33:08.281618+00:00",
+            "ok": false,
+            "error_type": "AssertionError",
+            "elapsed_ms": 31.588583020493388
+          },
+          {
+            "attempt": 3,
+            "observed_at": "2026-10-29T05:33:08.313217+00:00",
+            "ok": false,
+            "error_type": "AssertionError",
+            "elapsed_ms": 32.45908406097442
+          },
+          {
+            "attempt": 4,
+            "observed_at": "2026-10-29T05:33:08.345686+00:00",
+            "ok": false,
+            "error_type": "AssertionError",
+            "elapsed_ms": 33.13150000758469
+          }
+        ],
+        "failures": 5,
+        "violations_500ms": 0,
+        "latency_ms": {
+          "samples": 5,
+          "max": 33.132,
+          "p50": 32.459,
+          "p95": 33.132,
+          "p99": 33.132
+        }
+      }
+    },
+    "encoding_samples": 8,
+    "encoding_failures": 0,
+    "fleet_samples": 8,
+    "fleet_failures": 0,
+    "full_list_size_control": {
+      "observed_at": "2026-10-29T05:34:18.796280+00:00",
+      "route": "/api/agent/sessions?view=all&limit=10&detail=full",
+      "status": 200,
+      "content_length": 2396022,
+      "collector_limit_bytes": 2097152,
+      "exceeds_original_bound": true,
+      "body_read_bytes": 0,
+      "body_schema_verified": false,
+      "elapsed_ms": 38.39149999999999,
+      "correlation_id": "6c93b9d2-7e22-4d7c-87bf-75b8982debb9",
+      "scope": "One ordinary GET with original 5 s transport timeout; metadata only, response body not read/persisted. No bound/deadline raised, no credentials/PA import/proxy/redirect. Confirms size concern, not full-body correctness or acceptance."
+    }
+  },
+  "natural_maintenance": {
+    "last_started_at": "2026-10-29T05:28:39.613641+00:00",
+    "last_finished_at": "2026-10-29T05:28:45.205258+00:00",
+    "last_result": {
+      "ran_at": "2026-10-29T05:28:39.614261+00:00",
+      "transcript_cutoff": "2026-10-15T05:28:39.614261+00:00",
+      "mutation_cutoff": "2026-10-15T05:28:39.614261+00:00",
+      "transcript_events_deleted": 0,
+      "mutation_operations_deleted": 4,
+      "dispatch_compact": {
+        "events": 0,
+        "receipts": 0
+      },
+      "sqlite": {
+        "compacted": true,
+        "status": "ok",
+        "phases": {
+          "connect": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.273375,
+            "thread_cpu_ms": 0.117334
+          },
+          "size_initial": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.814291,
+            "thread_cpu_ms": 0.445208
+          },
+          "integrity_before": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 181.831792,
+            "thread_cpu_ms": 175.333709
+          },
+          "optimize": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.088167,
+            "thread_cpu_ms": 0.079917
+          },
+          "checkpoint_before": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.636417,
+            "thread_cpu_ms": 0.349083
+          },
+          "size_pre_compact": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.057625,
+            "thread_cpu_ms": 0.039083
+          },
+          "disk_space": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.032791,
+            "thread_cpu_ms": 0.033084
+          },
+          "vacuum": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 2629.944458,
+            "thread_cpu_ms": 1237.624833
+          },
+          "integrity_after": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 162.404291,
+            "thread_cpu_ms": 162.378125
+          },
+          "checkpoint_after": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 74.703,
+            "thread_cpu_ms": 57.461958
+          },
+          "size_final": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.034708,
+            "thread_cpu_ms": 0.034833
+          },
+          "close": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.1675,
+            "thread_cpu_ms": 0.167708
+          },
+          "total": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 3051.157625,
+            "thread_cpu_ms": 1634.211042
+          }
+        },
+        "before": {
+          "page_count": 111280,
+          "page_size": 4096,
+          "freelist_count": 103,
+          "bytes": 455802880,
+          "free_bytes": 421888
+        },
+        "after": {
+          "page_count": 109420,
+          "page_size": 4096,
+          "freelist_count": 11,
+          "bytes": 448184320,
+          "free_bytes": 45056
+        },
+        "page_count": 109420,
+        "page_size": 4096,
+        "freelist_count": 11,
+        "bytes": 448184320,
+        "free_bytes": 45056,
+        "quick_check": "ok",
+        "wal_busy": 0,
+        "wal_log": 0,
+        "wal_checkpointed": 0
+      },
+      "transcript_storage": {
+        "schema_version": 1,
+        "events": 875756,
+        "audit_evidence": 1104,
+        "objects": 25675,
+        "uncompressed_bytes": 421463014,
+        "compressed_bytes": 89868247,
+        "references": 25983,
+        "deduplicated_references": 308,
+        "missing_objects": 1,
+        "journal_mode": "wal",
+        "integrity": "ok",
+        "redaction_policy": "canonical-v1",
+        "hot_payload_limit": 2048,
+        "compatibility_rows": 897762,
+        "migration": "running",
+        "migration_examined": 243500,
+        "migration_changed": 84973,
+        "migration_error": null,
+        "measured_at": "2026-10-29T05:28:45.204804+00:00",
+        "measurement_state": "measured"
+      },
+      "phases": {
+        "retention_selection": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 86.756791,
+          "thread_cpu_ms": 9.767958,
+          "sqlite_calls": 278,
+          "sqlite_rows": 275,
+          "sqlite_statement_ms": 85.5463850311935,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_statement_thread_cpu_ms": 8.88703900000001,
+          "sqlite_commit_thread_cpu_ms": 0.0,
+          "sqlite_busy_failures": 0,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.0,
+          "outer_lock_hold_ms": 0.0
+        },
+        "retention_discovery": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 0.392083,
+          "thread_cpu_ms": 0.379125,
+          "sqlite_calls": 2,
+          "sqlite_rows": 0,
+          "sqlite_statement_ms": 0.331499963067472,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_statement_thread_cpu_ms": 0.3194159999999986,
+          "sqlite_commit_thread_cpu_ms": 0.0,
+          "sqlite_busy_failures": 0,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.0,
+          "outer_lock_hold_ms": 0.0
+        },
+        "retention_transaction": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 2.083459,
+          "thread_cpu_ms": 1.783334,
+          "sqlite_calls": 5,
+          "sqlite_rows": 0,
+          "sqlite_statement_ms": 1.8612090498209,
+          "sqlite_commit_ms": 0.025041052140295506,
+          "sqlite_statement_thread_cpu_ms": 1.579331999999999,
+          "sqlite_commit_thread_cpu_ms": 0.011208000000000398,
+          "sqlite_busy_failures": 0,
+          "python_lock_wait_ms": 0.000250060111284256,
+          "python_lock_hold_ms": 2.074708929285407,
+          "outer_lock_hold_ms": 2.074708929285407
+        },
+        "retention_object_collection": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 1208.868917,
+          "thread_cpu_ms": 131.24775,
+          "sqlite_calls": 402,
+          "sqlite_rows": 0,
+          "sqlite_statement_ms": 166.7343289591372,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_statement_thread_cpu_ms": 38.16303899999999,
+          "sqlite_commit_thread_cpu_ms": 0.0,
+          "sqlite_busy_failures": 0,
+          "python_lock_wait_ms": 0.0002080341801047325,
+          "python_lock_hold_ms": 0.0010420335456728935,
+          "outer_lock_hold_ms": 0.0010420335456728935
+        },
+        "retention_canonical": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 1210.993416,
+          "thread_cpu_ms": 133.069667,
+          "sqlite_calls": 407,
+          "sqlite_rows": 0,
+          "sqlite_statement_ms": 168.5955380089581,
+          "sqlite_commit_ms": 0.025041052140295506,
+          "sqlite_statement_thread_cpu_ms": 39.74237099999999,
+          "sqlite_commit_thread_cpu_ms": 0.011208000000000398,
+          "sqlite_busy_failures": 0,
+          "python_lock_wait_ms": 0.0004580942913889885,
+          "python_lock_hold_ms": 2.07575096283108,
+          "outer_lock_hold_ms": 2.07575096283108
+        },
+        "retention_mirror": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 0.745125,
+          "thread_cpu_ms": 0.618667,
+          "sqlite_calls": 2,
+          "sqlite_rows": 0,
+          "sqlite_statement_ms": 0.6557509768754244,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_statement_thread_cpu_ms": 0.5283749999999969,
+          "sqlite_commit_thread_cpu_ms": 0.0,
+          "sqlite_busy_failures": 0,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.0,
+          "outer_lock_hold_ms": 0.0
+        },
+        "transcript_retention": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 1298.539791,
+          "thread_cpu_ms": 143.499709
+        },
+        "mutation_retention": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 1.175542,
+          "thread_cpu_ms": 0.245417
+        },
+        "transcript_migration_and_health": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 593.426917,
+          "thread_cpu_ms": 404.5975
+        },
+        "dispatch_compact": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 13.093334,
+          "thread_cpu_ms": 6.059083
+        },
+        "projection_database": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 3051.164791,
+          "thread_cpu_ms": 1634.218125
+        },
+        "transcript_database": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 332.123542,
+          "thread_cpu_ms": 253.3085
+        },
+        "transcript_health_final": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 301.023042,
+          "thread_cpu_ms": 296.357125
+        },
+        "total": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 5590.612583,
+          "thread_cpu_ms": 2738.343667
+        }
+      },
+      "transcript_migration": {
+        "schema_version": 1,
+        "events": 875756,
+        "audit_evidence": 1104,
+        "objects": 25675,
+        "uncompressed_bytes": 421463014,
+        "compressed_bytes": 89868247,
+        "references": 25983,
+        "deduplicated_references": 308,
+        "missing_objects": 1,
+        "journal_mode": "wal",
+        "integrity": "ok",
+        "redaction_policy": "canonical-v1",
+        "hot_payload_limit": 2048,
+        "compatibility_rows": 897762,
+        "migration": "running",
+        "migration_examined": 243500,
+        "migration_changed": 84973,
+        "migration_error": null,
+        "measured_at": "2026-10-29T05:28:41.507407+00:00",
+        "measurement_state": "measured"
+      },
+      "transcript_sqlite": {
+        "compacted": false,
+        "status": "ok",
+        "phases": {
+          "connect": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.137625,
+            "thread_cpu_ms": 0.137875
+          },
+          "size_initial": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.1305,
+            "thread_cpu_ms": 0.130583
+          },
+          "integrity_before": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 331.444292,
+            "thread_cpu_ms": 252.655917
+          },
+          "optimize": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.03025,
+            "thread_cpu_ms": 0.030334
+          },
+          "checkpoint_before": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.163875,
+            "thread_cpu_ms": 0.140708
+          },
+          "size_pre_compact": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.0165,
+            "thread_cpu_ms": 0.016542
+          },
+          "size_final": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.02225,
+            "thread_cpu_ms": 0.02225
+          },
+          "close": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.081583,
+            "thread_cpu_ms": 0.081708
+          },
+          "total": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 332.10625,
+            "thread_cpu_ms": 253.291459
+          }
+        },
+        "before": {
+          "page_count": 160204,
+          "page_size": 4096,
+          "freelist_count": 0,
+          "bytes": 656195584,
+          "free_bytes": 0
+        },
+        "after": {
+          "page_count": 160204,
+          "page_size": 4096,
+          "freelist_count": 0,
+          "bytes": 656195584,
+          "free_bytes": 0
+        },
+        "page_count": 160204,
+        "page_size": 4096,
+        "freelist_count": 0,
+        "bytes": 656195584,
+        "free_bytes": 0,
+        "quick_check": "ok",
+        "wal_busy": 0,
+        "wal_log": 0,
+        "wal_checkpointed": 0
+      }
+    }
+  },
+  "runtime_population": {
+    "source": {
+      "loaded_module_version": "1.5.9",
+      "source_revision": "f103e237bd17cec59a29ef0c2083106c1af1177d",
+      "package_identity": "sha256:bec1ae1f2cf54f298fb8b6de4bf165baf44629848d711eaf15db1d4d229538a6",
+      "pid": 69929,
+      "startup_id": "1087b192-4d53-4cb0-a482-9cdaf198ec34"
+    },
+    "counts": {
+      "runtime": 101,
+      "route": 32
+    },
+    "mapping": {
+      "runtime": {
+        "acp.pa_mcp_owner_probe": [
+          "runtime:acp.pa_mcp_owner_probe"
+        ],
+        "acp.provider_resolve": [
+          "runtime:acp.provider_resolve"
+        ],
+        "acp.wire_append": [
+          "runtime:acp.wire_append"
+        ],
+        "acp.wire_init": [
+          "runtime:acp.wire_init"
+        ],
+        "agent.project_recovery_availability": [
+          "runtime:agent.project_recovery_availability"
+        ],
+        "agent.prompt_compose": [
+          "runtime:agent.prompt_compose"
+        ],
+        "agent.provider_resolve": [
+          "runtime:agent.provider_resolve"
+        ],
+        "agent.quiesce_snapshot_clear": [
+          "runtime:agent.quiesce_snapshot_clear"
+        ],
+        "agent.recovery_sessions": [
+          "runtime:agent.recovery_sessions"
+        ],
+        "agent.recovery_snapshot": [
+          "runtime:agent.recovery_snapshot"
+        ],
+        "agent.session_mkdir": [
+          "runtime:agent.session_mkdir"
+        ],
+        "agent.startup_state_read": [
+          "runtime:agent.startup_state_read"
+        ],
+        "conversation.issues": [
+          "runtime:conversation.issues"
+        ],
+        "conversation.session": [
+          "runtime:conversation.session"
+        ],
+        "dispatch.completion_pending_read": [
+          "runtime:dispatch.completion_pending_read"
+        ],
+        "dispatch.followup_ack": [
+          "runtime:dispatch.followup_ack"
+        ],
+        "dispatch.followup_bind": [
+          "runtime:dispatch.followup_bind"
+        ],
+        "dispatch.followup_pending_read": [
+          "runtime:dispatch.followup_pending_read"
+        ],
+        "dispatch.followup_record_write": [
+          "runtime:dispatch.followup_record_write"
+        ],
+        "dispatch.followup_started": [
+          "runtime:dispatch.followup_started"
+        ],
+        "dispatch.prompt_bind": [
+          "runtime:dispatch.prompt_bind"
+        ],
+        "dispatch.record_read": [
+          "runtime:dispatch.record_read"
+        ],
+        "dispatch.workspace_admission_read": [
+          "runtime:dispatch.workspace_admission_read"
+        ],
+        "filesystem.github_credentials_read": [
+          "runtime:filesystem.github_credentials_read"
+        ],
+        "fleet.overview.reachability": [
+          "runtime:fleet.overview.reachability"
+        ],
+        "fleet.overview.status": [
+          "runtime:fleet.overview.status"
+        ],
+        "fleet.overview.sync": [
+          "runtime:fleet.overview.sync"
+        ],
+        "fleet.overview_cache_read": [
+          "runtime:fleet.overview_cache_read"
+        ],
+        "fleet.overview_cache_write": [
+          "runtime:fleet.overview_cache_write"
+        ],
+        "fleet.overview_response_json": [
+          "runtime:fleet.overview_response_json"
+        ],
+        "fleet.response_json": [
+          "runtime:fleet.response_json"
+        ],
+        "fleet.update_recovery": [
+          "runtime:fleet.update_recovery"
+        ],
+        "goal.dispatch_followup_reserve": [
+          "runtime:goal.dispatch_followup_reserve"
+        ],
+        "goal.dispatch_lifecycle_index": [
+          "runtime:goal.dispatch_lifecycle_index"
+        ],
+        "health.canonical_obligation": [
+          "runtime:health.canonical_obligation"
+        ],
+        "http.fleet_agent": [
+          "runtime:http.fleet_agent"
+        ],
+        "http.fleet_overview": [
+          "runtime:http.fleet_overview"
+        ],
+        "http.github": [
+          "runtime:http.github"
+        ],
+        "http.pr_supervisor_peer": [
+          "runtime:http.pr_supervisor_peer"
+        ],
+        "http.session_list": [
+          "runtime-followup:http.session_list"
+        ],
+        "intake.web_prompt": [
+          "runtime:intake.web_prompt"
+        ],
+        "maintenance.run": [
+          "runtime:maintenance.run"
+        ],
+        "notifications.list_page": [
+          "runtime:notifications.list_page"
+        ],
+        "notifications.present_page": [
+          "runtime:notifications.present_page"
+        ],
+        "pr_supervisor.github_response_json": [
+          "runtime:pr_supervisor.github_response_json"
+        ],
+        "pr_supervisor.response_json": [
+          "runtime:pr_supervisor.response_json"
+        ],
+        "preferences.agent_auto_approve_read": [
+          "runtime:preferences.agent_auto_approve_read"
+        ],
+        "progress.checkpoint_write": [
+          "runtime:progress.checkpoint_write"
+        ],
+        "progress.dispatch_read": [
+          "runtime:progress.dispatch_read"
+        ],
+        "progress.final_report_build": [
+          "runtime:progress.final_report_build"
+        ],
+        "progress.final_report_write": [
+          "runtime:progress.final_report_write"
+        ],
+        "progress.heartbeat_write": [
+          "runtime:progress.heartbeat_write"
+        ],
+        "progress.pending_read": [
+          "runtime:progress.pending_read"
+        ],
+        "progress.sequence_allocate": [
+          "runtime:progress.sequence_allocate"
+        ],
+        "reconciliation.completion_evidence_read": [
+          "runtime:reconciliation.completion_evidence_read"
+        ],
+        "reconciliation.completion_queue": [
+          "runtime:reconciliation.completion_queue"
+        ],
+        "reconciliation.dispatch_read": [
+          "runtime:reconciliation.dispatch_read"
+        ],
+        "reconciliation.session_read": [
+          "runtime:reconciliation.session_read"
+        ],
+        "selection.attempt_authority": [
+          "runtime:selection.attempt_authority"
+        ],
+        "selection.configuration_receipt": [
+          "runtime:selection.configuration_receipt"
+        ],
+        "selection.prompt_identity": [
+          "runtime:selection.prompt_identity"
+        ],
+        "selection.prompt_outcome": [
+          "runtime:selection.prompt_outcome"
+        ],
+        "sqlite.agent_runtime_checkpoint": [
+          "runtime:sqlite.agent_runtime_checkpoint"
+        ],
+        "sqlite.agent_session_read": [
+          "runtime:sqlite.agent_session_read"
+        ],
+        "sqlite.agent_session_save": [
+          "runtime:sqlite.agent_session_save"
+        ],
+        "sqlite.card_read": [
+          "runtime:sqlite.card_read"
+        ],
+        "sqlite.dispatch_queue_admit": [
+          "runtime:sqlite.dispatch_queue_admit"
+        ],
+        "sqlite.pr_supervisor_capability_write": [
+          "runtime:sqlite.pr_supervisor_capability_write"
+        ],
+        "sqlite.pr_supervisor_completion_due_read": [
+          "runtime:sqlite.pr_supervisor_completion_due_read"
+        ],
+        "sqlite.pr_supervisor_due_read": [
+          "runtime:sqlite.pr_supervisor_due_read"
+        ],
+        "sqlite.pr_supervisor_event_write": [
+          "runtime:sqlite.pr_supervisor_event_write"
+        ],
+        "sqlite.pr_supervisor_metric": [
+          "runtime:sqlite.pr_supervisor_metric"
+        ],
+        "sqlite.pr_supervisor_watch_read": [
+          "runtime:sqlite.pr_supervisor_watch_read"
+        ],
+        "sqlite.pr_supervisor_watch_write": [
+          "runtime:sqlite.pr_supervisor_watch_write"
+        ],
+        "sqlite.project_read": [
+          "runtime:sqlite.project_read"
+        ],
+        "sqlite.prompt_acceptance_read": [
+          "runtime:sqlite.prompt_acceptance_read"
+        ],
+        "sqlite.repository_read": [
+          "runtime:sqlite.repository_read"
+        ],
+        "sqlite.restart_continuation_authorization": [
+          "runtime-live:sqlite.restart_continuation_authorization"
+        ],
+        "sqlite.restart_handoff_completion": [
+          "runtime:sqlite.restart_handoff_completion"
+        ],
+        "sqlite.restart_handoff_delivered": [
+          "runtime-live:sqlite.restart_handoff_delivered"
+        ],
+        "sqlite.restart_handoff_queued": [
+          "runtime-live:sqlite.restart_handoff_queued"
+        ],
+        "sqlite.restart_handoff_resuming": [
+          "runtime-live:sqlite.restart_handoff_resuming"
+        ],
+        "sqlite.restart_handoff_session": [
+          "runtime:sqlite.restart_handoff_session"
+        ],
+        "sqlite.restart_handoffs_pending": [
+          "runtime:sqlite.restart_handoffs_pending"
+        ],
+        "sqlite.restart_handoffs_watchdog": [
+          "runtime:sqlite.restart_handoffs_watchdog"
+        ],
+        "sqlite.transcript_append": [
+          "runtime:sqlite.transcript_append"
+        ],
+        "sqlite.transcript_sequence": [
+          "runtime:sqlite.transcript_sequence"
+        ],
+        "startup.agent_manager": [
+          "runtime:startup.agent_manager"
+        ],
+        "startup.async_backend_prepare": [
+          "runtime-followup:startup.async_backend_prepare"
+        ],
+        "startup.openapi": [
+          "runtime-followup:startup.openapi"
+        ],
+        "sync.commit_read": [
+          "runtime:sync.commit_read"
+        ],
+        "sync.gc_resume": [
+          "runtime:sync.gc_resume"
+        ],
+        "sync.json_decode": [
+          "runtime:sync.json_decode"
+        ],
+        "sync.peer_http": [
+          "runtime:sync.peer_http"
+        ],
+        "sync.reconcile_head": [
+          "runtime:sync.reconcile_head"
+        ],
+        "sync.ref_read": [
+          "runtime:sync.ref_read"
+        ],
+        "sync.startup_reconcile": [
+          "runtime:sync.startup_reconcile"
+        ],
+        "workspace.collect_garbage": [
+          "runtime:workspace.collect_garbage"
+        ],
+        "workspace.lease_renew": [
+          "runtime:workspace.lease_renew"
+        ],
+        "workspace.project_provision": [
+          "runtime:workspace.project_provision"
+        ],
+        "workspace.reconcile_terminal_state": [
+          "runtime:workspace.reconcile_terminal_state"
+        ]
+      },
+      "route": {
+        "/api/ready": [
+          "route:/api/ready"
+        ],
+        "/api/sync/refs": [
+          "route:/api/sync/refs"
+        ],
+        "/api/pr-supervisor/replicas": [
+          "route:/api/pr-supervisor/replicas"
+        ],
+        "/api/status": [
+          "route:/api/status"
+        ],
+        "/api/fleet/overview/local": [
+          "route:/api/fleet/overview/local"
+        ],
+        "/api/fleet/dispatch-jobs/{dispatch_id}": [
+          "route:/api/fleet/dispatch-jobs/{dispatch_id}"
+        ],
+        "/api/agent/sessions/{session_id}/issues": [
+          "route:/api/agent/sessions/{session_id}/issues"
+        ],
+        "/api/agent/sessions/{session_id}/threads": [
+          "route-live:/api/agent/sessions/{session_id}/threads"
+        ],
+        "/api/owner-ready": [
+          "route:/api/owner-ready"
+        ],
+        "/api/telemetry/live": [
+          "route:/api/telemetry/live"
+        ],
+        "/api/ui/assets": [
+          "route:/api/ui/assets"
+        ],
+        "/api/notifications": [
+          "route:/api/notifications"
+        ],
+        "/api/pr-supervisor/instances/heartbeat": [
+          "route:/api/pr-supervisor/instances/heartbeat"
+        ],
+        "/api/agent/observability/v1/sessions/{session_id}": [
+          "route:/api/agent/observability/v1/sessions/{session_id}"
+        ],
+        "/api/operations/{idempotency_key:path}": [
+          "route:/api/operations/{idempotency_key:path}"
+        ],
+        "/api/workspaces": [
+          "route:/api/workspaces"
+        ],
+        "/api/agent/prompt-capabilities": [
+          "route:/api/agent/prompt-capabilities"
+        ],
+        "/api/agent/sessions/{session_id}/dispatch-prompts": [
+          "route:/api/agent/sessions/{session_id}/dispatch-prompts"
+        ],
+        "/api/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}/{operation}": [
+          "route-b808:/api/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}/{operation}"
+        ],
+        "/api/sync/get": [
+          "route:/api/sync/get"
+        ],
+        "/api/fleet/dispatch-jobs/{dispatch_id}/checkpoint": [
+          "route:/api/fleet/dispatch-jobs/{dispatch_id}/checkpoint"
+        ],
+        "/api/fleet/dispatch/{dispatch_id}/turn-end": [
+          "route:/api/fleet/dispatch/{dispatch_id}/turn-end"
+        ],
+        "/api/configuration": [
+          "route:/api/configuration"
+        ],
+        "/api/pr-supervisor/capabilities": [
+          "route:/api/pr-supervisor/capabilities"
+        ],
+        "/api/runtime": [
+          "route:/api/runtime"
+        ],
+        "/api/health": [
+          "route:/api/health"
+        ],
+        "/{page_path:path}": [
+          "route:/{page_path:path}"
+        ],
+        "/fleet": [
+          "route-followup:/fleet"
+        ],
+        "/": [
+          "route:/"
+        ],
+        "/pull-requests": [
+          "route-followup:/pull-requests"
+        ],
+        "/api/fleet/overview": [
+          "route-b808:/api/fleet/overview"
+        ],
+        "/api/agent/sessions": [
+          "route:/api/agent/sessions"
+        ]
+      }
+    },
+    "scope": "New loadedf103 process population, lifetime counts/maxima and bounded windows remain distinct from earlier processes and sampled fixture/probe distributions."
+  },
+  "older_afterinstall_population": {
+    "input": ".dev/pr600-afterinstall-ordinary-owner-control-20261029.json",
+    "input_sha256": "0692da1cdd71f9ef222f75da6512996b85b71191d98f18336354309a488004c6",
+    "started_at": "2026-10-29T05:26:55.717165+00:00",
+    "finished_at": "2026-10-29T05:26:55.760851+00:00",
+    "runtime_build": {
+      "loaded_module_version": "1.5.9",
+      "source_revision": "d783f8f78caff10f85811dab4b713493030fda98",
+      "package_identity": "sha256:196c9737d81a7cc2d5f0309bd8407d906e2e00b5e634d296018d1c4d047f480e",
+      "pid": 63600,
+      "startup_id": "e88a66a6-8243-461b-9f00-f3de6353e43b"
+    },
+    "operations": 114,
+    "routes": 42,
+    "mapping": {
+      "runtime": {
+        "acp.pa_mcp_owner_probe": [
+          "runtime:acp.pa_mcp_owner_probe"
+        ],
+        "acp.provider_resolve": [
+          "runtime:acp.provider_resolve"
+        ],
+        "acp.wire_append": [
+          "runtime:acp.wire_append"
+        ],
+        "acp.wire_init": [
+          "runtime:acp.wire_init"
+        ],
+        "agent.project_recovery_availability": [
+          "runtime:agent.project_recovery_availability"
+        ],
+        "agent.prompt_compose": [
+          "runtime:agent.prompt_compose"
+        ],
+        "agent.quiesce_snapshot_clear": [
+          "runtime:agent.quiesce_snapshot_clear"
+        ],
+        "agent.recovery_sessions": [
+          "runtime:agent.recovery_sessions"
+        ],
+        "agent.session_mkdir": [
+          "runtime:agent.session_mkdir"
+        ],
+        "agent.startup_state_read": [
+          "runtime:agent.startup_state_read"
+        ],
+        "conversation.issues": [
+          "runtime:conversation.issues"
+        ],
+        "conversation.session": [
+          "runtime:conversation.session"
+        ],
+        "dispatch.completion_pending_read": [
+          "runtime:dispatch.completion_pending_read"
+        ],
+        "dispatch.followup_ack": [
+          "runtime:dispatch.followup_ack"
+        ],
+        "dispatch.followup_bind": [
+          "runtime:dispatch.followup_bind"
+        ],
+        "dispatch.followup_pending_read": [
+          "runtime:dispatch.followup_pending_read"
+        ],
+        "dispatch.followup_record_write": [
+          "runtime:dispatch.followup_record_write"
+        ],
+        "dispatch.followup_started": [
+          "runtime:dispatch.followup_started"
+        ],
+        "dispatch.prompt_bind": [
+          "runtime:dispatch.prompt_bind"
+        ],
+        "dispatch.record_read": [
+          "runtime:dispatch.record_read"
+        ],
+        "dispatch.workspace_admission_read": [
+          "runtime:dispatch.workspace_admission_read"
+        ],
+        "filesystem.github_credentials_read": [
+          "runtime:filesystem.github_credentials_read"
+        ],
+        "fleet.overview.reachability": [
+          "runtime:fleet.overview.reachability"
+        ],
+        "fleet.overview.status": [
+          "runtime:fleet.overview.status"
+        ],
+        "fleet.overview.sync": [
+          "runtime:fleet.overview.sync"
+        ],
+        "fleet.overview_cache_read": [
+          "runtime:fleet.overview_cache_read"
+        ],
+        "fleet.overview_cache_write": [
+          "runtime:fleet.overview_cache_write"
+        ],
+        "fleet.overview_response_json": [
+          "runtime:fleet.overview_response_json"
+        ],
+        "fleet.response_json": [
+          "runtime:fleet.response_json"
+        ],
+        "fleet.update_recovery": [
+          "runtime:fleet.update_recovery"
+        ],
+        "goal.dispatch_followup_reserve": [
+          "runtime:goal.dispatch_followup_reserve"
+        ],
+        "goal.dispatch_lifecycle_index": [
+          "runtime:goal.dispatch_lifecycle_index"
+        ],
+        "health.canonical_obligation": [
+          "runtime:health.canonical_obligation"
+        ],
+        "http.fleet_agent": [
+          "runtime:http.fleet_agent"
+        ],
+        "http.fleet_overview": [
+          "runtime:http.fleet_overview"
+        ],
+        "http.github": [
+          "runtime:http.github"
+        ],
+        "http.github_snapshot": [
+          "runtime:http.github_snapshot"
+        ],
+        "http.pr_supervisor_peer": [
+          "runtime:http.pr_supervisor_peer"
+        ],
+        "http.session_list": [
+          "runtime-followup:http.session_list"
+        ],
+        "intake.web_prompt": [
+          "runtime:intake.web_prompt"
+        ],
+        "maintenance.run": [
+          "runtime:maintenance.run"
+        ],
+        "notifications.list_page": [
+          "runtime:notifications.list_page"
+        ],
+        "notifications.present_page": [
+          "runtime:notifications.present_page"
+        ],
+        "pr_supervisor.dispatch_claim": [
+          "runtime:pr_supervisor.dispatch_claim"
+        ],
+        "pr_supervisor.dispatch_finish": [
+          "runtime:pr_supervisor.dispatch_finish"
+        ],
+        "pr_supervisor.github_response_json": [
+          "runtime:pr_supervisor.github_response_json"
+        ],
+        "pr_supervisor.metric": [
+          "runtime:pr_supervisor.metric"
+        ],
+        "pr_supervisor.response_json": [
+          "runtime:pr_supervisor.response_json"
+        ],
+        "preferences.agent_auto_approve_read": [
+          "runtime:preferences.agent_auto_approve_read"
+        ],
+        "progress.checkpoint_write": [
+          "runtime:progress.checkpoint_write"
+        ],
+        "progress.dispatch_read": [
+          "runtime:progress.dispatch_read"
+        ],
+        "progress.final_report_build": [
+          "runtime:progress.final_report_build"
+        ],
+        "progress.final_report_write": [
+          "runtime:progress.final_report_write"
+        ],
+        "progress.heartbeat_write": [
+          "runtime:progress.heartbeat_write"
+        ],
+        "progress.pending_read": [
+          "runtime:progress.pending_read"
+        ],
+        "progress.sequence_allocate": [
+          "runtime:progress.sequence_allocate"
+        ],
+        "reconciliation.completion_evidence_read": [
+          "runtime:reconciliation.completion_evidence_read"
+        ],
+        "reconciliation.completion_queue": [
+          "runtime:reconciliation.completion_queue"
+        ],
+        "reconciliation.dispatch_read": [
+          "runtime:reconciliation.dispatch_read"
+        ],
+        "reconciliation.session_read": [
+          "runtime:reconciliation.session_read"
+        ],
+        "selection.configuration_receipt": [
+          "runtime:selection.configuration_receipt"
+        ],
+        "selection.prompt_identity": [
+          "runtime:selection.prompt_identity"
+        ],
+        "selection.prompt_outcome": [
+          "runtime:selection.prompt_outcome"
+        ],
+        "sqlite.agent_runtime_checkpoint": [
+          "runtime:sqlite.agent_runtime_checkpoint"
+        ],
+        "sqlite.agent_session_read": [
+          "runtime:sqlite.agent_session_read"
+        ],
+        "sqlite.agent_session_save": [
+          "runtime:sqlite.agent_session_save"
+        ],
+        "sqlite.card_read": [
+          "runtime:sqlite.card_read"
+        ],
+        "sqlite.card_write": [
+          "runtime:sqlite.card_write"
+        ],
+        "sqlite.completion_capabilities": [
+          "runtime:sqlite.completion_capabilities"
+        ],
+        "sqlite.dispatch_queue_admit": [
+          "runtime:sqlite.dispatch_queue_admit"
+        ],
+        "sqlite.pr_merge_evidence_read": [
+          "runtime:sqlite.pr_merge_evidence_read"
+        ],
+        "sqlite.pr_supervisor_capability_read": [
+          "runtime:sqlite.pr_supervisor_capability_read"
+        ],
+        "sqlite.pr_supervisor_capability_write": [
+          "runtime:sqlite.pr_supervisor_capability_write"
+        ],
+        "sqlite.pr_supervisor_completion_due_read": [
+          "runtime:sqlite.pr_supervisor_completion_due_read"
+        ],
+        "sqlite.pr_supervisor_due_read": [
+          "runtime:sqlite.pr_supervisor_due_read"
+        ],
+        "sqlite.pr_supervisor_effect_finish": [
+          "runtime:sqlite.pr_supervisor_effect_finish"
+        ],
+        "sqlite.pr_supervisor_effect_prepare": [
+          "runtime:sqlite.pr_supervisor_effect_prepare"
+        ],
+        "sqlite.pr_supervisor_event_write": [
+          "runtime:sqlite.pr_supervisor_event_write"
+        ],
+        "sqlite.pr_supervisor_lease_write": [
+          "runtime:sqlite.pr_supervisor_lease_write"
+        ],
+        "sqlite.pr_supervisor_metric": [
+          "runtime:sqlite.pr_supervisor_metric"
+        ],
+        "sqlite.pr_supervisor_observation_write": [
+          "runtime:sqlite.pr_supervisor_observation_write"
+        ],
+        "sqlite.pr_supervisor_watch_read": [
+          "runtime:sqlite.pr_supervisor_watch_read"
+        ],
+        "sqlite.pr_supervisor_watch_write": [
+          "runtime:sqlite.pr_supervisor_watch_write"
+        ],
+        "sqlite.project_read": [
+          "runtime:sqlite.project_read"
+        ],
+        "sqlite.prompt_acceptance": [
+          "runtime:sqlite.prompt_acceptance"
+        ],
+        "sqlite.prompt_acceptance_read": [
+          "runtime:sqlite.prompt_acceptance_read"
+        ],
+        "sqlite.repository_read": [
+          "runtime:sqlite.repository_read"
+        ],
+        "sqlite.restart_continuation_authorization": [
+          "runtime-live:sqlite.restart_continuation_authorization"
+        ],
+        "sqlite.restart_handoff_completion": [
+          "runtime:sqlite.restart_handoff_completion"
+        ],
+        "sqlite.restart_handoff_delivered": [
+          "runtime-live:sqlite.restart_handoff_delivered"
+        ],
+        "sqlite.restart_handoff_queued": [
+          "runtime-live:sqlite.restart_handoff_queued"
+        ],
+        "sqlite.restart_handoff_resuming": [
+          "runtime-live:sqlite.restart_handoff_resuming"
+        ],
+        "sqlite.restart_handoff_session": [
+          "runtime:sqlite.restart_handoff_session"
+        ],
+        "sqlite.restart_handoffs_pending": [
+          "runtime:sqlite.restart_handoffs_pending"
+        ],
+        "sqlite.restart_handoffs_watchdog": [
+          "runtime:sqlite.restart_handoffs_watchdog"
+        ],
+        "sqlite.transcript_append": [
+          "runtime:sqlite.transcript_append"
+        ],
+        "sqlite.transcript_sequence": [
+          "runtime:sqlite.transcript_sequence"
+        ],
+        "startup.agent_manager": [
+          "runtime:startup.agent_manager"
+        ],
+        "startup.async_backend_prepare": [
+          "runtime-followup:startup.async_backend_prepare"
+        ],
+        "startup.openapi": [
+          "runtime-followup:startup.openapi"
+        ],
+        "sync.commit_read": [
+          "runtime:sync.commit_read"
+        ],
+        "sync.gc_resume": [
+          "runtime:sync.gc_resume"
+        ],
+        "sync.json_decode": [
+          "runtime:sync.json_decode"
+        ],
+        "sync.json_encode": [
+          "runtime:sync.json_encode"
+        ],
+        "sync.object_has": [
+          "runtime:sync.object_has"
+        ],
+        "sync.object_ingest": [
+          "runtime:sync.object_ingest"
+        ],
+        "sync.peer_http": [
+          "runtime:sync.peer_http"
+        ],
+        "sync.reconcile_head": [
+          "runtime:sync.reconcile_head"
+        ],
+        "sync.ref_read": [
+          "runtime:sync.ref_read"
+        ],
+        "sync.startup_reconcile": [
+          "runtime:sync.startup_reconcile"
+        ],
+        "workspace.collect_garbage": [
+          "runtime:workspace.collect_garbage"
+        ],
+        "workspace.lease_renew": [
+          "runtime:workspace.lease_renew"
+        ],
+        "workspace.project_provision": [
+          "runtime:workspace.project_provision"
+        ],
+        "workspace.reconcile_terminal_state": [
+          "runtime:workspace.reconcile_terminal_state"
+        ]
+      },
+      "route": {
+        "/api/sync/refs": [
+          "route:/api/sync/refs"
+        ],
+        "/api/agent/sessions/{session_id}/issues": [
+          "route:/api/agent/sessions/{session_id}/issues"
+        ],
+        "/api/agent/sessions/{session_id}/threads": [
+          "route-live:/api/agent/sessions/{session_id}/threads"
+        ],
+        "/api/sync/get": [
+          "route:/api/sync/get"
+        ],
+        "/api/pr-supervisor/replicas": [
+          "route:/api/pr-supervisor/replicas"
+        ],
+        "/api/fleet/dispatch-jobs/{dispatch_id}": [
+          "route:/api/fleet/dispatch-jobs/{dispatch_id}"
+        ],
+        "/api/ready": [
+          "route:/api/ready"
+        ],
+        "/api/fleet/overview/local": [
+          "route:/api/fleet/overview/local"
+        ],
+        "/api/status": [
+          "route:/api/status"
+        ],
+        "/api/owner-ready": [
+          "route:/api/owner-ready"
+        ],
+        "/api/pr-supervisor/instances/heartbeat": [
+          "route:/api/pr-supervisor/instances/heartbeat"
+        ],
+        "/api/telemetry/live": [
+          "route:/api/telemetry/live"
+        ],
+        "/api/ui/assets": [
+          "route:/api/ui/assets"
+        ],
+        "/api/notifications": [
+          "route:/api/notifications"
+        ],
+        "/api/operations/{idempotency_key:path}": [
+          "route:/api/operations/{idempotency_key:path}"
+        ],
+        "/api/pr-supervisor/watches/{watch_id}": [
+          "route:/api/pr-supervisor/watches/{watch_id}"
+        ],
+        "/api/agent/observability/v1/sessions/{session_id}": [
+          "route:/api/agent/observability/v1/sessions/{session_id}"
+        ],
+        "/api/fleet/dispatch-jobs/{dispatch_id}/checkpoint": [
+          "route:/api/fleet/dispatch-jobs/{dispatch_id}/checkpoint"
+        ],
+        "/api/workspaces": [
+          "route:/api/workspaces"
+        ],
+        "/api/operation-recovery/{idempotency_key:path}": [
+          "route:/api/operation-recovery/{idempotency_key:path}"
+        ],
+        "/api/agent/prompt-capabilities": [
+          "route:/api/agent/prompt-capabilities"
+        ],
+        "/api/agent/sessions/{session_id}/dispatch-prompts": [
+          "route:/api/agent/sessions/{session_id}/dispatch-prompts"
+        ],
+        "/api/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}/{operation}": [
+          "route-b808:/api/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}/{operation}"
+        ],
+        "/api/fleet/dispatch/{dispatch_id}/turn-end": [
+          "route:/api/fleet/dispatch/{dispatch_id}/turn-end"
+        ],
+        "/api/runtime": [
+          "route:/api/runtime"
+        ],
+        "/api/health": [
+          "route:/api/health"
+        ],
+        "/{page_path:path}": [
+          "route:/{page_path:path}"
+        ],
+        "/fleet": [
+          "route-followup:/fleet"
+        ],
+        "/": [
+          "route:/"
+        ],
+        "/pull-requests": [
+          "route-followup:/pull-requests"
+        ],
+        "/api/fleet/overview": [
+          "route-b808:/api/fleet/overview"
+        ],
+        "/api/agent/sessions": [
+          "route:/api/agent/sessions"
+        ],
+        "/api/pr-supervisor/capabilities": [
+          "route:/api/pr-supervisor/capabilities"
+        ],
+        "/api/instance/maintenance": [
+          "route-followup:/api/instance/maintenance"
+        ],
+        "/api/configuration": [
+          "route:/api/configuration"
+        ],
+        "/api/cards/{card_id}": [
+          "route:/api/cards/{card_id}"
+        ],
+        "/api/backups/status": [
+          "route:/api/backups/status"
+        ],
+        "/api/health-journal/reports": [
+          "route:/api/health-journal/reports"
+        ],
+        "/api/pr-supervisor/pull-requests": [
+          "route:/api/pr-supervisor/pull-requests"
+        ],
+        "/api/pr-supervisor/watches/{watch_id}/lease": [
+          "route:/api/pr-supervisor/watches/{watch_id}/lease"
+        ],
+        "/api/pr-supervisor/watches/{watch_id}/merge-evidence": [
+          "route:/api/pr-supervisor/watches/{watch_id}/merge-evidence"
+        ],
+        "/api/agent/sessions/{session_id}/restart-handoffs": [
+          "route:/api/agent/sessions/{session_id}/restart-handoffs"
+        ]
+      }
+    },
+    "scope": "Separate old-loaded d783 snapshot after exact f103 installation. All114operations/42routes mapped; overlapping same-process populations are not summed or pooled. All686 findings/150concerns and unexercised branches remain open."
+  },
+  "repair": {
+    "contracts": {
+      "started_at": "2026-10-29T05:35:45.983241+00:00",
+      "finished_at": "2026-10-29T05:35:48.441180+00:00",
+      "exit_code": 0,
+      "arguments": [
+        "-q",
+        "-q",
+        "tests/test_session_instance_names.py",
+        "tests/test_session_project_labels.py",
+        "tests/test_session_full_watch_reads.py",
+        "tests/test_session_list_snapshot.py",
+        "tests/test_instance_identity_ui.py"
+      ],
+      "log_sha256": "06d0e69fa439ef059c973038fcffb68dff1c32e3fd0a30e3b93d50592beccb27",
+      "source_sha256": "3b9f0a1462d1c76a10b9ba4b46422acc9c880ec5227e82bfbcddb94d1b33d136",
+      "scope": "Disposable fixtures; both roots private before every PA import, no live provider or production state. Existing waits/GC/deadlines/assertions unchanged."
+    },
+    "collected_contracts": 89,
+    "shared": {
+      "contract": "pa.session-origin-name-comparison/v1",
+      "baseline_source": "f103e237bd17cec59a29ef0c2083106c1af1177d",
+      "source_sha256": "3b9f0a1462d1c76a10b9ba4b46422acc9c880ec5227e82bfbcddb94d1b33d136",
+      "sessions": 250,
+      "origins": 1,
+      "fleet_members": 100,
+      "samples": [
+        {
+          "pair": 0,
+          "variant": "baseline",
+          "wall_ms": 25.450708,
+          "thread_cpu_ms": 25.448375
+        },
+        {
+          "pair": 0,
+          "variant": "candidate",
+          "wall_ms": 8.451917,
+          "thread_cpu_ms": 8.452208
+        },
+        {
+          "pair": 1,
+          "variant": "candidate",
+          "wall_ms": 8.08275,
+          "thread_cpu_ms": 8.083042
+        },
+        {
+          "pair": 1,
+          "variant": "baseline",
+          "wall_ms": 18.617792,
+          "thread_cpu_ms": 18.617959
+        },
+        {
+          "pair": 2,
+          "variant": "baseline",
+          "wall_ms": 18.912417,
+          "thread_cpu_ms": 18.912833
+        },
+        {
+          "pair": 2,
+          "variant": "candidate",
+          "wall_ms": 8.021291,
+          "thread_cpu_ms": 8.021708
+        },
+        {
+          "pair": 3,
+          "variant": "candidate",
+          "wall_ms": 7.96725,
+          "thread_cpu_ms": 7.965708
+        },
+        {
+          "pair": 3,
+          "variant": "baseline",
+          "wall_ms": 18.639583,
+          "thread_cpu_ms": 18.639709
+        },
+        {
+          "pair": 4,
+          "variant": "baseline",
+          "wall_ms": 18.506333,
+          "thread_cpu_ms": 18.499084
+        },
+        {
+          "pair": 4,
+          "variant": "candidate",
+          "wall_ms": 8.144417,
+          "thread_cpu_ms": 8.142083
+        }
+      ],
+      "latency_ms": {
+        "baseline": {
+          "samples": 5,
+          "p50": 18.639583,
+          "p95": 25.450708,
+          "p99": 25.450708,
+          "max": 25.450708
+        },
+        "candidate": {
+          "samples": 5,
+          "p50": 8.08275,
+          "p95": 8.451917,
+          "p99": 8.451917,
+          "max": 8.451917
+        }
+      },
+      "untimed_amplification": {
+        "baseline": {
+          "list_instances": 250,
+          "_instances_disk_key": 250
+        },
+        "candidate": {
+          "list_instances": 1,
+          "_instances_disk_key": 1
+        }
+      },
+      "complete_response_bytes_equal": true,
+      "response_bytes": 573750,
+      "response_sha256": "ce5c712d863f02533e96ee51e7d0fc3ae859f887af038ebe53c4c05a5b6dc379",
+      "scope": "Five alternating complete list calls; both roots private before PA imports. Timers exclude serialization/profiling/byte checks; normal GC/host load unchanged. Same response bodies, first native display-name read per origin/snapshot in one response; next request fresh. Custom readers remain per row; authority paths unchanged. No production workload, physical-I/O or historical attribution, installed/full HTTP/mixed/whole-card acceptance."
+    },
+    "unique_control": {
+      "contract": "pa.session-origin-name-comparison/v1",
+      "baseline_source": "f103e237bd17cec59a29ef0c2083106c1af1177d",
+      "source_sha256": "3b9f0a1462d1c76a10b9ba4b46422acc9c880ec5227e82bfbcddb94d1b33d136",
+      "sessions": 250,
+      "origins": 250,
+      "fleet_members": 250,
+      "samples": [
+        {
+          "pair": 0,
+          "variant": "baseline",
+          "wall_ms": 43.195709,
+          "thread_cpu_ms": 43.196542
+        },
+        {
+          "pair": 0,
+          "variant": "candidate",
+          "wall_ms": 36.111209,
+          "thread_cpu_ms": 36.112375
+        },
+        {
+          "pair": 1,
+          "variant": "candidate",
+          "wall_ms": 36.077042,
+          "thread_cpu_ms": 36.077416
+        },
+        {
+          "pair": 1,
+          "variant": "baseline",
+          "wall_ms": 35.933542,
+          "thread_cpu_ms": 35.933625
+        },
+        {
+          "pair": 2,
+          "variant": "baseline",
+          "wall_ms": 36.029667,
+          "thread_cpu_ms": 36.029916
+        },
+        {
+          "pair": 2,
+          "variant": "candidate",
+          "wall_ms": 36.098625,
+          "thread_cpu_ms": 36.100792
+        },
+        {
+          "pair": 3,
+          "variant": "candidate",
+          "wall_ms": 36.100417,
+          "thread_cpu_ms": 36.100583
+        },
+        {
+          "pair": 3,
+          "variant": "baseline",
+          "wall_ms": 33.821125,
+          "thread_cpu_ms": 33.813084
+        },
+        {
+          "pair": 4,
+          "variant": "baseline",
+          "wall_ms": 34.314208,
+          "thread_cpu_ms": 34.314625
+        },
+        {
+          "pair": 4,
+          "variant": "candidate",
+          "wall_ms": 34.591208,
+          "thread_cpu_ms": 34.591292
+        }
+      ],
+      "latency_ms": {
+        "baseline": {
+          "samples": 5,
+          "p50": 35.933542,
+          "p95": 43.195709,
+          "p99": 43.195709,
+          "max": 43.195709
+        },
+        "candidate": {
+          "samples": 5,
+          "p50": 36.098625,
+          "p95": 36.111209,
+          "p99": 36.111209,
+          "max": 36.111209
+        }
+      },
+      "untimed_amplification": {
+        "baseline": {
+          "list_instances": 250,
+          "_instances_disk_key": 250
+        },
+        "candidate": {
+          "list_instances": 250,
+          "_instances_disk_key": 250
+        }
+      },
+      "complete_response_bytes_equal": true,
+      "response_bytes": 574530,
+      "response_sha256": "40b2f8b129a6f85b6cf5e0dd1c72512b91e69d90aa1a8844e9d7c79913ad11ee",
+      "scope": "Five alternating complete list calls; both roots private before PA imports. Timers exclude serialization/profiling/byte checks; normal GC/host load unchanged. Same response bodies, first native display-name read per origin/snapshot in one response; next request fresh. Custom readers remain per row; authority paths unchanged. No production workload, physical-I/O or historical attribution, installed/full HTTP/mixed/whole-card acceptance."
+    },
+    "mixed": {
+      "started_at": "2026-10-29T05:36:30.781712+00:00",
+      "source_modules": {
+        "pa.modules.agent_chat": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/modules/agent_chat.py",
+          "sha256": "3b9f0a1462d1c76a10b9ba4b46422acc9c880ec5227e82bfbcddb94d1b33d136"
+        }
+      },
+      "both_roots_private_before_imports": true,
+      "exit_code": 0,
+      "finished_at": "2026-10-29T05:36:56.409579+00:00",
+      "log_sha256": "b11e6229c7f110239aa19fe9eccb3ed66963a5f546963b9d49732a7a9343f543",
+      "log_bytes": 382969,
+      "events": 9600,
+      "warnings": {},
+      "threshold_violations": {
+        "maintenance.run": 1
+      },
+      "maintenance": {
+        "samples": 1,
+        "max_ms": 809.492,
+        "p50_ms": 809.492,
+        "p95_ms": 809.492,
+        "p99_ms": 809.492
+      },
+      "import_attestation": {
+        "modules": {
+          "pa.modules.agent_chat": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/modules/agent_chat.py",
+            "sha256": "3b9f0a1462d1c76a10b9ba4b46422acc9c880ec5227e82bfbcddb94d1b33d136"
+          }
+        },
+        "before_workload": true,
+        "unchanged_after_workload": true
+      },
+      "scope": "Changed-module imports and unchanged hashes before/after mixed workload; does not establish every changed branch executes. Dedicated complete origin-name comparisons and contracts exercise the repair. Both roots private before all PA imports; unchanged waits/deadlines/GC; no real provider or production state."
+    },
+    "semantics": "Only selected session-list display labels share the first full native current_instance_name read per (origin instance ID, snapshot name) in one response. Next response reads afresh; unknown/removed/empty fallbacks remain distinct. Custom instance/subclass registry readers and custom display resolvers stay per row. Other current_instance_name callers and every authority path remain unchanged; no fleet/config/permission/default/mode/GC policy changed."
+  },
+  "negative_stages": {
+    "scope": "Negative stages retained; no acceptance or cause inferred from later passing checks.",
+    "stages": [
+      {
+        "stage": "exact600 native process",
+        "actual": "ps PermissionError EPERM before output proof",
+        "action": "Exact prepared read-only command allowed through provider escalation; native process proof then passed."
+      },
+      {
+        "stage": "exact600 public initial identity",
+        "actual": "Loopback PermissionError EPERM before output/retest body",
+        "action": "Exact bounded command allowed through provider escalation; actual five full-list AssertionErrors retained in completed output."
+      },
+      {
+        "stage": "origin-name initial contracts",
+        "path": ".dev/session-origin-name-source-contracts-20261029.json",
+        "actual": "pytest exit4 nonexistent tests/test_instance_identity.py before collection",
+        "action": "New helper/output fixes only path to existing test_instance_identity_ui.py; original log and helper retained."
+      },
+      {
+        "stage": "origin-name initial mixed launch",
+        "path": ".dev/session-origin-name-source-mixed100-20261029-proof.json",
+        "actual": "uv exit2 cache access EPERM before child import/workload",
+        "action": "New output prefix preserves original failure; provider-approved private launch succeeds, exact workload/deadlines/GC unchanged."
+      }
+    ]
+  },
+  "backup": {
+    "observed_at": "2026-10-29T05:34:50.418Z",
+    "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "backup_count": 9,
+    "verified_backup_count": 8,
+    "limited_backup_count": 1,
+    "backup_state": "limited",
+    "automatic_backups_paused": false,
+    "next_scheduled_run": "2026-10-29T08:18:02.824206Z",
+    "consecutive_failures": 0,
+    "returned_runs": 100,
+    "returned_restores": 0,
+    "scope": "Supported read only. Unsorted history is not a new incident population or exhaustive absence proof. Accepted backup scopes remain closed; no capture/restore/scrub/retry."
+  },
+  "local_only_custody": {
+    ".dev/exact600-native-restart-receipt-20261029.json": {
+      "bytes": 36613,
+      "sha256": "741300f772a0b6029d17f4ac99e8164dba787453c8000cb0c522f9a7bcd4cc08",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/exact600-native-restart-preview-20261029.json": {
+      "bytes": 31755,
+      "sha256": "ab39f9a1ab6d3d54755ffce23384e90f071feb1e7bb24d54287b1b9519a34bc5",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/exact600-managed-continuation-readable-20261029.txt": {
+      "bytes": 15323,
+      "sha256": "149fc9dad550a1f887bb3c3798329a6955d81e6a95d94b69caf3916e5e24059e",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/exact600-private-stage-late_cursor-20261029.log": {
+      "bytes": 1762,
+      "sha256": "903576c7f3f45aec1a434f427f9491c0f645012729dbfaa776f8063b108d5c42",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/exact600-private-stage-full_watches_all_related-20261029.log": {
+      "bytes": 401,
+      "sha256": "0f5c65811b09f52f47ff80ca9818016433fe6432b11c2a4bc5e5a72b3303e04a",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/exact600-private-stage-project_labels_unique-20261029.log": {
+      "bytes": 535,
+      "sha256": "1985e23eb90b1a7d0c32c44d32b002aabadb02aa3c119a5dd60b3081959f6742",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/exact600-private-stage-cold10-20261029.log": {
+      "bytes": 593,
+      "sha256": "5aa3b9824ed9f788806d72b9a7b9d2cf5b5e08fc78c251c399caff085c542cd9",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/exact600-private-stage-mixed100-20261029.log": {
+      "bytes": 1061,
+      "sha256": "c7dd5a0a6a4c241c9cab23d921e1b4f52677f0caae786edecdd651dbb163a871",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/exact600-private-stage-project_labels_shared-20261029.log": {
+      "bytes": 523,
+      "sha256": "9ff4e7de6d7271efe0df841956d8e9e473d81d2d852bb05f842131205e9b9f43",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/exact600-private-stage-watch_read-20261029.log": {
+      "bytes": 1180,
+      "sha256": "c6be50ad461ccd9e6b934df7ce057703eac47ffe20f9f77abee2f4c6ea907915",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/exact600-private-stage-dispatch_matching-20261029.log": {
+      "bytes": 1731,
+      "sha256": "cb6cbd21d4570a14ec24652382e4ccdd22d29f4277b1ca0bb5ce54be0c4c9ba8",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/exact600-private-stage-full_watches-20261029.log": {
+      "bytes": 388,
+      "sha256": "cac6b6151f0637216575decc61135bd3c033144887b9100a7403e29b95dd26c8",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/exact600-private-stage-lifecycle_contracts-20261029.log": {
+      "bytes": 1190,
+      "sha256": "12d2acad85c3976f8e79b66c01ac7c975fb2db786429e68973ee898aa4c7db2b",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/exact600-private-stage-lease_matching-20261029.log": {
+      "bytes": 1758,
+      "sha256": "e31e47eb38e608a2b4bb607c47fb49d3ced80c8252b477bc4175d3902c27e729",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/exact600-private-stage-reference_guard-20261029.log": {
+      "bytes": 994,
+      "sha256": "09b32eda1660a90f7ab2b1948aeaa0ac9c0bc8acac3bb7414aef121f33a540b4",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/exact600-private-stage-module_paths-20261029.log": {
+      "bytes": 166,
+      "sha256": "e7cd91726c084a6a45f21077b77144ee60a1bae91f2917c441ef3e8214de146a",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/exact600-private-stage-watch_matching-20261029.log": {
+      "bytes": 1675,
+      "sha256": "6a8c47fda7d98cbe0d369eaf0514be6c8a154b5cd0bc98757b34ecc5f81f18dd",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/exact600-private-stage-full_watch_source_hashes-20261029.log": {
+      "bytes": 62,
+      "sha256": "eaeb097b4c7990c35c2aabd8840da89fc8cce60639f8cba469db4287c2862bcb",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/session-origin-name-source-mixed100-approved-20261029.log": {
+      "bytes": 382969,
+      "sha256": "b11e6229c7f110239aa19fe9eccb3ed66963a5f546963b9d49732a7a9343f543",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/session-origin-name-source-mixed100-20261029.log": {
+      "bytes": 108,
+      "sha256": "05126c7e6ce9b779c1e20320c20f1b42de115c17d0836d8d0ed982ba7a41ed55",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/session-origin-name-source-contracts-20261029.log": {
+      "bytes": 70,
+      "sha256": "ec0b0d280fbb71f6ad15bad5e5107b0dd813762b0a0e94467261b7f41643d3af",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/session-origin-name-contract-inventory-20261029.log": {
+      "bytes": 203,
+      "sha256": "b53bcb80e4dcc4cbd30f518e8220b14e0637569722c36cf18744446d7dcd3777",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/session-origin-name-source-contracts-corrected-20261029.log": {
+      "bytes": 160,
+      "sha256": "06d0e69fa439ef059c973038fcffb68dff1c32e3fd0a30e3b93d50592beccb27",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/installed600-gc-contracts-corrected-20261029.log": {
+      "bytes": 261,
+      "sha256": "2ab48c2646b8b4da08392e20fd80fbc87f89b055c5dbf19894c7f08312408588",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/installed600-postrestart-separate-baseline-20261029-mixed100.log": {
+      "bytes": 382966,
+      "sha256": "7a02789929dcbe54946789305c8fe2ce70b1a9b4b7e9d0464510db4be7f696c5",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    },
+    ".dev/installed600-postrestart-cold-20261029.log": {
+      "bytes": 81,
+      "sha256": "36e61f0a4b97dafa495a0f203a3aacabeabf04037b95a237654b56469c2a4346",
+      "scope": "Raw prompt/private answer/log bytes LOCAL/untrusted/hash-only; never embedded or published."
+    }
+  },
+  "limits": [
+    "All687 findings/151concerns remain OPEN; prior686 rows/fields and all ten attachments/failures remain intact. Normal scheduler owns independent_agent_v1 revision17d034a6, unaccepted.",
+    "Full10 response2396022B exceeds unchanged2097152B collector. Body read0 in separate metadata check; full-body schema remains unverified. Five failed bounded reads retained, no raised limits/data removal/blind retry.",
+    "Installed maintenance758.695ms/source809.492ms/natural5590.612583ms are separate populations. Natural threadCPU2738.343667ms/projectionVACUUM2629.944458ms/retention1298.539791ms/finalhealth301.023042ms are inclusive overlapping spans; never sum. Off-CPU unclassified; no idle-host/historical cause claim.",
+    "Current loadedf103101operations/32routes are all mapped; oldd783114/42 and98/33 and every earlier process/window/logtail/fixture stay separate.",
+    "89 source contracts pass; first nonexistent-file launch and initial uv-cache sandbox denial preserved. Mixed source imports/hash proof does not establish every repair branch; dedicated complete response comparisons/contracts exercise the change.",
+    "Shared250row/100member synthetic fixture median18.639583 to8.08275ms/250to1directoryreads. Unique250origins/250members control same250reads, medians35.933542/36.098625ms. No physicalIO/historical contribution/wholeHTTP acceptance inferred.",
+    "Macmini cachedstatus/sync remains stale/probe_failed; peerbuild/log/retention unverified, no forced refresh/update/restart. Accepted backup0331/b527 andDB89957 original scopes closed. Missingobject1, /work603.818ms, cumulative logloss/statusfailures, screenshot/unknown555/0b79/f403/d448/413 and answerednotificationa99ee1db remain untouched.",
+    "Full realKernel/provider/MCP/placement/workspace/admission/startup/drain/concurrency/queue/payload/write-amplification and remaining maintenance acceptance remain. No fabricated milestones, Done/CAS loops or cleanup."
+  ],
+  "lossless_raw": {
+    "path": "docs/benchmarks/systemic-exact600-activation-origin-names-20261029.raw.json.gz",
+    "sha256": "e8c128d479f348ba598b4af47993c6150f9aa5a4ab0407594753ef1e9d7c1938",
+    "bytes": 5471090
+  }
+}

@@ -245,6 +245,17 @@ def _session_project_list_label(request, session, labels):
     return dict(label) if label is not None else None
 
 
+def _session_origin_list_name(request, session, names):
+    key = (session.origin_instance_id, session.origin_instance_name)
+    if names is None:
+        return current_instance_name(request.app.state.ctx, *key)
+    if key not in names:
+        # Display labels share their first native read within this response.
+        # Snapshot fallbacks remain distinct; the next request reads again.
+        names[key] = current_instance_name(request.app.state.ctx, *key)
+    return names[key]
+
+
 def _session_reconciliation(request: Request, session_id: str) -> dict[str, Any]:
     store = request.app.state.ctx.services.get("dispatch_store")
     if isinstance(store, DispatchStore):
@@ -1814,7 +1825,23 @@ def list_agent_sessions(
     watch_summaries = None
     card_summaries = None
     project_labels = None
+    origin_names = None
     if request is not None:
+        from pa.core.ui import instance_identity
+        from pa.fleet.registry import FleetRegistry
+
+        fleet = request.app.state.ctx.services.get("fleet_registry")
+        if (
+            current_instance_name is instance_identity.current_instance_name
+            and isinstance(fleet, FleetRegistry)
+            and all(
+                inspect.isfunction(getattr(FleetRegistry, name))
+                and inspect.getattr_static(fleet, name)
+                is inspect.getattr_static(FleetRegistry, name)
+                for name in ("list_instances", "_reload_instances", "_instances_disk_key")
+            )
+        ):
+            origin_names = {}
         project_store = request.app.state.ctx.store
         if (
             isinstance(project_store, CardProjection)
@@ -1844,6 +1871,7 @@ def list_agent_sessions(
             watch_summaries=watch_summaries,
             card_summaries=card_summaries,
             project_labels=project_labels,
+            origin_names=origin_names,
         )
         for item in bounded
     ]
@@ -2144,6 +2172,7 @@ def _session_list_item(
     watch_summaries: dict[str, list[dict]] | None = None,
     card_summaries: dict[str, list[dict]] | None = None,
     project_labels: dict[tuple[str, str], dict | None] | None = None,
+    origin_names: dict[tuple[str | None, str | None], str] | None = None,
 ) -> dict:
     from pa.domain.conversation_origin import conversation_origin
     config, confirmed = normalized_session_config_json(
@@ -2152,11 +2181,7 @@ def _session_list_item(
         mode_id=session.mode_id,
     )
     configuration = config.get("configuration", {})
-    current_origin_name = current_instance_name(
-        request.app.state.ctx,
-        session.origin_instance_id,
-        session.origin_instance_name,
-    )
+    current_origin_name = _session_origin_list_name(request, session, origin_names)
     durable = config.get("durable_runtime", {})
     queued = durable.get("queued_prompts") or []
     associated_cards = (card_summaries.get(session.id, []) if card_summaries is not None else [
