@@ -229,6 +229,21 @@ class VerificationOrigin:
     control_operations: dict[str, str]
 
 
+@dataclass(frozen=True)
+class VerificationSettlement:
+    """Detached settlement facts; receipt contents and retained plans stay private."""
+
+    state: str
+    session_id: str | None
+    prompt_acknowledged: bool
+    initial_prompt_present: bool
+    completion_acknowledged: bool
+    completion_delivery_class: str | None
+    reconciliation_state: str
+    recoverable: bool
+    followup_pending: bool
+
+
 class DispatchRecord(BaseModel):
     dispatch_id: str = Field(default_factory=lambda: str(uuid4()))
     mutation_id: str
@@ -2252,6 +2267,32 @@ class DispatchStore:
         with measured_lock(self._index_lock):
             record = self._records.get(dispatch_id)
             return self._verification_origin(record) if record else None
+
+    @staticmethod
+    def _verification_settlement(record: DispatchRecord) -> VerificationSettlement:
+        from pa.execution.followup import dispatch_followup_pending
+
+        return VerificationSettlement(
+            record.state, record.session_id, bool(record.prompt_acknowledged_at),
+            bool(record.initial_prompt_operation), bool(record.acknowledged_at),
+            record.completion_delivery_class, record.reconciliation_state,
+            record.recoverable,
+            dispatch_followup_pending(record) if record.state in TERMINAL_DISPATCH_STATES else False,
+        )
+
+    def verification_settlement(self, dispatch_id: str) -> VerificationSettlement | None:
+        """Read a fresh committed origin without copying unrelated retained history.
+
+        Publication replaces detached records after commit. Capture the same
+        indexed record as get(), then inspect its settlement/followup fields
+        outside the index lock. Only immutable scalar facts escape; neither a
+        borrowed receipt nor an uncommitted writer's record is exposed.
+        """
+        self._require_readable()
+        self._yield_to_index_writer()
+        with measured_lock(self._index_lock):
+            record = self._records.get(dispatch_id)
+        return self._verification_settlement(record) if record else None
 
     def verification_card_origins(
         self, *, card_id: str, realm_id: str, limit: int = 101,

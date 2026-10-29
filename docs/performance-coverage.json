@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-29T19:05:27.459675+00:00",
-  "completion": "OPEN: all702findings160concerns.610protectedmerged/uninstalled; mainfirstattemptfailure retained. Sourcehandoffphase testguard validated/unmerged; actual608active. Full independentacceptance and allremainingperformancecriteria unsatisfied.",
+  "as_of": "2026-10-29T19:25:04.710339+00:00",
+  "completion": "OPEN: all703findings161concerns.611protectedintegrated/head+maingreen/uninstalled;610firstmainFAILretained. Newsettlementprojection source tested/unmerged/uninstalled; actual608active, independentacceptance and allremainingperformancecriteria unsatisfied.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -219752,6 +219752,89 @@
       "resolution": "open",
       "next_actor": "This same systemic session/card",
       "next_action": "ProtectedreadyPR/durablewatch/exacthead+mainCI integration; future reviewedactivation/installedretest and fullrealKernel/provider/concurrency acceptance. Keep all remaining packet/watch/session/maintenance/control-plane paths and historicaltails open."
+    },
+    {
+      "id": "concern:verification-origin-settlement-history-copy",
+      "kind": "concern",
+      "finding": "Origin settlement repeatedly copies unrelated retained dispatch plans/history",
+      "family": "verification",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_private_native_copy_amplification_historical_tail_share_unverified",
+      "cause": "Exact611 complete origin-settlement method makes4500fullsnapshots/4440000logical retained plan steps across30pairs eachordinary100/settled-followups50. Requiredfollowupscan remains; copy counters are not physicalIO or historical541ms attribution.",
+      "implemented": "Native getter captures the same committed indexed record and projects immutable scalar settlement facts outside the index lock, without plans/history/receipt payload copies. Original dispatch_followup_pending is unchanged and still scans its required turn/operation inputs. Pending repair/missing/nonterminal/pre-session/prompt/ack/delivery/reconciliation/recoverable guards remain. Custom get/_snapshot or unsupported projection retain full-read fallback and short-circuits. Publication/readable/yield fences and canonical worker/cancellation/deadline/admission/authority/acceptance policies unchanged.",
+      "merged": [],
+      "deployed": "Sourceonly/uninstalled. Actual6083fd/package07e/PID20833 remainsactive at19:23:51Z;609\u2013611integrated/uninstalled.",
+      "retested": {
+        "artifact": "docs/benchmarks/systemic-pr611-integration-origin-settlement-20261029.json",
+        "contracts": "294tests68subtestsPASS including48newnative/fullfallback/receipt/ambiguity/pre-session/recovery/short-circuit/freshness/publication/customreader guards",
+        "comparison": {
+          "ordinary100": {
+            "baseline": {
+              "latency_ms": {
+                "p50_ms": 89.33112490922213,
+                "p95_ms": 90.77212493866682,
+                "p99_ms": 90.84379207342863,
+                "samples": 30,
+                "max_ms": 92.24212495610118
+              },
+              "full_dispatch_snapshots": 3000,
+              "logical_nested_plan_steps": 2970000,
+              "logical_followup_entries": 0
+            },
+            "candidate": {
+              "latency_ms": {
+                "p50_ms": 0.17529202159494162,
+                "p95_ms": 0.22162508685141802,
+                "p99_ms": 0.22954202722758055,
+                "samples": 30,
+                "max_ms": 0.23020803928375244
+              },
+              "full_dispatch_snapshots": 0,
+              "logical_nested_plan_steps": 0,
+              "logical_followup_entries": 0
+            }
+          },
+          "settled_followups50": {
+            "baseline": {
+              "latency_ms": {
+                "p50_ms": 36.90691594965756,
+                "p95_ms": 52.67545802053064,
+                "p99_ms": 53.038124926388264,
+                "samples": 30,
+                "max_ms": 53.54191595688462
+              },
+              "full_dispatch_snapshots": 1500,
+              "logical_nested_plan_steps": 1470000,
+              "logical_followup_entries": 30000
+            },
+            "candidate": {
+              "latency_ms": {
+                "p50_ms": 0.1894170418381691,
+                "p95_ms": 0.2248329110443592,
+                "p99_ms": 0.23425009567290545,
+                "samples": 30,
+                "max_ms": 0.24358299560844898
+              },
+              "full_dispatch_snapshots": 0,
+              "logical_nested_plan_steps": 0,
+              "logical_followup_entries": 0
+            }
+          }
+        },
+        "source_mixed": {
+          "ordered_events": 9600,
+          "worker_warnings": 0,
+          "failures_timeouts_rejections": 0,
+          "maintenance_ms": 844.429,
+          "threshold_violations": {
+            "maintenance.run": 1
+          }
+        },
+        "initial_failures": "Initialcandidate46fixtureValidationErrors/2pass andinitialbaselineinvalidforcopyproof omitted3requiredauthorityfields. Correctedfixture47pass/1wronglegacyackexpectation: archivedpolicyrejects acknowledged asnonterminal; expectationcorrectedwithoutsourcepolicychange. ValidarchivedcopyguardthenFAILS atmodel_copy asintended. Allfailedtestversions/logs retained."
+      },
+      "resolution": "open",
+      "next_actor": "This same systemic session/card",
+      "next_action": "ReadyPR/durablewatch/exacthead+mainprotectedintegration, future reviewedactivation/installedretest and allremainingrealprovider/concurrency/wholePAcriteria. Otherfullread/ensure/sessiononlywatch/maintenance/payload paths remainopen."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -317571,6 +317654,12 @@
       "artifact": "docs/benchmarks/systemic-pr609-integration-verification-origins-20261029.json",
       "status": "Source tested/unmerged/uninstalled; no fullPA acceptance",
       "resolution": "open"
+    },
+    {
+      "row_id": "concern:verification-origin-settlement-history-copy",
+      "artifact": "docs/benchmarks/systemic-pr611-integration-origin-settlement-20261029.json",
+      "status": "Source tested/unmerged/uninstalled; no fullPA acceptance",
+      "resolution": "open"
     }
   ],
   "integration_history": [
@@ -317705,6 +317794,19 @@
       "main_ci_status": "4success1failure/firstattempt/no retry",
       "deployed": false,
       "accepted": false
+    },
+    {
+      "pr": 611,
+      "artifact": "docs/benchmarks/systemic-pr611-integration-origin-settlement-20261029.json",
+      "watched_head": "3f736335e55d6360c898d0155294bcbaba7beef0",
+      "merge": "fcabfdc75e2f3d27a3babe07b85e124a3cf85e3d",
+      "watch": "418ac46d-26c2-40e1-a3b3-b00c5d305565",
+      "head_ci": 40936973735,
+      "main_ci": 40937696608,
+      "head_main": "5firstattemptsuccess each/no retries",
+      "deployed": false,
+      "accepted": false,
+      "separate_first_failure": "610main40935556426 staysFAILED/attempt1/no retry;611isnewpopulation"
     }
   ],
   "coverage_stage_history": [
