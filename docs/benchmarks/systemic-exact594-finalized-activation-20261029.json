@@ -1,0 +1,1527 @@
+{
+  "contract": "pa.exact594-finalized-activation/v1",
+  "observed_at": "2026-10-29T02:39:28.896257+00:00",
+  "actual_loaded": {
+    "loaded_module_version": "1.5.9",
+    "source_revision": "6d241622388dd91b50eab87042c73ef419cc8c72",
+    "package_identity": "sha256:19d96e7b8bb339027fb5aa3511a756fbefbe2e7d3d0e041424b85a96cab6d45f",
+    "pid": 83048,
+    "startup_id": "1dd674ab-06cb-42b4-ab65-42677354dc75"
+  },
+  "completed_20261026_retests": {
+    "contract": "pa.exact594-activation-retests-summary/v1",
+    "observed_at": "2026-10-26T02:04:12.752506+00:00",
+    "actual_loaded": {
+      "loaded_module_version": "1.5.9",
+      "source_revision": "6d241622388dd91b50eab87042c73ef419cc8c72",
+      "package_identity": "sha256:19d96e7b8bb339027fb5aa3511a756fbefbe2e7d3d0e041424b85a96cab6d45f",
+      "pid": 83048,
+      "startup_id": "1dd674ab-06cb-42b4-ab65-42677354dc75"
+    },
+    "installed_attestation": {
+      "contract": "pa.exact594-installed-metadata-attestation/v1",
+      "observed_at": "2026-10-26T02:00:18.038986+00:00",
+      "stage": "postrestart",
+      "source": "6d241622388dd91b50eab87042c73ef419cc8c72",
+      "package_identity": "sha256:19d96e7b8bb339027fb5aa3511a756fbefbe2e7d3d0e041424b85a96cab6d45f",
+      "source_files_verified": 439,
+      "record_entries_verified": 440,
+      "templates_verified": 38,
+      "template_cache_sha256": "fcb9a8ee8099db2aebeebdf06e98412cb3cfa0bcaf71ad2c297553cf3d87acfb",
+      "python_base_executable": "/Users/petersky/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/bin/python3.14",
+      "unchanged_dependency_versions": 52,
+      "private_roots_before_pa_imports": true,
+      "no_kernel_or_store_import": true,
+      "scope": "Read-only installed source, RECORD, interpreter, dependency and template-cache proof. No PA service state, credentials, Kernel, Store or workspace construction. Does not establish which modules/branches the listener executed; actual loaded owner/PID proof is separate.",
+      "manifest": {
+        ".dev/exact594-postrestart-20261026-source.json": "d15272b6bb9bb7324a95d01c93a05696cd37874d31052d3c95f667c5dd81426a",
+        ".dev/exact594-postrestart-20261026-artifact.json": "826eb545d46aa6e02f98acff3eca41f3efdaeeb9c00110c748e69d998282efd8",
+        ".dev/exact594-postrestart-20261026-records.json": "c3a697dc4c5846482a9744e8603a862a4bf7452e969bf34a3ca5adf38607de43"
+      }
+    },
+    "native_process": {
+      "observed_at": "2026-10-26T02:00:54.838407+00:00",
+      "pid": 83048,
+      "supervisor_pid": 83043,
+      "ps": "83048 83043 Sun Oct 25 18:57:44 2026      31  0 /Users/petersky/.local/share/uv/tools/pa/bin/python3",
+      "launchctl": [
+        "state = running",
+        "program = /Users/petersky/.local/share/uv/tools/pa/bin/pa",
+        "pid = 83043",
+        "state = active",
+        "state = active",
+        "spawn type = interactive (4)"
+      ],
+      "scope": "Read-only native process and launch class; no environment values retained or policy/power/clock/service changes."
+    },
+    "configuration_revision": "86968d122a80e240ea560052f275872c5d22699a35b218618200da9e62fc1767",
+    "handoff": {
+      "identity": {
+        "version": 1,
+        "owner": "restart",
+        "realm_id": "default",
+        "idempotency_key": "systemic-exact6d241622-lease-links-managed-restart-20261026-v1",
+        "operation": "agent_restart_handoff",
+        "request_fingerprint": null
+      },
+      "status": "continuation_queued",
+      "accepted": true,
+      "committed": true,
+      "projected": null,
+      "effect": "pending",
+      "phase": "running",
+      "phase_version": 5,
+      "attempt": 1,
+      "reason_code": "continuation_queued",
+      "next_action": "finish_continuation_turn",
+      "effect_state": "pending",
+      "worker_state": "active",
+      "domain_stage": "continuation_queued",
+      "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+      "handoff_id": "6fc5d013-e62a-58c5-a5f4-6cef84bc1d61",
+      "continuation_prompt_id": "restart-handoff:6fc5d013-e62a-58c5-a5f4-6cef84bc1d61",
+      "idempotency_key": "systemic-exact6d241622-lease-links-managed-restart-20261026-v1",
+      "owner": "restart",
+      "realm_id": "default",
+      "operation": "agent_restart_handoff",
+      "durable": true,
+      "recovery_state": "continuation_queued",
+      "recovery_action": "finish_continuation_turn",
+      "result": {
+        "handoff_id": "6fc5d013-e62a-58c5-a5f4-6cef84bc1d61",
+        "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+        "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+        "project_id": "fdc04d91-1222-447b-859c-38e67bcab6eb",
+        "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+        "status": "continuation_queued",
+        "failure_stage": null,
+        "error": null,
+        "attempts": 1,
+        "created_at": "2026-10-26T01:57:27.157044+00:00",
+        "updated_at": "2026-10-26T01:57:56.229743+00:00",
+        "delivered_at": null
+      }
+    },
+    "ordinary_gets": {
+      "samples": 95,
+      "failures": 0,
+      "violations_500ms": 0,
+      "max_ms": 104.98775000000005,
+      "per_route": {
+        "/api/status": {
+          "requested": 20,
+          "latency_ms": {
+            "samples": 20,
+            "max": 104.988,
+            "p50": 17.182,
+            "p95": 50.658,
+            "p99": 104.988
+          },
+          "decoded_bytes": {
+            "samples": 20,
+            "max": 2824,
+            "p50": 2824,
+            "p95": 2824,
+            "p99": 2824
+          },
+          "failures": 0,
+          "violations_500ms": 0
+        },
+        "/api/runtime": {
+          "requested": 20,
+          "latency_ms": {
+            "samples": 20,
+            "max": 33.404,
+            "p50": 28.488,
+            "p95": 33.295,
+            "p99": 33.404
+          },
+          "decoded_bytes": {
+            "samples": 20,
+            "max": 332194,
+            "p50": 332181,
+            "p95": 332192,
+            "p99": 332194
+          },
+          "failures": 0,
+          "violations_500ms": 0
+        },
+        "/api/health": {
+          "requested": 20,
+          "latency_ms": {
+            "samples": 20,
+            "max": 24.748,
+            "p50": 3.892,
+            "p95": 16.438,
+            "p99": 24.748
+          },
+          "decoded_bytes": {
+            "samples": 20,
+            "max": 15,
+            "p50": 15,
+            "p95": 15,
+            "p99": 15
+          },
+          "failures": 0,
+          "violations_500ms": 0
+        },
+        "/agent": {
+          "requested": 5,
+          "latency_ms": {
+            "samples": 5,
+            "max": 43.706,
+            "p50": 26.854,
+            "p95": 43.706,
+            "p99": 43.706
+          },
+          "decoded_bytes": {
+            "samples": 5,
+            "max": 117838,
+            "p50": 117838,
+            "p95": 117838,
+            "p99": 117838
+          },
+          "failures": 0,
+          "violations_500ms": 0
+        },
+        "/fleet": {
+          "requested": 5,
+          "latency_ms": {
+            "samples": 5,
+            "max": 67.883,
+            "p50": 36.8,
+            "p95": 67.883,
+            "p99": 67.883
+          },
+          "decoded_bytes": {
+            "samples": 5,
+            "max": 1147875,
+            "p50": 1147875,
+            "p95": 1147875,
+            "p99": 1147875
+          },
+          "failures": 0,
+          "violations_500ms": 0
+        },
+        "/": {
+          "requested": 5,
+          "latency_ms": {
+            "samples": 5,
+            "max": 11.899,
+            "p50": 7.395,
+            "p95": 11.899,
+            "p99": 11.899
+          },
+          "decoded_bytes": {
+            "samples": 5,
+            "max": 25464,
+            "p50": 25464,
+            "p95": 25464,
+            "p99": 25464
+          },
+          "failures": 0,
+          "violations_500ms": 0
+        },
+        "/work": {
+          "requested": 5,
+          "latency_ms": {
+            "samples": 5,
+            "max": 16.57,
+            "p50": 15.671,
+            "p95": 16.57,
+            "p99": 16.57
+          },
+          "decoded_bytes": {
+            "samples": 5,
+            "max": 31323,
+            "p50": 31323,
+            "p95": 31323,
+            "p99": 31323
+          },
+          "failures": 0,
+          "violations_500ms": 0
+        },
+        "/pull-requests": {
+          "requested": 5,
+          "latency_ms": {
+            "samples": 5,
+            "max": 31.892,
+            "p50": 22.122,
+            "p95": 31.892,
+            "p99": 31.892
+          },
+          "decoded_bytes": {
+            "samples": 5,
+            "max": 26012,
+            "p50": 26012,
+            "p95": 26012,
+            "p99": 26012
+          },
+          "failures": 0,
+          "violations_500ms": 0
+        },
+        "/settings?section=agent": {
+          "requested": 5,
+          "latency_ms": {
+            "samples": 5,
+            "max": 16.808,
+            "p50": 15.529,
+            "p95": 16.808,
+            "p99": 16.808
+          },
+          "decoded_bytes": {
+            "samples": 5,
+            "max": 101194,
+            "p50": 101194,
+            "p95": 101194,
+            "p99": 101194
+          },
+          "failures": 0,
+          "violations_500ms": 0
+        },
+        "/api/fleet/overview": {
+          "requested": 5,
+          "latency_ms": {
+            "samples": 5,
+            "max": 57.938,
+            "p50": 32.641,
+            "p95": 57.938,
+            "p99": 57.938
+          },
+          "decoded_bytes": {
+            "samples": 5,
+            "max": 985549,
+            "p50": 985549,
+            "p95": 985549,
+            "p99": 985549
+          },
+          "failures": 0,
+          "violations_500ms": 0
+        }
+      }
+    },
+    "encoding": {
+      "samples": 8,
+      "failures": 0,
+      "evidence": [
+        {
+          "path": "/fleet",
+          "pair": 0,
+          "accept_encoding": "identity",
+          "observed_at": "2026-10-26T02:01:08.645403+00:00",
+          "ok": true,
+          "status": 200,
+          "elapsed_ms": 45.85012499999941,
+          "encoded_body_bytes": 1147870,
+          "decoded_body_bytes": 1147870,
+          "content_length": 1147870,
+          "same_response_decoder_parity": true,
+          "decoded_sha256": "2482d79334175c685b9dada91992d922d7b579ebc7f8b57021a3e01522d1be71",
+          "encoded_sha256": "2482d79334175c685b9dada91992d922d7b579ebc7f8b57021a3e01522d1be71",
+          "verification_ms": 2.4182919999997665,
+          "correlation_id": "914df3b8-1265-4945-91da-f3e3b38112d9"
+        },
+        {
+          "path": "/fleet",
+          "pair": 0,
+          "accept_encoding": "gzip",
+          "observed_at": "2026-10-26T02:01:08.694857+00:00",
+          "ok": true,
+          "status": 200,
+          "elapsed_ms": 34.96937500000019,
+          "encoded_body_bytes": 208268,
+          "decoded_body_bytes": 1147870,
+          "content_length": 208268,
+          "same_response_decoder_parity": true,
+          "decoded_sha256": "3102db78cd5353fa3d4219558e4bc14483ba6bf09c187d9f25784439b6e2397e",
+          "encoded_sha256": "d126473f37d23394b5f176efcaaf1a2575a19df686858315301e1e144d0f0468",
+          "verification_ms": 2.5507920000000794,
+          "correlation_id": "ff66997c-e9db-4de3-8f0e-9cafb339836d"
+        },
+        {
+          "path": "/fleet",
+          "pair": 1,
+          "accept_encoding": "gzip",
+          "observed_at": "2026-10-26T02:01:08.733075+00:00",
+          "ok": true,
+          "status": 200,
+          "elapsed_ms": 33.44691700000002,
+          "encoded_body_bytes": 208265,
+          "decoded_body_bytes": 1147870,
+          "content_length": 208265,
+          "same_response_decoder_parity": true,
+          "decoded_sha256": "10a24a40ff6dfcc4fd538db6756b7fa00ac9096863446b4a7c4a5b35c7e63008",
+          "encoded_sha256": "f01ceb5ef5484224e0abbefdac7b3efef773a6eb1e1911a744c919590a4c4036",
+          "verification_ms": 2.312790999999592,
+          "correlation_id": "a4a97bb6-2f79-4ccd-a617-0fa312545fd6"
+        },
+        {
+          "path": "/fleet",
+          "pair": 1,
+          "accept_encoding": "identity",
+          "observed_at": "2026-10-26T02:01:08.769517+00:00",
+          "ok": true,
+          "status": 200,
+          "elapsed_ms": 29.491916999999646,
+          "encoded_body_bytes": 1147870,
+          "decoded_body_bytes": 1147870,
+          "content_length": 1147870,
+          "same_response_decoder_parity": true,
+          "decoded_sha256": "20eec034582ebb6e63f259f9966f310e4f9b39773e39a1531f74f0a7c9dcd5ae",
+          "encoded_sha256": "20eec034582ebb6e63f259f9966f310e4f9b39773e39a1531f74f0a7c9dcd5ae",
+          "verification_ms": 1.6530839999999714,
+          "correlation_id": "c4d2ba36-0bbc-4586-ad92-72606e8fb882"
+        },
+        {
+          "path": "/api/fleet/overview",
+          "pair": 0,
+          "accept_encoding": "identity",
+          "observed_at": "2026-10-26T02:01:08.801357+00:00",
+          "ok": true,
+          "status": 200,
+          "elapsed_ms": 19.193791999999377,
+          "encoded_body_bytes": 985547,
+          "decoded_body_bytes": 985547,
+          "content_length": 985547,
+          "same_response_decoder_parity": true,
+          "decoded_sha256": "33160834bc82be749be01677093a8fb9f952fcce82ff29d227a1afbb8f48a981",
+          "encoded_sha256": "33160834bc82be749be01677093a8fb9f952fcce82ff29d227a1afbb8f48a981",
+          "verification_ms": 0.5937080000002481,
+          "correlation_id": "978a214b-4e1c-44fe-b035-d84e639335e3"
+        },
+        {
+          "path": "/api/fleet/overview",
+          "pair": 0,
+          "accept_encoding": "gzip",
+          "observed_at": "2026-10-26T02:01:08.821849+00:00",
+          "ok": true,
+          "status": 200,
+          "elapsed_ms": 22.85108299999994,
+          "encoded_body_bytes": 181717,
+          "decoded_body_bytes": 985547,
+          "content_length": 181717,
+          "same_response_decoder_parity": true,
+          "decoded_sha256": "25bd2a071b29c8a662cbae5d4e6e54d46ae0740b264a0e22a6a42d87cd42919f",
+          "encoded_sha256": "729d817564b40dc95e56346789aefdbaf0f6c97c02989f702af4313b127823ca",
+          "verification_ms": 1.2555419999999984,
+          "correlation_id": "4a37692c-d185-4e0b-acab-a9cd0ce032c8"
+        },
+        {
+          "path": "/api/fleet/overview",
+          "pair": 1,
+          "accept_encoding": "gzip",
+          "observed_at": "2026-10-26T02:01:08.846895+00:00",
+          "ok": true,
+          "status": 200,
+          "elapsed_ms": 35.69449999999996,
+          "encoded_body_bytes": 181721,
+          "decoded_body_bytes": 985547,
+          "content_length": 181721,
+          "same_response_decoder_parity": true,
+          "decoded_sha256": "a03f41526d80f7bb82807476da81f2d166ca3e0edc14dc16a41b2d99b7585e04",
+          "encoded_sha256": "ec9057aed9e08db9be7cfbb750bce3e09f0d2f41694c17a7f1bb1cbe7ccd1185",
+          "verification_ms": 1.250290999999848,
+          "correlation_id": "7771b2b3-cd96-4ac3-8b1a-779043c2682a"
+        },
+        {
+          "path": "/api/fleet/overview",
+          "pair": 1,
+          "accept_encoding": "identity",
+          "observed_at": "2026-10-26T02:01:08.884781+00:00",
+          "ok": true,
+          "status": 200,
+          "elapsed_ms": 18.94316699999976,
+          "encoded_body_bytes": 985547,
+          "decoded_body_bytes": 985547,
+          "content_length": 985547,
+          "same_response_decoder_parity": true,
+          "decoded_sha256": "725de25b0002e389155e78583ec121910da6fbcae13a7d808f6fc691a8bb3dd5",
+          "encoded_sha256": "725de25b0002e389155e78583ec121910da6fbcae13a7d808f6fc691a8bb3dd5",
+          "verification_ms": 0.587417000000201,
+          "correlation_id": "1eecdbee-320a-4118-8298-322c148a59e8"
+        }
+      ]
+    },
+    "fleet": {
+      "samples": 8,
+      "required_field_states": {
+        "fresh": 80,
+        "stale": 16
+      },
+      "failure_codes": {
+        "probe_failed": 16
+      },
+      "scope": "Required fields are observations, not incidents; stale peer fields remain."
+    },
+    "lifecycle": {
+      "contract": "pa.installed-lifecycle-contracts/v1",
+      "source": "6d241622388dd91b50eab87042c73ef419cc8c72",
+      "started_at": "2026-10-26T02:01:48.757597+00:00",
+      "finished_at": "2026-10-26T02:01:48.992125+00:00",
+      "wall_ms": 234.53216592315584,
+      "tests": 28,
+      "passing_subtests": 64,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "modules": {
+        "pa.instance.session_lifecycle": {
+          "path": "/Users/petersky/.local/share/uv/tools/pa/lib/python3.14/site-packages/pa/instance/session_lifecycle.py",
+          "sha256": "f0c4f0b9cdebd667e6fcaa57466a36100f505a620f596392e9fbc185517d3ae8"
+        },
+        "pa.pr_supervisor.store": {
+          "path": "/Users/petersky/.local/share/uv/tools/pa/lib/python3.14/site-packages/pa/pr_supervisor/store.py",
+          "sha256": "982287af988e4c50f193cee280b590331521aa2bc9b2f1d25cfc0898669104e2"
+        }
+      },
+      "test_sha256": "7d7d8d9e6a4a0d9ea1155cb4fa6686b702f184b432a5f2e98ebe376ed8195cd5",
+      "log_sha256": "400c98fbc0d1d9ada0dbec9f9e12e60f1dd54b20c78ecb4d1e47b90f681662a9",
+      "scope": "Existing lifecycle obligation, retirement, closure and reserved-capacity/concurrency contracts against exact installed modules, both roots private before every PA import. No live closure/provider workload or whole-path performance acceptance."
+    },
+    "matching": {
+      "lease": {
+        "index": {
+          "samples": 5,
+          "median_ms": 1.210792,
+          "max_ms": 1.305625
+        },
+        "scan": {
+          "samples": 5,
+          "median_ms": 29.667542,
+          "max_ms": 30.923417
+        }
+      },
+      "dispatch": {
+        "index": {
+          "samples": 5,
+          "median_ms": 2.119625,
+          "max_ms": 2.22925
+        },
+        "scan": {
+          "samples": 5,
+          "median_ms": 116.628375,
+          "max_ms": 160.69775
+        }
+      },
+      "watch": {
+        "index": {
+          "samples": 5,
+          "median_ms": 2.043792,
+          "max_ms": 6.086667
+        },
+        "full": {
+          "samples": 5,
+          "median_ms": 69.503292,
+          "max_ms": 71.450417
+        }
+      }
+    },
+    "private_mixed": {
+      "iterations": 100,
+      "retained_ordered_events": 9600,
+      "warnings": {},
+      "threshold_violations": {
+        "maintenance.run": 1
+      },
+      "maintenance_ms": {
+        "samples": 1,
+        "max_ms": 778.373,
+        "p50_ms": 778.373,
+        "p95_ms": 778.373,
+        "p99_ms": 778.373
+      },
+      "failures_timeouts_rejections": 0,
+      "matched_imported_modules": 30,
+      "validation": {
+        "started_monotonic": 738094.692447708,
+        "finished_monotonic": 738095.625537,
+        "duration_ms": 933.0892920261249,
+        "scope": "Durable order, retained cold content hashes, projection head and card checks; includes awaited validation observer persistence. Excluded from workload duration and captured counters."
+      }
+    },
+    "private_fake_cold": {
+      "create_only_ms": {
+        "samples": 10,
+        "max_ms": 66.84145797044039
+      },
+      "drain_only_ms": {
+        "samples": 10,
+        "max_ms": 0.010249903425574303
+      },
+      "create_through_drain_ms": {
+        "samples": 10,
+        "max_ms": 66.85649999417365
+      }
+    },
+    "late_batches": {
+      "samples": 5,
+      "p50": 6.679667,
+      "p95": 20.284125,
+      "p99": 20.284125,
+      "max": 20.284125
+    },
+    "watch_read": {
+      "full": {
+        "samples": 30,
+        "p50": 14.309416,
+        "p95": 16.675125,
+        "p99": 16.8415,
+        "max": 16.8415
+      },
+      "links": {
+        "samples": 30,
+        "p50": 1.162291,
+        "p95": 1.45275,
+        "p99": 1.955291,
+        "max": 1.955291
+      }
+    },
+    "reference_guard": [
+      {
+        "rows": 100000,
+        "latency_ms": {
+          "archived": {
+            "samples": 5,
+            "p50_ms": 6.802875,
+            "p95_ms": 7.468708,
+            "p99_ms": 7.468708,
+            "max_ms": 7.468708
+          },
+          "candidate": {
+            "samples": 5,
+            "p50_ms": 3.716708,
+            "p95_ms": 3.871667,
+            "p99_ms": 3.871667,
+            "max_ms": 3.871667
+          }
+        },
+        "first_select_vm_steps": {
+          "archived": {
+            "selects": 10,
+            "guard_vm_steps": 400012
+          },
+          "candidate": {
+            "selects": 10,
+            "guard_vm_steps": 44
+          }
+        }
+      },
+      {
+        "rows": 500000,
+        "latency_ms": {
+          "archived": {
+            "samples": 5,
+            "p50_ms": 34.424417,
+            "p95_ms": 35.710083,
+            "p99_ms": 35.710083,
+            "max_ms": 35.710083
+          },
+          "candidate": {
+            "samples": 5,
+            "p50_ms": 17.521875,
+            "p95_ms": 18.389667,
+            "p99_ms": 18.389667,
+            "max_ms": 18.389667
+          }
+        },
+        "first_select_vm_steps": {
+          "archived": {
+            "selects": 10,
+            "guard_vm_steps": 2000012
+          },
+          "candidate": {
+            "selects": 10,
+            "guard_vm_steps": 44
+          }
+        }
+      }
+    ],
+    "natural_maintenance": {
+      "started_at": "2026-10-26T01:57:49.559129+00:00",
+      "finished_at": "2026-10-26T01:57:55.020689+00:00",
+      "result": {
+        "ran_at": "2026-10-26T01:57:49.559360+00:00",
+        "transcript_cutoff": "2026-10-12T01:57:49.559360+00:00",
+        "mutation_cutoff": "2026-10-12T01:57:49.559360+00:00",
+        "transcript_events_deleted": 0,
+        "mutation_operations_deleted": 0,
+        "dispatch_compact": {
+          "events": 0,
+          "receipts": 0
+        },
+        "sqlite": {
+          "compacted": true,
+          "status": "ok",
+          "phases": {
+            "connect": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 6.348958,
+              "thread_cpu_ms": 0.5125
+            },
+            "size_initial": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.54875,
+              "thread_cpu_ms": 0.5355
+            },
+            "integrity_before": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 179.782042,
+              "thread_cpu_ms": 172.36425
+            },
+            "optimize": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.082959,
+              "thread_cpu_ms": 0.080625
+            },
+            "checkpoint_before": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.677625,
+              "thread_cpu_ms": 0.441375
+            },
+            "size_pre_compact": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.039916,
+              "thread_cpu_ms": 0.031709
+            },
+            "disk_space": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.038917,
+              "thread_cpu_ms": 0.031833
+            },
+            "vacuum": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 2611.570458,
+              "thread_cpu_ms": 1117.972833
+            },
+            "integrity_after": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 177.918375,
+              "thread_cpu_ms": 177.219667
+            },
+            "checkpoint_after": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 39.898709,
+              "thread_cpu_ms": 15.085042
+            },
+            "size_final": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.041209,
+              "thread_cpu_ms": 0.041333
+            },
+            "close": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.17975,
+              "thread_cpu_ms": 0.179958
+            },
+            "total": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 3017.372375,
+              "thread_cpu_ms": 1484.719041
+            }
+          },
+          "before": {
+            "page_count": 111190,
+            "page_size": 4096,
+            "freelist_count": 78,
+            "bytes": 455434240,
+            "free_bytes": 319488
+          },
+          "after": {
+            "page_count": 109555,
+            "page_size": 4096,
+            "freelist_count": 77,
+            "bytes": 448737280,
+            "free_bytes": 315392
+          },
+          "page_count": 109555,
+          "page_size": 4096,
+          "freelist_count": 77,
+          "bytes": 448737280,
+          "free_bytes": 315392,
+          "quick_check": "ok",
+          "wal_busy": 0,
+          "wal_log": 0,
+          "wal_checkpointed": 0
+        },
+        "transcript_storage": {
+          "schema_version": 1,
+          "events": 875197,
+          "audit_evidence": 1052,
+          "objects": 24983,
+          "uncompressed_bytes": 408034475,
+          "compressed_bytes": 87399430,
+          "references": 25292,
+          "deduplicated_references": 309,
+          "missing_objects": 1,
+          "journal_mode": "wal",
+          "integrity": "ok",
+          "redaction_policy": "canonical-v1",
+          "hot_payload_limit": 2048,
+          "compatibility_rows": 897203,
+          "migration": "running",
+          "migration_examined": 237500,
+          "migration_changed": 84973,
+          "migration_error": null,
+          "measured_at": "2026-10-26T01:57:55.019358+00:00",
+          "measurement_state": "measured"
+        },
+        "phases": {
+          "retention_selection": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 173.564084,
+            "thread_cpu_ms": 6.865917,
+            "sqlite_calls": 274,
+            "sqlite_rows": 271,
+            "sqlite_statement_ms": 121.52466620318592,
+            "sqlite_commit_ms": 0,
+            "sqlite_statement_thread_cpu_ms": 6.122655999999977,
+            "sqlite_commit_thread_cpu_ms": 0,
+            "sqlite_busy_failures": 0,
+            "python_lock_wait_ms": 0,
+            "python_lock_hold_ms": 0,
+            "outer_lock_hold_ms": 0
+          },
+          "retention_discovery": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 7.420417,
+            "thread_cpu_ms": 0.560958,
+            "sqlite_calls": 2,
+            "sqlite_rows": 0,
+            "sqlite_statement_ms": 7.355457986705005,
+            "sqlite_commit_ms": 0,
+            "sqlite_statement_thread_cpu_ms": 0.4944159999999993,
+            "sqlite_commit_thread_cpu_ms": 0,
+            "sqlite_busy_failures": 0,
+            "python_lock_wait_ms": 0,
+            "python_lock_hold_ms": 0,
+            "outer_lock_hold_ms": 0
+          },
+          "retention_transaction": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 11.217334,
+            "thread_cpu_ms": 2.285042,
+            "sqlite_calls": 5,
+            "sqlite_rows": 0,
+            "sqlite_statement_ms": 9.186374954879284,
+            "sqlite_commit_ms": 0.33054198138415813,
+            "sqlite_statement_thread_cpu_ms": 1.9823330000000015,
+            "sqlite_commit_thread_cpu_ms": 0.07779200000000014,
+            "sqlite_busy_failures": 0,
+            "python_lock_wait_ms": 0.0003330642357468605,
+            "python_lock_hold_ms": 11.203625006601214,
+            "outer_lock_hold_ms": 11.203625006601214
+          },
+          "retention_object_collection": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 1025.692416,
+            "thread_cpu_ms": 123.957583,
+            "sqlite_calls": 392,
+            "sqlite_rows": 0,
+            "sqlite_statement_ms": 142.42371125146747,
+            "sqlite_commit_ms": 0,
+            "sqlite_statement_thread_cpu_ms": 32.77817300000012,
+            "sqlite_commit_thread_cpu_ms": 0,
+            "sqlite_busy_failures": 0,
+            "python_lock_wait_ms": 0.0002080341801047325,
+            "python_lock_hold_ms": 0.0007499475032091141,
+            "outer_lock_hold_ms": 0.0007499475032091141
+          },
+          "retention_canonical": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 1036.961208,
+            "thread_cpu_ms": 126.291083,
+            "sqlite_calls": 397,
+            "sqlite_rows": 0,
+            "sqlite_statement_ms": 151.61008620634675,
+            "sqlite_commit_ms": 0.33054198138415813,
+            "sqlite_statement_thread_cpu_ms": 34.76050600000013,
+            "sqlite_commit_thread_cpu_ms": 0.07779200000000014,
+            "sqlite_busy_failures": 0,
+            "python_lock_wait_ms": 0.000541098415851593,
+            "python_lock_hold_ms": 11.204374954104424,
+            "outer_lock_hold_ms": 11.204374954104424
+          },
+          "retention_mirror": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.562833,
+            "thread_cpu_ms": 0.563041,
+            "sqlite_calls": 2,
+            "sqlite_rows": 0,
+            "sqlite_statement_ms": 0.4337080754339695,
+            "sqlite_commit_ms": 0,
+            "sqlite_statement_thread_cpu_ms": 0.4331240000000065,
+            "sqlite_commit_thread_cpu_ms": 0,
+            "sqlite_busy_failures": 0,
+            "python_lock_wait_ms": 0,
+            "python_lock_hold_ms": 0,
+            "outer_lock_hold_ms": 0
+          },
+          "transcript_retention": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 1211.125667,
+            "thread_cpu_ms": 133.75525
+          },
+          "mutation_retention": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.099416,
+            "thread_cpu_ms": 0.049917
+          },
+          "transcript_migration_and_health": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 463.597916,
+            "thread_cpu_ms": 362.428209
+          },
+          "dispatch_compact": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 103.774375,
+            "thread_cpu_ms": 88.626041
+          },
+          "projection_database": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 3017.4075,
+            "thread_cpu_ms": 1484.754083
+          },
+          "transcript_database": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 311.7985,
+            "thread_cpu_ms": 278.128041
+          },
+          "transcript_health_final": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 352.214542,
+            "thread_cpu_ms": 328.360042
+          },
+          "total": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 5460.095917,
+            "thread_cpu_ms": 2676.165458
+          }
+        },
+        "transcript_migration": {
+          "schema_version": 1,
+          "events": 875197,
+          "audit_evidence": 1052,
+          "objects": 24983,
+          "uncompressed_bytes": 408034475,
+          "compressed_bytes": 87399430,
+          "references": 25292,
+          "deduplicated_references": 309,
+          "missing_objects": 1,
+          "journal_mode": "wal",
+          "integrity": "ok",
+          "redaction_policy": "canonical-v1",
+          "hot_payload_limit": 2048,
+          "compatibility_rows": 897203,
+          "migration": "running",
+          "migration_examined": 237500,
+          "migration_changed": 84973,
+          "migration_error": null,
+          "measured_at": "2026-10-26T01:57:51.234198+00:00",
+          "measurement_state": "measured"
+        },
+        "transcript_sqlite": {
+          "compacted": false,
+          "status": "ok",
+          "phases": {
+            "connect": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.1075,
+              "thread_cpu_ms": 0.107833
+            },
+            "size_initial": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.1015,
+              "thread_cpu_ms": 0.101583
+            },
+            "integrity_before": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 311.046333,
+              "thread_cpu_ms": 277.40475
+            },
+            "optimize": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.05025,
+              "thread_cpu_ms": 0.050417
+            },
+            "checkpoint_before": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.215291,
+              "thread_cpu_ms": 0.189458
+            },
+            "size_pre_compact": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.020458,
+              "thread_cpu_ms": 0.020625
+            },
+            "size_final": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.010459,
+              "thread_cpu_ms": 0.0105
+            },
+            "close": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 0.127,
+              "thread_cpu_ms": 0.127125
+            },
+            "total": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 311.786292,
+              "thread_cpu_ms": 278.115375
+            }
+          },
+          "before": {
+            "page_count": 159656,
+            "page_size": 4096,
+            "freelist_count": 0,
+            "bytes": 653950976,
+            "free_bytes": 0
+          },
+          "after": {
+            "page_count": 159656,
+            "page_size": 4096,
+            "freelist_count": 0,
+            "bytes": 653950976,
+            "free_bytes": 0
+          },
+          "page_count": 159656,
+          "page_size": 4096,
+          "freelist_count": 0,
+          "bytes": 653950976,
+          "free_bytes": 0,
+          "quick_check": "ok",
+          "wal_busy": 0,
+          "wal_log": 0,
+          "wal_checkpointed": 0
+        }
+      },
+      "scope": "Naturally completed startup maintenance, never manually triggered. Inclusive spans overlap and must not be summed. Off-CPU remains unclassified, no physical disk/busy/holder/GIL attribution."
+    },
+    "separate_populations": {
+      "ordinary_initial_operations": 86,
+      "ordinary_initial_routes": 20,
+      "native_operations": 86,
+      "native_routes": 30
+    },
+    "raw": {
+      "path": ".dev/pr594-activation-retests-inputs-20261026.raw.json.gz",
+      "sha256": "b9225af932a6c4a67d22f58e05dac5a686e0cf2a18ab9ded7090004ece4cfe0d",
+      "bytes": 2674947
+    },
+    "acceptance": {
+      "findings": 681,
+      "concerns": 145,
+      "all_resolution": "open",
+      "accepted": false,
+      "lane": "active",
+      "requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57"
+    },
+    "next_actions": [
+      "Finish original continuation normally as its exact native receipt requests; do not repeat merge/install/restart or rearm an ambiguous identity.",
+      "Publish this appended lossless bundle and exact activation/retests in the next immutable protected stage. Current observations remain local until then.",
+      "Continue substantive maintenance with fresh final health/migration/GC/compaction behavior preserved. Current native projection VACUUM and object collection remain costly; wall minus CPU is unclassified. Reusing batch read connections is not a demonstrated new repair because the existing worker already scopes derived connections.",
+      "Continue every foreground/background/provider/MCP/placement/workspace/queue/admission/lease/receipt/order/CAS/sync/acceptance and full real cold start/drain/concurrency, peer/build/log/retention/backup-linked obligation. Scheduler owns independent verification."
+    ]
+  },
+  "positive_original_handoff": {
+    "identity": {
+      "version": 1,
+      "owner": "restart",
+      "realm_id": "default",
+      "idempotency_key": "systemic-exact6d241622-lease-links-managed-restart-20261026-v1",
+      "operation": "agent_restart_handoff",
+      "request_fingerprint": null
+    },
+    "status": "continuation_delivered",
+    "accepted": true,
+    "committed": true,
+    "projected": null,
+    "effect": "complete",
+    "phase": "succeeded",
+    "phase_version": 6,
+    "attempt": 1,
+    "reason_code": "continuation_delivered",
+    "next_action": null,
+    "effect_state": "confirmed",
+    "worker_state": "absent",
+    "domain_stage": "continuation_delivered",
+    "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+    "handoff_id": "6fc5d013-e62a-58c5-a5f4-6cef84bc1d61",
+    "continuation_prompt_id": "restart-handoff:6fc5d013-e62a-58c5-a5f4-6cef84bc1d61",
+    "idempotency_key": "systemic-exact6d241622-lease-links-managed-restart-20261026-v1",
+    "owner": "restart",
+    "realm_id": "default",
+    "operation": "agent_restart_handoff",
+    "durable": true,
+    "recovery_state": "continuation_delivered",
+    "recovery_action": null,
+    "result": {
+      "handoff_id": "6fc5d013-e62a-58c5-a5f4-6cef84bc1d61",
+      "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+      "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "project_id": "fdc04d91-1222-447b-859c-38e67bcab6eb",
+      "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+      "status": "continuation_delivered",
+      "failure_stage": null,
+      "error": null,
+      "attempts": 1,
+      "created_at": "2026-10-26T01:57:27.157044+00:00",
+      "updated_at": "2026-10-26T02:04:58.243261+00:00",
+      "delivered_at": "2026-10-26T02:04:58.243261+00:00"
+    }
+  },
+  "continuation_gap": {
+    "confirmed": "The restart continuation completed and its original receipt is continuation_delivered/effect complete at 2026-10-26T02:04:58.243261Z. The agent ended with no subsequent prompt queued. Its emitted final used schema/card_id/summary/evidence.report_revision whereas the strict disposition contract requires contract/outcome and forbids those extras.",
+    "limits": "No dispatch turn-end snapshot/evaluation is available for that post-dispatch follow-up. Invalid final fields and absent continuation are agent errors; no claim that parser rejection alone caused idle state or that PA lost an admitted prompt.",
+    "correction": "Validate the final contract against the current parser in a private fixture and durably append a same-session continuation before ending unfinished work. Preserve original handoff and all ambiguous identities."
+  },
+  "current_separate_native_population": {
+    "operations": 106,
+    "routes": 44,
+    "all_names_already_mapped": true
+  },
+  "current_natural_maintenance": {
+    "last_started_at": "2026-10-28T03:17:29.294653+00:00",
+    "last_finished_at": "2026-10-28T03:17:34.409243+00:00",
+    "result": {
+      "ran_at": "2026-10-28T03:17:29.295084+00:00",
+      "transcript_cutoff": "2026-10-14T03:17:29.295084+00:00",
+      "mutation_cutoff": "2026-10-14T03:17:29.295084+00:00",
+      "transcript_events_deleted": 0,
+      "mutation_operations_deleted": 7,
+      "dispatch_compact": {
+        "events": 0,
+        "receipts": 0
+      },
+      "sqlite": {
+        "compacted": true,
+        "status": "ok",
+        "phases": {
+          "connect": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.153417,
+            "thread_cpu_ms": 0.153667
+          },
+          "size_initial": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.38025,
+            "thread_cpu_ms": 0.380417
+          },
+          "integrity_before": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 157.567875,
+            "thread_cpu_ms": 156.855667
+          },
+          "optimize": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.082333,
+            "thread_cpu_ms": 0.08225
+          },
+          "checkpoint_before": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.869625,
+            "thread_cpu_ms": 0.301209
+          },
+          "size_pre_compact": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.015459,
+            "thread_cpu_ms": 0.0155
+          },
+          "disk_space": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.026667,
+            "thread_cpu_ms": 0.026792
+          },
+          "vacuum": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 3500.115166,
+            "thread_cpu_ms": 1340.392708
+          },
+          "integrity_after": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 179.546625,
+            "thread_cpu_ms": 179.391834
+          },
+          "checkpoint_after": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 17.154583,
+            "thread_cpu_ms": 14.817333
+          },
+          "size_final": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.022542,
+            "thread_cpu_ms": 0.022667
+          },
+          "close": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.146333,
+            "thread_cpu_ms": 0.146583
+          },
+          "total": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 3856.181666,
+            "thread_cpu_ms": 1692.678333
+          }
+        },
+        "before": {
+          "page_count": 110804,
+          "page_size": 4096,
+          "freelist_count": 100,
+          "bytes": 453853184,
+          "free_bytes": 409600
+        },
+        "after": {
+          "page_count": 109613,
+          "page_size": 4096,
+          "freelist_count": 0,
+          "bytes": 448974848,
+          "free_bytes": 0
+        },
+        "page_count": 109613,
+        "page_size": 4096,
+        "freelist_count": 0,
+        "bytes": 448974848,
+        "free_bytes": 0,
+        "quick_check": "ok",
+        "wal_busy": 0,
+        "wal_log": 0,
+        "wal_checkpointed": 0
+      },
+      "transcript_storage": {
+        "schema_version": 1,
+        "events": 876739,
+        "audit_evidence": 1052,
+        "objects": 25045,
+        "uncompressed_bytes": 410380361,
+        "compressed_bytes": 87718545,
+        "references": 25355,
+        "deduplicated_references": 310,
+        "missing_objects": 1,
+        "journal_mode": "wal",
+        "integrity": "ok",
+        "redaction_policy": "canonical-v1",
+        "hot_payload_limit": 2048,
+        "compatibility_rows": 898745,
+        "migration": "running",
+        "migration_examined": 238500,
+        "migration_changed": 84973,
+        "migration_error": null,
+        "measured_at": "2026-10-28T03:17:34.408602+00:00",
+        "measurement_state": "measured"
+      },
+      "phases": {
+        "retention_selection": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 2.536584,
+          "thread_cpu_ms": 2.449584,
+          "sqlite_calls": 273,
+          "sqlite_rows": 271,
+          "sqlite_statement_ms": 1.7867862479761243,
+          "sqlite_commit_ms": 0,
+          "sqlite_statement_thread_cpu_ms": 1.5672929995389495,
+          "sqlite_commit_thread_cpu_ms": 0,
+          "sqlite_busy_failures": 0,
+          "python_lock_wait_ms": 0,
+          "python_lock_hold_ms": 0,
+          "outer_lock_hold_ms": 0
+        },
+        "retention_discovery": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 1.6745,
+          "thread_cpu_ms": 1.643208,
+          "sqlite_calls": 2,
+          "sqlite_rows": 0,
+          "sqlite_statement_ms": 1.449249917641282,
+          "sqlite_commit_ms": 0,
+          "sqlite_statement_thread_cpu_ms": 1.4012080000611604,
+          "sqlite_commit_thread_cpu_ms": 0,
+          "sqlite_busy_failures": 0,
+          "python_lock_wait_ms": 0,
+          "python_lock_hold_ms": 0,
+          "outer_lock_hold_ms": 0
+        },
+        "retention_transaction": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 9.839458,
+          "thread_cpu_ms": 8.15175,
+          "sqlite_calls": 5,
+          "sqlite_rows": 0,
+          "sqlite_statement_ms": 8.75958299729973,
+          "sqlite_commit_ms": 0.08029199671000242,
+          "sqlite_statement_thread_cpu_ms": 7.062458000063998,
+          "sqlite_commit_thread_cpu_ms": 0.0798329999724956,
+          "sqlite_busy_failures": 0,
+          "python_lock_wait_ms": 0.0013330718502402306,
+          "python_lock_hold_ms": 9.785791975446045,
+          "outer_lock_hold_ms": 9.785791975446045
+        },
+        "retention_object_collection": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 227.234916,
+          "thread_cpu_ms": 91.878042,
+          "sqlite_calls": 392,
+          "sqlite_rows": 0,
+          "sqlite_statement_ms": 28.569373302161694,
+          "sqlite_commit_ms": 0,
+          "sqlite_statement_thread_cpu_ms": 25.704674998678456,
+          "sqlite_commit_thread_cpu_ms": 0,
+          "sqlite_busy_failures": 0,
+          "python_lock_wait_ms": 0.0022919848561286926,
+          "python_lock_hold_ms": 0.002415967173874378,
+          "outer_lock_hold_ms": 0.002415967173874378
+        },
+        "retention_canonical": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 237.204459,
+          "thread_cpu_ms": 100.153333,
+          "sqlite_calls": 397,
+          "sqlite_rows": 0,
+          "sqlite_statement_ms": 37.328956299461424,
+          "sqlite_commit_ms": 0.08029199671000242,
+          "sqlite_statement_thread_cpu_ms": 32.767132998742454,
+          "sqlite_commit_thread_cpu_ms": 0.0798329999724956,
+          "sqlite_busy_failures": 0,
+          "python_lock_wait_ms": 0.003625056706368923,
+          "python_lock_hold_ms": 9.78820794261992,
+          "outer_lock_hold_ms": 9.78820794261992
+        },
+        "retention_mirror": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 0.760625,
+          "thread_cpu_ms": 0.761042,
+          "sqlite_calls": 2,
+          "sqlite_rows": 0,
+          "sqlite_statement_ms": 0.6405410822480917,
+          "sqlite_commit_ms": 0,
+          "sqlite_statement_thread_cpu_ms": 0.6390420001025632,
+          "sqlite_commit_thread_cpu_ms": 0,
+          "sqlite_busy_failures": 0,
+          "python_lock_wait_ms": 0,
+          "python_lock_hold_ms": 0,
+          "outer_lock_hold_ms": 0
+        },
+        "transcript_retention": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 240.597375,
+          "thread_cpu_ms": 103.461084
+        },
+        "mutation_retention": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 0.498708,
+          "thread_cpu_ms": 0.279041
+        },
+        "transcript_migration_and_health": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 306.323209,
+          "thread_cpu_ms": 301.98175
+        },
+        "dispatch_compact": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 172.876834,
+          "thread_cpu_ms": 90.5955
+        },
+        "projection_database": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 3856.186458,
+          "thread_cpu_ms": 1692.682958
+        },
+        "transcript_database": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 244.574417,
+          "thread_cpu_ms": 244.357
+        },
+        "transcript_health_final": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 292.437209,
+          "thread_cpu_ms": 292.403458
+        },
+        "total": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 5113.587208,
+          "thread_cpu_ms": 2725.843125
+        }
+      },
+      "transcript_migration": {
+        "schema_version": 1,
+        "events": 876739,
+        "audit_evidence": 1052,
+        "objects": 25045,
+        "uncompressed_bytes": 410380361,
+        "compressed_bytes": 87718545,
+        "references": 25355,
+        "deduplicated_references": 310,
+        "missing_objects": 1,
+        "journal_mode": "wal",
+        "integrity": "ok",
+        "redaction_policy": "canonical-v1",
+        "hot_payload_limit": 2048,
+        "compatibility_rows": 898745,
+        "migration": "running",
+        "migration_examined": 238500,
+        "migration_changed": 84973,
+        "migration_error": null,
+        "measured_at": "2026-10-28T03:17:29.842537+00:00",
+        "measurement_state": "measured"
+      },
+      "transcript_sqlite": {
+        "compacted": false,
+        "status": "ok",
+        "phases": {
+          "connect": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.098292,
+            "thread_cpu_ms": 0.098333
+          },
+          "size_initial": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.1275,
+            "thread_cpu_ms": 0.1275
+          },
+          "integrity_before": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 243.825791,
+            "thread_cpu_ms": 243.80425
+          },
+          "optimize": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.03025,
+            "thread_cpu_ms": 0.03025
+          },
+          "checkpoint_before": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.379667,
+            "thread_cpu_ms": 0.184958
+          },
+          "size_pre_compact": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.015209,
+            "thread_cpu_ms": 0.01525
+          },
+          "size_final": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.008,
+            "thread_cpu_ms": 0.008042
+          },
+          "close": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.054292,
+            "thread_cpu_ms": 0.054416
+          },
+          "total": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 244.570125,
+            "thread_cpu_ms": 244.352792
+          }
+        },
+        "before": {
+          "page_count": 159921,
+          "page_size": 4096,
+          "freelist_count": 0,
+          "bytes": 655036416,
+          "free_bytes": 0
+        },
+        "after": {
+          "page_count": 159921,
+          "page_size": 4096,
+          "freelist_count": 0,
+          "bytes": 655036416,
+          "free_bytes": 0
+        },
+        "page_count": 159921,
+        "page_size": 4096,
+        "freelist_count": 0,
+        "bytes": 655036416,
+        "free_bytes": 0,
+        "quick_check": "ok",
+        "wal_busy": 0,
+        "wal_log": 0,
+        "wal_checkpointed": 0
+      }
+    },
+    "scope": "Natural completed daily run, no manual production trigger. Inclusive spans overlap, never sum; off-CPU remains unclassified."
+  },
+  "raw": {
+    "path": "docs/benchmarks/systemic-exact594-finalized-activation-20261029.raw.json.gz",
+    "sha256": "a0dd7b92d7f10ab17e2b98b82985b869598d31330b345fd37f5a5b9c666c82c4",
+    "bytes": 2769649
+  },
+  "acceptance": {
+    "accepted": false,
+    "all_resolution": "open",
+    "findings": 682,
+    "concerns": 146,
+    "requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57"
+  },
+  "next_repair": "Measure the retained-object traversal portion of maintenance against an equivalent streaming directory iterator in a private fixture. Keep 128-file enumeration and publication recheck boundaries, original hidden/symlink/error behavior, fresh health/migration/compaction and all durable semantics. No source improvement or historical cause claimed before measurement."
+}

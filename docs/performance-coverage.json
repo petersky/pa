@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-26T01:44:55.905457+00:00",
-  "completion": "OPEN: all 681 findings / 145 concerns. PR594 original first CI EOF preserved; fresh auxiliary authority-read correction passes scoped real-browser test. Original cause remains unconfirmed; new-head CI/integration/activation and every broader acceptance criterion remain open.",
+  "as_of": "2026-10-29T02:39:28.896257+00:00",
+  "completion": "OPEN: all 682 findings / 146 concerns. Exact PR594 activation and declared scoped retests are complete; private 778.373 ms and natural maintenance over 5 s remain. Every prior failure, full real path, peer/log/build/retention and independent acceptance criterion remains.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -216679,7 +216679,28 @@
       "retested": "Private source decision comparisons and 98 source regressions / 64 subtests; not deployed or full-path acceptance.",
       "resolution": "open",
       "next_actor": "this same systemic session/card",
-      "next_action": "Ready protected PR, stable supervisor and independent exact signals, head+main CI. Finish original continuation turn for handoff settlement; no further install/restart without positive original completion and future exact gates. Continue substantive maintenance and every remaining amplification/acceptance obligation."
+      "next_action": "Ready protected PR, stable supervisor and independent exact signals, head+main CI. Finish original continuation turn for handoff settlement; no further install/restart without positive original completion and future exact gates. Continue substantive maintenance and every remaining amplification/acceptance obligation.",
+      "exact594_installed_followup_20261029": {
+        "artifact": "docs/benchmarks/systemic-exact594-finalized-activation-20261029.json",
+        "source": "6d241622388dd91b50eab87042c73ef419cc8c72",
+        "installed_retests_complete": true,
+        "installed_tests": 28,
+        "subtests": 64,
+        "matching": {
+          "index": {
+            "samples": 5,
+            "median_ms": 1.210792,
+            "max_ms": 1.305625
+          },
+          "scan": {
+            "samples": 5,
+            "median_ms": 29.667542,
+            "max_ms": 30.923417
+          }
+        },
+        "resolution": "open",
+        "limits": "Sparse installed matching and declared scoped retests only. All remaining whole-path and independent acceptance requirements retained."
+      }
     },
     {
       "id": "concern:ci-browser-authority-read-eof",
@@ -216925,6 +216946,33 @@
       "resolution": "open",
       "next_actor": "this same systemic session/card",
       "next_action": "Push scoped fix to existing ready PR594, preserve first CI failure without rerun, require new-head CI and stable supervisor plus independent exact signals. Retain original Linux cause/teardown owner-probe gap and all broader acceptance obligations."
+    },
+    {
+      "id": "concern:unfinished-performance-continuation-gap",
+      "kind": "concern",
+      "finding": "Unfinished systemic performance work ended without an admitted same-session continuation",
+      "family": "execution_lifecycle",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_agent_continuation_omission_and_invalid_final_contract",
+      "cause": {
+        "confirmed": "The restart continuation completed and its original receipt is continuation_delivered/effect complete at 2026-10-26T02:04:58.243261Z. The agent ended with no subsequent prompt queued. Its emitted final used schema/card_id/summary/evidence.report_revision whereas the strict disposition contract requires contract/outcome and forbids those extras.",
+        "limits": "No dispatch turn-end snapshot/evaluation is available for that post-dispatch follow-up. Invalid final fields and absent continuation are agent errors; no claim that parser rejection alone caused idle state or that PA lost an admitted prompt.",
+        "correction": "Validate the final contract against the current parser in a private fixture and durably append a same-session continuation before ending unfinished work. Preserve original handoff and all ambiguous identities."
+      },
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-exact594-finalized-activation-20261029.json",
+        "last_completed_turn_at": "2026-10-26T02:04:58.097242Z",
+        "restart_delivered_at": "2026-10-26T02:04:58.243261Z",
+        "new_root_resume_at": "2026-10-29T02:36:38.071865Z",
+        "last_followup_had_dispatch_turn_end_snapshot": false
+      },
+      "implemented": "Agent workflow correction: use strict contract/outcome JSON and admit same-session prompt before ending unfinished work; durable next prompt receipt still to be recorded. No change to completion requirement or execution defaults.",
+      "merged": [],
+      "deployed": "No product repair claimed; exact PR594 remains loaded.",
+      "retested": "Source contract inspected; disposable parser validation and supported continuation admission pending. No claim that PA lost an admitted continuation.",
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Validate strict final contract privately; admit one bounded same-session continuation with stable identity and verify queued state before ending. Preserve original completed handoff and all unknown effects."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -311817,6 +311865,16 @@
       "path": "docs/benchmarks/systemic-pr594-first-ci-browser-followup-20261026.raw.json.gz",
       "sha256": "3f4ec93ef562803aa55a056145cfc12c3af56647ddfee9790eef865e69750194",
       "bytes": 2206161
+    },
+    "all_prior_fields_preserved": true
+  },
+  "exact594_finalized_stage": {
+    "artifact": "docs/benchmarks/systemic-exact594-finalized-activation-20261029.json",
+    "sha256": "ccf8e173136f69af57c45389fe3ce61c97c418dd09918dae4a402d7dc2d8c8a3",
+    "raw": {
+      "path": "docs/benchmarks/systemic-exact594-finalized-activation-20261029.raw.json.gz",
+      "sha256": "a0dd7b92d7f10ab17e2b98b82985b869598d31330b345fd37f5a5b9c666c82c4",
+      "bytes": 2769649
     },
     "all_prior_fields_preserved": true
   }

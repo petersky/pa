@@ -1,3 +1,21 @@
+# Exact PR #594 activation, final retests and continuation gap
+
+[Finalized evidence](benchmarks/systemic-exact594-finalized-activation-20261029.json) and the adjacent lossless raw bundle publish the completed October 26 retests without rerunning them. All **682 findings / 146 concerns remain open**, with every prior row, field, failure and attachment preserved.
+
+Exact `6d241622` / package `19d96e7b` remains loaded in PID `83048`, startup `1dd674ab-06cb-42b4-ab65-42677354dc75`. The original managed handoff is positively `continuation_delivered` / effect `complete` at `2026-10-26T02:04:58.243261Z`. Historical pending labels in retained artifacts are historical observations. No merge, installation or restart was repeated.
+
+The completed installed proof covers 439 source files, 440 RECORD entries, 38 templates, Python 3.14.2, all 52 dependency versions/cache/configuration and named import paths. All **95 ordinary GETs passed**, maximum **104.988 ms**, with zero 500 ms violations; eight full encoding checks passed. Eight cached Fleet reads retained **80 fresh / 16 stale required fields** (`probe_failed`), not distinct incidents. The earlier `/work` **603.818 ms** outlier remains unclassified and is not erased by these passes.
+
+Installed lifecycle contracts passed **28 tests / 64 subtests**. Actual lease, dispatch and watch matching preserved decisions and order. The sequential private mixed run retained **9,600 ordered events**, zero worker warnings/failures/timeouts/rejections, but **maintenance 778.373 ms** still violated the unchanged 500 ms observation. Ten fake create/drain/combined cold starts, five late 100,000-row/500-selected batches, reference guards and thirty watch-read pairs completed. These are scoped subsets, not full real Kernel/provider/MCP/placement/admission/startup/drain/concurrency acceptance.
+
+October 26 natural maintenance was **5,460.096 ms inclusive**. A separate naturally completed October 28 run was **5,113.587 ms inclusive / 2,725.843 ms thread CPU**; its projection VACUUM span was **3,500.115 ms / 1,340.393 ms CPU**, and object collection **227.235 ms / 91.878 ms CPU**. Inclusive spans overlap and must never be summed. Off-CPU time remains unclassified. Every fresh migration/final health/GC/compaction check and existing policy remains. The new October 29 native **106-operation / 44-route** population is separate; all names already exist in the matrix. Older populations, lifetime maxima, bounded windows, fixtures and log tails remain separate.
+
+The interruption in unfinished work was an agent workflow error: the completed restart continuation had no admitted successor prompt. The emitted final also used unsupported `schema`/`summary`/`card_id` fields instead of the strict `contract`/`outcome` contract. Native follow-up turn history confirms completion and original handoff delivery; no dispatch turn-end evaluation exists for that follow-up, so parser rejection alone is not established as the idle-state cause. The agent must validate the final contract and durably append a same-session continuation before ending unfinished work. No claim that PA lost an admitted prompt, no new worker/card/verifier and no completion-policy relaxation.
+
+The next measured repair targets retained-object traversal in maintenance, preserving 128-file enumeration/recheck boundaries and all pin/publication/path/error semantics. No source speedup is claimed before a private alternating comparison. Full remaining shared-source, foreground/background, real provider/startup/concurrency, peer freshness/status/build/log/retention and independently accepted backup/database scope boundaries remain. The scheduler owns final acceptance under revision `17d034a6-efc7-4a9d-badc-d3fe012d0b57`; accepted is false.
+
+---
+
 # PR #594 first CI failure and authority-read follow-up
 
 [Immutable follow-up evidence](benchmarks/systemic-pr594-first-ci-browser-followup-20261026.json) and the adjacent lossless raw bundle preserve every preceding input, first-attempt failure, negative stage and ten attachments. All **681 findings / 145 concerns remain open**; all preceding 680 rows and fields remain unchanged.
