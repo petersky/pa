@@ -141,31 +141,40 @@ def get_openapi(**kwargs: Any) -> dict[str, Any]:
 
     traversal = dict(v2.get_flat_models_from_fields.__globals__)
     traversal["get_model_fields"] = model_fields
-    for name in (
+    discovery_names = (
         "get_flat_models_from_model", "get_flat_models_from_annotation",
         "get_flat_models_from_field", "get_flat_models_from_fields",
-    ):
-        traversal[name] = _bind(getattr(v2, name), traversal)
+    )
+    try:
+        for name in discovery_names:
+            traversal[name] = _bind(getattr(v2, name), traversal)
 
-    def definitions(*, fields: Any, **options: Any) -> Any:
-        input_types = {field.field_info.annotation for field in fields}
+        def definitions(*, fields: Any, **options: Any) -> Any:
+            input_types = {field.field_info.annotation for field in fields}
 
-        def model_field(**values: Any) -> Any:
-            # Upstream constructs these adapters then immediately discards
-            # fields whose model is already in the inputs. Keep only their
-            # metadata until that unchanged filter has discarded them.
-            if values["field_info"].annotation in input_types:
-                return SimpleNamespace(**values)
-            return v2.ModelField(**values)
+            def model_field(**values: Any) -> Any:
+                # Upstream constructs these adapters then immediately discards
+                # fields whose model is already in the inputs. Keep only their
+                # metadata until that unchanged filter has discarded them.
+                if values["field_info"].annotation in input_types:
+                    return SimpleNamespace(**values)
+                return v2.ModelField(**values)
 
-        namespace = {
-            **traversal, "ModelField": model_field,
-            "GenerateJsonSchema": _schema_generator(v2.GenerateJsonSchema),
-        }
-        return _bind(v2.get_definitions, namespace)(fields=fields, **options)
+            namespace = {
+                **traversal, "ModelField": model_field,
+                "GenerateJsonSchema": _schema_generator(v2.GenerateJsonSchema),
+            }
+            return _bind(v2.get_definitions, namespace)(fields=fields, **options)
 
-    generation = dict(framework_get_openapi.__globals__)
-    generation["get_flat_models_from_fields"] = traversal["get_flat_models_from_fields"]
-    generation["get_definitions"] = definitions
-    generation["jsonable_encoder"] = _encode_openapi
-    return _bind(framework_get_openapi, generation)(**kwargs)
+        generation = dict(framework_get_openapi.__globals__)
+        generation["get_flat_models_from_fields"] = traversal["get_flat_models_from_fields"]
+        generation["get_definitions"] = definitions
+        generation["jsonable_encoder"] = _encode_openapi
+        return _bind(framework_get_openapi, generation)(**kwargs)
+    finally:
+        # These functions are private to the completed generation call. Their
+        # shared globals retain the same functions, otherwise forming a cycle
+        # until a later collection. Release only our recursive bindings, on
+        # success or error; framework globals and returned schemas are untouched.
+        for name in discovery_names:
+            traversal.pop(name, None)

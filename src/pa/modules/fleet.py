@@ -824,6 +824,37 @@ def _policy_service(request: Request) -> FleetPolicyService:
     return service
 
 
+def _placement_policy_inputs(
+    policies: FleetPolicyService,
+    store,
+    realm_id: str,
+    candidates: list[PlacementCandidate],
+    *,
+    group_parameters: dict[str, Any] | None = None,
+):
+    """Read fresh policy inputs together without mutating candidate snapshots."""
+    group = None
+    if group_parameters is not None:
+        try:
+            group = policies.resolve_group(**group_parameters)
+        except ValueError as exc:
+            code, _separator, message = str(exc).partition(":")
+            _group, _separator, message = message.partition(":")
+            raise PlacementError(
+                code or "configured_group_unavailable",
+                message or str(exc),
+                recoverable=True,
+            ) from exc
+    explicit_policies = store.list_instance_participation_policies(realm_id)
+    enforcement_active = bool(
+        explicit_policies
+        or store.list_instance_groups(realm_id, include_archived=True)
+        or store.list_placement_defaults(realm_id)
+    )
+    effective = [policies.effective_policy(realm_id, item.instance_id) for item in candidates]
+    return group, enforcement_active, effective
+
+
 def _require_policy_admin(request: Request, permission: str):
     user = require_user(request)
     if getattr(user, "role", None) != "admin":
@@ -7647,7 +7678,10 @@ async def _resolve_policy_placement(
     # when the selected worker is Codex-only).
     body.provider = (body.provider or "").strip().lower() or None
     realm_id = card.realm_id if card else ctx.settings.primary_realm
-    plan, repository_ids = _placement_materialization_plan(
+    plan, repository_ids = await _offload_request(
+        request,
+        "fleet.placement_materialization_plan",
+        _placement_materialization_plan,
         request,
         body,
         card=card,
@@ -7676,34 +7710,26 @@ async def _resolve_policy_placement(
             "A named/manual dispatch cannot also specify a worker group.",
             recoverable=False,
         )
-    try:
-        group = policies.resolve_group(
-            realm_id=realm_id,
-            project_id=project_id,
-            workload_profile=plan.profile,
-            requested_group_id=(
+    group, policy_enforcement_active, effective_policies = await _offload_request(
+        request,
+        "fleet.placement_policy_inputs",
+        _placement_policy_inputs,
+        policies,
+        ctx.store,
+        realm_id,
+        candidates,
+        group_parameters={
+            "realm_id": realm_id,
+            "project_id": project_id,
+            "workload_profile": plan.profile,
+            "requested_group_id": (
                 "all-active" if body.target_instance_id else requested_group_id
             ),
-            candidates=candidates,
-            local_instance_id=ctx.settings.instance_id,
-        )
-    except ValueError as exc:
-        code, _separator, message = str(exc).partition(":")
-        _group, _separator, message = message.partition(":")
-        raise PlacementError(
-            code or "configured_group_unavailable",
-            message or str(exc),
-            recoverable=True,
-        ) from exc
-
-    explicit_policies = ctx.store.list_instance_participation_policies(realm_id)
-    policy_enforcement_active = bool(
-        explicit_policies
-        or ctx.store.list_instance_groups(realm_id, include_archived=True)
-        or ctx.store.list_placement_defaults(realm_id)
+            "candidates": candidates,
+            "local_instance_id": ctx.settings.instance_id,
+        },
     )
-    for candidate in candidates:
-        policy, explicit = policies.effective_policy(realm_id, candidate.instance_id)
+    for candidate, (policy, explicit) in zip(candidates, effective_policies):
         candidate.participation_policy = policy
         candidate.participation_policy_explicit = explicit
         candidate.group_membership = group.membership.get(
@@ -14040,16 +14066,16 @@ async def _retry_dispatch_api(
     provider = record.capacity_provider or record.request_payload.get("provider")
     original = dict(record.placement_decision or {})
     policy_service = _policy_service(request)
-    explicit_policies = ctx.store.list_instance_participation_policies(record.realm_id)
-    policy_enforcement_active = bool(
-        explicit_policies
-        or ctx.store.list_instance_groups(record.realm_id, include_archived=True)
-        or ctx.store.list_placement_defaults(record.realm_id)
+    _, policy_enforcement_active, effective_policies = await _offload_request(
+        request,
+        "fleet.retry_policy_inputs",
+        _placement_policy_inputs,
+        policy_service,
+        ctx.store,
+        record.realm_id,
+        candidates,
     )
-    for candidate in candidates:
-        policy, explicit = policy_service.effective_policy(
-            record.realm_id, candidate.instance_id
-        )
+    for candidate, (policy, explicit) in zip(candidates, effective_policies):
         candidate.participation_policy = policy
         candidate.participation_policy_explicit = explicit
         # This is a retry of an already resolved placement operation. Preserve
