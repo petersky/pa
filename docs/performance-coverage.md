@@ -1,3 +1,23 @@
+All **703 findings / 161 concerns remain open**. The [installed #612 results and encoding prototype](benchmarks/systemic-installed612-encoding-prototype-20261029.json) preserve the complete 22,900,374-byte parent bundle, every prior field and failure, and all ten attachments. Raw logs, ZIPs and prompt-bearing receipts remain local with recorded hashes.
+
+Commit d3d98da9 / package f7ae4494 was installed once and positively activated through handoff ab6bd620 on attempt 1. The loaded build, PID 39858, startup d801803a, unchanged configuration, process class and interpreter were verified. All 439 source files, 440 package records, 38 cached templates and 52 unchanged dependency versions passed attestation.
+
+**851 tests and 9 subtests, 19 private stages and 10 additional comparisons passed.** The mixed workload retained 9,600 ordered events with zero worker warnings, failures, timeouts or rejections. **Maintenance still took 778.829 ms**, exceeding its threshold once. This population remains separate from source #612 at 844.429 ms, installed #608 at 765.255 ms and every older result.
+
+The public scenario passed 95 ordinary GETs with zero 500 ms violations (maximum 126.307 ms), five summary lists, eight encoding checks and eight cached Fleet reads. **All five full ten-session list attempts failed assertions** under the original 5-second / 2 MiB bounds. The helper did not record the assertion location or complete body bytes, so the current cause and full-body schema remain unverified. Historical oversized responses remain separate evidence. No failed scenario was rerun, no page was shortened and no bound was raised.
+
+A separate 90-pair private full-handler prototype preserved complete JSON selection, order, schema and values. Compact UTF-8 encoding reduced bytes but made ASCII and Unicode p95 slower, so it was **not adopted**:
+
+| Shape | Baseline bytes | Prototype bytes | Baseline p95 ms | Prototype p95 ms |
+|---|---:|---:|---:|---:|
+| ASCII | 1,498,591 | 1,496,736 | 4.165 | 5.214 |
+| Unicode | 2,031,071 | 1,578,656 | 5.502 | 7.662 |
+| Structured | 2,022,311 | 1,840,466 | 38.532 | 22.535 |
+
+All samples and maxima are retained. Synthetic fields do not establish live payload composition or a passing body-size bound. Installed retention also had an adverse Unicode p95, 8.014 to 13.890 ms, despite a faster median. Verification origin and settlement comparisons preserved complete results while removing full snapshots; logical copied steps are not physical I/O or required followup-helper inspections.
+
+Full Kernel/provider/MCP/placement/admission/startup/drain/concurrency acceptance, maintenance and session tails, payload/call/write amplification, peer/log/build/retention/screenshot gaps, and scheduler-owned independent acceptance remain open. Backup0331/b527 and DB89957 retain their closed original scopes. The original #610 main failure and all prior rows and text follow unchanged.
+
 All **703 findings / 161 concerns remain OPEN**. The [PR611 integration and origin-settlement stage](benchmarks/systemic-pr611-integration-origin-settlement-20261029.json) embeds the COMPLETE20,593,783-byte `09392f85` postintegration input bundle with every prior702row/field/history/firstfailure/negative/interruptedstage and tenattachments. Raw prompts/logs/ZIPs remain LOCAL/hash-only.
 
 PR611 is protected merged `fcabfdc7` from `3f736335`, equal `165b633a` trees; head40936973735/main40937696608 each five first-attempt successes, no retries. Stablepremerge10, independent protection/checks/pagination/authorship/zero required approvals/zero threads/CLEAN verified without bypass; watch418ac46d retiredmerged/errornull. **PR610 first main40935556426 remains failed**;611 is a separate population. The delayed610notice is now running SAME5bce session turn,1898PR611notification queued/notrunning/consumed; no repeat merge. Source609–611 and the new repair remain uninstalled. Owner19:23:51Z remains actual608`3fdad48f`/package07e/PID20833/startupe11702c9/config86968; no restart/install/rearm.

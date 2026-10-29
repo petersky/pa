@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-29T19:25:04.710339+00:00",
-  "completion": "OPEN: all703findings161concerns.611protectedintegrated/head+maingreen/uninstalled;610firstmainFAILretained. Newsettlementprojection source tested/unmerged/uninstalled; actual608active, independentacceptance and allremainingperformancecriteria unsatisfied.",
+  "as_of": "2026-10-29T19:59:40.207238+00:00",
+  "completion": "OPEN: all703findings161concerns. Exact612 integrated/installed/positivelyactivated/isolatedsubsetsverified, butmaintenance778.829ms andfivefull-listfailures remain; adverseencodingprototype notadopted. Fullscope and exact17d independent acceptance unsatisfied.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -317814,6 +317814,29 @@
       "artifact": "docs/benchmarks/systemic-exact606-authority-runtime-coverage-20261029.json",
       "rows_before": 698,
       "rows_after": 700,
+      "resolution": "open"
+    }
+  ],
+  "installed_stage_history": [
+    {
+      "source": "d3d98da9fbb7174ed81236713b9135447230bb27",
+      "artifact": "docs/benchmarks/systemic-installed612-encoding-prototype-20261029.json",
+      "activation": "positivecomplete/attempt1",
+      "contracts": "851tests9subtests",
+      "private_stages": 19,
+      "additional_stages": 10,
+      "mixed_maintenance_ms": 778.829,
+      "public_failures": 5,
+      "resolution": "open",
+      "whole_card_accepted": false
+    }
+  ],
+  "diagnostic_stage_history": [
+    {
+      "artifact": "docs/benchmarks/systemic-installed612-encoding-prototype-20261029.json",
+      "prototype": "compactUTF8full-session encoding",
+      "decision": "not_adopted_ASCII_Unicode_latency_regressions",
+      "complete_json_parity": true,
       "resolution": "open"
     }
   ]
