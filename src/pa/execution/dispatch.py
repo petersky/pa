@@ -4866,18 +4866,22 @@ class DispatchStore:
                     )
                 ):
                     continue
-                safe.append(self._snapshot(stored))
+                # The writer lock keeps these inputs stable. Detach only a
+                # record whose progress/ranges actually need changing below.
+                safe.append(stored)
             if not safe:
                 return {"events": 0, "receipts": 0}
+            changed: list[DispatchRecord] = []
             try:
                 with self._transaction() as conn:
-                    for record in safe:
+                    for stored in safe:
                         stale = [
                             event
-                            for event in record.progress_events
+                            for event in stored.progress_events
                             if event.occurred_at < cutoff
                             and not self._progress_protected(event)
                         ]
+                        record = self._snapshot(stored) if stale else stored
                         for event in stale:
                             conn.execute(
                                 "DELETE FROM dispatch_progress_events "
@@ -4910,14 +4914,17 @@ class DispatchStore:
                             )
                         removed_events += len(stale)
                         removed_receipts += max(0, cursor.rowcount)
-                        self._persist_record_conn(conn, record)
+                        if stale:
+                            self._persist_record_conn(conn, record)
+                            changed.append(record)
             except BaseException as exc:
-                if getattr(exc, "pa_transaction_committed", False):
-                    self._publish_records_locked(safe)
+                if getattr(exc, "pa_transaction_committed", False) and changed:
+                    self._publish_records_locked(changed)
                 raise
-            self._publish_records_locked(safe)
+            if changed:
+                self._publish_records_locked(changed)
             self._retention_actions += removed_events + removed_receipts
-            self._write_rows += removed_events + removed_receipts + len(safe)
+            self._write_rows += removed_events + removed_receipts + len(changed)
         return {"events": removed_events, "receipts": removed_receipts}
 
     def export_legacy_json(self, destination: Path) -> dict[str, Any]:
