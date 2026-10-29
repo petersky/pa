@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-29T19:59:40.207238+00:00",
-  "completion": "OPEN: all703findings161concerns. Exact612 integrated/installed/positivelyactivated/isolatedsubsetsverified, butmaintenance778.829ms andfivefull-listfailures remain; adverseencodingprototype notadopted. Fullscope and exact17d independent acceptance unsatisfied.",
+  "as_of": "2026-10-29T20:16:42.309739+00:00",
+  "completion": "OPEN: all704findings162concerns.613protectedintegrated/head+maingreen;612positivelyactivated/isolatedsubsetsverified butmaintenance/full-list failures remain. Newprior-intent source repair unmerged/uninstalled. Fullscope/exact17d independent acceptance unsatisfied.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -219835,6 +219835,114 @@
       "resolution": "open",
       "next_actor": "This same systemic session/card",
       "next_action": "ReadyPR/durablewatch/exacthead+mainprotectedintegration, future reviewedactivation/installedretest and allremainingrealprovider/concurrency/wholePAcriteria. Otherfullread/ensure/sessiononlywatch/maintenance/payload paths remainopen."
+    },
+    {
+      "id": "concern:verification-prior-intent-pre-session-copy",
+      "kind": "concern",
+      "finding": "Prior-intent ensure reads copy unrelated pre-session retained dispatch plans",
+      "family": "verification",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_private_native_copy_amplification_historical_tail_share_unverified",
+      "cause": "Complete valid prior-verifier ensure cycles copy330000logical retained plan steps/60full pre-session snapshots across30pairs each1000/10000step fixtures. Session-bearing lifecycle records require and retain60full copies in the separate session1000scenario. Not physicalIO or a proven cause of historical stalls.",
+      "implemented": "Exact native readers return detached pre-session identity/control facts without copying retained plans/history. Session-bearing records retain original full snapshots under original index-lock boundary. Readable/yield/newest/tie/publication/detachment guards remain. Class/subclass/instance/custom/snapshot/projector/legacy overrides retain full fallback. Readers resolve lazily and are reselected after receipt-recovery awaits. All original ensure decisions, exact absent-admission proof, pending recovery confirmation, lifecycle/origin readiness, authority/admission/acceptance semantics and diagnostics/deadlines remain.",
+      "merged": [],
+      "deployed": "Source only/unmerged/uninstalled. Actual612d3d/packagef7ae/PID39858/startupd801803a/config86968 remains loaded; docs-only613integrated does not require application reinstall.",
+      "retested": {
+        "artifact": "docs/benchmarks/systemic-pr613-integration-prior-intent-20261029.json",
+        "contracts": "229testsPASS including30newguards",
+        "comparison": {
+          "pre_session1000": {
+            "baseline": {
+              "latency_ms": {
+                "samples": 30,
+                "p50_ms": 3.449292038567364,
+                "p95_ms": 3.8217499386519194,
+                "p99_ms": 4.383374936878681,
+                "max_ms": 9.019708959385753
+              },
+              "full_snapshots": 30,
+              "logical_copied_steps": 30000
+            },
+            "candidate": {
+              "latency_ms": {
+                "samples": 30,
+                "p50_ms": 2.701291930861771,
+                "p95_ms": 3.089125035330653,
+                "p99_ms": 3.1211660243570805,
+                "max_ms": 3.2209589844569564
+              },
+              "full_snapshots": 0,
+              "logical_copied_steps": 0
+            }
+          },
+          "pre_session10000": {
+            "baseline": {
+              "latency_ms": {
+                "samples": 30,
+                "p50_ms": 9.943332988768816,
+                "p95_ms": 11.765541974455118,
+                "p99_ms": 23.81562499795109,
+                "max_ms": 25.111875031143427
+              },
+              "full_snapshots": 30,
+              "logical_copied_steps": 300000
+            },
+            "candidate": {
+              "latency_ms": {
+                "samples": 30,
+                "p50_ms": 2.852250006981194,
+                "p95_ms": 3.272624919191003,
+                "p99_ms": 3.3292919397354126,
+                "max_ms": 3.4299170365557075
+              },
+              "full_snapshots": 0,
+              "logical_copied_steps": 0
+            }
+          },
+          "session_full1000": {
+            "baseline": {
+              "latency_ms": {
+                "samples": 30,
+                "p50_ms": 4.827791010029614,
+                "p95_ms": 5.3787080105394125,
+                "p99_ms": 6.204542005434632,
+                "max_ms": 17.905125045217574
+              },
+              "full_snapshots": 60,
+              "logical_copied_steps": 60000
+            },
+            "candidate": {
+              "latency_ms": {
+                "samples": 30,
+                "p50_ms": 4.8027499578893185,
+                "p95_ms": 5.034334026277065,
+                "p99_ms": 5.064042052254081,
+                "max_ms": 5.405833013355732
+              },
+              "full_snapshots": 60,
+              "logical_copied_steps": 60000
+            }
+          }
+        },
+        "mixed": {
+          "ordered_events": 9600,
+          "warnings": {},
+          "threshold_violations": {
+            "maintenance.run": 1
+          },
+          "maintenance": {
+            "samples": 1,
+            "max_ms": 879.842,
+            "p50_ms": 879.842,
+            "p95_ms": 879.842,
+            "p99_ms": 879.842
+          }
+        },
+        "initial_failures": "Pre-seeding wrong CompletionEvidence import; initial authority fixture attempted clearing dispatch_id via preserving API; two original fullsession lock-boundary regressions; unused customreader access and stale post-recovery reader selection. Each initial source/test/log retained and corrected without policy/deadline changes. Valid archived613 no-copy guard FAILS atmodelcopy. Earlier candidate22.828ms maximum and935.395/880.986ms maintenance tails retained."
+      },
+      "resolution": "open",
+      "next_actor": "This same systemic session/card",
+      "next_action": "Ready PR/durable supervisor/exacthead+main protected integration; future reviewedactivation/installedretests and fullremaining performance acceptance. Fullsession snapshots, maintenance/payload/provider/peer/log gaps remain open."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -317660,6 +317768,12 @@
       "artifact": "docs/benchmarks/systemic-pr611-integration-origin-settlement-20261029.json",
       "status": "Source tested/unmerged/uninstalled; no fullPA acceptance",
       "resolution": "open"
+    },
+    {
+      "row_id": "concern:verification-prior-intent-pre-session-copy",
+      "artifact": "docs/benchmarks/systemic-pr613-integration-prior-intent-20261029.json",
+      "status": "Source tested/unmerged/uninstalled; no wholePA acceptance",
+      "resolution": "open"
     }
   ],
   "integration_history": [
@@ -317807,6 +317921,18 @@
       "deployed": false,
       "accepted": false,
       "separate_first_failure": "610main40935556426 staysFAILED/attempt1/no retry;611isnewpopulation"
+    },
+    {
+      "pr": 613,
+      "artifact": "docs/benchmarks/systemic-pr613-integration-prior-intent-20261029.json",
+      "watched_head": "66640b5a29d19416b5555e90de2e7076de2daa9a",
+      "merge": "841a352fc6e032e284d1e6bcd6f9529701e3911c",
+      "watch": "ec754cb0-0e29-4c1a-bf07-6d6889beec67",
+      "head_ci": 40945149560,
+      "main_ci": 40945767318,
+      "head_main": "5firstattemptsuccess each/no retries",
+      "application_reinstalled": false,
+      "accepted": false
     }
   ],
   "coverage_stage_history": [

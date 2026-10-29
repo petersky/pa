@@ -230,6 +230,22 @@ class VerificationOrigin:
 
 
 @dataclass(frozen=True)
+class VerificationPriorIntent:
+    """Detached pre-session facts used when retiring an older verification intent."""
+
+    dispatch_id: str
+    session_id: str | None
+    card_id: str | None
+    realm_id: str
+    target_instance_id: str
+    state: str
+    acknowledged_at: datetime | None
+    completion_delivery_class: str | None
+    reconciliation_state: str
+    control_operations: dict[str, str]
+
+
+@dataclass(frozen=True)
 class VerificationSettlement:
     """Detached settlement facts; receipt contents and retained plans stay private."""
 
@@ -2252,6 +2268,53 @@ class DispatchStore:
         with measured_lock(self._index_lock):
             record = self._records.get(dispatch_id)
             return self._snapshot(record) if record else None
+
+    def _verification_prior_intent(
+        self, record: DispatchRecord,
+    ) -> VerificationPriorIntent | DispatchRecord:
+        # Session lifecycle decisions still consume the original full record.
+        if record.session_id:
+            return self._snapshot(record)
+        return VerificationPriorIntent(
+            record.dispatch_id, record.session_id, record.card_id, record.realm_id,
+            record.target_instance_id, record.state, record.acknowledged_at,
+            record.completion_delivery_class, record.reconciliation_state,
+            copy.deepcopy(record.control_operations),
+        )
+
+    def verification_prior_intent(
+        self, dispatch_id: str,
+    ) -> VerificationPriorIntent | DispatchRecord | None:
+        """Capture the same committed record as get; detach only required inputs.
+
+        Published records are replaced after commit. Pre-session projection can
+        happen outside the index lock without borrowing a mutable control map.
+        Full session snapshots keep get()'s original index-lock boundary.
+        """
+        self._require_readable()
+        self._yield_to_index_writer()
+        with measured_lock(self._index_lock):
+            record = self._records.get(dispatch_id)
+            if record and record.session_id:
+                return self._snapshot(record)
+        return self._verification_prior_intent(record) if record else None
+
+    def verification_prior_intent_by_authority(
+        self, authority_instance_id: str, idempotency_key: str,
+    ) -> VerificationPriorIntent | DispatchRecord | None:
+        """Preserve by_authority_idempotency's newest-match and tie ordering."""
+        self._require_readable()
+        self._yield_to_index_writer()
+        with measured_lock(self._index_lock):
+            record = max(
+                (record for record in self._records.values()
+                 if record.authority_instance_id == authority_instance_id
+                 and record.idempotency_key == idempotency_key),
+                key=lambda item: item.updated_at, default=None,
+            )
+            if record and record.session_id:
+                return self._snapshot(record)
+        return self._verification_prior_intent(record) if record else None
 
     @staticmethod
     def _verification_origin(record: DispatchRecord) -> VerificationOrigin:

@@ -1,3 +1,23 @@
+All **704 findings / 162 concerns remain open**. The [#613 integration and prior-intent repair stage](benchmarks/systemic-pr613-integration-prior-intent-20261029.json) embeds the complete 24,851,706-byte parent bundle and every prior row, field, failure and attachment. Raw logs, ZIPs and prompt-bearing receipts remain local with recorded hashes.
+
+#613 is protected merged as 841a352f from 66640b5a, with equal f2eba4cf trees. Head40945149560/main40945767318 each have five first-attempt successes, without retries. Independent rules, checks, approvals, threads, pagination, authorship and clean merge state were verified without bypass; the supervisor retired merged with no error. Actual PA remains #612 d3d98da9/packagef7ae/PID39858/startupd801803a/config86968. The new source repair is unmerged and uninstalled.
+
+The repair avoids copying unrelated retained plans for exact native pre-session prior-intent reads. Session-bearing lifecycle records keep their full snapshots under the original index lock. Publication, readability, writer yield, newest-match/tie order and detached control maps remain; custom and legacy readers keep full fallback. Reader selection is lazy and repeated after receipt-recovery awaits. Admission absence proofs, recovery confirmations, lifecycle/readiness, authority and acceptance decisions remain unchanged.
+
+**229 tests pass, including 30 new guards.** The archived no-copy guard fails as expected. Initial fixture/import mistakes and candidate lock-boundary, unused-reader and stale-reader regressions remain with exact failed versions and logs. Thirty alternating pairs per complete shape preserve ensure results and prior-intent decisions with canonical verification identities and no admission:
+
+| Shape | Archived p95 ms | Candidate p95 ms | Archived full snapshots | Candidate full snapshots |
+|---|---:|---:|---:|---:|
+| Pre-session, 1,000 steps | 3.822 | 3.089 | 30 | 0 |
+| Pre-session, 10,000 steps | 11.766 | 3.273 | 30 | 0 |
+| Session-bearing, 1,000 steps | 5.379 | 5.034 | 60 | 60 |
+
+The pre-session comparisons remove 330,000 logical copied plan steps. The session-bearing case retains its required full copies and lock boundary. The earlier adverse 22.828 ms candidate maximum, all raw samples/maxima and lower empirical quantiles remain. Logical copies are not physical I/O, historical causes or hardware bounds; these results do not establish every-branch or deployed acceptance.
+
+The final mixed run retains 9,600 ordered events and zero worker warnings, failures, timeouts or rejections, but **maintenance879.842ms** remains one threshold violation. Earlier 935.395/880.986 ms candidate tails, installed #612 at778.829ms and every older population remain separate. A passive cached natural result took4,991.631ms including projection VACUUM2,984.872ms; nested inclusive spans must not be summed. No compaction, freshness, retention, deadline or GC policy changed.
+
+The five installed full-list assertion failures and exact-cause/full-body schema gap, rejected encoding regressions, and remaining provider/Kernel/admission/concurrency, maintenance/session/payload/call/write amplification, peer/log/build/retention/screenshot obligations remain open. Exact17d independent acceptance remains scheduler-owned and unaccepted. All prior rows and text follow unchanged.
+
 All **703 findings / 161 concerns remain open**. The [installed #612 results and encoding prototype](benchmarks/systemic-installed612-encoding-prototype-20261029.json) preserve the complete 22,900,374-byte parent bundle, every prior field and failure, and all ten attachments. Raw logs, ZIPs and prompt-bearing receipts remain local with recorded hashes.
 
 Commit d3d98da9 / package f7ae4494 was installed once and positively activated through handoff ab6bd620 on attempt 1. The loaded build, PID 39858, startup d801803a, unchanged configuration, process class and interpreter were verified. All 439 source files, 440 package records, 38 cached templates and 52 unchanged dependency versions passed attestation.

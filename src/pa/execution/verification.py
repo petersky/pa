@@ -24,6 +24,27 @@ from pa.execution.disposition import decide_card_disposition, disposition_for_me
 from pa.health_journal.models import digest, encode
 
 
+_PRIOR_INTENT_NATIVE_READERS = {
+    name: getattr_static(DispatchStore, name) for name in (
+        'get', 'by_authority_idempotency', '_snapshot',
+        '_verification_prior_intent', 'verification_prior_intent',
+        'verification_prior_intent_by_authority',
+    )
+}
+
+
+def _prior_intent_reader(ledger, *, by_key=False):
+    """Select only the needed reader, fresh at each existing read boundary."""
+    native = isinstance(ledger, DispatchStore) and all(
+        getattr_static(ledger, name, None) is reader
+        for name, reader in _PRIOR_INTENT_NATIVE_READERS.items()
+    )
+    if by_key:
+        return (ledger.verification_prior_intent_by_authority if native
+                else ledger.by_authority_idempotency)
+    return ledger.verification_prior_intent if native else ledger.get
+
+
 class VerificationStore:
     def __init__(self, path: Path):
         self.path = path
@@ -394,8 +415,8 @@ class VerificationService:
             if old['id'] == current['id'] or old['state'] in {'accepted', 'superseded'}:
                 continue
             ledger = self.ctx.services['dispatch_store']
-            record = ((await self.call(ledger.get, old['dispatch_id'], diagnostic_phase='verification_dispatch_read')) if old['dispatch_id'] else
-                      (await self.call(ledger.by_authority_idempotency, self.ctx.settings.instance_id, 'verification:' + old['id'], diagnostic_phase='verification_dispatch_read')))
+            record = ((await self.call(_prior_intent_reader(ledger), old['dispatch_id'], diagnostic_phase='verification_dispatch_read')) if old['dispatch_id'] else
+                      (await self.call(_prior_intent_reader(ledger, by_key=True), self.ctx.settings.instance_id, 'verification:' + old['id'], diagnostic_phase='verification_dispatch_read')))
             if record and not old['dispatch_id']:
                 await self.call(self.store.update, old['id'], 'dispatched', dispatch_id=record.dispatch_id, diagnostic_phase='verification_intent_write')
                 old = await self.call(self.store.get, old['id'], diagnostic_phase='verification_intent_read')
@@ -411,7 +432,7 @@ class VerificationService:
                 checked_absence = True
                 head = await self.absent_admission_head(old)
                 if head:
-                    record = await self.call(ledger.by_authority_idempotency,
+                    record = await self.call(_prior_intent_reader(ledger, by_key=True),
                         self.ctx.settings.instance_id, 'verification:' + old['id'], diagnostic_phase='verification_dispatch_read')
                     if record:
                         await self.call(self.store.update, old['id'], 'dispatched', dispatch_id=record.dispatch_id, diagnostic_phase='verification_intent_write')
