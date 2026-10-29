@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-29T06:58:34.004452+00:00",
-  "completion": "OPEN: all693 findings/153concerns. Exact602 installed/activated/scoped retests complete; maintenance801.547ms and full list collector failures remain. New Fleet source repair measured/uninstalled. Independent whole-card acceptance missing.",
+  "as_of": "2026-10-29T07:13:58.867912+00:00",
+  "completion": "OPEN: all694findings/154concerns. PR603 includes Fleetread offload and temporaryschema binding lifetime repair; first8eheadCIfailed218.784msGCpause, no retry/merge. New mixedmaintenance864.917ms and installed602full-list/maintenance residuals remain. Independent acceptance missing.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -218882,6 +218882,25 @@
       "merged": [],
       "deployed": "Uninstalled source.",
       "retested": "Private controlled comparison only; separate new worker population, not added baseline HTTP/runtime or real admission coverage."
+    },
+    {
+      "id": "concern:openapi-temporary-binding-cycle",
+      "kind": "concern",
+      "finding": "Four private cloned model-discovery functions share a globals dictionary that retains the same functions after OpenAPI generation returns or fails.",
+      "family": "startup",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_owned_namespace_cycle_ci_pause_allocation_owner_unverified",
+      "cause": "Owned recursive traversal namespace retains4clonedfunctions after generation returns/fails; actual CI pause allocation owner remains unknown.",
+      "implemented": "After complete generation succeeds or raises, remove only the four recursive names from the privately owned traversal namespace in finally. Framework globals, complete schemas, native exception identity, request validation, readiness, schema version fences and GC/default/deadline policies are untouched. No cache, forced collection, GC disable/freeze/threshold change or skipped check.",
+      "merged": [],
+      "deployed": "Uninstalled source; actual listener remainsabe51586/package3f67.",
+      "retested": "Original2contracts fail; repaired2pass; broader77tests/19subtestspass.6complete484-path/578733B generator outputs match; immediate temporary-function retention4to0 with normalGC. Mixed864.917msmaintenance remains.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-pr603-schema-lifetime-20261029.json"
+      },
+      "resolution": "open",
+      "next_actor": "this same systemic session/card",
+      "next_action": "Protected supervised exact-new-head CI/integration; further actual GC retained-graph attribution/repair and full independent acceptance. No blind rerun or GC/deadline policy change."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -316641,6 +316660,12 @@
       "row_id": "concern:fleet-placement-policy-loop-reads",
       "artifact": "docs/benchmarks/systemic-pr602-activation-placement-reads-20261029.json",
       "status": "Source tested; unmerged/uninstalled",
+      "resolution": "open"
+    },
+    {
+      "row_id": "concern:openapi-temporary-binding-cycle",
+      "artifact": "docs/benchmarks/systemic-pr603-schema-lifetime-20261029.json",
+      "status": "Measured source repair; unmerged/uninstalled; firstCI failure retained",
       "resolution": "open"
     }
   ],

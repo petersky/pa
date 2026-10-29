@@ -1,0 +1,2071 @@
+{
+  "contract": "pa.schema-binding-lifetime-stage/v1",
+  "observed_at": "2026-10-29T07:13:58.867912+00:00",
+  "identity": {
+    "instance": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "authority": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "session": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+    "card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+    "project": "fdc04d91-1222-447b-859c-38e67bcab6eb",
+    "repository": "https://github.com/petersky/pa",
+    "repository_id": "5ce49cd8-f632-5f6d-a0d5-0b9eaf61f9cd",
+    "worktree": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c",
+    "branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+    "original_base": "4697ed583f6a5eceead72217d07ba2ebaf4ccc83",
+    "source_base": "00d2bd8419d558934519a86bde3767e9c177b04d",
+    "head": "8e1b0cd3b46318e108153de2d82cd6ab275992e0",
+    "upstream": "8e1b0cd3b46318e108153de2d82cd6ab275992e0",
+    "tree": "f18b3a2475366d0dc1f03d08b1b9aba6b7ae680b",
+    "lease": "d24899f49011107365c237bbf09a300f63beb5a5c9658eac682770304ade52f2",
+    "fence": 334
+  },
+  "source_base": "8e1b0cd3b46318e108153de2d82cd6ab275992e0",
+  "source_sha256": "5db13f313160926c7c012554473c5ff81c24bfcbbb41cb7dc174f218dc4d7a9a",
+  "pr": {
+    "number": 603,
+    "url": "https://github.com/petersky/pa/pull/603",
+    "watch": "c46a64cd-d0dc-4a91-8004-677e84b68576",
+    "state": "Ready/open/unmerged/uninstalled at this immutable stage. First head8e1b0cd3CI40832580943 attempt1failed; no CI retry. Substantive lifetime source repair now measured before a new head."
+  },
+  "repair": {
+    "finding": "Four private cloned model-discovery functions share a globals dictionary that retains the same functions after OpenAPI generation returns or fails.",
+    "cause_classification": "confirmed_owned_namespace_cycle_ci_pause_allocation_owner_unverified",
+    "semantics": "After complete generation succeeds or raises, remove only the four recursive names from the privately owned traversal namespace in finally. Framework globals, complete schemas, native exception identity, request validation, readiness, schema version fences and GC/default/deadline policies are untouched. No cache, forced collection, GC disable/freeze/threshold change or skipped check.",
+    "baseline": {
+      "started_at": "2026-10-29T07:10:24.074876+00:00",
+      "finished_at": "2026-10-29T07:10:24.441955+00:00",
+      "exit_code": 1,
+      "source_sha256": "619cf785fc2749250bea57e7915ccb89951a4bb4a661157f3e2c75d9aa584caf",
+      "test_sha256": "7072bb860bae0817dbe3982805778b546bb4a6125908fdd03c55aebe6c210cf8",
+      "log_sha256": "1e544b782ffcf399cd4884125605938e3a9d3055c75c9cb7c4ae8ca3cbc0aea2",
+      "scope": "Private source lifetime contract. Both roots private before imports; no GC collect/disable/freeze/threshold change; complete schema parity and native exception identity retained."
+    },
+    "focused": {
+      "started_at": "2026-10-29T07:10:45.165074+00:00",
+      "finished_at": "2026-10-29T07:10:45.439082+00:00",
+      "exit_code": 0,
+      "source_sha256": "5db13f313160926c7c012554473c5ff81c24bfcbbb41cb7dc174f218dc4d7a9a",
+      "test_sha256": "7072bb860bae0817dbe3982805778b546bb4a6125908fdd03c55aebe6c210cf8",
+      "log_sha256": "615346574e154b3beff92a0c3300cc216b1d715cbac6441c7dbf923797c8c68f",
+      "scope": "Private source lifetime contract. Both roots private before imports; no GC collect/disable/freeze/threshold change; complete schema parity and native exception identity retained."
+    },
+    "broader": {
+      "started_at": "2026-10-29T07:11:58.866221+00:00",
+      "finished_at": "2026-10-29T07:12:04.395226+00:00",
+      "exit_code": 0,
+      "source_sha256": "5db13f313160926c7c012554473c5ff81c24bfcbbb41cb7dc174f218dc4d7a9a",
+      "test_sha256": "7072bb860bae0817dbe3982805778b546bb4a6125908fdd03c55aebe6c210cf8",
+      "log_sha256": "323628388ecbc8ad324a0907de168c394a8129253340bffa3f79c660b195735f",
+      "tests": [
+        "tests/test_schema_binding_lifetime.py",
+        "tests/test_schema_generation.py",
+        "tests/test_schema_owned_filter.py",
+        "tests/test_schema_scalar_defaults.py",
+        "tests/test_openapi_contract.py",
+        "tests/test_mcp_domain_schemas.py",
+        "tests/test_async_responsiveness.py",
+        "tests/test_fleet_placement_read_offload.py"
+      ],
+      "deadline_evidence": [
+        {
+          "contract": "pa.test-deadline-evidence/v1",
+          "python": "3.14.2",
+          "platform": "Darwin",
+          "source_sha": null,
+          "gc_thresholds": [
+            2000,
+            10,
+            0
+          ],
+          "loop_thread_id": 8276681088,
+          "request_wall_ms": 108.69287501554936,
+          "request_loop_thread_cpu_ms": 4.210333000000066,
+          "gc_events_total": 0,
+          "gc_events_retained": 0,
+          "gc_events_dropped": 0,
+          "request_gc_overlaps": [],
+          "worker_calls_started": 6,
+          "worker_calls_total": 6,
+          "worker_calls_incomplete": 0,
+          "worker_events_dropped": 0,
+          "worker_intervals": [
+            {
+              "wall_ms": 41.9047080213204,
+              "thread_cpu_ms": 0.010708000000000002,
+              "thread_id": 6227095552,
+              "start_relative_ms": 0.26995898224413395,
+              "end_relative_ms": 42.17466700356454
+            },
+            {
+              "wall_ms": 41.73724993597716,
+              "thread_cpu_ms": 0.00725,
+              "thread_id": 6378532864,
+              "start_relative_ms": 0.45220903120934963,
+              "end_relative_ms": 42.18945896718651
+            },
+            {
+              "wall_ms": 41.619166964665055,
+              "thread_cpu_ms": 0.014374999999999999,
+              "thread_id": 6395359232,
+              "start_relative_ms": 0.5868750158697367,
+              "end_relative_ms": 42.20604198053479
+            },
+            {
+              "wall_ms": 40.709291002713144,
+              "thread_cpu_ms": 0.005625,
+              "thread_id": 6412185600,
+              "start_relative_ms": 1.2463340535759926,
+              "end_relative_ms": 41.955625056289136
+            },
+            {
+              "wall_ms": 43.655875022523105,
+              "thread_cpu_ms": 0.020666,
+              "thread_id": 6412185600,
+              "start_relative_ms": 42.13337495457381,
+              "end_relative_ms": 85.78924997709692
+            },
+            {
+              "wall_ms": 43.39124995749444,
+              "thread_cpu_ms": 0.018832999999999996,
+              "thread_id": 6227095552,
+              "start_relative_ms": 42.44291700888425,
+              "end_relative_ms": 85.83416696637869
+            }
+          ],
+          "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+        },
+        {
+          "contract": "pa.test-deadline-evidence/v1",
+          "python": "3.14.2",
+          "platform": "Darwin",
+          "source_sha": null,
+          "gc_thresholds": [
+            2000,
+            10,
+            0
+          ],
+          "loop_thread_id": 8276681088,
+          "request_wall_ms": 3.089207923039794,
+          "request_loop_thread_cpu_ms": 2.5467919999999644,
+          "gc_events_total": 0,
+          "gc_events_retained": 0,
+          "gc_events_dropped": 0,
+          "request_gc_overlaps": [],
+          "worker_calls_started": 1,
+          "worker_calls_total": 1,
+          "worker_calls_incomplete": 0,
+          "worker_events_dropped": 0,
+          "worker_intervals": [
+            {
+              "wall_ms": 210.04141599405557,
+              "thread_cpu_ms": 0.038083,
+              "thread_id": 6193442816,
+              "start_relative_ms": -4.305375041440129,
+              "end_relative_ms": 205.73604095261544
+            }
+          ],
+          "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+        }
+      ],
+      "native_thresholds": [
+        2000,
+        10,
+        0
+      ],
+      "scope": "Both PA roots private before imports; schema/fullAPI/native runtime contracts. Original waits/deadlines/assertions/normal GC retained. No live provider/network/service data. Not a full Linux CI reproduction."
+    },
+    "comparison": {
+      "baseline": "8e1b0cd3b46318e108153de2d82cd6ab275992e0",
+      "source_sha256": "5db13f313160926c7c012554473c5ff81c24bfcbbb41cb7dc174f218dc4d7a9a",
+      "started_at": "2026-10-29T07:11:28.802231+00:00",
+      "rows": [
+        {
+          "pair": 0,
+          "variant": "baseline",
+          "schema_wall_ms": 108.95554104354233,
+          "schema_thread_cpu_ms": 108.7355000000001,
+          "temporary_discovery_functions": 4,
+          "retained_after_return": 4,
+          "schema_bytes": 578733,
+          "schema_sha256": "f706f4e99c3681222f887b4c204b00d5e995e485214e004c1ae5f425e529739a",
+          "paths": 484,
+          "natural_gc_pauses": [
+            {
+              "generation": 1,
+              "wall_ms": 0.002291053533554077,
+              "thread_cpu_ms": 0.0027080000000179183,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0019159633666276932,
+              "thread_cpu_ms": 0.001957999999913085,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.001208973117172718,
+              "thread_cpu_ms": 0.0012090000001130363,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.001125037670135498,
+              "thread_cpu_ms": 0.0009579999999953515,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.001249951310455799,
+              "thread_cpu_ms": 0.0011670000001906544,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.001250067725777626,
+              "thread_cpu_ms": 0.0011659999998858694,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0010419171303510666,
+              "thread_cpu_ms": 0.0010409999999794195,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.48204197082668543,
+              "thread_cpu_ms": 0.4821669999999223,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000750063918530941,
+              "thread_cpu_ms": 0.000790999999944475,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0914999982342124,
+              "thread_cpu_ms": 0.09154199999983348,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.24487508926540613,
+              "thread_cpu_ms": 0.24487499999992224,
+              "collected": 8,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 1.2536250287666917,
+              "thread_cpu_ms": 1.2543750000000298,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 18.603833043016493,
+              "thread_cpu_ms": 18.604917,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0013330718502402306,
+              "thread_cpu_ms": 0.0010409999999794195,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0015420373529195786,
+              "thread_cpu_ms": 0.001083000000123846,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0008749775588512421,
+              "thread_cpu_ms": 0.0008329999998668569,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0005830079317092896,
+              "thread_cpu_ms": 0.000500000000069889,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007079215720295906,
+              "thread_cpu_ms": 0.000583000000053957,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006249174475669861,
+              "thread_cpu_ms": 0.0005840000001366974,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0008749775588512421,
+              "thread_cpu_ms": 0.0007500000001048335,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006670597940683365,
+              "thread_cpu_ms": 0.0006250000001983835,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006669433787465096,
+              "thread_cpu_ms": 0.000583000000053957,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0005420297384262085,
+              "thread_cpu_ms": 0.000500000000069889,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0005409820005297661,
+              "thread_cpu_ms": 0.0005409999999095305,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0011669471859931946,
+              "thread_cpu_ms": 0.0009590000000780918,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0011670636013150215,
+              "thread_cpu_ms": 0.001000000000139778,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.00070908572524786,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0005420297384262085,
+              "thread_cpu_ms": 0.000500000000069889,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0010830117389559746,
+              "thread_cpu_ms": 0.0009170000001557099,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000875093974173069,
+              "thread_cpu_ms": 0.0009160000000729696,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0009160721674561501,
+              "thread_cpu_ms": 0.0008750000000112834,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0025420449674129486,
+              "thread_cpu_ms": 0.0022090000000307697,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0032919924706220627,
+              "thread_cpu_ms": 0.0007500000001048335,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0009170034900307655,
+              "thread_cpu_ms": 0.0008750000000112834,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007499475032091141,
+              "thread_cpu_ms": 0.0007500000001048335,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007080379873514175,
+              "thread_cpu_ms": 0.0006669999998987208,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0008749775588512421,
+              "thread_cpu_ms": 0.0008750000000112834,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006249174475669861,
+              "thread_cpu_ms": 0.0005419999999922709,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007080379873514175,
+              "thread_cpu_ms": 0.0006660000000380251,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006670597940683365,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006669433787465096,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0014170072972774506,
+              "thread_cpu_ms": 0.0013330000001587905,
+              "collected": 0,
+              "uncollectable": 0
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "variant": "candidate",
+          "schema_wall_ms": 89.90999998059124,
+          "schema_thread_cpu_ms": 89.911042,
+          "temporary_discovery_functions": 4,
+          "retained_after_return": 0,
+          "schema_bytes": 578733,
+          "schema_sha256": "f706f4e99c3681222f887b4c204b00d5e995e485214e004c1ae5f425e529739a",
+          "paths": 484,
+          "natural_gc_pauses": [
+            {
+              "generation": 1,
+              "wall_ms": 0.0015419209375977516,
+              "thread_cpu_ms": 0.0015419999999100042,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.001249951310455799,
+              "thread_cpu_ms": 0.0011669999999686098,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.001209089532494545,
+              "thread_cpu_ms": 0.0011670000001906544,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0011670636013150215,
+              "thread_cpu_ms": 0.001125000000046228,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0010830117389559746,
+              "thread_cpu_ms": 0.001125000000046228,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.001334003172814846,
+              "thread_cpu_ms": 0.0012499999999526779,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007499475032091141,
+              "thread_cpu_ms": 0.0006669999998987208,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0008329516276717186,
+              "thread_cpu_ms": 0.0007500000001048335,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0008329516276717186,
+              "thread_cpu_ms": 0.0007499999998827889,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006660120561718941,
+              "thread_cpu_ms": 0.0006669999998987208,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007499475032091141,
+              "thread_cpu_ms": 0.0006660000000380251,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007080379873514175,
+              "thread_cpu_ms": 0.0006250000001983835,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0008329516276717186,
+              "thread_cpu_ms": 0.0007500000001048335,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007079215720295906,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000584055669605732,
+              "thread_cpu_ms": 0.0005419999999922709,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007499475032091141,
+              "thread_cpu_ms": 0.0006669999998987208,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0005420297384262085,
+              "thread_cpu_ms": 0.000500000000069889,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006660120561718941,
+              "thread_cpu_ms": 0.000583000000053957,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006660120561718941,
+              "thread_cpu_ms": 0.0005419999999922709,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000583939254283905,
+              "thread_cpu_ms": 0.000583000000053957,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006670597940683365,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006669433787465096,
+              "thread_cpu_ms": 0.0006670000001207654,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.00100000761449337,
+              "thread_cpu_ms": 0.0009170000001557099,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.001084059476852417,
+              "thread_cpu_ms": 0.0009999999999177334,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006669433787465096,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000708969309926033,
+              "thread_cpu_ms": 0.0006670000001207654,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.00100000761449337,
+              "thread_cpu_ms": 0.0009579999999953515,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0009579816833138466,
+              "thread_cpu_ms": 0.0009999999999177334,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0009579816833138466,
+              "thread_cpu_ms": 0.0008750000000112834,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0011669471859931946,
+              "thread_cpu_ms": 0.0009999999999177334,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.00070908572524786,
+              "thread_cpu_ms": 0.000707999999960407,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000625033862888813,
+              "thread_cpu_ms": 0.0005840000001366974,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007079215720295906,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000750063918530941,
+              "thread_cpu_ms": 0.000707999999960407,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000584055669605732,
+              "thread_cpu_ms": 0.0005829999998319124,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006669433787465096,
+              "thread_cpu_ms": 0.0006670000001207654,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007079215720295906,
+              "thread_cpu_ms": 0.0005839999999146528,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000625033862888813,
+              "thread_cpu_ms": 0.0005829999998319124,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000625033862888813,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.001500011421740055,
+              "thread_cpu_ms": 0.001332999999936746,
+              "collected": 0,
+              "uncollectable": 0
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "variant": "candidate",
+          "schema_wall_ms": 90.62183403875679,
+          "schema_thread_cpu_ms": 90.622333,
+          "temporary_discovery_functions": 4,
+          "retained_after_return": 0,
+          "schema_bytes": 578733,
+          "schema_sha256": "f706f4e99c3681222f887b4c204b00d5e995e485214e004c1ae5f425e529739a",
+          "paths": 484,
+          "natural_gc_pauses": [
+            {
+              "generation": 1,
+              "wall_ms": 0.0014159595593810081,
+              "thread_cpu_ms": 0.0013750000000811724,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0011670636013150215,
+              "thread_cpu_ms": 0.0010829999999018014,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0012080417945981026,
+              "thread_cpu_ms": 0.0010409999999794195,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0011669471859931946,
+              "thread_cpu_ms": 0.0010829999999018014,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0014170072972774506,
+              "thread_cpu_ms": 0.0012499999999526779,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0011670636013150215,
+              "thread_cpu_ms": 0.0011670000001906544,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006670597940683365,
+              "thread_cpu_ms": 0.0006660000000380251,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007499475032091141,
+              "thread_cpu_ms": 0.0007090000000431473,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007909256964921951,
+              "thread_cpu_ms": 0.000707999999960407,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007499475032091141,
+              "thread_cpu_ms": 0.0006660000000380251,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007499475032091141,
+              "thread_cpu_ms": 0.0007499999998827889,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006249174475669861,
+              "thread_cpu_ms": 0.0005829999998319124,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0008330680429935455,
+              "thread_cpu_ms": 0.0007920000000272154,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000708969309926033,
+              "thread_cpu_ms": 0.0006670000001207654,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006660120561718941,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000625033862888813,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0005830079317092896,
+              "thread_cpu_ms": 0.0004999999998478444,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000750063918530941,
+              "thread_cpu_ms": 0.000707999999960407,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007080379873514175,
+              "thread_cpu_ms": 0.0006659999998159805,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0005830079317092896,
+              "thread_cpu_ms": 0.0005419999999922709,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000750063918530941,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000584055669605732,
+              "thread_cpu_ms": 0.0005419999999922709,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0010420335456728935,
+              "thread_cpu_ms": 0.000915999999850925,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0009589130058884621,
+              "thread_cpu_ms": 0.0009589999998560472,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006660120561718941,
+              "thread_cpu_ms": 0.0005839999999146528,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000750063918530941,
+              "thread_cpu_ms": 0.000707999999960407,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0009579816833138466,
+              "thread_cpu_ms": 0.0009579999999953515,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0009170034900307655,
+              "thread_cpu_ms": 0.0008750000000112834,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0008749775588512421,
+              "thread_cpu_ms": 0.0008330000000889015,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0010830117389559746,
+              "thread_cpu_ms": 0.001083000000123846,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000833999365568161,
+              "thread_cpu_ms": 0.0007920000000272154,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007499475032091141,
+              "thread_cpu_ms": 0.0006669999998987208,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000625033862888813,
+              "thread_cpu_ms": 0.0005839999999146528,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000708969309926033,
+              "thread_cpu_ms": 0.000707999999960407,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000625033862888813,
+              "thread_cpu_ms": 0.0006250000001983835,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006249174475669861,
+              "thread_cpu_ms": 0.0005839999999146528,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000625033862888813,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000625033862888813,
+              "thread_cpu_ms": 0.0005829999998319124,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000625033862888813,
+              "thread_cpu_ms": 0.0005420000002143155,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.001750071533024311,
+              "thread_cpu_ms": 0.0016659999999557584,
+              "collected": 0,
+              "uncollectable": 0
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "variant": "baseline",
+          "schema_wall_ms": 114.6816669497639,
+          "schema_thread_cpu_ms": 114.67454100000008,
+          "temporary_discovery_functions": 4,
+          "retained_after_return": 4,
+          "schema_bytes": 578733,
+          "schema_sha256": "f706f4e99c3681222f887b4c204b00d5e995e485214e004c1ae5f425e529739a",
+          "paths": 484,
+          "natural_gc_pauses": [
+            {
+              "generation": 1,
+              "wall_ms": 0.001374981366097927,
+              "thread_cpu_ms": 0.0012079999998082513,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0010419171303510666,
+              "thread_cpu_ms": 0.0010419999998401153,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0010420335456728935,
+              "thread_cpu_ms": 0.001000000000139778,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0009579816833138466,
+              "thread_cpu_ms": 0.0009579999999953515,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.00100000761449337,
+              "thread_cpu_ms": 0.001000000000139778,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.001291045919060707,
+              "thread_cpu_ms": 0.0011659999998858694,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007920898497104645,
+              "thread_cpu_ms": 0.0007499999998827889,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0032919924706220627,
+              "thread_cpu_ms": 0.0006250000001983835,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0008329516276717186,
+              "thread_cpu_ms": 0.0007499999998827889,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006670597940683365,
+              "thread_cpu_ms": 0.0005829999998319124,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007499475032091141,
+              "thread_cpu_ms": 0.0006669999998987208,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006669433787465096,
+              "thread_cpu_ms": 0.0006250000001983835,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0009579816833138466,
+              "thread_cpu_ms": 0.0008750000000112834,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 2.850583055987954,
+              "thread_cpu_ms": 2.8439999999998467,
+              "collected": 10462,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.001125037670135498,
+              "thread_cpu_ms": 0.0010409999999794195,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007499475032091141,
+              "thread_cpu_ms": 0.000707999999960407,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006658956408500671,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.00100000761449337,
+              "thread_cpu_ms": 0.0009169999999336653,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006670597940683365,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0005830079317092896,
+              "thread_cpu_ms": 0.000500000000069889,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.14408305287361145,
+              "thread_cpu_ms": 0.14408399999998878,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.437582959420979,
+              "thread_cpu_ms": 0.43758300000007466,
+              "collected": 8,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.3915830748155713,
+              "thread_cpu_ms": 0.3915840000001669,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.4425420193001628,
+              "thread_cpu_ms": 0.442540999999963,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 1.070957980118692,
+              "thread_cpu_ms": 1.071250000000079,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 19.648583023808897,
+              "thread_cpu_ms": 19.649417000000113,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0016670674085617065,
+              "thread_cpu_ms": 0.0010839999999845418,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0010830117389559746,
+              "thread_cpu_ms": 0.0008750000000112834,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.00100000761449337,
+              "thread_cpu_ms": 0.0009999999999177334,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0037499703466892242,
+              "thread_cpu_ms": 0.0011669999999686098,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000875093974173069,
+              "thread_cpu_ms": 0.0008750000000112834,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0008749775588512421,
+              "thread_cpu_ms": 0.0007910000001665196,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006670597940683365,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0009170034900307655,
+              "thread_cpu_ms": 0.0009579999999953515,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007080379873514175,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007080379873514175,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0005830079317092896,
+              "thread_cpu_ms": 0.0005419999999922709,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000584055669605732,
+              "thread_cpu_ms": 0.0005839999999146528,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0005830079317092896,
+              "thread_cpu_ms": 0.0005419999999922709,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0015830155462026596,
+              "thread_cpu_ms": 0.0013340000000194863,
+              "collected": 0,
+              "uncollectable": 0
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "variant": "baseline",
+          "schema_wall_ms": 88.40383298229426,
+          "schema_thread_cpu_ms": 88.40466700000005,
+          "temporary_discovery_functions": 4,
+          "retained_after_return": 4,
+          "schema_bytes": 578733,
+          "schema_sha256": "f706f4e99c3681222f887b4c204b00d5e995e485214e004c1ae5f425e529739a",
+          "paths": 484,
+          "natural_gc_pauses": [
+            {
+              "generation": 1,
+              "wall_ms": 0.001416075974702835,
+              "thread_cpu_ms": 0.0013340000000194863,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.00108394306153059,
+              "thread_cpu_ms": 0.0010409999999794195,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.001125037670135498,
+              "thread_cpu_ms": 0.0009169999999336653,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.00100000761449337,
+              "thread_cpu_ms": 0.0009160000000729696,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0010830117389559746,
+              "thread_cpu_ms": 0.0009590000000780918,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.001250067725777626,
+              "thread_cpu_ms": 0.001208000000030296,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0034580007195472717,
+              "thread_cpu_ms": 0.0007500000001048335,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007080379873514175,
+              "thread_cpu_ms": 0.000583000000053957,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007919734343886375,
+              "thread_cpu_ms": 0.0007090000000431473,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007079215720295906,
+              "thread_cpu_ms": 0.0006660000000380251,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000750063918530941,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000583939254283905,
+              "thread_cpu_ms": 0.0005419999999922709,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0008749775588512421,
+              "thread_cpu_ms": 0.0007920000000272154,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006669433787465096,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000625033862888813,
+              "thread_cpu_ms": 0.0005419999999922709,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007499475032091141,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000583939254283905,
+              "thread_cpu_ms": 0.0005419999999922709,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007499475032091141,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006670597940683365,
+              "thread_cpu_ms": 0.000583000000053957,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000625033862888813,
+              "thread_cpu_ms": 0.0005419999999922709,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006670597940683365,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0005830079317092896,
+              "thread_cpu_ms": 0.000500000000069889,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.00100000761449337,
+              "thread_cpu_ms": 0.0008329999998668569,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0009170034900307655,
+              "thread_cpu_ms": 0.0008750000000112834,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.00070908572524786,
+              "thread_cpu_ms": 0.0006670000001207654,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006660120561718941,
+              "thread_cpu_ms": 0.0005839999999146528,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.001125037670135498,
+              "thread_cpu_ms": 0.001000000000139778,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0009170034900307655,
+              "thread_cpu_ms": 0.0009160000000729696,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007919734343886375,
+              "thread_cpu_ms": 0.0007920000000272154,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0010830117389559746,
+              "thread_cpu_ms": 0.001000000000139778,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007499475032091141,
+              "thread_cpu_ms": 0.0007089999998211027,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000750063918530941,
+              "thread_cpu_ms": 0.0007499999998827889,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006670597940683365,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.003374996595084667,
+              "thread_cpu_ms": 0.0006669999998987208,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006658956408500671,
+              "thread_cpu_ms": 0.0006660000000380251,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007080379873514175,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006670597940683365,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007079215720295906,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.003374996595084667,
+              "thread_cpu_ms": 0.000583000000053957,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0020829029381275177,
+              "thread_cpu_ms": 0.0014999999999876223,
+              "collected": 0,
+              "uncollectable": 0
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "variant": "candidate",
+          "schema_wall_ms": 89.70512496307492,
+          "schema_thread_cpu_ms": 89.60150000000012,
+          "temporary_discovery_functions": 4,
+          "retained_after_return": 0,
+          "schema_bytes": 578733,
+          "schema_sha256": "f706f4e99c3681222f887b4c204b00d5e995e485214e004c1ae5f425e529739a",
+          "paths": 484,
+          "natural_gc_pauses": [
+            {
+              "generation": 1,
+              "wall_ms": 0.0012919772416353226,
+              "thread_cpu_ms": 0.0012499999999526779,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.00100000761449337,
+              "thread_cpu_ms": 0.0009169999999336653,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0009170034900307655,
+              "thread_cpu_ms": 0.0008339999999495973,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.00100000761449337,
+              "thread_cpu_ms": 0.0009579999999953515,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.001125037670135498,
+              "thread_cpu_ms": 0.0009999999999177334,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0010420335456728935,
+              "thread_cpu_ms": 0.0009999999999177334,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.00070908572524786,
+              "thread_cpu_ms": 0.0007080000001824516,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006660120561718941,
+              "thread_cpu_ms": 0.0006670000001207654,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007499475032091141,
+              "thread_cpu_ms": 0.0007080000001824516,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.00070908572524786,
+              "thread_cpu_ms": 0.0007080000001824516,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000625033862888813,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000708969309926033,
+              "thread_cpu_ms": 0.0006670000001207654,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.003416091203689575,
+              "thread_cpu_ms": 0.0008329999998668569,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006660120561718941,
+              "thread_cpu_ms": 0.0005829999998319124,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000583939254283905,
+              "thread_cpu_ms": 0.0005829999998319124,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007499475032091141,
+              "thread_cpu_ms": 0.0006250000001983835,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0005830079317092896,
+              "thread_cpu_ms": 0.000500000000069889,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.003374996595084667,
+              "thread_cpu_ms": 0.0006660000000380251,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006670597940683365,
+              "thread_cpu_ms": 0.0006250000001983835,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000500003807246685,
+              "thread_cpu_ms": 0.00045900000000820285,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000750063918530941,
+              "thread_cpu_ms": 0.0006669999998987208,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0005420297384262085,
+              "thread_cpu_ms": 0.000500000000069889,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0010419171303510666,
+              "thread_cpu_ms": 0.0009160000000729696,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0010420335456728935,
+              "thread_cpu_ms": 0.0009579999999953515,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000583939254283905,
+              "thread_cpu_ms": 0.0005419999999922709,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007079215720295906,
+              "thread_cpu_ms": 0.0007089999998211027,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0009580980986356735,
+              "thread_cpu_ms": 0.0008750000000112834,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.000875093974173069,
+              "thread_cpu_ms": 0.0008750000000112834,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007499475032091141,
+              "thread_cpu_ms": 0.000790999999944475,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0010409858077764511,
+              "thread_cpu_ms": 0.0009579999999953515,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007910421118140221,
+              "thread_cpu_ms": 0.0007920000000272154,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0008330680429935455,
+              "thread_cpu_ms": 0.000790999999944475,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0006249174475669861,
+              "thread_cpu_ms": 0.0006249999999763389,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007499475032091141,
+              "thread_cpu_ms": 0.000707999999960407,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0007079215720295906,
+              "thread_cpu_ms": 0.000583000000053957,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0033329706639051437,
+              "thread_cpu_ms": 0.0006660000000380251,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0005830079317092896,
+              "thread_cpu_ms": 0.0005419999999922709,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.0005409820005297661,
+              "thread_cpu_ms": 0.000500000000069889,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.002249958924949169,
+              "thread_cpu_ms": 0.0022090000000307697,
+              "collected": 0,
+              "uncollectable": 0
+            },
+            {
+              "generation": 1,
+              "wall_ms": 0.001208973117172718,
+              "thread_cpu_ms": 0.001166000000107914,
+              "collected": 0,
+              "uncollectable": 0
+            }
+          ]
+        }
+      ],
+      "scope": "Compare complete private PA schemas and temporary binding retention.\n\nNative GC runs unchanged. No forced collection, policy changes, listener,\nprovider, network or production state. This does not reproduce a Linux CI pause.\n",
+      "native_thresholds": [
+        2000,
+        10,
+        0
+      ],
+      "private_roots_before_imports": true,
+      "finished_at": "2026-10-29T07:11:29.409678+00:00",
+      "complete_schema_bytes_equal": true,
+      "gc_policy_unchanged": true,
+      "limits": "Temporary discovery functions release4to0 without explicit collection. Other Pydantic/FastAPI cycles may remain. Native Darwin3.14.2 fixture is not Linux3.14.10 CI or live activation; no whole-card or CI-failure resolution claim."
+    },
+    "mixed": {
+      "started_at": "2026-10-29T07:12:23.818346+00:00",
+      "source_modules": {
+        "pa.modules.fleet": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/modules/fleet.py",
+          "sha256": "5d2daaf20f1ea751db385aba613863d8ff1de5383f4b0700d49eae5b910ce5dd"
+        },
+        "pa.server.schema_generation": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/server/schema_generation.py",
+          "sha256": "5db13f313160926c7c012554473c5ff81c24bfcbbb41cb7dc174f218dc4d7a9a"
+        }
+      },
+      "both_roots_private_before_imports": true,
+      "exit_code": 0,
+      "finished_at": "2026-10-29T07:12:49.838823+00:00",
+      "log_sha256": "ae7d64850c74767317b1014f8ef27d02ad1eb52b1cc0e6c20233e699bbd4a406",
+      "log_bytes": 382950,
+      "events": 9600,
+      "warnings": {},
+      "threshold_violations": {
+        "maintenance.run": 1
+      },
+      "maintenance": {
+        "samples": 1,
+        "max_ms": 864.917,
+        "p50_ms": 864.917,
+        "p95_ms": 864.917,
+        "p99_ms": 864.917
+      },
+      "import_attestation": {
+        "modules": {
+          "pa.modules.fleet": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/modules/fleet.py",
+            "sha256": "5d2daaf20f1ea751db385aba613863d8ff1de5383f4b0700d49eae5b910ce5dd"
+          },
+          "pa.server.schema_generation": {
+            "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/server/schema_generation.py",
+            "sha256": "5db13f313160926c7c012554473c5ff81c24bfcbbb41cb7dc174f218dc4d7a9a"
+          }
+        },
+        "before_workload": true,
+        "unchanged_after_workload": true
+      },
+      "scope": "Changed-module imports and unchanged hashes before/after mixed workload; does not establish every changed branch executes. Dedicated control-read contracts and native executor comparison exercise the repair; the mixed inventory may not execute every branch. Both roots private before all PA imports; unchanged waits/deadlines/GC; no real provider or production state."
+    }
+  },
+  "first_ci": {
+    "run": 40832580943,
+    "attempt": 1,
+    "head": "8e1b0cd3b46318e108153de2d82cd6ab275992e0",
+    "result": "Failed unchanged100ms unrelated-surface deadline228.565231ms; smoke+3testshards success.",
+    "actual_numeric": "Request228.566464mswall/228.092196msloopCPU includes same-loop-thread generation2GC218.783805mswall/218.312704msCPU,18048collected/0uncollectable. Slowworker separate thread218.165440mswall/0.115506msCPU; inclusive spans overlap and never sum.",
+    "uncertainty": "The schema namespace cycle is independently proven, but no allocation-owner proof links it to all18048collectedobjects or this CI pause. This source repair does not itself establish CI failure resolution.",
+    "custody_correction": "Actual first-run manifest has2raw artifactZIPs. Revision185 incorrectly said4; revision186 corrects only prose count, preserving manifest/hashes/logs. Rawlogs/ZIPsLOCAL/hash-only."
+  },
+  "remaining": [
+    "All694findings/154concernsOPEN. Original693rows/fields and tenattachments unchanged. Entire preceding a1b43dd1 bundle is embedded, including installed602proofs, all historical bundles/first failures, actualfirstCI and correction186.",
+    "Complete private484-path generator output578733bytes matches in all6alternatingcalls. Baseline4temporaryfunctions retained after return; candidate0. Timings are small unprofiled samples with normal nativeGC; no general speedup or full LinuxCI/live activation/whole-card claim. Other Pydantic/FastAPI/class/traceback cycles may remain.",
+    "New combined Fleet/schema source mixed100 retains9600ordered events,0workerwarnings/failures/timeouts/rejections, but maintenance864.917ms remains. Prior818.589ms, installed602801.547ms, source854.706/844.751ms and every earlier residual remain separate.",
+    "Darwin3.14.2 nativeGC2000/10/0 is separate fromLinux3.14.10observed2000/10/10. No policy changed. Prior isolated3.224ms/noGC control does not resolve full-suite failure or justify a blind retry.",
+    "Exact601/602protectedintegration/oneinstallation/positiveoriginal602handoffcompletion and installed519tests/7subtests/19private stages remaincomplete. Actual listenerabe51586/package3f67/PID81195/startup59957880; no reinstall/restart/remerge/rearm. New source is uninstalled.",
+    "95ordinary200HTTP/max127.135792ms/8encoding/8cachedFleet pass are scoped602evidence. All5full10session-list2MiBcollector failures remain; metadata2417641B/bodyread0/fullschemaUNVERIFIED. No raised bound, blind rerun or dropped output/durable data.",
+    "Remainingmaintenance/shared-source/provider/session/workspace/queue/payload/call/writeamplification and fullrealKernel/MCP/placement/admission/startup/drain/concurrency acceptance remain. Capacity snapshots expire reservations; retain durable mutation ownership/fences.",
+    "Acceptedbackup0331/b527andDB89957originalscopesCLOSED. Backup9/8verified/1limited/unpaused; cachedMacmini status/syncstale/probe_failed/build/log/retention unknown andolderotherpeers remain. No manualbackup/forcedpeerrefresh/update/restart/staleOctober17admission/secretsfallback.",
+    "Missingobject1/2842decodedB,/work603.818ms,cumulative2396statusfailures/5640760droppedB,FD/rotation/log/screenshotgaps and ambiguous555/0b79/f403/d448/HTTP413effects remain. No absence inference/replay. Answerednotificationa99ee1db delivered/resolvedv4untouched/noquote/change/withdraw/rearm/redelivery/consentinference.",
+    "Scheduler independent_agent_v1 acceptance exact17d034a6-efc7-4a9d-badc-d3fe012d0b57 remainsunaccepted. No self-verifier, fabricatedactive/verified/acceptancemilestone,Done/CASloop or unfinishedcleanup."
+  ],
+  "negative_stages": [
+    "Both original-source lifetime contracts fail before product repair; same two pass afterward. Originalfullschemaoutput/nativeexception preserved.",
+    "First continuation read naively compared historical coverage-ledger hash to currentknowncommittedappend. Assert failed on only versioned ledger; oldabe51586blob matches originalhash and alloriginalrows/fields, current693ledger append separatelyverified. Other221files unchanged; all222read. No input discarded.",
+    "Sandbox uv cache/GitHub network denials occurred before approved child/network reads; provider-approved exact calls succeeded. No boundary/credential fallback. All earlier invalidcProfile/firstmarker/lock/fixture/metadatarecorder/Python/symlink/nativeps/GraphQLfailures remain in priorbundle."
+  ],
+  "local_only_custody": {
+    ".dev/pr603-schema-lifetime-source-20261029.log": {
+      "bytes": 98,
+      "sha256": "615346574e154b3beff92a0c3300cc216b1d715cbac6441c7dbf923797c8c68f",
+      "scope": "LOCAL/untrusted/hash-only raw log or archived first source."
+    },
+    ".dev/pr603-schema-lifetime-baseline-20261029.log": {
+      "bytes": 2606,
+      "sha256": "1e544b782ffcf399cd4884125605938e3a9d3055c75c9cb7c4ae8ca3cbc0aea2",
+      "scope": "LOCAL/untrusted/hash-only raw log or archived first source."
+    },
+    ".dev/pr603-schema-lifetime-broader-20261029.log": {
+      "bytes": 1350,
+      "sha256": "323628388ecbc8ad324a0907de168c394a8129253340bffa3f79c660b195735f",
+      "scope": "LOCAL/untrusted/hash-only raw log or archived first source."
+    },
+    ".dev/pr603-lifetime-source-mixed100-20261029.log": {
+      "bytes": 382950,
+      "sha256": "ae7d64850c74767317b1014f8ef27d02ad1eb52b1cc0e6c20233e699bbd4a406",
+      "scope": "LOCAL/untrusted/hash-only raw log or archived first source."
+    },
+    ".dev/schema_generation.before603-lifetime-20261029.py": {
+      "bytes": 7546,
+      "sha256": "619cf785fc2749250bea57e7915ccb89951a4bb4a661157f3e2c75d9aa584caf",
+      "scope": "LOCAL/untrusted/hash-only raw log or archived first source."
+    }
+  },
+  "lossless_raw": {
+    "path": "docs/benchmarks/systemic-pr603-schema-lifetime-20261029.raw.json.gz",
+    "sha256": "a64ca74af9abec4a8bb8d956d7e077df02728bfd3dd9d280fb30d0768f0674bd",
+    "bytes": 8350165
+  }
+}
