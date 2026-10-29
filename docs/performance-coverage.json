@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-29T16:33:34.099029+00:00",
-  "completion": "OPEN: all696findings/156concerns. Exact604active/scopedretested;maintenance/full-list/live tails remain. Newbrowserauthorityread sourcefix tested/unintegrated; fullindependentacceptance remainsopen.",
+  "as_of": "2026-10-29T17:00:55.844366+00:00",
+  "completion": "OPEN: all697findings/157concerns. Exact604active/scopedretested;PR605integrateduninstalled;readinesssourceunmerged/uninstalled. Maintenance/full-list/live/sharedtails and fullindependentacceptance remain.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -218942,6 +218942,27 @@
       "resolution": "open",
       "next_actor": "This same systemic card/session",
       "next_action": "Protected readyPR/durablewatch/exacthead+mainCI integration; future exact activation/retests and remaining systemic acceptance. No mutation/default/policy/GC change or historical wholepath attribution."
+    },
+    {
+      "id": "concern:verification-origin-readiness-proof-hydration",
+      "kind": "concern",
+      "finding": "Origin readiness hydrates all retained PR proofs for lifecycle link guards",
+      "family": "health",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_source_and_native_fixture_hydration_historical_tail_share_unverified",
+      "cause": "Verification origin readiness loaded all fullPR models/proofs before lifecycle consumes only session/card/status links. Savedcanonicalhealth614.388ms CPU-heavy unclassified tail exists but its exact call/contribution is not established.",
+      "implemented": "Origin readiness reuses existing lifecycle_watch_links rather than full retained PR models; all realms, retired/terminal watches, session-or-card links, status validation/order, fresh per-call reads and existing lifecycle guards are retained. Existing health canonical bounded worker, five-second deadline and watch_list diagnostic phase. Full proofs remain stored and hydrated by paths that need them. No verifier admission, close, acceptance, independent policy, GC/default/configuration change.",
+      "merged": [],
+      "deployed": "Newsourceuninstalled; PR605alsointegrateduninstalled; exact604active/scopedretested withremainingmaintenance/payload/live tails.",
+      "retested": "8targeted then136broader tests/66subtests pass with unchanged guards; complete100watch/30pairreadiness parity. No live verifier admission.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-pr605-integration-readiness-links-20261029.json",
+        "comparison": ".dev/readiness606-native-comparison-20261029.json",
+        "mixed": ".dev/readiness606-source-mixed100-20261029-proof.json"
+      },
+      "resolution": "open",
+      "next_actor": "This same systemic session/card",
+      "next_action": "Protected readyPR/watch/head+mainCI integration; reviewed exactfutureactivation/installedretets; continue full systemic acceptance and shared-tail causal investigation without policy changes."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -316731,6 +316752,12 @@
       "artifact": "docs/benchmarks/systemic-exact604-activation-browser-reads-20261029.json",
       "status": "Source tested;unmerged/uninstalled",
       "resolution": "open"
+    },
+    {
+      "row_id": "concern:verification-origin-readiness-proof-hydration",
+      "artifact": "docs/benchmarks/systemic-pr605-integration-readiness-links-20261029.json",
+      "status": "Source tested;unmerged/uninstalled",
+      "resolution": "open"
     }
   ],
   "integration_history": [
@@ -316800,6 +316827,18 @@
       "deployed": true,
       "accepted": false,
       "residuals": "Installedmaintenance756.220ms/fivefull-listcollectornegatives/liveprocessrequesttails/fullcriteriaopen."
+    },
+    {
+      "pr": 605,
+      "artifact": "docs/benchmarks/systemic-pr605-integration-readiness-links-20261029.json",
+      "merge": "6818042b3c132356a4b3d7dcbd179a705e686583",
+      "watched_head": "468d94cc4dfd58cce0650c70f9e2342f1ccc5e25",
+      "watch": "1878d502-d258-4eea-b32e-e7eaab40f70d",
+      "deployed": false,
+      "accepted": false,
+      "head_ci": 40912965154,
+      "main_ci": 40913869406,
+      "ci": "Each5first-attemptsuccess/no retries"
     }
   ]
 }
