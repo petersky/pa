@@ -4874,6 +4874,19 @@ class DispatchStore:
             changed: list[DispatchRecord] = []
             try:
                 with self._transaction() as conn:
+                    # Discover only expiry candidates in the same SQLite writer
+                    # transaction. A negative result cannot race another receipt
+                    # writer, and avoids a no-op DELETE per retained dispatch.
+                    receipt_candidates = {
+                        row[0] for row in conn.execute(
+                            "SELECT DISTINCT dispatch_id FROM dispatch_receipts "
+                            "WHERE created_at<? AND dispatch_id IN "
+                            "(SELECT value FROM json_each(?))",
+                            (cutoff.isoformat(), json.dumps([
+                                record.dispatch_id for record in safe
+                            ])),
+                        )
+                    }
                     for stored in safe:
                         stale = [
                             event
@@ -4903,25 +4916,26 @@ class DispatchStore:
                                     *[[event.sequence, event.sequence] for event in stale],
                                 ]
                             )
-                        protected_keys = {
-                            event.idempotency_key for event in record.progress_events
-                        }
-                        if record.progress_heartbeat:
-                            protected_keys.add(record.progress_heartbeat.idempotency_key)
-                        if protected_keys:
-                            placeholders = ",".join("?" for _ in protected_keys)
-                            cursor = conn.execute(
-                                "DELETE FROM dispatch_receipts WHERE dispatch_id=? "
-                                f"AND created_at<? AND idempotency_key NOT IN ({placeholders})",
-                                (record.dispatch_id, cutoff.isoformat(), *protected_keys),
-                            )
-                        else:
-                            cursor = conn.execute(
-                                "DELETE FROM dispatch_receipts WHERE dispatch_id=? AND created_at<?",
-                                (record.dispatch_id, cutoff.isoformat()),
-                            )
+                        if record.dispatch_id in receipt_candidates:
+                            protected_keys = {
+                                event.idempotency_key for event in record.progress_events
+                            }
+                            if record.progress_heartbeat:
+                                protected_keys.add(record.progress_heartbeat.idempotency_key)
+                            if protected_keys:
+                                placeholders = ",".join("?" for _ in protected_keys)
+                                cursor = conn.execute(
+                                    "DELETE FROM dispatch_receipts WHERE dispatch_id=? "
+                                    f"AND created_at<? AND idempotency_key NOT IN ({placeholders})",
+                                    (record.dispatch_id, cutoff.isoformat(), *protected_keys),
+                                )
+                            else:
+                                cursor = conn.execute(
+                                    "DELETE FROM dispatch_receipts WHERE dispatch_id=? AND created_at<?",
+                                    (record.dispatch_id, cutoff.isoformat()),
+                                )
+                            removed_receipts += max(0, cursor.rowcount)
                         removed_events += len(stale)
-                        removed_receipts += max(0, cursor.rowcount)
                         if stale:
                             self._persist_record_conn(conn, record)
                             changed.append(record)
