@@ -463,7 +463,8 @@ class VerificationService:
         runtime = manager.get(record.session_id)
         if session.status == 'closed' and runtime and not getattr(runtime, '_closed', False):
             return {**identity, 'ready':False, 'reason':'origin_runtime_still_owned'}
-        watches = await self.call(self.ctx.services['pr_supervisor_store'].list_watches, include_retired=True)
+        watches = await self.call(self.ctx.services['pr_supervisor_store'].lifecycle_watch_links,
+                                  diagnostic_phase='watch_list')
         leases = await self.call(manager.workspace_manager.list, card_id=record.card_id)
         latest = await self.call(self.ctx.services['dispatch_store'].by_session, record.session_id)
         records = [record] + ([latest] if latest and latest.dispatch_id != record.dispatch_id else [])
