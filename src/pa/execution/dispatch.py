@@ -4888,11 +4888,19 @@ class DispatchStore:
                                 "WHERE dispatch_id=? AND idempotency_key=?",
                                 (record.dispatch_id, event.idempotency_key),
                             )
-                            record.progress_events.remove(event)
+                        if stale:
+                            # Keys are unique per dispatch. Filter once rather
+                            # than repeatedly shifting/searching the retained
+                            # list, and normalize the same range union once.
+                            expired_keys = {event.idempotency_key for event in stale}
+                            record.progress_events = [
+                                event for event in record.progress_events
+                                if event.idempotency_key not in expired_keys
+                            ]
                             record.progress_compacted_ranges = _normalized_sequence_ranges(
                                 [
                                     *record.progress_compacted_ranges,
-                                    [event.sequence, event.sequence],
+                                    *[[event.sequence, event.sequence] for event in stale],
                                 ]
                             )
                         protected_keys = {

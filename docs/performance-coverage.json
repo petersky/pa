@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-29T03:18:15.264562+00:00",
-  "completion": "OPEN: all 683 findings / 147 concerns. Exact PR595 installed activation/scoped retests complete; installed766.897 ms/source893.184 ms/natural11071.671 ms maintenance and all broader obligations remain. New dispatch compaction source repair is unmerged/uninstalled; no independent acceptance.",
+  "as_of": "2026-10-29T03:41:54.539123+00:00",
+  "completion": "OPEN: all 684 findings /148 concerns. Exact PR596 activation/scoped retests complete; installed764.783 ms/source876.949 ms/natural5324.784 ms maintenance and all broader obligations remain. New expired-progress source repair unmerged/uninstalled; independent acceptance pending.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -217564,6 +217564,25 @@
       "resolution": "open",
       "next_actor": "this same systemic session",
       "next_action": "Complete supervised integration and exact activation/retests, then remaining substantive maintenance and broader acceptance. No whole-maintenance/historical cause closure."
+    },
+    {
+      "id": "concern:dispatch-compaction-expired-progress",
+      "kind": "concern",
+      "finding": "Expired dispatch progress repeatedly removes retained list entries and normalizes accumulating ranges",
+      "family": "maintenance",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_source_and_private_stored_history_cpu_amplification_normal_live_share_unverified",
+      "cause": "Per-expired-event list removal and cumulative sorting repeat Python work. Ordinary current ingress limits remain; large retained/import-shaped input is separate.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-exact596-activation-expired-compaction-20261029.json"
+      },
+      "implemented": "Filter expired unique keys once and normalize the same complete sequence-range union once; original SQL per event, writer lock, eligibility, receipts, transaction and committed-error publication remain.",
+      "merged": [],
+      "deployed": "New source uninstalled. Exact PR596 c41631be installed, loaded and scoped-retested.",
+      "retested": "84 scoped source contracts pass, including sparse protected/recent/exact-boundary events, receipt keys and rollback/commit/reopen semantics. Source mixed100/9600 events has zero worker warnings/failures/timeouts/rejections; maintenance876.949 ms remains.",
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Supervised integration and exact activation/retests, then remaining maintenance/shared-source and full inventory acceptance. No whole-maintenance or historical cause closure."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -313452,6 +313471,929 @@
               ],
               "/api/fleet/overview": [
                 "route-b808:/api/fleet/overview"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pr": 596,
+      "artifact": "docs/benchmarks/systemic-exact596-activation-expired-compaction-20261029.json",
+      "source": "c41631beb2c63a4d7a7acbf030dcaab5a345ba27",
+      "loaded": true,
+      "scoped_retested": true,
+      "accepted": false,
+      "runtime_populations": [
+        {
+          "input": ".dev/pr596-afterinstall-ordinary-owner-control-20261029.json",
+          "started_at": "2026-10-29T03:27:49.152456+00:00",
+          "finished_at": "2026-10-29T03:27:49.193955+00:00",
+          "loaded": {
+            "loaded_module_version": "1.5.9",
+            "source_revision": "b12760da8856b06dc014fda1d31dd14def86f941",
+            "package_identity": "sha256:d2174a0861daf297eeb34d90ad7e05ce8ff27a020b2f285d8b22ee270fa00217",
+            "pid": 41750,
+            "startup_id": "a87359ca-900c-4d06-b89c-3905f48a3173"
+          },
+          "operations": 117,
+          "routes": 42,
+          "mapping": {
+            "runtime": {
+              "acp.pa_mcp_owner_probe": [
+                "runtime:acp.pa_mcp_owner_probe"
+              ],
+              "acp.provider_resolve": [
+                "runtime:acp.provider_resolve"
+              ],
+              "acp.wire_append": [
+                "runtime:acp.wire_append"
+              ],
+              "acp.wire_init": [
+                "runtime:acp.wire_init"
+              ],
+              "agent.project_recovery_availability": [
+                "runtime:agent.project_recovery_availability"
+              ],
+              "agent.prompt_compose": [
+                "runtime:agent.prompt_compose"
+              ],
+              "agent.provider_resolve": [
+                "runtime:agent.provider_resolve"
+              ],
+              "agent.quiesce_snapshot_clear": [
+                "runtime:agent.quiesce_snapshot_clear"
+              ],
+              "agent.recovery_sessions": [
+                "runtime:agent.recovery_sessions"
+              ],
+              "agent.recovery_snapshot": [
+                "runtime:agent.recovery_snapshot"
+              ],
+              "agent.session_mkdir": [
+                "runtime:agent.session_mkdir"
+              ],
+              "agent.startup_state_read": [
+                "runtime:agent.startup_state_read"
+              ],
+              "conversation.issues": [
+                "runtime:conversation.issues"
+              ],
+              "conversation.session": [
+                "runtime:conversation.session"
+              ],
+              "dispatch.completion_pending_read": [
+                "runtime:dispatch.completion_pending_read"
+              ],
+              "dispatch.followup_ack": [
+                "runtime:dispatch.followup_ack"
+              ],
+              "dispatch.followup_bind": [
+                "runtime:dispatch.followup_bind"
+              ],
+              "dispatch.followup_pending_read": [
+                "runtime:dispatch.followup_pending_read"
+              ],
+              "dispatch.followup_record_write": [
+                "runtime:dispatch.followup_record_write"
+              ],
+              "dispatch.followup_started": [
+                "runtime:dispatch.followup_started"
+              ],
+              "dispatch.prompt_bind": [
+                "runtime:dispatch.prompt_bind"
+              ],
+              "dispatch.record_read": [
+                "runtime:dispatch.record_read"
+              ],
+              "dispatch.workspace_admission_read": [
+                "runtime:dispatch.workspace_admission_read"
+              ],
+              "filesystem.github_credentials_read": [
+                "runtime:filesystem.github_credentials_read"
+              ],
+              "fleet.overview.reachability": [
+                "runtime:fleet.overview.reachability"
+              ],
+              "fleet.overview.status": [
+                "runtime:fleet.overview.status"
+              ],
+              "fleet.overview.sync": [
+                "runtime:fleet.overview.sync"
+              ],
+              "fleet.overview_cache_read": [
+                "runtime:fleet.overview_cache_read"
+              ],
+              "fleet.overview_cache_write": [
+                "runtime:fleet.overview_cache_write"
+              ],
+              "fleet.overview_response_json": [
+                "runtime:fleet.overview_response_json"
+              ],
+              "fleet.response_json": [
+                "runtime:fleet.response_json"
+              ],
+              "fleet.update_recovery": [
+                "runtime:fleet.update_recovery"
+              ],
+              "goal.dispatch_followup_reserve": [
+                "runtime:goal.dispatch_followup_reserve"
+              ],
+              "goal.dispatch_lifecycle_index": [
+                "runtime:goal.dispatch_lifecycle_index"
+              ],
+              "health.canonical_obligation": [
+                "runtime:health.canonical_obligation"
+              ],
+              "http.fleet_agent": [
+                "runtime:http.fleet_agent"
+              ],
+              "http.fleet_overview": [
+                "runtime:http.fleet_overview"
+              ],
+              "http.github": [
+                "runtime:http.github"
+              ],
+              "http.github_snapshot": [
+                "runtime:http.github_snapshot"
+              ],
+              "http.pr_supervisor_peer": [
+                "runtime:http.pr_supervisor_peer"
+              ],
+              "http.session_list": [
+                "runtime-followup:http.session_list"
+              ],
+              "intake.web_prompt": [
+                "runtime:intake.web_prompt"
+              ],
+              "maintenance.run": [
+                "runtime:maintenance.run"
+              ],
+              "notifications.list_page": [
+                "runtime:notifications.list_page"
+              ],
+              "notifications.present_page": [
+                "runtime:notifications.present_page"
+              ],
+              "pr_supervisor.dispatch_claim": [
+                "runtime:pr_supervisor.dispatch_claim"
+              ],
+              "pr_supervisor.dispatch_finish": [
+                "runtime:pr_supervisor.dispatch_finish"
+              ],
+              "pr_supervisor.github_response_json": [
+                "runtime:pr_supervisor.github_response_json"
+              ],
+              "pr_supervisor.metric": [
+                "runtime:pr_supervisor.metric"
+              ],
+              "pr_supervisor.response_json": [
+                "runtime:pr_supervisor.response_json"
+              ],
+              "preferences.agent_auto_approve_read": [
+                "runtime:preferences.agent_auto_approve_read"
+              ],
+              "progress.checkpoint_write": [
+                "runtime:progress.checkpoint_write"
+              ],
+              "progress.dispatch_read": [
+                "runtime:progress.dispatch_read"
+              ],
+              "progress.final_report_build": [
+                "runtime:progress.final_report_build"
+              ],
+              "progress.final_report_write": [
+                "runtime:progress.final_report_write"
+              ],
+              "progress.heartbeat_write": [
+                "runtime:progress.heartbeat_write"
+              ],
+              "progress.pending_read": [
+                "runtime:progress.pending_read"
+              ],
+              "progress.sequence_allocate": [
+                "runtime:progress.sequence_allocate"
+              ],
+              "reconciliation.completion_evidence_read": [
+                "runtime:reconciliation.completion_evidence_read"
+              ],
+              "reconciliation.completion_queue": [
+                "runtime:reconciliation.completion_queue"
+              ],
+              "reconciliation.dispatch_read": [
+                "runtime:reconciliation.dispatch_read"
+              ],
+              "reconciliation.session_read": [
+                "runtime:reconciliation.session_read"
+              ],
+              "selection.attempt_authority": [
+                "runtime:selection.attempt_authority"
+              ],
+              "selection.configuration_receipt": [
+                "runtime:selection.configuration_receipt"
+              ],
+              "selection.prompt_identity": [
+                "runtime:selection.prompt_identity"
+              ],
+              "selection.prompt_outcome": [
+                "runtime:selection.prompt_outcome"
+              ],
+              "sqlite.agent_runtime_checkpoint": [
+                "runtime:sqlite.agent_runtime_checkpoint"
+              ],
+              "sqlite.agent_session_read": [
+                "runtime:sqlite.agent_session_read"
+              ],
+              "sqlite.agent_session_save": [
+                "runtime:sqlite.agent_session_save"
+              ],
+              "sqlite.card_read": [
+                "runtime:sqlite.card_read"
+              ],
+              "sqlite.card_write": [
+                "runtime:sqlite.card_write"
+              ],
+              "sqlite.completion_capabilities": [
+                "runtime:sqlite.completion_capabilities"
+              ],
+              "sqlite.dispatch_queue_admit": [
+                "runtime:sqlite.dispatch_queue_admit"
+              ],
+              "sqlite.pr_merge_evidence_read": [
+                "runtime:sqlite.pr_merge_evidence_read"
+              ],
+              "sqlite.pr_supervisor_capability_read": [
+                "runtime:sqlite.pr_supervisor_capability_read"
+              ],
+              "sqlite.pr_supervisor_capability_write": [
+                "runtime:sqlite.pr_supervisor_capability_write"
+              ],
+              "sqlite.pr_supervisor_completion_due_read": [
+                "runtime:sqlite.pr_supervisor_completion_due_read"
+              ],
+              "sqlite.pr_supervisor_due_read": [
+                "runtime:sqlite.pr_supervisor_due_read"
+              ],
+              "sqlite.pr_supervisor_effect_finish": [
+                "runtime:sqlite.pr_supervisor_effect_finish"
+              ],
+              "sqlite.pr_supervisor_effect_prepare": [
+                "runtime:sqlite.pr_supervisor_effect_prepare"
+              ],
+              "sqlite.pr_supervisor_event_write": [
+                "runtime:sqlite.pr_supervisor_event_write"
+              ],
+              "sqlite.pr_supervisor_lease_write": [
+                "runtime:sqlite.pr_supervisor_lease_write"
+              ],
+              "sqlite.pr_supervisor_metric": [
+                "runtime:sqlite.pr_supervisor_metric"
+              ],
+              "sqlite.pr_supervisor_observation_write": [
+                "runtime:sqlite.pr_supervisor_observation_write"
+              ],
+              "sqlite.pr_supervisor_watch_read": [
+                "runtime:sqlite.pr_supervisor_watch_read"
+              ],
+              "sqlite.pr_supervisor_watch_write": [
+                "runtime:sqlite.pr_supervisor_watch_write"
+              ],
+              "sqlite.project_read": [
+                "runtime:sqlite.project_read"
+              ],
+              "sqlite.prompt_acceptance": [
+                "runtime:sqlite.prompt_acceptance"
+              ],
+              "sqlite.prompt_acceptance_read": [
+                "runtime:sqlite.prompt_acceptance_read"
+              ],
+              "sqlite.repository_read": [
+                "runtime:sqlite.repository_read"
+              ],
+              "sqlite.restart_continuation_authorization": [
+                "runtime-live:sqlite.restart_continuation_authorization"
+              ],
+              "sqlite.restart_handoff_completion": [
+                "runtime:sqlite.restart_handoff_completion"
+              ],
+              "sqlite.restart_handoff_delivered": [
+                "runtime-live:sqlite.restart_handoff_delivered"
+              ],
+              "sqlite.restart_handoff_queued": [
+                "runtime-live:sqlite.restart_handoff_queued"
+              ],
+              "sqlite.restart_handoff_resuming": [
+                "runtime-live:sqlite.restart_handoff_resuming"
+              ],
+              "sqlite.restart_handoff_session": [
+                "runtime:sqlite.restart_handoff_session"
+              ],
+              "sqlite.restart_handoffs_pending": [
+                "runtime:sqlite.restart_handoffs_pending"
+              ],
+              "sqlite.restart_handoffs_watchdog": [
+                "runtime:sqlite.restart_handoffs_watchdog"
+              ],
+              "sqlite.transcript_append": [
+                "runtime:sqlite.transcript_append"
+              ],
+              "sqlite.transcript_sequence": [
+                "runtime:sqlite.transcript_sequence"
+              ],
+              "startup.agent_manager": [
+                "runtime:startup.agent_manager"
+              ],
+              "startup.async_backend_prepare": [
+                "runtime-followup:startup.async_backend_prepare"
+              ],
+              "startup.openapi": [
+                "runtime-followup:startup.openapi"
+              ],
+              "sync.commit_read": [
+                "runtime:sync.commit_read"
+              ],
+              "sync.gc_resume": [
+                "runtime:sync.gc_resume"
+              ],
+              "sync.json_decode": [
+                "runtime:sync.json_decode"
+              ],
+              "sync.json_encode": [
+                "runtime:sync.json_encode"
+              ],
+              "sync.object_has": [
+                "runtime:sync.object_has"
+              ],
+              "sync.object_ingest": [
+                "runtime:sync.object_ingest"
+              ],
+              "sync.peer_http": [
+                "runtime:sync.peer_http"
+              ],
+              "sync.reconcile_head": [
+                "runtime:sync.reconcile_head"
+              ],
+              "sync.ref_read": [
+                "runtime:sync.ref_read"
+              ],
+              "sync.startup_reconcile": [
+                "runtime:sync.startup_reconcile"
+              ],
+              "workspace.collect_garbage": [
+                "runtime:workspace.collect_garbage"
+              ],
+              "workspace.lease_renew": [
+                "runtime:workspace.lease_renew"
+              ],
+              "workspace.project_provision": [
+                "runtime:workspace.project_provision"
+              ],
+              "workspace.reconcile_terminal_state": [
+                "runtime:workspace.reconcile_terminal_state"
+              ]
+            },
+            "route": {
+              "/api/ready": [
+                "route:/api/ready"
+              ],
+              "/api/sync/refs": [
+                "route:/api/sync/refs"
+              ],
+              "/api/agent/sessions/{session_id}/issues": [
+                "route:/api/agent/sessions/{session_id}/issues"
+              ],
+              "/api/agent/sessions/{session_id}/threads": [
+                "route-live:/api/agent/sessions/{session_id}/threads"
+              ],
+              "/api/status": [
+                "route:/api/status"
+              ],
+              "/api/fleet/overview/local": [
+                "route:/api/fleet/overview/local"
+              ],
+              "/api/fleet/dispatch-jobs/{dispatch_id}": [
+                "route:/api/fleet/dispatch-jobs/{dispatch_id}"
+              ],
+              "/api/pr-supervisor/instances/heartbeat": [
+                "route:/api/pr-supervisor/instances/heartbeat"
+              ],
+              "/api/owner-ready": [
+                "route:/api/owner-ready"
+              ],
+              "/api/operations/{idempotency_key:path}": [
+                "route:/api/operations/{idempotency_key:path}"
+              ],
+              "/api/workspaces": [
+                "route:/api/workspaces"
+              ],
+              "/api/agent/observability/v1/sessions/{session_id}": [
+                "route:/api/agent/observability/v1/sessions/{session_id}"
+              ],
+              "/api/pr-supervisor/replicas": [
+                "route:/api/pr-supervisor/replicas"
+              ],
+              "/api/telemetry/live": [
+                "route:/api/telemetry/live"
+              ],
+              "/api/ui/assets": [
+                "route:/api/ui/assets"
+              ],
+              "/api/notifications": [
+                "route:/api/notifications"
+              ],
+              "/api/agent/prompt-capabilities": [
+                "route:/api/agent/prompt-capabilities"
+              ],
+              "/api/agent/sessions/{session_id}/dispatch-prompts": [
+                "route:/api/agent/sessions/{session_id}/dispatch-prompts"
+              ],
+              "/api/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}/{operation}": [
+                "route-b808:/api/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}/{operation}"
+              ],
+              "/api/sync/get": [
+                "route:/api/sync/get"
+              ],
+              "/api/health-journal/reports": [
+                "route:/api/health-journal/reports"
+              ],
+              "/api/fleet/dispatch-jobs/{dispatch_id}/checkpoint": [
+                "route:/api/fleet/dispatch-jobs/{dispatch_id}/checkpoint"
+              ],
+              "/api/fleet/dispatch/{dispatch_id}/turn-end": [
+                "route:/api/fleet/dispatch/{dispatch_id}/turn-end"
+              ],
+              "/api/pr-supervisor/capabilities": [
+                "route:/api/pr-supervisor/capabilities"
+              ],
+              "/api/runtime": [
+                "route:/api/runtime"
+              ],
+              "/api/health": [
+                "route:/api/health"
+              ],
+              "/{page_path:path}": [
+                "route:/{page_path:path}"
+              ],
+              "/fleet": [
+                "route-followup:/fleet"
+              ],
+              "/": [
+                "route:/"
+              ],
+              "/pull-requests": [
+                "route-followup:/pull-requests"
+              ],
+              "/api/fleet/overview": [
+                "route-b808:/api/fleet/overview"
+              ],
+              "/api/instance/maintenance": [
+                "route-followup:/api/instance/maintenance"
+              ],
+              "/api/configuration": [
+                "route:/api/configuration"
+              ],
+              "/api/cards/{card_id}": [
+                "route:/api/cards/{card_id}"
+              ],
+              "/api/fleet/instances": [
+                "route:/api/fleet/instances"
+              ],
+              "/api/agent/sessions": [
+                "route:/api/agent/sessions"
+              ],
+              "/api/backups/status": [
+                "route:/api/backups/status"
+              ],
+              "/api/pr-supervisor/pull-requests": [
+                "route:/api/pr-supervisor/pull-requests"
+              ],
+              "/api/pr-supervisor/watches/{watch_id}/lease": [
+                "route:/api/pr-supervisor/watches/{watch_id}/lease"
+              ],
+              "/api/pr-supervisor/watches/{watch_id}": [
+                "route:/api/pr-supervisor/watches/{watch_id}"
+              ],
+              "/api/pr-supervisor/watches/{watch_id}/merge-evidence": [
+                "route:/api/pr-supervisor/watches/{watch_id}/merge-evidence"
+              ],
+              "/api/agent/sessions/{session_id}/restart-handoffs": [
+                "route:/api/agent/sessions/{session_id}/restart-handoffs"
+              ]
+            }
+          }
+        },
+        {
+          "input": ".dev/exact596-postrestart-ordinary-owner-control-20261029.json",
+          "started_at": "2026-10-29T03:35:16.249094+00:00",
+          "finished_at": "2026-10-29T03:35:16.288649+00:00",
+          "loaded": {
+            "loaded_module_version": "1.5.9",
+            "source_revision": "c41631beb2c63a4d7a7acbf030dcaab5a345ba27",
+            "package_identity": "sha256:ef7dba6d9fb852bc95791147bfd3fcd56fedb8cae488e1e168306c6534980012",
+            "pid": 46525,
+            "startup_id": "a53f26d9-5e80-4911-b735-edcbb1d25ab6"
+          },
+          "operations": 100,
+          "routes": 32,
+          "mapping": {
+            "runtime": {
+              "acp.pa_mcp_owner_probe": [
+                "runtime:acp.pa_mcp_owner_probe"
+              ],
+              "acp.provider_resolve": [
+                "runtime:acp.provider_resolve"
+              ],
+              "acp.wire_append": [
+                "runtime:acp.wire_append"
+              ],
+              "acp.wire_init": [
+                "runtime:acp.wire_init"
+              ],
+              "agent.project_recovery_availability": [
+                "runtime:agent.project_recovery_availability"
+              ],
+              "agent.prompt_compose": [
+                "runtime:agent.prompt_compose"
+              ],
+              "agent.provider_resolve": [
+                "runtime:agent.provider_resolve"
+              ],
+              "agent.quiesce_snapshot_clear": [
+                "runtime:agent.quiesce_snapshot_clear"
+              ],
+              "agent.recovery_sessions": [
+                "runtime:agent.recovery_sessions"
+              ],
+              "agent.recovery_snapshot": [
+                "runtime:agent.recovery_snapshot"
+              ],
+              "agent.session_mkdir": [
+                "runtime:agent.session_mkdir"
+              ],
+              "agent.startup_state_read": [
+                "runtime:agent.startup_state_read"
+              ],
+              "conversation.issues": [
+                "runtime:conversation.issues"
+              ],
+              "conversation.session": [
+                "runtime:conversation.session"
+              ],
+              "dispatch.completion_pending_read": [
+                "runtime:dispatch.completion_pending_read"
+              ],
+              "dispatch.followup_ack": [
+                "runtime:dispatch.followup_ack"
+              ],
+              "dispatch.followup_bind": [
+                "runtime:dispatch.followup_bind"
+              ],
+              "dispatch.followup_pending_read": [
+                "runtime:dispatch.followup_pending_read"
+              ],
+              "dispatch.followup_record_write": [
+                "runtime:dispatch.followup_record_write"
+              ],
+              "dispatch.followup_started": [
+                "runtime:dispatch.followup_started"
+              ],
+              "dispatch.prompt_bind": [
+                "runtime:dispatch.prompt_bind"
+              ],
+              "dispatch.record_read": [
+                "runtime:dispatch.record_read"
+              ],
+              "dispatch.workspace_admission_read": [
+                "runtime:dispatch.workspace_admission_read"
+              ],
+              "filesystem.github_credentials_read": [
+                "runtime:filesystem.github_credentials_read"
+              ],
+              "fleet.overview.reachability": [
+                "runtime:fleet.overview.reachability"
+              ],
+              "fleet.overview.status": [
+                "runtime:fleet.overview.status"
+              ],
+              "fleet.overview.sync": [
+                "runtime:fleet.overview.sync"
+              ],
+              "fleet.overview_cache_read": [
+                "runtime:fleet.overview_cache_read"
+              ],
+              "fleet.overview_cache_write": [
+                "runtime:fleet.overview_cache_write"
+              ],
+              "fleet.overview_response_json": [
+                "runtime:fleet.overview_response_json"
+              ],
+              "fleet.response_json": [
+                "runtime:fleet.response_json"
+              ],
+              "fleet.update_recovery": [
+                "runtime:fleet.update_recovery"
+              ],
+              "goal.dispatch_followup_reserve": [
+                "runtime:goal.dispatch_followup_reserve"
+              ],
+              "goal.dispatch_lifecycle_index": [
+                "runtime:goal.dispatch_lifecycle_index"
+              ],
+              "health.canonical_obligation": [
+                "runtime:health.canonical_obligation"
+              ],
+              "http.fleet_agent": [
+                "runtime:http.fleet_agent"
+              ],
+              "http.fleet_overview": [
+                "runtime:http.fleet_overview"
+              ],
+              "http.github": [
+                "runtime:http.github"
+              ],
+              "http.pr_supervisor_peer": [
+                "runtime:http.pr_supervisor_peer"
+              ],
+              "intake.web_prompt": [
+                "runtime:intake.web_prompt"
+              ],
+              "maintenance.run": [
+                "runtime:maintenance.run"
+              ],
+              "notifications.list_page": [
+                "runtime:notifications.list_page"
+              ],
+              "notifications.present_page": [
+                "runtime:notifications.present_page"
+              ],
+              "pr_supervisor.github_response_json": [
+                "runtime:pr_supervisor.github_response_json"
+              ],
+              "pr_supervisor.response_json": [
+                "runtime:pr_supervisor.response_json"
+              ],
+              "preferences.agent_auto_approve_read": [
+                "runtime:preferences.agent_auto_approve_read"
+              ],
+              "progress.checkpoint_write": [
+                "runtime:progress.checkpoint_write"
+              ],
+              "progress.dispatch_read": [
+                "runtime:progress.dispatch_read"
+              ],
+              "progress.final_report_build": [
+                "runtime:progress.final_report_build"
+              ],
+              "progress.final_report_write": [
+                "runtime:progress.final_report_write"
+              ],
+              "progress.heartbeat_write": [
+                "runtime:progress.heartbeat_write"
+              ],
+              "progress.pending_read": [
+                "runtime:progress.pending_read"
+              ],
+              "progress.sequence_allocate": [
+                "runtime:progress.sequence_allocate"
+              ],
+              "reconciliation.completion_evidence_read": [
+                "runtime:reconciliation.completion_evidence_read"
+              ],
+              "reconciliation.completion_queue": [
+                "runtime:reconciliation.completion_queue"
+              ],
+              "reconciliation.dispatch_read": [
+                "runtime:reconciliation.dispatch_read"
+              ],
+              "reconciliation.session_read": [
+                "runtime:reconciliation.session_read"
+              ],
+              "selection.attempt_authority": [
+                "runtime:selection.attempt_authority"
+              ],
+              "selection.configuration_receipt": [
+                "runtime:selection.configuration_receipt"
+              ],
+              "selection.prompt_identity": [
+                "runtime:selection.prompt_identity"
+              ],
+              "selection.prompt_outcome": [
+                "runtime:selection.prompt_outcome"
+              ],
+              "sqlite.agent_runtime_checkpoint": [
+                "runtime:sqlite.agent_runtime_checkpoint"
+              ],
+              "sqlite.agent_session_read": [
+                "runtime:sqlite.agent_session_read"
+              ],
+              "sqlite.agent_session_save": [
+                "runtime:sqlite.agent_session_save"
+              ],
+              "sqlite.card_read": [
+                "runtime:sqlite.card_read"
+              ],
+              "sqlite.dispatch_queue_admit": [
+                "runtime:sqlite.dispatch_queue_admit"
+              ],
+              "sqlite.pr_supervisor_capability_write": [
+                "runtime:sqlite.pr_supervisor_capability_write"
+              ],
+              "sqlite.pr_supervisor_completion_due_read": [
+                "runtime:sqlite.pr_supervisor_completion_due_read"
+              ],
+              "sqlite.pr_supervisor_due_read": [
+                "runtime:sqlite.pr_supervisor_due_read"
+              ],
+              "sqlite.pr_supervisor_event_write": [
+                "runtime:sqlite.pr_supervisor_event_write"
+              ],
+              "sqlite.pr_supervisor_metric": [
+                "runtime:sqlite.pr_supervisor_metric"
+              ],
+              "sqlite.pr_supervisor_watch_read": [
+                "runtime:sqlite.pr_supervisor_watch_read"
+              ],
+              "sqlite.pr_supervisor_watch_write": [
+                "runtime:sqlite.pr_supervisor_watch_write"
+              ],
+              "sqlite.project_read": [
+                "runtime:sqlite.project_read"
+              ],
+              "sqlite.prompt_acceptance_read": [
+                "runtime:sqlite.prompt_acceptance_read"
+              ],
+              "sqlite.repository_read": [
+                "runtime:sqlite.repository_read"
+              ],
+              "sqlite.restart_continuation_authorization": [
+                "runtime-live:sqlite.restart_continuation_authorization"
+              ],
+              "sqlite.restart_handoff_completion": [
+                "runtime:sqlite.restart_handoff_completion"
+              ],
+              "sqlite.restart_handoff_delivered": [
+                "runtime-live:sqlite.restart_handoff_delivered"
+              ],
+              "sqlite.restart_handoff_queued": [
+                "runtime-live:sqlite.restart_handoff_queued"
+              ],
+              "sqlite.restart_handoff_resuming": [
+                "runtime-live:sqlite.restart_handoff_resuming"
+              ],
+              "sqlite.restart_handoff_session": [
+                "runtime:sqlite.restart_handoff_session"
+              ],
+              "sqlite.restart_handoffs_pending": [
+                "runtime:sqlite.restart_handoffs_pending"
+              ],
+              "sqlite.restart_handoffs_watchdog": [
+                "runtime:sqlite.restart_handoffs_watchdog"
+              ],
+              "sqlite.transcript_append": [
+                "runtime:sqlite.transcript_append"
+              ],
+              "sqlite.transcript_sequence": [
+                "runtime:sqlite.transcript_sequence"
+              ],
+              "startup.agent_manager": [
+                "runtime:startup.agent_manager"
+              ],
+              "startup.async_backend_prepare": [
+                "runtime-followup:startup.async_backend_prepare"
+              ],
+              "startup.openapi": [
+                "runtime-followup:startup.openapi"
+              ],
+              "sync.commit_read": [
+                "runtime:sync.commit_read"
+              ],
+              "sync.gc_resume": [
+                "runtime:sync.gc_resume"
+              ],
+              "sync.json_decode": [
+                "runtime:sync.json_decode"
+              ],
+              "sync.peer_http": [
+                "runtime:sync.peer_http"
+              ],
+              "sync.reconcile_head": [
+                "runtime:sync.reconcile_head"
+              ],
+              "sync.ref_read": [
+                "runtime:sync.ref_read"
+              ],
+              "sync.startup_reconcile": [
+                "runtime:sync.startup_reconcile"
+              ],
+              "workspace.collect_garbage": [
+                "runtime:workspace.collect_garbage"
+              ],
+              "workspace.lease_renew": [
+                "runtime:workspace.lease_renew"
+              ],
+              "workspace.project_provision": [
+                "runtime:workspace.project_provision"
+              ],
+              "workspace.reconcile_terminal_state": [
+                "runtime:workspace.reconcile_terminal_state"
+              ]
+            },
+            "route": {
+              "/api/telemetry/live": [
+                "route:/api/telemetry/live"
+              ],
+              "/api/ready": [
+                "route:/api/ready"
+              ],
+              "/api/ui/assets": [
+                "route:/api/ui/assets"
+              ],
+              "/api/agent/sessions/{session_id}/issues": [
+                "route:/api/agent/sessions/{session_id}/issues"
+              ],
+              "/api/agent/sessions/{session_id}/threads": [
+                "route-live:/api/agent/sessions/{session_id}/threads"
+              ],
+              "/api/notifications": [
+                "route:/api/notifications"
+              ],
+              "/api/pr-supervisor/replicas": [
+                "route:/api/pr-supervisor/replicas"
+              ],
+              "/api/status": [
+                "route:/api/status"
+              ],
+              "/api/fleet/overview/local": [
+                "route:/api/fleet/overview/local"
+              ],
+              "/api/fleet/dispatch-jobs/{dispatch_id}": [
+                "route:/api/fleet/dispatch-jobs/{dispatch_id}"
+              ],
+              "/api/sync/refs": [
+                "route:/api/sync/refs"
+              ],
+              "/api/sync/get": [
+                "route:/api/sync/get"
+              ],
+              "/api/owner-ready": [
+                "route:/api/owner-ready"
+              ],
+              "/api/pr-supervisor/instances/heartbeat": [
+                "route:/api/pr-supervisor/instances/heartbeat"
+              ],
+              "/api/pr-supervisor/capabilities": [
+                "route:/api/pr-supervisor/capabilities"
+              ],
+              "/api/agent/observability/v1/sessions/{session_id}": [
+                "route:/api/agent/observability/v1/sessions/{session_id}"
+              ],
+              "/api/workspaces": [
+                "route:/api/workspaces"
+              ],
+              "/api/operations/{idempotency_key:path}": [
+                "route:/api/operations/{idempotency_key:path}"
+              ],
+              "/api/agent/prompt-capabilities": [
+                "route:/api/agent/prompt-capabilities"
+              ],
+              "/api/agent/sessions/{session_id}/dispatch-prompts": [
+                "route:/api/agent/sessions/{session_id}/dispatch-prompts"
+              ],
+              "/api/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}/{operation}": [
+                "route-b808:/api/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}/{operation}"
+              ],
+              "/api/fleet/dispatch-jobs/{dispatch_id}/checkpoint": [
+                "route:/api/fleet/dispatch-jobs/{dispatch_id}/checkpoint"
+              ],
+              "/api/fleet/dispatch/{dispatch_id}/turn-end": [
+                "route:/api/fleet/dispatch/{dispatch_id}/turn-end"
+              ],
+              "/api/runtime": [
+                "route:/api/runtime"
+              ],
+              "/api/health": [
+                "route:/api/health"
+              ],
+              "/{page_path:path}": [
+                "route:/{page_path:path}"
+              ],
+              "/fleet": [
+                "route-followup:/fleet"
+              ],
+              "/": [
+                "route:/"
+              ],
+              "/pull-requests": [
+                "route-followup:/pull-requests"
+              ],
+              "/api/fleet/overview": [
+                "route-b808:/api/fleet/overview"
+              ],
+              "/api/backups/status": [
+                "route:/api/backups/status"
+              ],
+              "/api/instance/maintenance": [
+                "route-followup:/api/instance/maintenance"
               ]
             }
           }
