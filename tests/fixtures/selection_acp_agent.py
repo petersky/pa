@@ -1,6 +1,7 @@
 """Tool-free ACP wire fixture. It never runs shell commands or edits files."""
 
 import json
+import os
 import sys
 from uuid import uuid4
 
@@ -68,6 +69,11 @@ def advertised(harness="codex"):
 def main():
     harness = sys.argv[1] if len(sys.argv) > 1 else "codex"
     state = advertised(harness)
+    if harness == "codex":
+        startup_model = json.loads(os.environ.get("CODEX_CONFIG") or "{}").get("model")
+        if startup_model and not os.environ.get("FIXTURE_IGNORE_MODEL"):
+            state["models"]["currentModelId"] = startup_model
+            state["config_options"][0]["currentValue"] = startup_model
     sid = str(uuid4())
     for line in sys.stdin:
         request = json.loads(line)
@@ -81,11 +87,15 @@ def main():
                 "agentInfo": {"name": "pa-selection-test-fixture", "version": "1"},
                 "agentCapabilities": {
                     "loadSession": True,
+                    "sessionCapabilities": {"resume": {}},
                     "promptCapabilities": {"image": True},
                 },
                 "authMethods": [],
             }
-        elif method in {"session/new", "session/load"}:
+        elif method in {"session/new", "session/load", "session/resume"}:
+            if method == "session/resume" and os.environ.get("FIXTURE_RESUME_FAIL"):
+                print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "error": {"code": -32601, "message": "resume unavailable"}}), flush=True)
+                continue
             sid = params.get("sessionId") or sid
             result = {
                 "sessionId": sid,
@@ -93,6 +103,8 @@ def main():
                 "configOptions": state["config_options"],
                 "modes": state["modes"],
             }
+            if os.environ.get("FIXTURE_NO_METADATA"):
+                result = {"sessionId": sid}
         elif method == "session/set_config_option":
             for option in state["config_options"]:
                 if option["id"] == params.get("configId"):

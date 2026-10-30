@@ -112,6 +112,20 @@ PA injects `pa mcp` on session create/resume the same as for Cursor. Codex docum
 
 ## Resume / quiesce
 
+PA resolves explicit configuration (or the saved requested configuration when no
+explicit request is supplied) before launching the provider. For Codex, the selected
+model overlays only `CODEX_CONFIG.model` in the child environment. The adapter
+[merges that configuration into native resume and load](https://github.com/agentclientprotocol/codex-acp/blob/main/src/CodexAcpClient.ts)
+before restoring the conversation. Global config, reasoning, fast mode, permissions,
+and native conversation identity are preserved. Other providers retain their native
+startup behavior and the ACP configuration admission barrier.
+
+`model_startup` records the requested model separately from the provider's startup
+acknowledgement. Missing metadata leaves effective model unknown; persisted PA
+metadata is not confirmation for a new connection. A conflicting Codex startup
+acknowledgement fails admission. Full requested configuration is still applied and
+verified through ACP before PA drains prompts.
+
 Treat resume as best-effort: PA uses initialize session capabilities; on failure it opens a new session (queued prompts preserved in PA’s quiesce snapshot).
 
 ## PA ops / fleet

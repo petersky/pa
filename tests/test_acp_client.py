@@ -958,6 +958,7 @@ class AgentConfigurationAdmissionTests(unittest.IsolatedAsyncioTestCase):
                 await runtime.start(resume_external_id="external-1")
 
         configured = connection.configure.await_args.args[0]
+        self.assertEqual(connection.connect.await_args.kwargs["initial_configuration"], requested)
         self.assertEqual(configured.as_dict(), requested.as_dict())
         self.assertTrue(connection.configure.await_args.kwargs["force"])
         connection.disconnect.assert_not_awaited()
