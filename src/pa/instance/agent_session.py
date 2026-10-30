@@ -1281,9 +1281,17 @@ class AgentSessionRuntime:
             mcp_private_env=self.mcp_private_env,
             startup_trace=self.startup_trace,
         )
+        persisted = dict(
+            ((self.session.config_json or {}).get("configuration") or {}).get("requested")
+            or {}
+        )
+        configuration = initial_configuration
+        if configuration is None and persisted:
+            configuration = SessionConfigurationRequest.from_dict(persisted)
         try:
             self.session = await self.connection.connect(
                 resume_external_id=resume_external_id,
+                initial_configuration=configuration,
                 require_restore=require_restore,
                 cwd=self.session.cwd,
                 existing_session=self.session,
@@ -1293,15 +1301,6 @@ class AgentSessionRuntime:
                 card_id=self.session.card_id,
                 project_id=self.session.project_id,
             )
-            persisted = dict(
-                ((self.session.config_json or {}).get("configuration") or {}).get(
-                    "requested"
-                )
-                or {}
-            )
-            configuration = initial_configuration
-            if configuration is None and persisted:
-                configuration = SessionConfigurationRequest.from_dict(persisted)
             configuration_phase = (
                 self.startup_trace.phase("session_configuration")
                 if self.startup_trace

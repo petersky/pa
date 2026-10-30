@@ -1014,6 +1014,7 @@ class AgentConnection:
         self,
         *,
         resume_external_id: str | None = None,
+        initial_configuration: SessionConfigurationRequest | None = None,
         require_restore: bool = False,
         cwd: str | None = None,
         existing_session: AgentSession | None = None,
@@ -1024,6 +1025,11 @@ class AgentConnection:
         project_id: str | None = None,
     ) -> AgentSession:
         self._mcp_observer = None
+        # Resolve intent before provider metadata can replace the saved aliases.
+        if initial_configuration is None and existing_session is not None:
+            initial_configuration = SessionConfigurationRequest.from_dict(
+                ((existing_session.config_json or {}).get("configuration") or {}).get("requested")
+            )
         if not self.settings.agent_enabled:
             raise RuntimeError("Agent connection disabled (PA_AGENT_ENABLED=false)")
         await self._abort_connect_if_shutting_down(stage="preflight")
@@ -1210,6 +1216,19 @@ class AgentConnection:
         # LaunchAgents often inherit /usr/bin:/bin. Prepend Homebrew and
         # ~/.local/bin so npx/node/codex-acp resolve the same way as a login shell.
         child_env["PATH"] = build_service_path()
+        if spec.id == "codex" and initial_configuration and initial_configuration.model_id:
+            # The adapter merges CODEX_CONFIG into both thread/resume (including
+            # session/load) and thread/start. ACP has no standard initial model
+            # field. Keep this override process-local and preserve every other
+            # native setting, including permissions, effort and service tier.
+            try:
+                native_config = json.loads(child_env.get("CODEX_CONFIG") or "{}")
+            except (ValueError, TypeError) as exc:
+                raise ACPConfigurationError("Invalid CODEX_CONFIG for model admission") from exc
+            if not isinstance(native_config, dict):
+                raise ACPConfigurationError("CODEX_CONFIG must be an object for model admission")
+            native_config["model"] = initial_configuration.model_id
+            child_env["CODEX_CONFIG"] = json.dumps(native_config)
         if spec.id == "codex":
             child_env = apply_codex_owner_sandbox_environment(
                 child_env, self.settings
@@ -1467,7 +1486,43 @@ class AgentConnection:
         if project_id is not None:
             self.session.project_id = project_id
 
+        # A previous connection's receipt is historical evidence, never proof of
+        # the model selected by this provider process.
+        config = dict(self.session.config_json or {})
+        for key in ("models", "modes", "options", "values", "model_startup"):
+            config.pop(key, None)
+        admission = dict(config.get("configuration") or {})
+        if initial_configuration is not None and not initial_configuration.empty:
+            admission["requested"] = initial_configuration.as_dict()
+        if admission:
+            admission.pop("effective", None)
+            admission["state"] = "pending"
+            config["configuration"] = admission
+        self.session.config_json = config
+        self.session.model_id = None
+        self.session.mode_id = None
         self._apply_session_meta(session_meta)
+        requested_model = initial_configuration.model_id if initial_configuration else None
+        if spec.id == "codex" and requested_model:
+            config = dict(self.session.config_json or {})
+            config["model_startup"] = {
+                "requested": requested_model,
+                "effective": self.session.model_id,
+                "strategy": "codex_process_config",
+                "restore": restored,
+            }
+            self.session.config_json = config
+            if self.session.model_id and self.session.model_id != requested_model:
+                config["configuration"] = {
+                    **dict(config.get("configuration") or {}),
+                    "state": "failed",
+                    "requested": initial_configuration.as_dict(),
+                    "error": "Provider startup model differs from requested model",
+                }
+                raise ACPConfigurationError(
+                    "Provider startup model differs from requested model; "
+                    "the conversation was not admitted for prompting"
+                )
         info = self._client.session_titles.get(self.session.external_session_id) or session_meta
         apply_provider_title(
             self.session, info.get("title"),
