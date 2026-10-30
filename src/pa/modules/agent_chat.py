@@ -3225,6 +3225,11 @@ async def _record_web_intake(
     runtime,
     message: str,
 ) -> dict[str, str] | None:
+    # Fleet delivery already has a durable dispatch operation and prompt identity.
+    # It is not a new web intake: wrapping a continuation here applies the web
+    # envelope's text limit before dispatch admission and can strand its receipt.
+    if getattr(request.state, "instance_authenticated", False) is True and body.dispatch_id:
+        return None
     ctx = getattr(request.app.state, "ctx", None)
     services = getattr(ctx, "services", None)
     if not isinstance(services, dict):

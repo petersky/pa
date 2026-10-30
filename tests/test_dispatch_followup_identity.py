@@ -20,6 +20,8 @@ from pa.instance.agent_session import AgentSessionManager, AgentSessionRuntime
 from pa.modules.agent_chat import (PromptBody, dispatch_prompt_capabilities, get_prompt_acceptance_status, session_prompt)
 from pa.modules.fleet import DispatchFollowupBody, _process_remote_dispatch, prompt_dispatch_session
 from pa.modules.items import operation_outcome_endpoint, operation_recovery_endpoint
+from pa.modules.agent_chat import _record_web_intake
+from pa.intake.service import IntakeService
 
 MESSAGE = "Please review how Bearer credentials are handled."
 KEY = "review-followup-v1"
@@ -77,6 +79,45 @@ async def authority(env):
 
 def operation(env):
     return env.ledger.get(env.record.dispatch_id).followup_operations[KEY]
+
+
+@pytest.mark.asyncio
+async def test_long_internal_continuation_skips_web_intake_and_admits_once(env):
+    service = IntakeService(env.store, env.manager.settings)
+    env.request.app.state.ctx.services["intake_service"] = service
+    message = ("Continue the existing work. " * 2000).strip()
+    assert len(message) > 32_000
+    try:
+        with patch("pa.modules.agent_chat._record_web_intake", _record_web_intake), patch.object(
+            service, "ingest_web_prompt", wraps=service.ingest_web_prompt,
+        ) as intake:
+            responses = await asyncio.gather(*(target(env, message) for _ in range(3)))
+        intake.assert_not_called()
+        assert all(response["accepted"] for response in responses)
+        assert {response["prompt_id"] for response in responses} == {dispatch_prompt_identity(env.record, KEY)}
+        assert len(env.runtime._queue) == 1
+        assert env.runtime._queue[0].message == message
+        assert len(env.ledger.get(env.record.dispatch_id).followup_turns) == 1
+    finally:
+        service.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("authenticated,dispatch_id", [(False, "dispatch-human"), (True, None)])
+async def test_only_authenticated_dispatch_delivery_skips_web_intake(env, authenticated, dispatch_id):
+    env.request.state.instance_authenticated = authenticated
+    service = MagicMock()
+    service.ingest_web_prompt.return_value = SimpleNamespace(
+        id="intake-id", correlation_id="correlation-id",
+        security=SimpleNamespace(disposition=SimpleNamespace(value="accepted")),
+    )
+    env.request.app.state.ctx.services["intake_service"] = service
+    result = await _record_web_intake(
+        env.request, env.record.session_id, PromptBody(message=MESSAGE, dispatch_id=dispatch_id),
+        env.runtime, MESSAGE,
+    )
+    service.ingest_web_prompt.assert_called_once()
+    assert result["id"] == "intake-id"
 
 
 @pytest.mark.asyncio
