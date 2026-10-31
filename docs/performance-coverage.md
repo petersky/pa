@@ -6925,3 +6925,26 @@ Native627GC1404.046ms/85.334SQLms118calls48rows, session-save798mslockchain, ful
 All716rows170concerns remainOPEN. Exact17dindependent scheduleracceptance unaccepted; originalbackup0331/b527andDB89957acceptedscopes stayclosed. No selfverifier/Done/cleanup/oldreceipt/effectreplay/model/default/config/GC/powerclockchanges.
 
 [Complete source evidence, actual PR628 integration and all private populations](benchmarks/systemic-workspace-connection-ownership-20261031.json). Existing worker ownership bounds normal returned handles and reduces repeated opens; it does not establish the cause of native GC stalls or whole-PA performance acceptance.
+
+
+Fresh log inventory and integrated resource repair (2026-10-31)
+
+Capture18:50:34.681180–18:50:46.029284Z/requestedsince2026-10-30T18:50:34.681180Z.424807records/cap1000000NOTreached;stderr312901/stdout107558/structured4348. ExactsourceUTC rangesinfullinventory, raw142565768B/SHA14b96c538df16a3babd45ff4decc94fbc66254df543e7b96271aef91501a1a86 LOCALonly.
+
+Nine slow names/sevenprefixfamilies/40rawemissions/20structurednumericphase samples allretained withsource/count/p50/p95/p99/max. Matching structured/stderr emissions mayduplicate; NOT40distinctincidents. No pooledfamilyquantiles. Allninealreadyhave retainedledgerrows.
+
+Sevenpagefamilies/73accessmethod-routefamilies retained completely. Page latency/bytes/numericphase samples differ from accesscounts; accessrecords have no reliableper-request latency/bytes. Current30seenruntimepatternmapping leaves unmatchedpaths hash-only; theirliteralidentities remain explicitcoveragegaps.
+
+Native counters/maxima/last256windows/tails/thislogslice are different populations; no backfilledprocessquantiles or warningcountsfrommaxima. Source24h includes olderbuilds; exactbuildperline notattested. No fleetexhaustive or currentpeerrootcause claim.
+
+Explicitowner settingslabels are not independentdefaultCLIidentity proof. Current63296FD/pump/rotatedownership/olderretention/peerlogs/builds unverified; historical88PIPE evidence remains historical. Status2402failures5683571droppedB unchangedfromprior626/88, notresolution ofoldloss. Currentrotation/compression/prune/pump0 notproof ofpastlossrecovery.
+
+All old626425271record and88 427558record slices remain byte-identical parents withtheirownranges/counts/windows. Source629privatefixture/tests/benchmarks andpubliccachedreads overlap portionsofhosthistory; no idlehost/solePA CPU/IOcausalclaim.
+
+PR629resourceownership addresses returnedhandles and workeropenamplification only. NativeGC1404ms/85msobservedSQL, session798mslockchain, sourcefixturemaintenance927.824ms andfullsession2489025B/2MiBnegatives remain. Factoryfailurebeforehandle-return/successfulbusy/IO/GC/Git/filelock/realprovider/startup/drain/peer/log/receipt gaps stayopen.
+
+Exact17dindependent policy unpaused/unaccepted; cardWaiting, verification_pending/missingactive,verified,acceptance/satisfiedintegrated;116evidenceentries and10attachments observed withoutmutation. No selfverifier/Done/laneCAS/cleanup/newworker/model/default/config/GC/powerclock change. Originalbackup0331/b527andDB89957acceptedscopesclosed; privateunknownreceipt/notification custody untouched.
+
+Complete74107650Bparent andallolderfullsource/activation/failure layers preserved unchanged. Newcapture/preparationmatching-order failure andmissingdriver beforeinventory retained; no capture rerun or retrospectiveattribution. Raw native/card/privateprompt/writer/log/XML/ZIP/quarantine bodies LOCAL/hash-onlypublic.
+
+[Every retained slow-operation/source quantile, page family, access count, numeric phase and coverage gap](benchmarks/systemic-current627-log-inventory-20261031.json). PR629 is integrated; the running service remains PR627. All 716 findings and 170 concerns remain open.

@@ -1,0 +1,4543 @@
+{
+  "contract": "pa.current627-log-and-integrations/v1",
+  "observed_at": "2026-10-31T18:58:13.991173+00:00",
+  "host": "macbook",
+  "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+  "loaded_source": "3d76ec938a3ee932e23fb7f4136dfc81f2e0dc53",
+  "loaded_package": "sha256:329894051f776d206f150166ba263769200d025d3a9fa4e7492da2c8188e4d38",
+  "pid": 63296,
+  "inventory": {
+    "contract": "pa.log-backed-performance-inventory/v1",
+    "created_at": "2026-10-31T18:51:32.938895+00:00",
+    "host": "macbook",
+    "authority_instance": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "capture": {
+      "contract": "pa.owner-cli-log-capture/v1",
+      "started_at": "2026-10-31T18:50:34.681180+00:00",
+      "finished_at": "2026-10-31T18:50:46.029284+00:00",
+      "since": "2026-10-30T18:50:34.681180+00:00",
+      "host": "macbook",
+      "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+      "listener_pid": 63296,
+      "source_revision": "3d76ec938a3ee932e23fb7f4136dfc81f2e0dc53",
+      "reader_path": "/Users/petersky/.local/share/uv/tools/pa/lib/python3.14/site-packages/pa/cli/logs.py",
+      "reader_sha256": "99ebd407421af79bd0b76333822ff5493f11d63a28c8607b4b5a70c9fdd646f6",
+      "sources_requested": [
+        "stdout",
+        "stderr",
+        "structured",
+        "supervisor"
+      ],
+      "line_cap": 1000000,
+      "records": 424807,
+      "raw_local": {
+        "path": ".dev/current627-service-logs-20261031.LOCAL.ndjson",
+        "bytes": 142565768,
+        "sha256": "14b96c538df16a3babd45ff4decc94fbc66254df543e7b96271aef91501a1a86"
+      },
+      "diagnostics_local": {
+        "path": ".dev/current627-service-logs-20261031.LOCAL.log",
+        "bytes": 645,
+        "sha256": "bc61ff2cace458cae44a75345ee09233fea2973bffcfab625ebca3c0413f7867"
+      },
+      "scope": "Supported pa.cli.logs.show_logs used by pa logs; exact owner data-directory/identity supplied solely as read parameters after private import roots; no production Settings/Kernel/Store/EventLog creation, write, restart or credentials. Full redacted messages remain LOCAL; numeric inventory published separately. Reader deduplicates bounded matching records, further structured/stderr duplicates may remain. File retention beyond returned24h and peer logs unverified."
+    },
+    "records": 424807,
+    "line_cap": 1000000,
+    "line_cap_reached": false,
+    "sources": {
+      "stderr": 312901,
+      "stdout": 107558,
+      "structured": 4348
+    },
+    "cli_labels": [
+      {
+        "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+        "name": "macbook",
+        "records": 424807
+      }
+    ],
+    "timestamp_ranges_utc": {
+      "stderr": [
+        "2026-10-30T18:50:35+00:00",
+        "2026-10-31T18:50:39+00:00"
+      ],
+      "stdout": [
+        "2026-10-30T18:50:38+00:00",
+        "2026-10-31T18:50:36+00:00"
+      ],
+      "structured": [
+        "2026-10-30T23:47:02.778876+00:00",
+        "2026-10-31T18:50:30.754514+00:00"
+      ]
+    },
+    "slow_name_count": 9,
+    "prefix_family_count": 7,
+    "raw_slow_emissions": 40,
+    "operations": {
+      "agent.startup_state_read": {
+        "stderr": {
+          "count": 1,
+          "p50_ms": 1320.9,
+          "p95_ms": 1320.9,
+          "p99_ms": 1320.9,
+          "max_ms": 1320.9
+        },
+        "structured": {
+          "count": 1,
+          "p50_ms": 1320.9,
+          "p95_ms": 1320.9,
+          "p99_ms": 1320.9,
+          "max_ms": 1320.9
+        }
+      },
+      "fleet.overview.mcp_bootstrap": {
+        "stderr": {
+          "count": 2,
+          "p50_ms": 1017.2,
+          "p95_ms": 1030.7,
+          "p99_ms": 1030.7,
+          "max_ms": 1030.7
+        },
+        "structured": {
+          "count": 2,
+          "p50_ms": 1017.2,
+          "p95_ms": 1030.7,
+          "p99_ms": 1030.7,
+          "max_ms": 1030.7
+        }
+      },
+      "provider.status.cursor": {
+        "stderr": {
+          "count": 2,
+          "p50_ms": 1078.6,
+          "p95_ms": 1080.8,
+          "p99_ms": 1080.8,
+          "max_ms": 1080.8
+        },
+        "structured": {
+          "count": 2,
+          "p50_ms": 1078.6,
+          "p95_ms": 1080.8,
+          "p99_ms": 1080.8,
+          "max_ms": 1080.8
+        }
+      },
+      "reconciliation.session_read": {
+        "stderr": {
+          "count": 2,
+          "p50_ms": 512.0,
+          "p95_ms": 902.4,
+          "p99_ms": 902.4,
+          "max_ms": 902.4
+        },
+        "structured": {
+          "count": 2,
+          "p50_ms": 512.0,
+          "p95_ms": 902.4,
+          "p99_ms": 902.4,
+          "max_ms": 902.4
+        }
+      },
+      "sqlite.agent_session_save": {
+        "stderr": {
+          "count": 2,
+          "p50_ms": 797.5,
+          "p95_ms": 798.0,
+          "p99_ms": 798.0,
+          "max_ms": 798.0
+        },
+        "structured": {
+          "count": 2,
+          "p50_ms": 797.5,
+          "p95_ms": 798.0,
+          "p99_ms": 798.0,
+          "max_ms": 798.0
+        }
+      },
+      "sqlite.prompt_acceptance_read": {
+        "stderr": {
+          "count": 1,
+          "p50_ms": 1165.9,
+          "p95_ms": 1165.9,
+          "p99_ms": 1165.9,
+          "max_ms": 1165.9
+        },
+        "structured": {
+          "count": 1,
+          "p50_ms": 1165.9,
+          "p95_ms": 1165.9,
+          "p99_ms": 1165.9,
+          "max_ms": 1165.9
+        }
+      },
+      "sync.reconcile_head": {
+        "stderr": {
+          "count": 6,
+          "p50_ms": 522.8,
+          "p95_ms": 645.4,
+          "p99_ms": 645.4,
+          "max_ms": 645.4
+        },
+        "structured": {
+          "count": 6,
+          "p50_ms": 522.8,
+          "p95_ms": 645.4,
+          "p99_ms": 645.4,
+          "max_ms": 645.4
+        }
+      },
+      "workspace.collect_garbage": {
+        "stderr": {
+          "count": 3,
+          "p50_ms": 1431.1,
+          "p95_ms": 9957.2,
+          "p99_ms": 9957.2,
+          "max_ms": 9957.2
+        },
+        "structured": {
+          "count": 3,
+          "p50_ms": 1431.1,
+          "p95_ms": 9957.2,
+          "p99_ms": 9957.2,
+          "max_ms": 9957.2
+        }
+      },
+      "workspace.project_provision": {
+        "stderr": {
+          "count": 1,
+          "p50_ms": 6391.9,
+          "p95_ms": 6391.9,
+          "p99_ms": 6391.9,
+          "max_ms": 6391.9
+        },
+        "structured": {
+          "count": 1,
+          "p50_ms": 6391.9,
+          "p95_ms": 6391.9,
+          "p99_ms": 6391.9,
+          "max_ms": 6391.9
+        }
+      }
+    },
+    "prefix_families": {
+      "sync": {
+        "stderr": 6,
+        "structured": 6
+      },
+      "fleet": {
+        "stderr": 2,
+        "structured": 2
+      },
+      "provider": {
+        "stderr": 2,
+        "structured": 2
+      },
+      "workspace": {
+        "stderr": 4,
+        "structured": 4
+      },
+      "reconciliation": {
+        "stderr": 2,
+        "structured": 2
+      },
+      "agent": {
+        "stderr": 1,
+        "structured": 1
+      },
+      "sqlite": {
+        "stderr": 3,
+        "structured": 3
+      }
+    },
+    "structured_numeric_phase_samples": {
+      "sync.reconcile_head": [
+        {
+          "timestamp": "2026-10-31T00:29:24.210461+00:00",
+          "source": "structured",
+          "elapsed_ms": 552.43,
+          "observed_at_monotonic": 989454.28693,
+          "queue_wait_ms": 0.0,
+          "thread_cpu_ms": 183.66,
+          "python_lock_wait_ms": 0.001,
+          "python_lock_hold_ms": 0.838,
+          "python_lock_release_ms": 0.001,
+          "outer_lock_hold_ms": 0.838,
+          "outer_lock_release_ms": 0.001,
+          "sqlite_statement_ms": 74.553,
+          "sqlite_commit_ms": 0.025,
+          "sqlite_statement_thread_cpu_ms": 25.976,
+          "sqlite_commit_thread_cpu_ms": 0.024,
+          "sqlite_calls": 262,
+          "sqlite_rows": 12,
+          "sqlite_aggregate_items": 30618,
+          "sqlite_aggregate_bytes": 2051408,
+          "sqlite_busy_failures": 0,
+          "file_lock_wait_ms": 0.267,
+          "file_lock_hold_ms": 0.261,
+          "file_lock_release_ms": 0.011,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 1412,
+          "object_get_bytes": 8208500,
+          "object_get_ms": 384.368,
+          "object_put_files": 0,
+          "object_put_bytes": 0,
+          "lock_events_total": 2,
+          "worker_service_ms": 552.166,
+          "executor_dispatch_ms": 0.189,
+          "completion_delivery_ms": 0.091
+        },
+        {
+          "timestamp": "2026-10-31T15:41:08.809698+00:00",
+          "source": "structured",
+          "elapsed_ms": 645.409,
+          "observed_at_monotonic": 1044159.021056,
+          "queue_wait_ms": 0.0,
+          "thread_cpu_ms": 154.857,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.136,
+          "python_lock_release_ms": 0.0,
+          "outer_lock_hold_ms": 0.136,
+          "outer_lock_release_ms": 0.0,
+          "sqlite_statement_ms": 180.53,
+          "sqlite_commit_ms": 0.045,
+          "sqlite_statement_thread_cpu_ms": 37.246,
+          "sqlite_commit_thread_cpu_ms": 0.041,
+          "sqlite_calls": 262,
+          "sqlite_rows": 12,
+          "sqlite_aggregate_items": 30626,
+          "sqlite_aggregate_bytes": 2051944,
+          "sqlite_busy_failures": 0,
+          "file_lock_wait_ms": 0.004,
+          "file_lock_hold_ms": 0.06,
+          "file_lock_release_ms": 0.002,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 1428,
+          "object_get_bytes": 8240419,
+          "object_get_ms": 405.047,
+          "object_put_files": 0,
+          "object_put_bytes": 0,
+          "lock_events_total": 2,
+          "worker_service_ms": 645.265,
+          "executor_dispatch_ms": 0.06,
+          "completion_delivery_ms": 0.101
+        },
+        {
+          "timestamp": "2026-10-31T16:32:05.697287+00:00",
+          "source": "structured",
+          "elapsed_ms": 627.414,
+          "observed_at_monotonic": 1047215.904125,
+          "queue_wait_ms": 0.0,
+          "thread_cpu_ms": 145.753,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.327,
+          "python_lock_release_ms": 0.0,
+          "outer_lock_hold_ms": 0.327,
+          "outer_lock_release_ms": 0.0,
+          "sqlite_statement_ms": 105.438,
+          "sqlite_commit_ms": 0.028,
+          "sqlite_statement_thread_cpu_ms": 30.13,
+          "sqlite_commit_thread_cpu_ms": 0.027,
+          "sqlite_calls": 262,
+          "sqlite_rows": 12,
+          "sqlite_aggregate_items": 30628,
+          "sqlite_aggregate_bytes": 2052078,
+          "sqlite_busy_failures": 0,
+          "file_lock_wait_ms": 0.008,
+          "file_lock_hold_ms": 0.17,
+          "file_lock_release_ms": 0.004,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 1432,
+          "object_get_bytes": 8243533,
+          "object_get_ms": 476.967,
+          "object_put_files": 0,
+          "object_put_bytes": 0,
+          "lock_events_total": 2,
+          "worker_service_ms": 627.191,
+          "executor_dispatch_ms": 0.171,
+          "completion_delivery_ms": 0.066
+        },
+        {
+          "timestamp": "2026-10-31T17:52:08.129626+00:00",
+          "source": "structured",
+          "elapsed_ms": 504.473,
+          "observed_at_monotonic": 1052018.271795,
+          "queue_wait_ms": 0.0,
+          "thread_cpu_ms": 129.967,
+          "python_lock_wait_ms": 0.001,
+          "python_lock_hold_ms": 0.346,
+          "python_lock_release_ms": 0.0,
+          "outer_lock_hold_ms": 0.346,
+          "outer_lock_release_ms": 0.0,
+          "sqlite_statement_ms": 73.295,
+          "sqlite_commit_ms": 0.011,
+          "sqlite_statement_thread_cpu_ms": 26.345,
+          "sqlite_commit_thread_cpu_ms": 0.011,
+          "sqlite_calls": 262,
+          "sqlite_rows": 12,
+          "sqlite_aggregate_items": 30637,
+          "sqlite_aggregate_bytes": 2052681,
+          "sqlite_busy_failures": 0,
+          "file_lock_wait_ms": 0.009,
+          "file_lock_hold_ms": 0.173,
+          "file_lock_release_ms": 0.006,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 1450,
+          "object_get_bytes": 8410126,
+          "object_get_ms": 392.384,
+          "object_put_files": 0,
+          "object_put_bytes": 0,
+          "lock_events_total": 2,
+          "worker_service_ms": 504.203,
+          "executor_dispatch_ms": 0.169,
+          "completion_delivery_ms": 0.133
+        },
+        {
+          "timestamp": "2026-10-31T17:53:41.958623+00:00",
+          "source": "structured",
+          "elapsed_ms": 522.809,
+          "observed_at_monotonic": 1052112.099955,
+          "queue_wait_ms": 0.0,
+          "thread_cpu_ms": 123.739,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.141,
+          "python_lock_release_ms": 0.0,
+          "outer_lock_hold_ms": 0.141,
+          "outer_lock_release_ms": 0.0,
+          "sqlite_statement_ms": 63.51,
+          "sqlite_commit_ms": 0.019,
+          "sqlite_statement_thread_cpu_ms": 24.475,
+          "sqlite_commit_thread_cpu_ms": 0.019,
+          "sqlite_calls": 262,
+          "sqlite_rows": 12,
+          "sqlite_aggregate_items": 30637,
+          "sqlite_aggregate_bytes": 2052681,
+          "sqlite_busy_failures": 0,
+          "file_lock_wait_ms": 0.006,
+          "file_lock_hold_ms": 0.064,
+          "file_lock_release_ms": 0.001,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 1450,
+          "object_get_bytes": 8410126,
+          "object_get_ms": 410.096,
+          "object_put_files": 0,
+          "object_put_bytes": 0,
+          "lock_events_total": 2,
+          "worker_service_ms": 522.679,
+          "executor_dispatch_ms": 0.057,
+          "completion_delivery_ms": 0.095
+        },
+        {
+          "timestamp": "2026-10-31T18:27:16.337287+00:00",
+          "source": "structured",
+          "elapsed_ms": 506.299,
+          "observed_at_monotonic": 1054126.465854,
+          "queue_wait_ms": 0.0,
+          "thread_cpu_ms": 121.778,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.148,
+          "python_lock_release_ms": 0.0,
+          "outer_lock_hold_ms": 0.148,
+          "outer_lock_release_ms": 0.0,
+          "sqlite_statement_ms": 79.694,
+          "sqlite_commit_ms": 0.023,
+          "sqlite_statement_thread_cpu_ms": 26.73,
+          "sqlite_commit_thread_cpu_ms": 0.022,
+          "sqlite_calls": 262,
+          "sqlite_rows": 12,
+          "sqlite_aggregate_items": 30638,
+          "sqlite_aggregate_bytes": 2052748,
+          "sqlite_busy_failures": 0,
+          "file_lock_wait_ms": 0.005,
+          "file_lock_hold_ms": 0.066,
+          "file_lock_release_ms": 0.001,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 1452,
+          "object_get_bytes": 8483333,
+          "object_get_ms": 378.516,
+          "object_put_files": 0,
+          "object_put_bytes": 0,
+          "lock_events_total": 2,
+          "worker_service_ms": 506.109,
+          "executor_dispatch_ms": 0.053,
+          "completion_delivery_ms": 0.148
+        }
+      ],
+      "fleet.overview.mcp_bootstrap": [
+        {
+          "timestamp": "2026-10-31T15:20:10.304678+00:00",
+          "source": "structured",
+          "elapsed_ms": 1030.662,
+          "observed_at_monotonic": 1042900.479266,
+          "queue_wait_ms": 0.0,
+          "thread_cpu_ms": 23.476,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.0,
+          "python_lock_release_ms": 0.0,
+          "outer_lock_hold_ms": 0.0,
+          "outer_lock_release_ms": 0.0,
+          "sqlite_statement_ms": 0.0,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_statement_thread_cpu_ms": 0.0,
+          "sqlite_commit_thread_cpu_ms": 0.0,
+          "sqlite_calls": 0,
+          "sqlite_rows": 0,
+          "sqlite_aggregate_items": 0,
+          "sqlite_aggregate_bytes": 0,
+          "sqlite_busy_failures": 0,
+          "file_lock_wait_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "file_lock_release_ms": 0.0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0.0,
+          "object_put_files": 0,
+          "object_put_bytes": 0,
+          "lock_events_total": 0,
+          "worker_service_ms": 1030.516,
+          "executor_dispatch_ms": 0.08,
+          "completion_delivery_ms": 0.079
+        },
+        {
+          "timestamp": "2026-10-31T16:34:50.400952+00:00",
+          "source": "structured",
+          "elapsed_ms": 1017.164,
+          "observed_at_monotonic": 1047380.608727,
+          "queue_wait_ms": 2.0,
+          "thread_cpu_ms": 24.295,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.0,
+          "python_lock_release_ms": 0.0,
+          "outer_lock_hold_ms": 0.0,
+          "outer_lock_release_ms": 0.0,
+          "sqlite_statement_ms": 0.0,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_statement_thread_cpu_ms": 0.0,
+          "sqlite_commit_thread_cpu_ms": 0.0,
+          "sqlite_calls": 0,
+          "sqlite_rows": 0,
+          "sqlite_aggregate_items": 0,
+          "sqlite_aggregate_bytes": 0,
+          "sqlite_busy_failures": 0,
+          "file_lock_wait_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "file_lock_release_ms": 0.0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0.0,
+          "object_put_files": 0,
+          "object_put_bytes": 0,
+          "lock_events_total": 0,
+          "worker_service_ms": 1016.493,
+          "executor_dispatch_ms": 0.588,
+          "completion_delivery_ms": 0.104
+        }
+      ],
+      "provider.status.cursor": [
+        {
+          "timestamp": "2026-10-31T15:20:10.354441+00:00",
+          "source": "structured",
+          "elapsed_ms": 1080.785,
+          "observed_at_monotonic": 1042900.529029,
+          "queue_wait_ms": 0.0,
+          "thread_cpu_ms": 15.165,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.0,
+          "python_lock_release_ms": 0.0,
+          "outer_lock_hold_ms": 0.0,
+          "outer_lock_release_ms": 0.0,
+          "sqlite_statement_ms": 0.0,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_statement_thread_cpu_ms": 0.0,
+          "sqlite_commit_thread_cpu_ms": 0.0,
+          "sqlite_calls": 0,
+          "sqlite_rows": 0,
+          "sqlite_aggregate_items": 0,
+          "sqlite_aggregate_bytes": 0,
+          "sqlite_busy_failures": 0,
+          "file_lock_wait_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "file_lock_release_ms": 0.0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0.0,
+          "object_put_files": 0,
+          "object_put_bytes": 0,
+          "lock_events_total": 0,
+          "worker_service_ms": 1080.507,
+          "executor_dispatch_ms": 0.197,
+          "completion_delivery_ms": 0.097
+        },
+        {
+          "timestamp": "2026-10-31T16:34:50.493966+00:00",
+          "source": "structured",
+          "elapsed_ms": 1078.62,
+          "observed_at_monotonic": 1047380.701745,
+          "queue_wait_ms": 32.0,
+          "thread_cpu_ms": 13.838,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.0,
+          "python_lock_release_ms": 0.0,
+          "outer_lock_hold_ms": 0.0,
+          "outer_lock_release_ms": 0.0,
+          "sqlite_statement_ms": 0.0,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_statement_thread_cpu_ms": 0.0,
+          "sqlite_commit_thread_cpu_ms": 0.0,
+          "sqlite_calls": 0,
+          "sqlite_rows": 0,
+          "sqlite_aggregate_items": 0,
+          "sqlite_aggregate_bytes": 0,
+          "sqlite_busy_failures": 0,
+          "file_lock_wait_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "file_lock_release_ms": 0.0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0.0,
+          "object_put_files": 0,
+          "object_put_bytes": 0,
+          "lock_events_total": 0,
+          "worker_service_ms": 1078.408,
+          "executor_dispatch_ms": 0.13,
+          "completion_delivery_ms": 0.103
+        }
+      ],
+      "workspace.project_provision": [
+        {
+          "timestamp": "2026-10-31T15:20:22.240746+00:00",
+          "source": "structured",
+          "elapsed_ms": 6391.95,
+          "observed_at_monotonic": 1042912.415321,
+          "queue_wait_ms": 0.0,
+          "thread_cpu_ms": 68.129,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.0,
+          "python_lock_release_ms": 0.0,
+          "outer_lock_hold_ms": 0.0,
+          "outer_lock_release_ms": 0.0,
+          "sqlite_statement_ms": 0.428,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_statement_thread_cpu_ms": 0.426,
+          "sqlite_commit_thread_cpu_ms": 0.0,
+          "sqlite_calls": 8,
+          "sqlite_rows": 386,
+          "sqlite_aggregate_items": 0,
+          "sqlite_aggregate_bytes": 0,
+          "sqlite_busy_failures": 0,
+          "file_lock_wait_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "file_lock_release_ms": 0.0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0.0,
+          "object_put_files": 0,
+          "object_put_bytes": 0,
+          "lock_events_total": 0,
+          "worker_service_ms": 6391.868,
+          "executor_dispatch_ms": 0.019,
+          "completion_delivery_ms": 0.079
+        }
+      ],
+      "reconciliation.session_read": [
+        {
+          "timestamp": "2026-10-31T15:41:06.063676+00:00",
+          "source": "structured",
+          "elapsed_ms": 902.397,
+          "observed_at_monotonic": 1044156.274998,
+          "queue_wait_ms": 0.0,
+          "thread_cpu_ms": 0.81,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.0,
+          "python_lock_release_ms": 0.0,
+          "outer_lock_hold_ms": 0.0,
+          "outer_lock_release_ms": 0.0,
+          "sqlite_statement_ms": 0.544,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_statement_thread_cpu_ms": 0.259,
+          "sqlite_commit_thread_cpu_ms": 0.0,
+          "sqlite_calls": 2,
+          "sqlite_rows": 1,
+          "sqlite_aggregate_items": 0,
+          "sqlite_aggregate_bytes": 0,
+          "sqlite_busy_failures": 0,
+          "file_lock_wait_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "file_lock_release_ms": 0.0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0.0,
+          "object_put_files": 0,
+          "object_put_bytes": 0,
+          "lock_events_total": 0,
+          "worker_service_ms": 1.107,
+          "executor_dispatch_ms": 1.111,
+          "completion_delivery_ms": 900.21
+        },
+        {
+          "timestamp": "2026-10-31T18:27:13.339772+00:00",
+          "source": "structured",
+          "elapsed_ms": 511.967,
+          "observed_at_monotonic": 1054123.468338,
+          "queue_wait_ms": 0.0,
+          "thread_cpu_ms": 1.315,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.0,
+          "python_lock_release_ms": 0.0,
+          "outer_lock_hold_ms": 0.0,
+          "outer_lock_release_ms": 0.0,
+          "sqlite_statement_ms": 12.926,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_statement_thread_cpu_ms": 0.384,
+          "sqlite_commit_thread_cpu_ms": 0.0,
+          "sqlite_calls": 2,
+          "sqlite_rows": 1,
+          "sqlite_aggregate_items": 0,
+          "sqlite_aggregate_bytes": 0,
+          "sqlite_busy_failures": 0,
+          "file_lock_wait_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "file_lock_release_ms": 0.0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0.0,
+          "object_put_files": 0,
+          "object_put_bytes": 0,
+          "lock_events_total": 0,
+          "worker_service_ms": 480.449,
+          "executor_dispatch_ms": 0.131,
+          "completion_delivery_ms": 31.405
+        }
+      ],
+      "agent.startup_state_read": [
+        {
+          "timestamp": "2026-10-31T15:41:06.065703+00:00",
+          "source": "structured",
+          "elapsed_ms": 1320.922,
+          "observed_at_monotonic": 1044156.27705,
+          "queue_wait_ms": 0.0,
+          "thread_cpu_ms": 74.436,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.0,
+          "python_lock_release_ms": 0.0,
+          "outer_lock_hold_ms": 0.0,
+          "outer_lock_release_ms": 0.0,
+          "sqlite_statement_ms": 1282.159,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_statement_thread_cpu_ms": 64.741,
+          "sqlite_commit_thread_cpu_ms": 0.0,
+          "sqlite_calls": 3,
+          "sqlite_rows": 383,
+          "sqlite_aggregate_items": 0,
+          "sqlite_aggregate_bytes": 0,
+          "sqlite_busy_failures": 0,
+          "file_lock_wait_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "file_lock_release_ms": 0.0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0.0,
+          "object_put_files": 0,
+          "object_put_bytes": 0,
+          "lock_events_total": 0,
+          "worker_service_ms": 1292.288,
+          "executor_dispatch_ms": 0.104,
+          "completion_delivery_ms": 28.542
+        }
+      ],
+      "workspace.collect_garbage": [
+        {
+          "timestamp": "2026-10-31T15:41:16.487456+00:00",
+          "source": "structured",
+          "elapsed_ms": 9957.173,
+          "observed_at_monotonic": 1044166.698842,
+          "queue_wait_ms": 0.0,
+          "thread_cpu_ms": 295.275,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.0,
+          "python_lock_release_ms": 0.0,
+          "outer_lock_hold_ms": 0.0,
+          "outer_lock_release_ms": 0.0,
+          "sqlite_statement_ms": 8.899,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_statement_thread_cpu_ms": 3.809,
+          "sqlite_commit_thread_cpu_ms": 0.0,
+          "sqlite_calls": 66,
+          "sqlite_rows": 21,
+          "sqlite_aggregate_items": 0,
+          "sqlite_aggregate_bytes": 0,
+          "sqlite_busy_failures": 0,
+          "file_lock_wait_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "file_lock_release_ms": 0.0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0.0,
+          "object_put_files": 0,
+          "object_put_bytes": 0,
+          "lock_events_total": 0,
+          "worker_service_ms": 9956.764,
+          "executor_dispatch_ms": 0.197,
+          "completion_delivery_ms": 0.233
+        },
+        {
+          "timestamp": "2026-10-31T17:53:39.992677+00:00",
+          "source": "structured",
+          "elapsed_ms": 1431.053,
+          "observed_at_monotonic": 1052110.134025,
+          "queue_wait_ms": 0.0,
+          "thread_cpu_ms": 294.362,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.0,
+          "python_lock_release_ms": 0.0,
+          "outer_lock_hold_ms": 0.0,
+          "outer_lock_release_ms": 0.0,
+          "sqlite_statement_ms": 10.628,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_statement_thread_cpu_ms": 2.713,
+          "sqlite_commit_thread_cpu_ms": 0.0,
+          "sqlite_calls": 66,
+          "sqlite_rows": 21,
+          "sqlite_aggregate_items": 0,
+          "sqlite_aggregate_bytes": 0,
+          "sqlite_busy_failures": 0,
+          "file_lock_wait_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "file_lock_release_ms": 0.0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0.0,
+          "object_put_files": 0,
+          "object_put_bytes": 0,
+          "lock_events_total": 0,
+          "worker_service_ms": 1428.94,
+          "executor_dispatch_ms": 2.001,
+          "completion_delivery_ms": 0.126
+        },
+        {
+          "timestamp": "2026-10-31T18:27:14.881266+00:00",
+          "source": "structured",
+          "elapsed_ms": 1404.046,
+          "observed_at_monotonic": 1054125.009818,
+          "queue_wait_ms": 0.0,
+          "thread_cpu_ms": 291.686,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.0,
+          "python_lock_release_ms": 0.0,
+          "outer_lock_hold_ms": 0.0,
+          "outer_lock_release_ms": 0.0,
+          "sqlite_statement_ms": 85.334,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_statement_thread_cpu_ms": 8.992,
+          "sqlite_commit_thread_cpu_ms": 0.0,
+          "sqlite_calls": 118,
+          "sqlite_rows": 48,
+          "sqlite_aggregate_items": 0,
+          "sqlite_aggregate_bytes": 0,
+          "sqlite_busy_failures": 0,
+          "file_lock_wait_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "file_lock_release_ms": 0.0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0.0,
+          "object_put_files": 0,
+          "object_put_bytes": 0,
+          "lock_events_total": 0,
+          "worker_service_ms": 1403.142,
+          "executor_dispatch_ms": 0.691,
+          "completion_delivery_ms": 0.231
+        }
+      ],
+      "sqlite.prompt_acceptance_read": [
+        {
+          "timestamp": "2026-10-31T16:42:43.174199+00:00",
+          "source": "structured",
+          "elapsed_ms": 1165.895,
+          "observed_at_monotonic": 1047853.384664,
+          "queue_wait_ms": 0.0,
+          "thread_cpu_ms": 171.153,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.0,
+          "python_lock_release_ms": 0.0,
+          "outer_lock_hold_ms": 0.0,
+          "outer_lock_release_ms": 0.0,
+          "sqlite_statement_ms": 938.144,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_statement_thread_cpu_ms": 125.637,
+          "sqlite_commit_thread_cpu_ms": 0.0,
+          "sqlite_calls": 8,
+          "sqlite_rows": 610,
+          "sqlite_aggregate_items": 0,
+          "sqlite_aggregate_bytes": 0,
+          "sqlite_busy_failures": 0,
+          "file_lock_wait_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "file_lock_release_ms": 0.0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0.0,
+          "object_put_files": 0,
+          "object_put_bytes": 0,
+          "lock_events_total": 0,
+          "worker_service_ms": 1165.755,
+          "executor_dispatch_ms": 0.041,
+          "completion_delivery_ms": 0.119
+        }
+      ],
+      "sqlite.agent_session_save": [
+        {
+          "timestamp": "2026-10-31T18:27:18.931798+00:00",
+          "source": "structured",
+          "elapsed_ms": 798.02,
+          "observed_at_monotonic": 1054129.060342,
+          "queue_wait_ms": 0.0,
+          "thread_cpu_ms": 247.705,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 797.775,
+          "python_lock_release_ms": 0.003,
+          "outer_lock_hold_ms": 797.775,
+          "outer_lock_release_ms": 0.003,
+          "sqlite_statement_ms": 415.411,
+          "sqlite_commit_ms": 382.257,
+          "sqlite_statement_thread_cpu_ms": 0.873,
+          "sqlite_commit_thread_cpu_ms": 246.693,
+          "sqlite_calls": 3,
+          "sqlite_rows": 0,
+          "sqlite_aggregate_items": 0,
+          "sqlite_aggregate_bytes": 0,
+          "sqlite_busy_failures": 0,
+          "file_lock_wait_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "file_lock_release_ms": 0.0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0.0,
+          "object_put_files": 0,
+          "object_put_bytes": 0,
+          "lock_events_total": 1,
+          "worker_service_ms": 797.802,
+          "executor_dispatch_ms": 0.116,
+          "completion_delivery_ms": 0.115
+        },
+        {
+          "timestamp": "2026-10-31T18:27:18.932591+00:00",
+          "source": "structured",
+          "elapsed_ms": 797.523,
+          "observed_at_monotonic": 1054129.06114,
+          "queue_wait_ms": 0.0,
+          "thread_cpu_ms": 0.751,
+          "python_lock_wait_ms": 796.582,
+          "python_lock_hold_ms": 0.799,
+          "python_lock_release_ms": 0.001,
+          "outer_lock_hold_ms": 0.799,
+          "outer_lock_release_ms": 0.001,
+          "sqlite_statement_ms": 0.64,
+          "sqlite_commit_ms": 0.094,
+          "sqlite_statement_thread_cpu_ms": 0.58,
+          "sqlite_commit_thread_cpu_ms": 0.079,
+          "sqlite_calls": 3,
+          "sqlite_rows": 0,
+          "sqlite_aggregate_items": 0,
+          "sqlite_aggregate_bytes": 0,
+          "sqlite_busy_failures": 0,
+          "file_lock_wait_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "file_lock_release_ms": 0.0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0.0,
+          "object_put_files": 0,
+          "object_put_bytes": 0,
+          "lock_events_total": 1,
+          "worker_service_ms": 797.399,
+          "executor_dispatch_ms": 0.041,
+          "completion_delivery_ms": 0.092
+        }
+      ]
+    },
+    "page_shells": {
+      "agent": {
+        "stderr": {
+          "latency": {
+            "count": 17,
+            "p50_ms": 25.1,
+            "p95_ms": 41.5,
+            "p99_ms": 41.5,
+            "max_ms": 41.5
+          },
+          "response_bytes": {
+            "min": 100032,
+            "max": 123976
+          },
+          "numeric_samples": [
+            {
+              "total_ms": 35.1,
+              "response_bytes": 123605,
+              "timings_ms": {
+                "page_context": 21.8,
+                "shell": 8.2,
+                "template": 4.6
+              },
+              "thread_cpu_ms": {
+                "page_context": 21.5,
+                "shell": 4.9,
+                "template": 3.4
+              }
+            },
+            {
+              "total_ms": 41.5,
+              "response_bytes": 100032,
+              "timings_ms": {
+                "page_context": 32.7,
+                "shell": 2.0,
+                "template": 6.6
+              },
+              "thread_cpu_ms": {
+                "page_context": 27.2,
+                "shell": 2.0,
+                "template": 5.0
+              }
+            },
+            {
+              "total_ms": 36.2,
+              "response_bytes": 123431,
+              "timings_ms": {
+                "page_context": 25.3,
+                "shell": 7.7,
+                "template": 2.8
+              },
+              "thread_cpu_ms": {
+                "page_context": 23.3,
+                "shell": 4.8,
+                "template": 2.8
+              }
+            },
+            {
+              "total_ms": 22.0,
+              "response_bytes": 123431,
+              "timings_ms": {
+                "page_context": 17.1,
+                "shell": 1.9,
+                "template": 2.6
+              },
+              "thread_cpu_ms": {
+                "page_context": 17.0,
+                "shell": 1.9,
+                "template": 2.6
+              }
+            },
+            {
+              "total_ms": 25.1,
+              "response_bytes": 123431,
+              "timings_ms": {
+                "page_context": 20.1,
+                "shell": 2.3,
+                "template": 2.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 19.0,
+                "shell": 1.9,
+                "template": 2.5
+              }
+            },
+            {
+              "total_ms": 23.0,
+              "response_bytes": 123431,
+              "timings_ms": {
+                "page_context": 17.9,
+                "shell": 2.1,
+                "template": 2.7
+              },
+              "thread_cpu_ms": {
+                "page_context": 17.7,
+                "shell": 2.1,
+                "template": 2.5
+              }
+            },
+            {
+              "total_ms": 21.2,
+              "response_bytes": 123431,
+              "timings_ms": {
+                "page_context": 16.1,
+                "shell": 2.1,
+                "template": 2.6
+              },
+              "thread_cpu_ms": {
+                "page_context": 16.1,
+                "shell": 2.1,
+                "template": 2.6
+              }
+            },
+            {
+              "total_ms": 34.1,
+              "response_bytes": 123796,
+              "timings_ms": {
+                "page_context": 24.4,
+                "shell": 2.5,
+                "template": 6.8
+              },
+              "thread_cpu_ms": {
+                "page_context": 24.2,
+                "shell": 2.5,
+                "template": 6.7
+              }
+            },
+            {
+              "total_ms": 17.8,
+              "response_bytes": 123796,
+              "timings_ms": {
+                "page_context": 14.6,
+                "shell": 1.6,
+                "template": 1.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 14.5,
+                "shell": 1.6,
+                "template": 1.5
+              }
+            },
+            {
+              "total_ms": 23.3,
+              "response_bytes": 123796,
+              "timings_ms": {
+                "page_context": 18.6,
+                "shell": 1.3,
+                "template": 3.2
+              },
+              "thread_cpu_ms": {
+                "page_context": 18.4,
+                "shell": 1.3,
+                "template": 3.2
+              }
+            },
+            {
+              "total_ms": 28.8,
+              "response_bytes": 123796,
+              "timings_ms": {
+                "page_context": 24.2,
+                "shell": 1.7,
+                "template": 2.7
+              },
+              "thread_cpu_ms": {
+                "page_context": 24.0,
+                "shell": 1.7,
+                "template": 2.7
+              }
+            },
+            {
+              "total_ms": 29.7,
+              "response_bytes": 123796,
+              "timings_ms": {
+                "page_context": 24.8,
+                "shell": 1.6,
+                "template": 3.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 24.4,
+                "shell": 1.6,
+                "template": 2.9
+              }
+            },
+            {
+              "total_ms": 41.1,
+              "response_bytes": 123976,
+              "timings_ms": {
+                "page_context": 28.2,
+                "shell": 5.5,
+                "template": 7.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 26.1,
+                "shell": 3.7,
+                "template": 7.0
+              }
+            },
+            {
+              "total_ms": 24.3,
+              "response_bytes": 123976,
+              "timings_ms": {
+                "page_context": 19.6,
+                "shell": 1.7,
+                "template": 2.6
+              },
+              "thread_cpu_ms": {
+                "page_context": 19.2,
+                "shell": 1.7,
+                "template": 2.6
+              }
+            },
+            {
+              "total_ms": 26.4,
+              "response_bytes": 123976,
+              "timings_ms": {
+                "page_context": 21.8,
+                "shell": 1.7,
+                "template": 2.6
+              },
+              "thread_cpu_ms": {
+                "page_context": 21.6,
+                "shell": 1.7,
+                "template": 2.6
+              }
+            },
+            {
+              "total_ms": 11.5,
+              "response_bytes": 123976,
+              "timings_ms": {
+                "page_context": 8.2,
+                "shell": 1.7,
+                "template": 1.4
+              },
+              "thread_cpu_ms": {
+                "page_context": 7.9,
+                "shell": 0.9,
+                "template": 1.4
+              }
+            },
+            {
+              "total_ms": 12.1,
+              "response_bytes": 123976,
+              "timings_ms": {
+                "page_context": 9.2,
+                "shell": 1.1,
+                "template": 1.6
+              },
+              "thread_cpu_ms": {
+                "page_context": 9.1,
+                "shell": 0.8,
+                "template": 1.6
+              }
+            }
+          ]
+        }
+      },
+      "projects": {
+        "stderr": {
+          "latency": {
+            "count": 7,
+            "p50_ms": 14.4,
+            "p95_ms": 70.2,
+            "p99_ms": 70.2,
+            "max_ms": 70.2
+          },
+          "response_bytes": {
+            "min": 5235,
+            "max": 43278
+          },
+          "numeric_samples": [
+            {
+              "total_ms": 14.4,
+              "response_bytes": 5235,
+              "timings_ms": {
+                "page_context": 1.8,
+                "shell": 7.6,
+                "template": 4.9
+              },
+              "thread_cpu_ms": {
+                "page_context": 1.5,
+                "shell": 4.6,
+                "template": 4.2
+              }
+            },
+            {
+              "total_ms": 70.2,
+              "response_bytes": 43278,
+              "timings_ms": {
+                "page_context": 66.2,
+                "shell": 1.2,
+                "template": 2.7
+              },
+              "thread_cpu_ms": {
+                "page_context": 22.2,
+                "shell": 1.2,
+                "template": 1.7
+              }
+            },
+            {
+              "total_ms": 5.9,
+              "response_bytes": 32723,
+              "timings_ms": {
+                "page_context": 1.5,
+                "shell": 2.6,
+                "template": 1.6
+              },
+              "thread_cpu_ms": {
+                "page_context": 1.4,
+                "shell": 2.6,
+                "template": 1.6
+              }
+            },
+            {
+              "total_ms": 4.2,
+              "response_bytes": 34879,
+              "timings_ms": {
+                "page_context": 1.2,
+                "shell": 1.8,
+                "template": 1.1
+              },
+              "thread_cpu_ms": {
+                "page_context": 1.2,
+                "shell": 1.8,
+                "template": 1.1
+              }
+            },
+            {
+              "total_ms": 2.5,
+              "response_bytes": 29143,
+              "timings_ms": {
+                "page_context": 0.6,
+                "shell": 1.1,
+                "template": 0.8
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.6,
+                "shell": 1.1,
+                "template": 0.8
+              }
+            },
+            {
+              "total_ms": 41.3,
+              "response_bytes": 43278,
+              "timings_ms": {
+                "page_context": 38.2,
+                "shell": 1.8,
+                "template": 1.1
+              },
+              "thread_cpu_ms": {
+                "page_context": 37.2,
+                "shell": 1.8,
+                "template": 1.1
+              }
+            },
+            {
+              "total_ms": 35.4,
+              "response_bytes": 21675,
+              "timings_ms": {
+                "page_context": 27.0,
+                "shell": 6.0,
+                "template": 2.3
+              },
+              "thread_cpu_ms": {
+                "page_context": 23.3,
+                "shell": 2.4,
+                "template": 1.5
+              }
+            }
+          ]
+        }
+      },
+      "work": {
+        "stderr": {
+          "latency": {
+            "count": 16,
+            "p50_ms": 5.7,
+            "p95_ms": 19.0,
+            "p99_ms": 19.0,
+            "max_ms": 19.0
+          },
+          "response_bytes": {
+            "min": 7931,
+            "max": 31323
+          },
+          "numeric_samples": [
+            {
+              "total_ms": 19.0,
+              "response_bytes": 7931,
+              "timings_ms": {
+                "page_context": 7.5,
+                "shell": 8.4,
+                "template": 2.9
+              },
+              "thread_cpu_ms": {
+                "page_context": 6.3,
+                "shell": 5.0,
+                "template": 2.4
+              }
+            },
+            {
+              "total_ms": 1.9,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 1.0,
+                "shell": 0.5,
+                "template": 0.3
+              },
+              "thread_cpu_ms": {
+                "page_context": 1.0,
+                "shell": 0.5,
+                "template": 0.3
+              }
+            },
+            {
+              "total_ms": 2.0,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 1.0,
+                "shell": 0.6,
+                "template": 0.4
+              },
+              "thread_cpu_ms": {
+                "page_context": 1.0,
+                "shell": 0.6,
+                "template": 0.4
+              }
+            },
+            {
+              "total_ms": 2.1,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 0.9,
+                "shell": 0.7,
+                "template": 0.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.9,
+                "shell": 0.7,
+                "template": 0.5
+              }
+            },
+            {
+              "total_ms": 3.2,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 1.4,
+                "shell": 1.0,
+                "template": 0.7
+              },
+              "thread_cpu_ms": {
+                "page_context": 1.4,
+                "shell": 1.0,
+                "template": 0.7
+              }
+            },
+            {
+              "total_ms": 7.9,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 3.4,
+                "shell": 2.9,
+                "template": 1.4
+              },
+              "thread_cpu_ms": {
+                "page_context": 3.4,
+                "shell": 2.9,
+                "template": 1.4
+              }
+            },
+            {
+              "total_ms": 3.5,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 1.6,
+                "shell": 0.8,
+                "template": 1.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 1.6,
+                "shell": 0.8,
+                "template": 1.0
+              }
+            },
+            {
+              "total_ms": 5.2,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 2.8,
+                "shell": 1.3,
+                "template": 1.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 2.8,
+                "shell": 1.3,
+                "template": 1.0
+              }
+            },
+            {
+              "total_ms": 14.3,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 6.3,
+                "shell": 6.5,
+                "template": 1.4
+              },
+              "thread_cpu_ms": {
+                "page_context": 6.0,
+                "shell": 3.3,
+                "template": 1.4
+              }
+            },
+            {
+              "total_ms": 5.2,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 2.3,
+                "shell": 1.7,
+                "template": 1.1
+              },
+              "thread_cpu_ms": {
+                "page_context": 2.3,
+                "shell": 1.7,
+                "template": 1.1
+              }
+            },
+            {
+              "total_ms": 5.7,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 2.7,
+                "shell": 1.8,
+                "template": 1.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 2.7,
+                "shell": 1.8,
+                "template": 1.0
+              }
+            },
+            {
+              "total_ms": 15.6,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 5.9,
+                "shell": 6.9,
+                "template": 2.6
+              },
+              "thread_cpu_ms": {
+                "page_context": 5.0,
+                "shell": 4.3,
+                "template": 2.6
+              }
+            },
+            {
+              "total_ms": 9.4,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 4.2,
+                "shell": 3.3,
+                "template": 1.7
+              },
+              "thread_cpu_ms": {
+                "page_context": 4.2,
+                "shell": 3.3,
+                "template": 1.7
+              }
+            },
+            {
+              "total_ms": 8.8,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 4.0,
+                "shell": 2.9,
+                "template": 1.7
+              },
+              "thread_cpu_ms": {
+                "page_context": 4.0,
+                "shell": 2.9,
+                "template": 1.7
+              }
+            },
+            {
+              "total_ms": 9.4,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 2.7,
+                "shell": 5.1,
+                "template": 1.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 2.7,
+                "shell": 3.2,
+                "template": 1.4
+              }
+            },
+            {
+              "total_ms": 8.2,
+              "response_bytes": 31323,
+              "timings_ms": {
+                "page_context": 3.4,
+                "shell": 2.6,
+                "template": 2.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 3.4,
+                "shell": 2.6,
+                "template": 1.9
+              }
+            }
+          ]
+        }
+      },
+      "fleet": {
+        "stderr": {
+          "latency": {
+            "count": 27,
+            "p50_ms": 33.6,
+            "p95_ms": 72.3,
+            "p99_ms": 77.7,
+            "max_ms": 77.7
+          },
+          "response_bytes": {
+            "min": 1153164,
+            "max": 1156867
+          },
+          "numeric_samples": [
+            {
+              "total_ms": 64.9,
+              "response_bytes": 1156863,
+              "timings_ms": {
+                "page_context": 50.4,
+                "shell": 2.0,
+                "template": 11.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 46.5,
+                "shell": 2.0,
+                "template": 10.8
+              }
+            },
+            {
+              "total_ms": 38.8,
+              "response_bytes": 1156863,
+              "timings_ms": {
+                "page_context": 28.6,
+                "shell": 0.7,
+                "template": 8.1
+              },
+              "thread_cpu_ms": {
+                "page_context": 28.4,
+                "shell": 0.7,
+                "template": 8.1
+              }
+            },
+            {
+              "total_ms": 35.2,
+              "response_bytes": 1156863,
+              "timings_ms": {
+                "page_context": 26.1,
+                "shell": 0.6,
+                "template": 7.4
+              },
+              "thread_cpu_ms": {
+                "page_context": 25.8,
+                "shell": 0.6,
+                "template": 7.4
+              }
+            },
+            {
+              "total_ms": 35.5,
+              "response_bytes": 1156863,
+              "timings_ms": {
+                "page_context": 26.1,
+                "shell": 0.7,
+                "template": 7.6
+              },
+              "thread_cpu_ms": {
+                "page_context": 25.7,
+                "shell": 0.7,
+                "template": 7.6
+              }
+            },
+            {
+              "total_ms": 34.4,
+              "response_bytes": 1156863,
+              "timings_ms": {
+                "page_context": 25.4,
+                "shell": 0.6,
+                "template": 7.3
+              },
+              "thread_cpu_ms": {
+                "page_context": 25.1,
+                "shell": 0.6,
+                "template": 7.3
+              }
+            },
+            {
+              "total_ms": 30.9,
+              "response_bytes": 1156867,
+              "timings_ms": {
+                "page_context": 22.1,
+                "shell": 0.5,
+                "template": 7.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 22.0,
+                "shell": 0.5,
+                "template": 7.0
+              }
+            },
+            {
+              "total_ms": 30.6,
+              "response_bytes": 1156867,
+              "timings_ms": {
+                "page_context": 22.2,
+                "shell": 0.5,
+                "template": 6.7
+              },
+              "thread_cpu_ms": {
+                "page_context": 22.0,
+                "shell": 0.5,
+                "template": 6.7
+              }
+            },
+            {
+              "total_ms": 30.8,
+              "response_bytes": 1156867,
+              "timings_ms": {
+                "page_context": 22.4,
+                "shell": 0.4,
+                "template": 6.7
+              },
+              "thread_cpu_ms": {
+                "page_context": 22.2,
+                "shell": 0.4,
+                "template": 6.6
+              }
+            },
+            {
+              "total_ms": 31.7,
+              "response_bytes": 1156867,
+              "timings_ms": {
+                "page_context": 23.3,
+                "shell": 0.5,
+                "template": 6.8
+              },
+              "thread_cpu_ms": {
+                "page_context": 22.7,
+                "shell": 0.5,
+                "template": 6.8
+              }
+            },
+            {
+              "total_ms": 77.7,
+              "response_bytes": 1153164,
+              "timings_ms": {
+                "page_context": 65.1,
+                "shell": 1.7,
+                "template": 9.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 52.1,
+                "shell": 1.7,
+                "template": 9.5
+              }
+            },
+            {
+              "total_ms": 36.7,
+              "response_bytes": 1153164,
+              "timings_ms": {
+                "page_context": 27.6,
+                "shell": 0.8,
+                "template": 7.2
+              },
+              "thread_cpu_ms": {
+                "page_context": 27.1,
+                "shell": 0.8,
+                "template": 7.0
+              }
+            },
+            {
+              "total_ms": 32.6,
+              "response_bytes": 1153164,
+              "timings_ms": {
+                "page_context": 24.3,
+                "shell": 0.6,
+                "template": 6.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 24.1,
+                "shell": 0.6,
+                "template": 6.5
+              }
+            },
+            {
+              "total_ms": 35.3,
+              "response_bytes": 1153164,
+              "timings_ms": {
+                "page_context": 25.4,
+                "shell": 0.7,
+                "template": 7.9
+              },
+              "thread_cpu_ms": {
+                "page_context": 24.9,
+                "shell": 0.7,
+                "template": 7.9
+              }
+            },
+            {
+              "total_ms": 31.8,
+              "response_bytes": 1153164,
+              "timings_ms": {
+                "page_context": 23.4,
+                "shell": 0.6,
+                "template": 6.6
+              },
+              "thread_cpu_ms": {
+                "page_context": 23.1,
+                "shell": 0.6,
+                "template": 6.6
+              }
+            },
+            {
+              "total_ms": 34.0,
+              "response_bytes": 1153164,
+              "timings_ms": {
+                "page_context": 23.8,
+                "shell": 0.7,
+                "template": 8.3
+              },
+              "thread_cpu_ms": {
+                "page_context": 23.6,
+                "shell": 0.7,
+                "template": 8.3
+              }
+            },
+            {
+              "total_ms": 29.6,
+              "response_bytes": 1153164,
+              "timings_ms": {
+                "page_context": 21.1,
+                "shell": 0.5,
+                "template": 6.7
+              },
+              "thread_cpu_ms": {
+                "page_context": 20.9,
+                "shell": 0.5,
+                "template": 6.7
+              }
+            },
+            {
+              "total_ms": 30.3,
+              "response_bytes": 1153164,
+              "timings_ms": {
+                "page_context": 21.9,
+                "shell": 0.5,
+                "template": 6.7
+              },
+              "thread_cpu_ms": {
+                "page_context": 21.7,
+                "shell": 0.5,
+                "template": 6.7
+              }
+            },
+            {
+              "total_ms": 29.4,
+              "response_bytes": 1153164,
+              "timings_ms": {
+                "page_context": 21.1,
+                "shell": 0.5,
+                "template": 6.6
+              },
+              "thread_cpu_ms": {
+                "page_context": 20.9,
+                "shell": 0.5,
+                "template": 6.6
+              }
+            },
+            {
+              "total_ms": 72.3,
+              "response_bytes": 1153165,
+              "timings_ms": {
+                "page_context": 61.6,
+                "shell": 0.9,
+                "template": 8.6
+              },
+              "thread_cpu_ms": {
+                "page_context": 34.7,
+                "shell": 0.9,
+                "template": 8.6
+              }
+            },
+            {
+              "total_ms": 33.6,
+              "response_bytes": 1153165,
+              "timings_ms": {
+                "page_context": 24.1,
+                "shell": 0.7,
+                "template": 7.7
+              },
+              "thread_cpu_ms": {
+                "page_context": 23.9,
+                "shell": 0.7,
+                "template": 7.7
+              }
+            },
+            {
+              "total_ms": 32.8,
+              "response_bytes": 1153165,
+              "timings_ms": {
+                "page_context": 24.3,
+                "shell": 0.6,
+                "template": 6.6
+              },
+              "thread_cpu_ms": {
+                "page_context": 23.8,
+                "shell": 0.6,
+                "template": 6.6
+              }
+            },
+            {
+              "total_ms": 38.2,
+              "response_bytes": 1153165,
+              "timings_ms": {
+                "page_context": 29.9,
+                "shell": 0.6,
+                "template": 6.6
+              },
+              "thread_cpu_ms": {
+                "page_context": 29.5,
+                "shell": 0.6,
+                "template": 6.6
+              }
+            },
+            {
+              "total_ms": 37.9,
+              "response_bytes": 1153165,
+              "timings_ms": {
+                "page_context": 27.7,
+                "shell": 2.4,
+                "template": 6.6
+              },
+              "thread_cpu_ms": {
+                "page_context": 21.7,
+                "shell": 0.7,
+                "template": 6.6
+              }
+            },
+            {
+              "total_ms": 32.1,
+              "response_bytes": 1153167,
+              "timings_ms": {
+                "page_context": 22.6,
+                "shell": 0.5,
+                "template": 7.8
+              },
+              "thread_cpu_ms": {
+                "page_context": 22.4,
+                "shell": 0.5,
+                "template": 7.8
+              }
+            },
+            {
+              "total_ms": 32.9,
+              "response_bytes": 1153167,
+              "timings_ms": {
+                "page_context": 21.5,
+                "shell": 0.5,
+                "template": 9.6
+              },
+              "thread_cpu_ms": {
+                "page_context": 21.2,
+                "shell": 0.5,
+                "template": 9.4
+              }
+            },
+            {
+              "total_ms": 33.2,
+              "response_bytes": 1153167,
+              "timings_ms": {
+                "page_context": 24.3,
+                "shell": 0.5,
+                "template": 7.2
+              },
+              "thread_cpu_ms": {
+                "page_context": 24.0,
+                "shell": 0.5,
+                "template": 7.1
+              }
+            },
+            {
+              "total_ms": 34.7,
+              "response_bytes": 1153167,
+              "timings_ms": {
+                "page_context": 26.4,
+                "shell": 0.5,
+                "template": 6.6
+              },
+              "thread_cpu_ms": {
+                "page_context": 22.9,
+                "shell": 0.5,
+                "template": 6.6
+              }
+            }
+          ]
+        }
+      },
+      "home": {
+        "stderr": {
+          "latency": {
+            "count": 15,
+            "p50_ms": 1.4,
+            "p95_ms": 83.9,
+            "p99_ms": 83.9,
+            "max_ms": 83.9
+          },
+          "response_bytes": {
+            "min": 25464,
+            "max": 25464
+          },
+          "numeric_samples": [
+            {
+              "total_ms": 1.4,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 0.6,
+                "template": 0.7
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 0.6,
+                "template": 0.5
+              }
+            },
+            {
+              "total_ms": 1.1,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 0.6,
+                "template": 0.4
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 0.6,
+                "template": 0.4
+              }
+            },
+            {
+              "total_ms": 3.6,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 2.4,
+                "template": 1.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 2.2,
+                "template": 1.0
+              }
+            },
+            {
+              "total_ms": 83.9,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 80.1,
+                "template": 3.7
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 1.4,
+                "template": 0.5
+              }
+            },
+            {
+              "total_ms": 0.8,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 0.5,
+                "template": 0.3
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 0.5,
+                "template": 0.3
+              }
+            },
+            {
+              "total_ms": 1.2,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 0.6,
+                "template": 0.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 0.6,
+                "template": 0.5
+              }
+            },
+            {
+              "total_ms": 1.4,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 0.9,
+                "template": 0.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 0.9,
+                "template": 0.5
+              }
+            },
+            {
+              "total_ms": 2.9,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 1.8,
+                "template": 1.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 1.8,
+                "template": 1.0
+              }
+            },
+            {
+              "total_ms": 61.7,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 61.3,
+                "template": 0.3
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 1.3,
+                "template": 0.3
+              }
+            },
+            {
+              "total_ms": 1.0,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 0.6,
+                "template": 0.4
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 0.6,
+                "template": 0.4
+              }
+            },
+            {
+              "total_ms": 1.2,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 0.6,
+                "template": 0.5
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 0.6,
+                "template": 0.5
+              }
+            },
+            {
+              "total_ms": 1.3,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 0.8,
+                "template": 0.4
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 0.8,
+                "template": 0.4
+              }
+            },
+            {
+              "total_ms": 3.3,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 2.1,
+                "template": 0.9
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 2.2,
+                "template": 0.9
+              }
+            },
+            {
+              "total_ms": 1.9,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 1.1,
+                "template": 0.7
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 1.1,
+                "template": 0.7
+              }
+            },
+            {
+              "total_ms": 5.6,
+              "response_bytes": 25464,
+              "timings_ms": {
+                "page_context": 0.0,
+                "shell": 3.4,
+                "template": 1.9
+              },
+              "thread_cpu_ms": {
+                "page_context": 0.0,
+                "shell": 3.4,
+                "template": 1.9
+              }
+            }
+          ]
+        }
+      },
+      "pull-requests": {
+        "stderr": {
+          "latency": {
+            "count": 15,
+            "p50_ms": 23.9,
+            "p95_ms": 28.8,
+            "p99_ms": 28.8,
+            "max_ms": 28.8
+          },
+          "response_bytes": {
+            "min": 26011,
+            "max": 26012
+          },
+          "numeric_samples": [
+            {
+              "total_ms": 27.0,
+              "response_bytes": 26011,
+              "timings_ms": {
+                "page_context": 22.2,
+                "shell": 2.8,
+                "template": 2.0
+              },
+              "thread_cpu_ms": {
+                "page_context": 21.5,
+                "shell": 2.8,
+                "template": 1.8
+              }
+            },
+            {
+              "total_ms": 27.4,
+              "response_bytes": 26011,
+              "timings_ms": {
+                "page_context": 22.4,
+                "shell": 4.1,
+                "template": 0.8
+              },
+              "thread_cpu_ms": {
+                "page_context": 21.9,
+                "shell": 3.2,
+                "template": 0.8
+              }
+            },
+            {
+              "total_ms": 22.5,
+              "response_bytes": 26011,
+              "timings_ms": {
+                "page_context": 17.4,
+                "shell": 4.3,
+                "template": 0.8
+              },
+              "thread_cpu_ms": {
+                "page_context": 16.7,
+                "shell": 3.1,
+                "template": 0.8
+              }
+            },
+            {
+              "total_ms": 27.5,
+              "response_bytes": 26011,
+              "timings_ms": {
+                "page_context": 23.3,
+                "shell": 3.4,
+                "template": 0.7
+              },
+              "thread_cpu_ms": {
+                "page_context": 22.2,
+                "shell": 3.4,
+                "template": 0.7
+              }
+            },
+            {
+              "total_ms": 27.6,
+              "response_bytes": 26011,
+              "timings_ms": {
+                "page_context": 23.4,
+                "shell": 3.4,
+                "template": 0.7
+              },
+              "thread_cpu_ms": {
+                "page_context": 22.6,
+                "shell": 3.4,
+                "template": 0.7
+              }
+            },
+            {
+              "total_ms": 23.9,
+              "response_bytes": 26012,
+              "timings_ms": {
+                "page_context": 19.5,
+                "shell": 1.5,
+                "template": 2.8
+              },
+              "thread_cpu_ms": {
+                "page_context": 18.9,
+                "shell": 1.5,
+                "template": 2.7
+              }
+            },
+            {
+              "total_ms": 22.4,
+              "response_bytes": 26012,
+              "timings_ms": {
+                "page_context": 19.2,
+                "shell": 1.8,
+                "template": 1.2
+              },
+              "thread_cpu_ms": {
+                "page_context": 18.8,
+                "shell": 1.8,
+                "template": 1.2
+              }
+            },
+            {
+              "total_ms": 20.1,
+              "response_bytes": 26012,
+              "timings_ms": {
+                "page_context": 17.5,
+                "shell": 1.6,
+                "template": 0.8
+              },
+              "thread_cpu_ms": {
+                "page_context": 17.2,
+                "shell": 1.6,
+                "template": 0.8
+              }
+            },
+            {
+              "total_ms": 23.6,
+              "response_bytes": 26012,
+              "timings_ms": {
+                "page_context": 20.5,
+                "shell": 1.7,
+                "template": 1.3
+              },
+              "thread_cpu_ms": {
+                "page_context": 20.2,
+                "shell": 1.7,
+                "template": 1.3
+              }
+            },
+            {
+              "total_ms": 23.6,
+              "response_bytes": 26012,
+              "timings_ms": {
+                "page_context": 20.5,
+                "shell": 1.6,
+                "template": 1.3
+              },
+              "thread_cpu_ms": {
+                "page_context": 19.8,
+                "shell": 1.6,
+                "template": 1.4
+              }
+            },
+            {
+              "total_ms": 25.8,
+              "response_bytes": 26012,
+              "timings_ms": {
+                "page_context": 21.3,
+                "shell": 3.1,
+                "template": 1.2
+              },
+              "thread_cpu_ms": {
+                "page_context": 20.9,
+                "shell": 3.1,
+                "template": 1.2
+              }
+            },
+            {
+              "total_ms": 28.8,
+              "response_bytes": 26012,
+              "timings_ms": {
+                "page_context": 25.1,
+                "shell": 2.7,
+                "template": 0.9
+              },
+              "thread_cpu_ms": {
+                "page_context": 24.4,
+                "shell": 2.7,
+                "template": 0.9
+              }
+            },
+            {
+              "total_ms": 11.7,
+              "response_bytes": 26012,
+              "timings_ms": {
+                "page_context": 9.2,
+                "shell": 1.7,
+                "template": 0.7
+              },
+              "thread_cpu_ms": {
+                "page_context": 9.0,
+                "shell": 1.4,
+                "template": 0.7
+              }
+            },
+            {
+              "total_ms": 23.1,
+              "response_bytes": 26012,
+              "timings_ms": {
+                "page_context": 19.6,
+                "shell": 2.7,
+                "template": 0.7
+              },
+              "thread_cpu_ms": {
+                "page_context": 18.7,
+                "shell": 2.7,
+                "template": 0.7
+              }
+            },
+            {
+              "total_ms": 26.2,
+              "response_bytes": 26012,
+              "timings_ms": {
+                "page_context": 21.9,
+                "shell": 3.0,
+                "template": 1.1
+              },
+              "thread_cpu_ms": {
+                "page_context": 21.3,
+                "shell": 3.0,
+                "template": 1.1
+              }
+            }
+          ]
+        }
+      },
+      "settings": {
+        "stderr": {
+          "latency": {
+            "count": 15,
+            "p50_ms": 10.4,
+            "p95_ms": 14.4,
+            "p99_ms": 14.4,
+            "max_ms": 14.4
+          },
+          "response_bytes": {
+            "min": 101194,
+            "max": 101194
+          },
+          "numeric_samples": [
+            {
+              "total_ms": 14.4,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 4.5,
+                "shell": 3.0,
+                "template": 6.6
+              },
+              "thread_cpu_ms": {
+                "settings-section": 4.1,
+                "shell": 3.0,
+                "template": 5.7
+              }
+            },
+            {
+              "total_ms": 11.2,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 4.4,
+                "shell": 3.4,
+                "template": 3.0
+              },
+              "thread_cpu_ms": {
+                "settings-section": 4.4,
+                "shell": 3.4,
+                "template": 3.0
+              }
+            },
+            {
+              "total_ms": 9.9,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 3.5,
+                "shell": 3.3,
+                "template": 2.8
+              },
+              "thread_cpu_ms": {
+                "settings-section": 3.5,
+                "shell": 3.3,
+                "template": 2.8
+              }
+            },
+            {
+              "total_ms": 11.1,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 4.8,
+                "shell": 3.1,
+                "template": 2.8
+              },
+              "thread_cpu_ms": {
+                "settings-section": 4.6,
+                "shell": 3.1,
+                "template": 2.8
+              }
+            },
+            {
+              "total_ms": 11.1,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 4.5,
+                "shell": 3.1,
+                "template": 3.1
+              },
+              "thread_cpu_ms": {
+                "settings-section": 4.5,
+                "shell": 3.1,
+                "template": 3.1
+              }
+            },
+            {
+              "total_ms": 10.4,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 3.1,
+                "shell": 1.8,
+                "template": 5.2
+              },
+              "thread_cpu_ms": {
+                "settings-section": 2.7,
+                "shell": 1.8,
+                "template": 5.1
+              }
+            },
+            {
+              "total_ms": 6.4,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 2.2,
+                "shell": 2.0,
+                "template": 2.0
+              },
+              "thread_cpu_ms": {
+                "settings-section": 2.2,
+                "shell": 2.0,
+                "template": 2.0
+              }
+            },
+            {
+              "total_ms": 9.5,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 5.4,
+                "shell": 1.7,
+                "template": 2.1
+              },
+              "thread_cpu_ms": {
+                "settings-section": 3.7,
+                "shell": 1.7,
+                "template": 2.1
+              }
+            },
+            {
+              "total_ms": 5.0,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 1.8,
+                "shell": 1.2,
+                "template": 1.8
+              },
+              "thread_cpu_ms": {
+                "settings-section": 1.8,
+                "shell": 1.2,
+                "template": 1.8
+              }
+            },
+            {
+              "total_ms": 5.7,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 2.0,
+                "shell": 1.8,
+                "template": 1.6
+              },
+              "thread_cpu_ms": {
+                "settings-section": 2.0,
+                "shell": 1.7,
+                "template": 1.7
+              }
+            },
+            {
+              "total_ms": 13.5,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 4.6,
+                "shell": 2.9,
+                "template": 5.7
+              },
+              "thread_cpu_ms": {
+                "settings-section": 4.2,
+                "shell": 2.9,
+                "template": 5.7
+              }
+            },
+            {
+              "total_ms": 10.5,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 4.2,
+                "shell": 3.2,
+                "template": 2.7
+              },
+              "thread_cpu_ms": {
+                "settings-section": 4.2,
+                "shell": 3.3,
+                "template": 2.7
+              }
+            },
+            {
+              "total_ms": 7.8,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 2.5,
+                "shell": 3.1,
+                "template": 2.1
+              },
+              "thread_cpu_ms": {
+                "settings-section": 2.5,
+                "shell": 2.2,
+                "template": 2.1
+              }
+            },
+            {
+              "total_ms": 11.1,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 4.7,
+                "shell": 3.2,
+                "template": 2.9
+              },
+              "thread_cpu_ms": {
+                "settings-section": 4.7,
+                "shell": 3.2,
+                "template": 2.9
+              }
+            },
+            {
+              "total_ms": 9.9,
+              "response_bytes": 101194,
+              "timings_ms": {
+                "settings-section": 3.6,
+                "shell": 3.2,
+                "template": 2.8
+              },
+              "thread_cpu_ms": {
+                "settings-section": 3.6,
+                "shell": 3.2,
+                "template": 2.8
+              }
+            }
+          ]
+        }
+      }
+    },
+    "access_log_route_counts": [
+      {
+        "method": "GET",
+        "normalized_path": "/",
+        "status": 200,
+        "source": "stdout",
+        "count": 15
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/agent/observability/v1/sessions/{session_id}",
+        "status": 200,
+        "source": "stdout",
+        "count": 38
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/agent/prompt-capabilities",
+        "status": 200,
+        "source": "stdout",
+        "count": 4
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/agent/sessions",
+        "status": 200,
+        "source": "stdout",
+        "count": 3132
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/agent/sessions/{session_id}/issues",
+        "status": 200,
+        "source": "stdout",
+        "count": 15869
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/agent/sessions/{session_id}/threads",
+        "status": 200,
+        "source": "stdout",
+        "count": 15852
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/configuration",
+        "status": 200,
+        "source": "stdout",
+        "count": 23
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/fleet/dispatch-jobs/{dispatch_id}",
+        "status": 200,
+        "source": "stdout",
+        "count": 11
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/fleet/overview",
+        "status": 200,
+        "source": "stdout",
+        "count": 51
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/fleet/overview/local",
+        "status": 200,
+        "source": "stdout",
+        "count": 11174
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/health",
+        "status": 200,
+        "source": "stdout",
+        "count": 61
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/instance/maintenance",
+        "status": 200,
+        "source": "stdout",
+        "count": 3
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/notifications",
+        "status": 200,
+        "source": "stdout",
+        "count": 3794
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/operations/{idempotency_key:path}",
+        "status": 200,
+        "source": "stdout",
+        "count": 25
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/owner-ready",
+        "status": 200,
+        "source": "stdout",
+        "count": 8
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/pr-supervisor/capabilities",
+        "status": 200,
+        "source": "stdout",
+        "count": 335
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/ready",
+        "status": 200,
+        "source": "stdout",
+        "count": 11169
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/ready",
+        "status": 503,
+        "source": "stdout",
+        "count": 8
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/runtime",
+        "status": 200,
+        "source": "stdout",
+        "count": 63
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/status",
+        "status": 200,
+        "source": "stdout",
+        "count": 11285
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/sync/refs",
+        "status": 200,
+        "source": "stdout",
+        "count": 3846
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/telemetry/live",
+        "status": 200,
+        "source": "stdout",
+        "count": 19328
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/ui/assets",
+        "status": 200,
+        "source": "stdout",
+        "count": 1706
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/api/workspaces",
+        "status": 200,
+        "source": "stdout",
+        "count": 28
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{page_path:path}",
+        "status": 200,
+        "source": "stdout",
+        "count": 97
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:0a87ffdbaf79236a}",
+        "status": 200,
+        "source": "stdout",
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:38e3ca45b167d8bf}",
+        "status": 200,
+        "source": "stdout",
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:407928513bc91c1b}",
+        "status": 200,
+        "source": "stdout",
+        "count": 6
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:5bb1724b58ad3fe8}",
+        "status": 200,
+        "source": "stdout",
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:735a947bfcaa85a9}",
+        "status": 200,
+        "source": "stdout",
+        "count": 3
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:76b5b5e3d1653745}",
+        "status": 200,
+        "source": "stdout",
+        "count": 17
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:7a3038f01894772e}",
+        "status": 200,
+        "source": "stdout",
+        "count": 4
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:7be5107143348c81}",
+        "status": 200,
+        "source": "stdout",
+        "count": 5
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:7fb1e230397f8be5}",
+        "status": 200,
+        "source": "stdout",
+        "count": 2
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:811a35837d247fc2}",
+        "status": 200,
+        "source": "stdout",
+        "count": 3
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:885b2d000cd02515}",
+        "status": 200,
+        "source": "stdout",
+        "count": 10
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:9281c5dbd4c943c1}",
+        "status": 200,
+        "source": "stdout",
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:98f3a23017132ffa}",
+        "status": 200,
+        "source": "stdout",
+        "count": 11
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:9ebd766e777bfc15}",
+        "status": 200,
+        "source": "stdout",
+        "count": 8
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:ab5c6b8d0dbf67f5}",
+        "status": 200,
+        "source": "stdout",
+        "count": 4
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:aecca7dde94ccd3a}",
+        "status": 200,
+        "source": "stdout",
+        "count": 4211
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:c07f3f63f3629d73}",
+        "status": 200,
+        "source": "stdout",
+        "count": 3
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:d08146c1ae95cbd7}",
+        "status": 200,
+        "source": "stdout",
+        "count": 10
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:ded0e30c5eaa2b6e}",
+        "status": 200,
+        "source": "stdout",
+        "count": 11
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:e4d5237422cf2b48}",
+        "status": 200,
+        "source": "stdout",
+        "count": 4
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:e5dbe1cd830574d5}",
+        "status": 200,
+        "source": "stdout",
+        "count": 14
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:f257e04cfe0352be}",
+        "status": 200,
+        "source": "stdout",
+        "count": 2
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:f35d6fa28880f8fb}",
+        "status": 200,
+        "source": "stdout",
+        "count": 3
+      },
+      {
+        "method": "GET",
+        "normalized_path": "/{unmapped-route-sha256:ff5aac73f4cf1a1a}",
+        "status": 200,
+        "source": "stdout",
+        "count": 8
+      },
+      {
+        "method": "PATCH",
+        "normalized_path": "/{unmapped-route-sha256:76b5b5e3d1653745}",
+        "status": 200,
+        "source": "stdout",
+        "count": 4
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/api/agent/sessions",
+        "status": 200,
+        "source": "stdout",
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/api/agent/sessions/{session_id}/dispatch-prompts",
+        "status": 200,
+        "source": "stdout",
+        "count": 4
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/api/fleet/dispatch/{dispatch_id}/turn-end",
+        "status": 200,
+        "source": "stdout",
+        "count": 3
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/api/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}/{operation}",
+        "status": 200,
+        "source": "stdout",
+        "count": 3
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/api/pr-supervisor/instances/heartbeat",
+        "status": 200,
+        "source": "stdout",
+        "count": 1430
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/{unmapped-route-sha256:0a87ffdbaf79236a}",
+        "status": 201,
+        "source": "stdout",
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/{unmapped-route-sha256:12e30b8bb2b3c992}",
+        "status": 201,
+        "source": "stdout",
+        "count": 6
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/{unmapped-route-sha256:16a11334bc35d051}",
+        "status": 200,
+        "source": "stdout",
+        "count": 3
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/{unmapped-route-sha256:2540d18917217834}",
+        "status": 200,
+        "source": "stdout",
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/{unmapped-route-sha256:2ed896a836a77083}",
+        "status": 200,
+        "source": "stdout",
+        "count": 3673
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/{unmapped-route-sha256:738f30562b75ef88}",
+        "status": 200,
+        "source": "stdout",
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/{unmapped-route-sha256:7521d06ef335aa4f}",
+        "status": 202,
+        "source": "stdout",
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/{unmapped-route-sha256:7b1dc06f41dc575c}",
+        "status": 201,
+        "source": "stdout",
+        "count": 14
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/{unmapped-route-sha256:88878dfeb74ac8d8}",
+        "status": 202,
+        "source": "stdout",
+        "count": 3
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/{unmapped-route-sha256:8a1f0092d7c8c355}",
+        "status": 200,
+        "source": "stdout",
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/{unmapped-route-sha256:8f60d61a9b78274f}",
+        "status": 200,
+        "source": "stdout",
+        "count": 51
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/{unmapped-route-sha256:98f3a23017132ffa}",
+        "status": 200,
+        "source": "stdout",
+        "count": 3
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/{unmapped-route-sha256:bf032fb209aecde0}",
+        "status": 200,
+        "source": "stdout",
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/{unmapped-route-sha256:c1f481b4d91a9792}",
+        "status": 200,
+        "source": "stdout",
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/{unmapped-route-sha256:d25cb8eff83e6b7d}",
+        "status": 200,
+        "source": "stdout",
+        "count": 5
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/{unmapped-route-sha256:d25cb8eff83e6b7d}",
+        "status": 409,
+        "source": "stdout",
+        "count": 3
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/{unmapped-route-sha256:d6894b17ac6c3962}",
+        "status": 200,
+        "source": "stdout",
+        "count": 16
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/{unmapped-route-sha256:ed820d1db27b69a2}",
+        "status": 200,
+        "source": "stdout",
+        "count": 5
+      },
+      {
+        "method": "POST",
+        "normalized_path": "/{unmapped-route-sha256:f6f3056fc980245c}",
+        "status": 200,
+        "source": "stdout",
+        "count": 47
+      },
+      {
+        "method": "PUT",
+        "normalized_path": "/api/agent/sessions/{session_id}/issues",
+        "status": 200,
+        "source": "stdout",
+        "count": 1
+      },
+      {
+        "method": "PUT",
+        "normalized_path": "/api/agent/sessions/{session_id}/issues",
+        "status": 409,
+        "source": "stdout",
+        "count": 1
+      },
+      {
+        "method": "PUT",
+        "normalized_path": "/api/agent/sessions/{session_id}/issues",
+        "status": 422,
+        "source": "stdout",
+        "count": 1
+      }
+    ],
+    "timeout_or_binding_mentions": [],
+    "observability": {
+      "cli_labels_scope": "Labels derived from supportedreader with explicitowner-confirmedsettings; not independentdefaultCLIidentityvalidation.",
+      "listener_pid": 63296,
+      "listener_stdout_stderr": "Previous88PIPE finding remainshistorical. Current627pumpFD/rotatedownership not re-established; no currentFDcoverage claim.",
+      "log_storage_source": ".dev/current627-service-logs-20261031.LOCAL.log",
+      "status_failures_and_dropped_bytes": "Read actualdiagnostics metadata; not guessed from old2402/5683571. Historical2396/5640760 and2402/5683571 retained inparent.",
+      "retention_beyond_returned_range": "Notindependentlyestablished",
+      "peer_log_files_inspected": false
+    },
+    "limits": [
+      "Log-tail-only percentiles differ from runtime rolling windows/process maxima. All returned slow names/source counts/raw numeric phase samples retained; matching structured/stderr emissions may duplicate one invocation. Raw emissions are not distinct incidents. No pooled family quantiles. Access paths map only current30runtime registered patterns; unmatched normalized routes are hash-only, their literal route identity remains a coverage gap.",
+      "Page-shell timers and access-route counts are separate: access records do not carry reliable per-request latency/bytes here; do not infer percentiles from counts. Missing records cannot prove zero timeouts/failures.",
+      "Live/background data and recent disposable fixtures share this host. Installed private mixed/cold/late/reference fixtures and source lifecycle tests/benchmarks ran on this host during the slice; current626/627installed privatefixtures/tests, this logreader and629sourceownership probes/tests/mixed ran on this host duringthe slice; actual62767-file18:28:52\u201318:30:17Z/private19 18:30:20\u201318:31:24Z/additionalfirst14andguardfailure18:31:28\u201318:32:23Z/recovery3 18:32:39\u201318:32:52Z/public18:32:30onward overlapped last3recovery; source629privateprobes/tests18:36onward/source100mixed18:44:07\u201318:44:35Z; exactclockbrackets remaininartifacts; do not attribute all host contention to service. Their file sources and exact build per record are not independently separated. Exact build per log line is not attested; source identity does not prove complete listener, rotation or fleet coverage.",
+      "Retained raw messages are local/untrusted/not published; inventory saves only numeric phases/route families/page counters, no prompts/credentials/raw SQL. No service write/restart, model/default/threshold/permission change or acceptance claim."
+    ]
+  },
+  "log_coverage_followup": {
+    "capture": {
+      "contract": "pa.owner-cli-log-capture/v1",
+      "started_at": "2026-10-31T18:50:34.681180+00:00",
+      "finished_at": "2026-10-31T18:50:46.029284+00:00",
+      "since": "2026-10-30T18:50:34.681180+00:00",
+      "host": "macbook",
+      "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+      "listener_pid": 63296,
+      "source_revision": "3d76ec938a3ee932e23fb7f4136dfc81f2e0dc53",
+      "reader_path": "/Users/petersky/.local/share/uv/tools/pa/lib/python3.14/site-packages/pa/cli/logs.py",
+      "reader_sha256": "99ebd407421af79bd0b76333822ff5493f11d63a28c8607b4b5a70c9fdd646f6",
+      "sources_requested": [
+        "stdout",
+        "stderr",
+        "structured",
+        "supervisor"
+      ],
+      "line_cap": 1000000,
+      "records": 424807,
+      "raw_local": {
+        "path": ".dev/current627-service-logs-20261031.LOCAL.ndjson",
+        "bytes": 142565768,
+        "sha256": "14b96c538df16a3babd45ff4decc94fbc66254df543e7b96271aef91501a1a86"
+      },
+      "diagnostics_local": {
+        "path": ".dev/current627-service-logs-20261031.LOCAL.log",
+        "bytes": 645,
+        "sha256": "bc61ff2cace458cae44a75345ee09233fea2973bffcfab625ebca3c0413f7867"
+      },
+      "scope": "Supported pa.cli.logs.show_logs used by pa logs; exact owner data-directory/identity supplied solely as read parameters after private import roots; no production Settings/Kernel/Store/EventLog creation, write, restart or credentials. Full redacted messages remain LOCAL; numeric inventory published separately. Reader deduplicates bounded matching records, further structured/stderr duplicates may remain. File retention beyond returned24h and peer logs unverified."
+    },
+    "actual_supported_reader_log_storage_numeric": {
+      "current_bytes": 26971179,
+      "total_bytes": 31467407,
+      "oldest_age_seconds": 162270.28074669838,
+      "rotation_failures": 0,
+      "compression_failures": 0,
+      "prune_failures": 0,
+      "pump_failures": 0,
+      "status_failures": 2402,
+      "bootstrap_failures": 0,
+      "dropped_bytes": 5683571,
+      "free_bytes": 39366279168,
+      "minimum_free_bytes": 536870912
+    },
+    "delta_from_prior626_capture": {
+      "status_failures": 0,
+      "dropped_bytes": 0
+    },
+    "historical_loss_unresolved": true,
+    "scope": "Explicitowner settingslabels only, no independentdefaultCLIidentityproof. Current63296FD/pump/rotationownership/olderretention/peerlogs/buildperline unverified. Rawsource/privatehelpers preserved;9slownames40rawemissions20numericphases not40incidents. CLI24hslice notfleetexhaustiveness."
+  },
+  "pr629_integration": {
+    "pr": 629,
+    "head": "f3a27bc931a3a5bb76fae7efd9064c5816cb7d19",
+    "merge": "c530d5a148b81cdd7f188e432a683de2233fcbaa",
+    "source_tree": "5898edbe99ac54b84513df3b8b4d793206267d1a",
+    "merge_tree": "5898edbe99ac54b84513df3b8b4d793206267d1a",
+    "watch": "66c92ed9-7633-4998-88f7-506f08355996",
+    "stable_observations": 10,
+    "independent_checks": 5,
+    "required_approvals": 0,
+    "reviews": 0,
+    "threads": 0,
+    "pagination": "complete",
+    "attributed_commits": 1,
+    "no_bypass": true,
+    "head_ci": {
+      "id": 41231105483,
+      "attempt": 1,
+      "conclusion": "success",
+      "checks": 5
+    },
+    "main_ci": {
+      "id": 41231513626,
+      "attempt": 1,
+      "status": "in_progress"
+    },
+    "scope": "Exact629sourceintegration done; no installed629/update/restart/wholePAacceptance. Running627source3d76/package329 unchanged. Full716rows170concerns and allthresholds/negatives/openfactoryfailure/resource/nativecausegaps remain."
+  },
+  "pr629_actual_main_ci": {
+    "observed_at": "2026-10-31T18:56:21.972558+00:00",
+    "stage": "main",
+    "run": {
+      "id": 41231513626,
+      "name": "CI",
+      "node_id": "WFR_kwLOSnxSCs8AAAAJmZb4Gg",
+      "head_branch": "main",
+      "head_sha": "c530d5a148b81cdd7f188e432a683de2233fcbaa",
+      "path": ".github/workflows/ci.yml",
+      "display_title": "Merge pull request #629 from petersky/pa/7894e44b-eef9-4d-45ae26f1-1e\u2026",
+      "run_number": 1667,
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "workflow_id": 307631205,
+      "check_suite_id": 111761763599,
+      "check_suite_node_id": "CS_kwDOSnxSCs8AAAAaBYUtDw",
+      "url": "https://api.github.com/repos/petersky/pa/actions/runs/41231513626",
+      "html_url": "https://github.com/petersky/pa/actions/runs/41231513626",
+      "pull_requests": [],
+      "created_at": "2026-10-31T18:52:33Z",
+      "updated_at": "2026-10-31T18:56:03Z",
+      "actor": {
+        "login": "petersky",
+        "id": 1606386,
+        "node_id": "MDQ6VXNlcjE2MDYzODY=",
+        "avatar_url": "https://avatars.githubusercontent.com/u/1606386?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/petersky",
+        "html_url": "https://github.com/petersky",
+        "followers_url": "https://api.github.com/users/petersky/followers",
+        "following_url": "https://api.github.com/users/petersky/following{/other_user}",
+        "gists_url": "https://api.github.com/users/petersky/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/petersky/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/petersky/subscriptions",
+        "organizations_url": "https://api.github.com/users/petersky/orgs",
+        "repos_url": "https://api.github.com/users/petersky/repos",
+        "events_url": "https://api.github.com/users/petersky/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/petersky/received_events",
+        "type": "User",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "run_attempt": 1,
+      "referenced_workflows": [],
+      "run_started_at": "2026-10-31T18:52:33Z",
+      "triggering_actor": {
+        "login": "petersky",
+        "id": 1606386,
+        "node_id": "MDQ6VXNlcjE2MDYzODY=",
+        "avatar_url": "https://avatars.githubusercontent.com/u/1606386?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/petersky",
+        "html_url": "https://github.com/petersky",
+        "followers_url": "https://api.github.com/users/petersky/followers",
+        "following_url": "https://api.github.com/users/petersky/following{/other_user}",
+        "gists_url": "https://api.github.com/users/petersky/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/petersky/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/petersky/subscriptions",
+        "organizations_url": "https://api.github.com/users/petersky/orgs",
+        "repos_url": "https://api.github.com/users/petersky/repos",
+        "events_url": "https://api.github.com/users/petersky/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/petersky/received_events",
+        "type": "User",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "jobs_url": "https://api.github.com/repos/petersky/pa/actions/runs/41231513626/jobs",
+      "logs_url": "https://api.github.com/repos/petersky/pa/actions/runs/41231513626/logs",
+      "check_suite_url": "https://api.github.com/repos/petersky/pa/check-suites/111761763599",
+      "artifacts_url": "https://api.github.com/repos/petersky/pa/actions/runs/41231513626/artifacts",
+      "cancel_url": "https://api.github.com/repos/petersky/pa/actions/runs/41231513626/cancel",
+      "rerun_url": "https://api.github.com/repos/petersky/pa/actions/runs/41231513626/rerun",
+      "previous_attempt_url": null,
+      "workflow_url": "https://api.github.com/repos/petersky/pa/actions/workflows/307631205",
+      "head_commit": {
+        "id": "c530d5a148b81cdd7f188e432a683de2233fcbaa",
+        "tree_id": "5898edbe99ac54b84513df3b8b4d793206267d1a",
+        "message": "Merge pull request #629 from petersky/pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c\n\nBound workspace ledger connections to worker ownership",
+        "timestamp": "2026-10-31T18:52:31Z",
+        "author": {
+          "name": "Kyle Petersen",
+          "email": "petersky@users.noreply.github.com"
+        },
+        "committer": {
+          "name": "GitHub",
+          "email": "noreply@github.com"
+        }
+      },
+      "repository": {
+        "id": 1249661450,
+        "node_id": "R_kgDOSnxSCg",
+        "name": "pa",
+        "full_name": "petersky/pa",
+        "private": false,
+        "owner": {
+          "login": "petersky",
+          "id": 1606386,
+          "node_id": "MDQ6VXNlcjE2MDYzODY=",
+          "avatar_url": "https://avatars.githubusercontent.com/u/1606386?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/petersky",
+          "html_url": "https://github.com/petersky",
+          "followers_url": "https://api.github.com/users/petersky/followers",
+          "following_url": "https://api.github.com/users/petersky/following{/other_user}",
+          "gists_url": "https://api.github.com/users/petersky/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/petersky/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/petersky/subscriptions",
+          "organizations_url": "https://api.github.com/users/petersky/orgs",
+          "repos_url": "https://api.github.com/users/petersky/repos",
+          "events_url": "https://api.github.com/users/petersky/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/petersky/received_events",
+          "type": "User",
+          "user_view_type": "public",
+          "site_admin": false
+        },
+        "html_url": "https://github.com/petersky/pa",
+        "description": "Human\u2013agent orchestration: goals, tasks, knowledge, and distributed coordination",
+        "fork": false,
+        "url": "https://api.github.com/repos/petersky/pa",
+        "forks_url": "https://api.github.com/repos/petersky/pa/forks",
+        "keys_url": "https://api.github.com/repos/petersky/pa/keys{/key_id}",
+        "collaborators_url": "https://api.github.com/repos/petersky/pa/collaborators{/collaborator}",
+        "teams_url": "https://api.github.com/repos/petersky/pa/teams",
+        "hooks_url": "https://api.github.com/repos/petersky/pa/hooks",
+        "issue_events_url": "https://api.github.com/repos/petersky/pa/issues/events{/number}",
+        "events_url": "https://api.github.com/repos/petersky/pa/events",
+        "assignees_url": "https://api.github.com/repos/petersky/pa/assignees{/user}",
+        "branches_url": "https://api.github.com/repos/petersky/pa/branches{/branch}",
+        "tags_url": "https://api.github.com/repos/petersky/pa/tags",
+        "blobs_url": "https://api.github.com/repos/petersky/pa/git/blobs{/sha}",
+        "git_tags_url": "https://api.github.com/repos/petersky/pa/git/tags{/sha}",
+        "git_refs_url": "https://api.github.com/repos/petersky/pa/git/refs{/sha}",
+        "trees_url": "https://api.github.com/repos/petersky/pa/git/trees{/sha}",
+        "statuses_url": "https://api.github.com/repos/petersky/pa/statuses/{sha}",
+        "languages_url": "https://api.github.com/repos/petersky/pa/languages",
+        "stargazers_url": "https://api.github.com/repos/petersky/pa/stargazers",
+        "contributors_url": "https://api.github.com/repos/petersky/pa/contributors",
+        "subscribers_url": "https://api.github.com/repos/petersky/pa/subscribers",
+        "subscription_url": "https://api.github.com/repos/petersky/pa/subscription",
+        "commits_url": "https://api.github.com/repos/petersky/pa/commits{/sha}",
+        "git_commits_url": "https://api.github.com/repos/petersky/pa/git/commits{/sha}",
+        "comments_url": "https://api.github.com/repos/petersky/pa/comments{/number}",
+        "issue_comment_url": "https://api.github.com/repos/petersky/pa/issues/comments{/number}",
+        "contents_url": "https://api.github.com/repos/petersky/pa/contents/{+path}",
+        "compare_url": "https://api.github.com/repos/petersky/pa/compare/{base}...{head}",
+        "merges_url": "https://api.github.com/repos/petersky/pa/merges",
+        "archive_url": "https://api.github.com/repos/petersky/pa/{archive_format}{/ref}",
+        "downloads_url": "https://api.github.com/repos/petersky/pa/downloads",
+        "issues_url": "https://api.github.com/repos/petersky/pa/issues{/number}",
+        "pulls_url": "https://api.github.com/repos/petersky/pa/pulls{/number}",
+        "milestones_url": "https://api.github.com/repos/petersky/pa/milestones{/number}",
+        "notifications_url": "https://api.github.com/repos/petersky/pa/notifications{?since,all,participating}",
+        "labels_url": "https://api.github.com/repos/petersky/pa/labels{/name}",
+        "releases_url": "https://api.github.com/repos/petersky/pa/releases{/id}",
+        "deployments_url": "https://api.github.com/repos/petersky/pa/deployments"
+      },
+      "head_repository": {
+        "id": 1249661450,
+        "node_id": "R_kgDOSnxSCg",
+        "name": "pa",
+        "full_name": "petersky/pa",
+        "private": false,
+        "owner": {
+          "login": "petersky",
+          "id": 1606386,
+          "node_id": "MDQ6VXNlcjE2MDYzODY=",
+          "avatar_url": "https://avatars.githubusercontent.com/u/1606386?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/petersky",
+          "html_url": "https://github.com/petersky",
+          "followers_url": "https://api.github.com/users/petersky/followers",
+          "following_url": "https://api.github.com/users/petersky/following{/other_user}",
+          "gists_url": "https://api.github.com/users/petersky/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/petersky/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/petersky/subscriptions",
+          "organizations_url": "https://api.github.com/users/petersky/orgs",
+          "repos_url": "https://api.github.com/users/petersky/repos",
+          "events_url": "https://api.github.com/users/petersky/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/petersky/received_events",
+          "type": "User",
+          "user_view_type": "public",
+          "site_admin": false
+        },
+        "html_url": "https://github.com/petersky/pa",
+        "description": "Human\u2013agent orchestration: goals, tasks, knowledge, and distributed coordination",
+        "fork": false,
+        "url": "https://api.github.com/repos/petersky/pa",
+        "forks_url": "https://api.github.com/repos/petersky/pa/forks",
+        "keys_url": "https://api.github.com/repos/petersky/pa/keys{/key_id}",
+        "collaborators_url": "https://api.github.com/repos/petersky/pa/collaborators{/collaborator}",
+        "teams_url": "https://api.github.com/repos/petersky/pa/teams",
+        "hooks_url": "https://api.github.com/repos/petersky/pa/hooks",
+        "issue_events_url": "https://api.github.com/repos/petersky/pa/issues/events{/number}",
+        "events_url": "https://api.github.com/repos/petersky/pa/events",
+        "assignees_url": "https://api.github.com/repos/petersky/pa/assignees{/user}",
+        "branches_url": "https://api.github.com/repos/petersky/pa/branches{/branch}",
+        "tags_url": "https://api.github.com/repos/petersky/pa/tags",
+        "blobs_url": "https://api.github.com/repos/petersky/pa/git/blobs{/sha}",
+        "git_tags_url": "https://api.github.com/repos/petersky/pa/git/tags{/sha}",
+        "git_refs_url": "https://api.github.com/repos/petersky/pa/git/refs{/sha}",
+        "trees_url": "https://api.github.com/repos/petersky/pa/git/trees{/sha}",
+        "statuses_url": "https://api.github.com/repos/petersky/pa/statuses/{sha}",
+        "languages_url": "https://api.github.com/repos/petersky/pa/languages",
+        "stargazers_url": "https://api.github.com/repos/petersky/pa/stargazers",
+        "contributors_url": "https://api.github.com/repos/petersky/pa/contributors",
+        "subscribers_url": "https://api.github.com/repos/petersky/pa/subscribers",
+        "subscription_url": "https://api.github.com/repos/petersky/pa/subscription",
+        "commits_url": "https://api.github.com/repos/petersky/pa/commits{/sha}",
+        "git_commits_url": "https://api.github.com/repos/petersky/pa/git/commits{/sha}",
+        "comments_url": "https://api.github.com/repos/petersky/pa/comments{/number}",
+        "issue_comment_url": "https://api.github.com/repos/petersky/pa/issues/comments{/number}",
+        "contents_url": "https://api.github.com/repos/petersky/pa/contents/{+path}",
+        "compare_url": "https://api.github.com/repos/petersky/pa/compare/{base}...{head}",
+        "merges_url": "https://api.github.com/repos/petersky/pa/merges",
+        "archive_url": "https://api.github.com/repos/petersky/pa/{archive_format}{/ref}",
+        "downloads_url": "https://api.github.com/repos/petersky/pa/downloads",
+        "issues_url": "https://api.github.com/repos/petersky/pa/issues{/number}",
+        "pulls_url": "https://api.github.com/repos/petersky/pa/pulls{/number}",
+        "milestones_url": "https://api.github.com/repos/petersky/pa/milestones{/number}",
+        "notifications_url": "https://api.github.com/repos/petersky/pa/notifications{?since,all,participating}",
+        "labels_url": "https://api.github.com/repos/petersky/pa/labels{/name}",
+        "releases_url": "https://api.github.com/repos/petersky/pa/releases{/id}",
+        "deployments_url": "https://api.github.com/repos/petersky/pa/deployments"
+      }
+    },
+    "jobs": {
+      "total_count": 5,
+      "jobs": [
+        {
+          "id": 124626524508,
+          "run_id": 41231513626,
+          "workflow_name": "CI",
+          "head_branch": "main",
+          "run_url": "https://api.github.com/repos/petersky/pa/actions/runs/41231513626",
+          "run_attempt": 1,
+          "node_id": "CR_kwDOSnxSCs8AAAAdBFHZXA",
+          "head_sha": "c530d5a148b81cdd7f188e432a683de2233fcbaa",
+          "url": "https://api.github.com/repos/petersky/pa/actions/jobs/124626524508",
+          "html_url": "https://github.com/petersky/pa/actions/runs/41231513626/job/124626524508",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-31T18:52:34Z",
+          "started_at": "2026-10-31T18:52:35Z",
+          "completed_at": "2026-10-31T18:55:21Z",
+          "name": "test (1)",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-31T18:52:46Z",
+              "completed_at": "2026-10-31T18:52:47Z"
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-31T18:52:47Z",
+              "completed_at": "2026-10-31T18:53:19Z"
+            },
+            {
+              "name": "Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-31T18:53:19Z",
+              "completed_at": "2026-10-31T18:53:21Z"
+            },
+            {
+              "name": "Set up Python",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-31T18:53:21Z",
+              "completed_at": "2026-10-31T18:53:21Z"
+            },
+            {
+              "name": "Install dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-31T18:53:21Z",
+              "completed_at": "2026-10-31T18:53:22Z"
+            },
+            {
+              "name": "Warm up Chrome",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-31T18:53:22Z",
+              "completed_at": "2026-10-31T18:53:31Z"
+            },
+            {
+              "name": "Test",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-31T18:53:31Z",
+              "completed_at": "2026-10-31T18:55:17Z"
+            },
+            {
+              "name": "Retain bounded deadline evidence",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-31T18:55:17Z",
+              "completed_at": "2026-10-31T18:55:18Z"
+            },
+            {
+              "name": "Post Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 15,
+              "started_at": "2026-10-31T18:55:18Z",
+              "completed_at": "2026-10-31T18:55:19Z"
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 16,
+              "started_at": "2026-10-31T18:55:19Z",
+              "completed_at": "2026-10-31T18:55:19Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17,
+              "started_at": "2026-10-31T18:55:19Z",
+              "completed_at": "2026-10-31T18:55:19Z"
+            }
+          ],
+          "check_run_url": "https://api.github.com/repos/petersky/pa/check-runs/124626524508",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "runner_id": 1000005813,
+          "runner_name": "GitHub Actions 1000005813",
+          "runner_group_id": 0,
+          "runner_group_name": "GitHub Actions"
+        },
+        {
+          "id": 124626524527,
+          "run_id": 41231513626,
+          "workflow_name": "CI",
+          "head_branch": "main",
+          "run_url": "https://api.github.com/repos/petersky/pa/actions/runs/41231513626",
+          "run_attempt": 1,
+          "node_id": "CR_kwDOSnxSCs8AAAAdBFHZbw",
+          "head_sha": "c530d5a148b81cdd7f188e432a683de2233fcbaa",
+          "url": "https://api.github.com/repos/petersky/pa/actions/jobs/124626524527",
+          "html_url": "https://github.com/petersky/pa/actions/runs/41231513626/job/124626524527",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-31T18:52:34Z",
+          "started_at": "2026-10-31T18:52:35Z",
+          "completed_at": "2026-10-31T18:53:30Z",
+          "name": "smoke",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-31T18:52:36Z",
+              "completed_at": "2026-10-31T18:52:37Z"
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-31T18:52:37Z",
+              "completed_at": "2026-10-31T18:53:11Z"
+            },
+            {
+              "name": "Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-31T18:53:11Z",
+              "completed_at": "2026-10-31T18:53:14Z"
+            },
+            {
+              "name": "Set up Python",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-31T18:53:14Z",
+              "completed_at": "2026-10-31T18:53:14Z"
+            },
+            {
+              "name": "Install dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-31T18:53:14Z",
+              "completed_at": "2026-10-31T18:53:15Z"
+            },
+            {
+              "name": "Boot smoke test",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-31T18:53:15Z",
+              "completed_at": "2026-10-31T18:53:20Z"
+            },
+            {
+              "name": "Build published artifacts",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-31T18:53:20Z",
+              "completed_at": "2026-10-31T18:53:21Z"
+            },
+            {
+              "name": "Packaged MCP 2 stdio smoke",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-31T18:53:21Z",
+              "completed_at": "2026-10-31T18:53:27Z"
+            },
+            {
+              "name": "Channel resolution smoke",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9,
+              "started_at": "2026-10-31T18:53:27Z",
+              "completed_at": "2026-10-31T18:53:27Z"
+            },
+            {
+              "name": "Post Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17,
+              "started_at": "2026-10-31T18:53:27Z",
+              "completed_at": "2026-10-31T18:53:28Z"
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 18,
+              "started_at": "2026-10-31T18:53:28Z",
+              "completed_at": "2026-10-31T18:53:28Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 19,
+              "started_at": "2026-10-31T18:53:28Z",
+              "completed_at": "2026-10-31T18:53:28Z"
+            }
+          ],
+          "check_run_url": "https://api.github.com/repos/petersky/pa/check-runs/124626524527",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "runner_id": 1000005815,
+          "runner_name": "GitHub Actions 1000005815",
+          "runner_group_id": 0,
+          "runner_group_name": "GitHub Actions"
+        },
+        {
+          "id": 124626524596,
+          "run_id": 41231513626,
+          "workflow_name": "CI",
+          "head_branch": "main",
+          "run_url": "https://api.github.com/repos/petersky/pa/actions/runs/41231513626",
+          "run_attempt": 1,
+          "node_id": "CR_kwDOSnxSCs8AAAAdBFHZtA",
+          "head_sha": "c530d5a148b81cdd7f188e432a683de2233fcbaa",
+          "url": "https://api.github.com/repos/petersky/pa/actions/jobs/124626524596",
+          "html_url": "https://github.com/petersky/pa/actions/runs/41231513626/job/124626524596",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-31T18:52:34Z",
+          "started_at": "2026-10-31T18:52:36Z",
+          "completed_at": "2026-10-31T18:55:51Z",
+          "name": "test (0)",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-31T18:52:37Z",
+              "completed_at": "2026-10-31T18:52:38Z"
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-31T18:52:38Z",
+              "completed_at": "2026-10-31T18:53:14Z"
+            },
+            {
+              "name": "Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-31T18:53:14Z",
+              "completed_at": "2026-10-31T18:53:17Z"
+            },
+            {
+              "name": "Set up Python",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-31T18:53:17Z",
+              "completed_at": "2026-10-31T18:53:18Z"
+            },
+            {
+              "name": "Install dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-31T18:53:18Z",
+              "completed_at": "2026-10-31T18:53:19Z"
+            },
+            {
+              "name": "Warm up Chrome",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-31T18:53:19Z",
+              "completed_at": "2026-10-31T18:53:22Z"
+            },
+            {
+              "name": "Test",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-31T18:53:22Z",
+              "completed_at": "2026-10-31T18:55:46Z"
+            },
+            {
+              "name": "Retain bounded deadline evidence",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-31T18:55:46Z",
+              "completed_at": "2026-10-31T18:55:47Z"
+            },
+            {
+              "name": "Post Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 15,
+              "started_at": "2026-10-31T18:55:47Z",
+              "completed_at": "2026-10-31T18:55:48Z"
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 16,
+              "started_at": "2026-10-31T18:55:48Z",
+              "completed_at": "2026-10-31T18:55:48Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17,
+              "started_at": "2026-10-31T18:55:48Z",
+              "completed_at": "2026-10-31T18:55:48Z"
+            }
+          ],
+          "check_run_url": "https://api.github.com/repos/petersky/pa/check-runs/124626524596",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "runner_id": 1000005816,
+          "runner_name": "GitHub Actions 1000005816",
+          "runner_group_id": 0,
+          "runner_group_name": "GitHub Actions"
+        },
+        {
+          "id": 124626524620,
+          "run_id": 41231513626,
+          "workflow_name": "CI",
+          "head_branch": "main",
+          "run_url": "https://api.github.com/repos/petersky/pa/actions/runs/41231513626",
+          "run_attempt": 1,
+          "node_id": "CR_kwDOSnxSCs8AAAAdBFHZzA",
+          "head_sha": "c530d5a148b81cdd7f188e432a683de2233fcbaa",
+          "url": "https://api.github.com/repos/petersky/pa/actions/jobs/124626524620",
+          "html_url": "https://github.com/petersky/pa/actions/runs/41231513626/job/124626524620",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-31T18:52:34Z",
+          "started_at": "2026-10-31T18:52:36Z",
+          "completed_at": "2026-10-31T18:55:27Z",
+          "name": "test (3)",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-31T18:52:36Z",
+              "completed_at": "2026-10-31T18:52:37Z"
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-31T18:52:37Z",
+              "completed_at": "2026-10-31T18:53:10Z"
+            },
+            {
+              "name": "Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-31T18:53:10Z",
+              "completed_at": "2026-10-31T18:53:12Z"
+            },
+            {
+              "name": "Set up Python",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-31T18:53:12Z",
+              "completed_at": "2026-10-31T18:53:13Z"
+            },
+            {
+              "name": "Install dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-31T18:53:13Z",
+              "completed_at": "2026-10-31T18:53:14Z"
+            },
+            {
+              "name": "Warm up Chrome",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-31T18:53:14Z",
+              "completed_at": "2026-10-31T18:53:15Z"
+            },
+            {
+              "name": "Test",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-31T18:53:15Z",
+              "completed_at": "2026-10-31T18:55:23Z"
+            },
+            {
+              "name": "Retain bounded deadline evidence",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-31T18:55:23Z",
+              "completed_at": "2026-10-31T18:55:24Z"
+            },
+            {
+              "name": "Post Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 15,
+              "started_at": "2026-10-31T18:55:24Z",
+              "completed_at": "2026-10-31T18:55:24Z"
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 16,
+              "started_at": "2026-10-31T18:55:24Z",
+              "completed_at": "2026-10-31T18:55:24Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17,
+              "started_at": "2026-10-31T18:55:24Z",
+              "completed_at": "2026-10-31T18:55:24Z"
+            }
+          ],
+          "check_run_url": "https://api.github.com/repos/petersky/pa/check-runs/124626524620",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "runner_id": 1000005817,
+          "runner_name": "GitHub Actions 1000005817",
+          "runner_group_id": 0,
+          "runner_group_name": "GitHub Actions"
+        },
+        {
+          "id": 124626524629,
+          "run_id": 41231513626,
+          "workflow_name": "CI",
+          "head_branch": "main",
+          "run_url": "https://api.github.com/repos/petersky/pa/actions/runs/41231513626",
+          "run_attempt": 1,
+          "node_id": "CR_kwDOSnxSCs8AAAAdBFHZ1Q",
+          "head_sha": "c530d5a148b81cdd7f188e432a683de2233fcbaa",
+          "url": "https://api.github.com/repos/petersky/pa/actions/jobs/124626524629",
+          "html_url": "https://github.com/petersky/pa/actions/runs/41231513626/job/124626524629",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-31T18:52:34Z",
+          "started_at": "2026-10-31T18:52:36Z",
+          "completed_at": "2026-10-31T18:56:02Z",
+          "name": "test (2)",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-31T18:52:37Z",
+              "completed_at": "2026-10-31T18:52:38Z"
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-31T18:52:38Z",
+              "completed_at": "2026-10-31T18:53:12Z"
+            },
+            {
+              "name": "Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-31T18:53:12Z",
+              "completed_at": "2026-10-31T18:53:16Z"
+            },
+            {
+              "name": "Set up Python",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-31T18:53:16Z",
+              "completed_at": "2026-10-31T18:53:16Z"
+            },
+            {
+              "name": "Install dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-31T18:53:16Z",
+              "completed_at": "2026-10-31T18:53:18Z"
+            },
+            {
+              "name": "Warm up Chrome",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-31T18:53:18Z",
+              "completed_at": "2026-10-31T18:53:19Z"
+            },
+            {
+              "name": "Test",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-31T18:53:19Z",
+              "completed_at": "2026-10-31T18:55:58Z"
+            },
+            {
+              "name": "Retain bounded deadline evidence",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-31T18:55:58Z",
+              "completed_at": "2026-10-31T18:55:59Z"
+            },
+            {
+              "name": "Post Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 15,
+              "started_at": "2026-10-31T18:55:59Z",
+              "completed_at": "2026-10-31T18:55:59Z"
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 16,
+              "started_at": "2026-10-31T18:55:59Z",
+              "completed_at": "2026-10-31T18:55:59Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17,
+              "started_at": "2026-10-31T18:55:59Z",
+              "completed_at": "2026-10-31T18:55:59Z"
+            }
+          ],
+          "check_run_url": "https://api.github.com/repos/petersky/pa/check-runs/124626524629",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "runner_id": 1000005814,
+          "runner_name": "GitHub Actions 1000005814",
+          "runner_group_id": 0,
+          "runner_group_name": "GitHub Actions"
+        }
+      ]
+    },
+    "raw_logs": {
+      "path": ".dev/pr629-main-ci-first-evidence-20261031.zip",
+      "bytes": 109095,
+      "sha256": "1d62d31675ce22be302027b465514abfbfd19f5328dbcc7697c00902ecc453b2"
+    },
+    "numeric_artifacts": [
+      {
+        "id": 13054110653,
+        "name": "deadline-evidence-1-1",
+        "path": ".dev/pr629-main-first-deadline-evidence-13054110653-20261031.zip",
+        "bytes": 1559,
+        "sha256": "2a044ae5cec0540a8bd087026799fbaefcc9e0ac0afb41c887f613ed756e5f00",
+        "numeric": {
+          "agent-snapshot-34ba58b270584be993cdcdede419ae43.json": {
+            "contract": "pa.test-deadline-evidence/v1",
+            "python": "3.14.10",
+            "platform": "Linux",
+            "source_sha": "c530d5a148b81cdd7f188e432a683de2233fcbaa",
+            "gc_thresholds": [
+              2000,
+              10,
+              10
+            ],
+            "loop_thread_id": 139862838343488,
+            "request_wall_ms": 1.1340229999632356,
+            "request_loop_thread_cpu_ms": 0.8272439999998937,
+            "gc_events_total": 0,
+            "gc_events_retained": 0,
+            "gc_events_dropped": 0,
+            "request_gc_overlaps": [],
+            "worker_calls_started": 1,
+            "worker_calls_total": 1,
+            "worker_calls_incomplete": 0,
+            "worker_events_dropped": 0,
+            "worker_intervals": [
+              {
+                "wall_ms": 0.2566609999803404,
+                "thread_cpu_ms": 0.257865,
+                "thread_id": 139862591170240,
+                "start_relative_ms": 0.19481399999676796,
+                "end_relative_ms": 0.4514749999771084
+              }
+            ],
+            "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+          },
+          "incomplete-worker-63c1880aba6c42c2b34fc248f46917fc.json": {
+            "contract": "pa.test-deadline-evidence/v1",
+            "python": "3.14.10",
+            "platform": "Linux",
+            "source_sha": "c530d5a148b81cdd7f188e432a683de2233fcbaa",
+            "gc_thresholds": [
+              2000,
+              10,
+              10
+            ],
+            "loop_thread_id": 139862838343488,
+            "request_wall_ms": 0.10730899998634413,
+            "request_loop_thread_cpu_ms": 0.0696750000006574,
+            "gc_events_total": 0,
+            "gc_events_retained": 0,
+            "gc_events_dropped": 0,
+            "request_gc_overlaps": [],
+            "worker_calls_started": 1,
+            "worker_calls_total": 1,
+            "worker_calls_incomplete": 0,
+            "worker_events_dropped": 0,
+            "worker_intervals": [
+              {
+                "wall_ms": 0.044787000035739766,
+                "thread_cpu_ms": 0.015634,
+                "thread_id": 139862288094912,
+                "start_relative_ms": 0.08805599998140679,
+                "end_relative_ms": 0.13284300001714655
+              }
+            ],
+            "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+          }
+        }
+      },
+      {
+        "id": 13053698708,
+        "name": "deadline-evidence-3-1",
+        "path": ".dev/pr629-main-first-deadline-evidence-13053698708-20261031.zip",
+        "bytes": 707,
+        "sha256": "9cdf7ad79b07f622e9fb59094ff133c8d78148d63e226afa5d5167f36af47553",
+        "numeric": {
+          "restart-drain-start-7606165b679d40a9be0bca169f1e55c5.json": {
+            "contract": "pa.test-deadline-evidence/v1",
+            "python": "3.14.10",
+            "platform": "Linux",
+            "source_sha": "c530d5a148b81cdd7f188e432a683de2233fcbaa",
+            "gc_thresholds": [
+              2000,
+              10,
+              10
+            ],
+            "loop_thread_id": 140503108781888,
+            "request_wall_ms": 0.034564999992880985,
+            "request_loop_thread_cpu_ms": 0.03170400000129803,
+            "gc_events_total": 0,
+            "gc_events_retained": 0,
+            "gc_events_dropped": 0,
+            "request_gc_overlaps": [],
+            "worker_calls_started": 0,
+            "worker_calls_total": 0,
+            "worker_calls_incomplete": 0,
+            "worker_events_dropped": 0,
+            "worker_intervals": [],
+            "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+          }
+        }
+      },
+      {
+        "id": 13053394416,
+        "name": "deadline-evidence-0-1",
+        "path": ".dev/pr629-main-first-deadline-evidence-13053394416-20261031.zip",
+        "bytes": 1834,
+        "sha256": "984dd4565e07f46aef139567d96bc649915b897d98562d906ef3ec916e6492df",
+        "numeric": {
+          "mixed-hot-path-loop-lag-964618513129406d965f81e74ed6c9f9.json": {
+            "contract": "pa.test-deadline-evidence/v1",
+            "python": "3.14.10",
+            "platform": "Linux",
+            "source_sha": "c530d5a148b81cdd7f188e432a683de2233fcbaa",
+            "gc_thresholds": [
+              2000,
+              10,
+              10
+            ],
+            "loop_thread_id": 140279281198912,
+            "request_wall_ms": 93.24860500004206,
+            "request_loop_thread_cpu_ms": 9.887876000000517,
+            "gc_events_total": 0,
+            "gc_events_retained": 0,
+            "gc_events_dropped": 0,
+            "request_gc_overlaps": [],
+            "worker_calls_started": 6,
+            "worker_calls_total": 6,
+            "worker_calls_incomplete": 0,
+            "worker_events_dropped": 0,
+            "worker_intervals": [
+              {
+                "wall_ms": 40.074462999996285,
+                "thread_cpu_ms": 0.031376999999999995,
+                "thread_id": 140278912509632,
+                "start_relative_ms": 0.6890310000358113,
+                "end_relative_ms": 40.7634940000321
+              },
+              {
+                "wall_ms": 40.34838499995885,
+                "thread_cpu_ms": 0.025578000000000004,
+                "thread_id": 140278929290944,
+                "start_relative_ms": 1.1217560000318372,
+                "end_relative_ms": 41.47014099999069
+              },
+              {
+                "wall_ms": 40.06690200003504,
+                "thread_cpu_ms": 0.018836999999999996,
+                "thread_id": 140278895728320,
+                "start_relative_ms": 1.5252480000071955,
+                "end_relative_ms": 41.59215000004224
+              },
+              {
+                "wall_ms": 40.0647890000414,
+                "thread_cpu_ms": 0.01702600000000001,
+                "thread_id": 140278732158656,
+                "start_relative_ms": 3.072637999991912,
+                "end_relative_ms": 43.13742700003331
+              },
+              {
+                "wall_ms": 40.07320100004108,
+                "thread_cpu_ms": 0.026270000000000005,
+                "thread_id": 140278912509632,
+                "start_relative_ms": 41.53192100000069,
+                "end_relative_ms": 81.60512200004177
+              },
+              {
+                "wall_ms": 40.097576999983175,
+                "thread_cpu_ms": 0.025516999999999995,
+                "thread_id": 140278929290944,
+                "start_relative_ms": 42.030493000027036,
+                "end_relative_ms": 82.12807000001021
+              }
+            ],
+            "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+          },
+          "sync-unrelated-surfaces-98de0471bca742da88675e3df8540702.json": {
+            "contract": "pa.test-deadline-evidence/v1",
+            "python": "3.14.10",
+            "platform": "Linux",
+            "source_sha": "c530d5a148b81cdd7f188e432a683de2233fcbaa",
+            "gc_thresholds": [
+              2000,
+              10,
+              10
+            ],
+            "loop_thread_id": 140279281198912,
+            "request_wall_ms": 5.549972999972397,
+            "request_loop_thread_cpu_ms": 5.550262999999944,
+            "gc_events_total": 0,
+            "gc_events_retained": 0,
+            "gc_events_dropped": 0,
+            "request_gc_overlaps": [],
+            "worker_calls_started": 1,
+            "worker_calls_total": 1,
+            "worker_calls_incomplete": 0,
+            "worker_events_dropped": 0,
+            "worker_intervals": [
+              {
+                "wall_ms": 200.0873160000083,
+                "thread_cpu_ms": 0.04365400000000001,
+                "thread_id": 140279031031488,
+                "start_relative_ms": -2.488600999981827,
+                "end_relative_ms": 197.59871500002646
+              }
+            ],
+            "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+          }
+        }
+      }
+    ],
+    "scope": "Actualfirst629CI5terminalSUCCESS/logs/numericartifacts; no retries. Allprior620+610firstfailures retainedunchanged; testCI isnot production/performanceacceptance. Rawlogs retainedLOCAL/hashonly publicly."
+  },
+  "completion_boundary": {
+    "card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+    "lane": "waiting",
+    "completion_requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+    "mode": "explicit_acceptance",
+    "verification_policy": "independent_agent_v1",
+    "verification_authority_instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "verification_paused": false,
+    "completion_status": {
+      "reason_code": "verification_pending",
+      "missing": [
+        "active",
+        "verified",
+        "acceptance"
+      ],
+      "satisfied": [
+        "integrated"
+      ],
+      "accepted": false
+    },
+    "evidence_receipts": 116,
+    "attachments": 10,
+    "raw_local_custody": {
+      "path": ".dev/pr630-card-acceptance-native-20261031.LOCAL.json",
+      "bytes": 126852,
+      "sha256": "ad2826924e4206744cad80176a3f83f1bd2f92f6338ab4b5bb05f9a664e38f9e"
+    },
+    "scope": "Read-only exactcard completion boundary; Waiting and unaccepted observed. Existing17dindependent criteria/principals/defaults untouched. No selfverification/fabricatedmilestones/Done/laneCAS/defaultchange."
+  },
+  "coverage": {
+    "rows": 716,
+    "concerns": 170,
+    "all_open": true,
+    "new_slow_names_not_already_retained": []
+  },
+  "status": {
+    "source_repair": "PR629 integratedc530d5a1/headf3a27bc9/equaltree5898edbe/watch66c92ed9. Stablegreen10/independent5SUCCESS/0requiredapprovals/0reviews0threads/fullpagination/attributedcommit/CLEAN/unchangedrules/no bypass. Head41231105483/main41231513626 first5success/noretries.",
+    "deployment": "PA still installed/loaded6273d76/package329/PID63296/startupea8eaedc beforeandaftercapture. PR629 has NOT been installed/activated/retested asrunningservice. No extra install/restart inthis NONRESTARTphase.",
+    "resolution": "WholePAacceptanceOPEN; source/resource/observability subsets neverblanketclosure.",
+    "next_actor": "Same systemic session/card for remainingrepairs and authorizedactivation/retest; independent scheduler owns exact17dacceptance.",
+    "next_action": "Retain all716findings170concerns, failed/adversepopulations; finish fullrealKernel/provider/MCP/placement/admission/startup/drain/concurrency/pageAPI/peer/log/nativebusyIO acceptance without replay/defaultchanges."
+  },
+  "limits": [
+    "Capture18:50:34.681180\u201318:50:46.029284Z/requestedsince2026-10-30T18:50:34.681180Z.424807records/cap1000000NOTreached;stderr312901/stdout107558/structured4348. ExactsourceUTC rangesinfullinventory, raw142565768B/SHA14b96c538df16a3babd45ff4decc94fbc66254df543e7b96271aef91501a1a86 LOCALonly.",
+    "Nine slow names/sevenprefixfamilies/40rawemissions/20structurednumericphase samples allretained withsource/count/p50/p95/p99/max. Matching structured/stderr emissions mayduplicate; NOT40distinctincidents. No pooledfamilyquantiles. Allninealreadyhave retainedledgerrows.",
+    "Sevenpagefamilies/73accessmethod-routefamilies retained completely. Page latency/bytes/numericphase samples differ from accesscounts; accessrecords have no reliableper-request latency/bytes. Current30seenruntimepatternmapping leaves unmatchedpaths hash-only; theirliteralidentities remain explicitcoveragegaps.",
+    "Native counters/maxima/last256windows/tails/thislogslice are different populations; no backfilledprocessquantiles or warningcountsfrommaxima. Source24h includes olderbuilds; exactbuildperline notattested. No fleetexhaustive or currentpeerrootcause claim.",
+    "Explicitowner settingslabels are not independentdefaultCLIidentity proof. Current63296FD/pump/rotatedownership/olderretention/peerlogs/builds unverified; historical88PIPE evidence remains historical. Status2402failures5683571droppedB unchangedfromprior626/88, notresolution ofoldloss. Currentrotation/compression/prune/pump0 notproof ofpastlossrecovery.",
+    "All old626425271record and88 427558record slices remain byte-identical parents withtheirownranges/counts/windows. Source629privatefixture/tests/benchmarks andpubliccachedreads overlap portionsofhosthistory; no idlehost/solePA CPU/IOcausalclaim.",
+    "PR629resourceownership addresses returnedhandles and workeropenamplification only. NativeGC1404ms/85msobservedSQL, session798mslockchain, sourcefixturemaintenance927.824ms andfullsession2489025B/2MiBnegatives remain. Factoryfailurebeforehandle-return/successfulbusy/IO/GC/Git/filelock/realprovider/startup/drain/peer/log/receipt gaps stayopen.",
+    "Exact17dindependent policy unpaused/unaccepted; cardWaiting, verification_pending/missingactive,verified,acceptance/satisfiedintegrated;116evidenceentries and10attachments observed withoutmutation. No selfverifier/Done/laneCAS/cleanup/newworker/model/default/config/GC/powerclock change. Originalbackup0331/b527andDB89957acceptedscopesclosed; privateunknownreceipt/notification custody untouched.",
+    "Complete74107650Bparent andallolderfullsource/activation/failure layers preserved unchanged. Newcapture/preparationmatching-order failure andmissingdriver beforeinventory retained; no capture rerun or retrospectiveattribution. Raw native/card/privateprompt/writer/log/XML/ZIP/quarantine bodies LOCAL/hash-onlypublic."
+  ],
+  "complete_lossless_bundle": {
+    "path": "docs/benchmarks/systemic-current627-log-inventory-20261031.raw.json.gz",
+    "bytes": 74901717,
+    "sha256": "93794c2bd2b2ba7f3a4e3a9364e84e0d2f969a448f81474781aab267b350d462"
+  },
+  "input_versions": 22
+}
