@@ -6904,3 +6904,24 @@ Additional retentionUnicodep957.980→9.098ms/observeron.404→.409ms ADVERSE re
 Peer causes/builds/logs, historical dropped logs/FDrotation/retention, fullrealKernel/provider/MCP/placement/admission/startup/drain/concurrency/pageAPI acceptance remain open. Original accepted backup0331/b527 andDB89957scopes stayclosed. Tenattachments/privateunknownreceipt/notification custody unchanged.
 
 [Full numeric outcomes, all operation/route rows, comparisons, first failures and complete prior evidence](benchmarks/systemic-installed627-outcomes-20261031.json). All 715 rows and 169 concerns remain open under the unchanged independent acceptance requirement.
+
+
+Workspace connection ownership source follow-up (2026-10-31)
+
+All prior73191978Bparent bytes/full70998181/70019082/allolderlayers preserved. Raw private prompts/writers/native receipts/quarantineddraft/log/XML/ZIP bodies LOCAL/hash-only publicly;10attachments unchanged.
+
+PR628 merged8a8a5b71 from7f9824b3/equaltree43346c6e/watchf3b35399; stablegreen9 andindependent5SUCCESS/0requiredapprovals/0reviews0threads/fullpagination/attributedcommit/CLEAN/unchangedrules/no bypass. Head41230173681/main41230504340 first5success/noretries. No applicationchange/install/restart in628.
+
+Source101contracts pass; separate actualworker1pass. Copiedsource98+3pass retained separately. Initial explicitclosecopiedsource97pass/1thread-affinitytestharnessfailure preserved; onlyfaileditemowner-threadcorrection1pass, no threadguardrelaxation. Initial preparationimporttext/missingdriver andtemp-rootguard failures beforePAworkload retained.
+
+Private100actualconnectcontexts retained100handles;233actualhelpercalls retained233. Native transactions committed exactvalues; handles retained under naturalGC, no forcedGC/GCpolicychanges or independentFDcount/permanentleak claim.
+
+Explicitclosecandidate remainsunadopted afterp951.234to2.033ms/max6.203to7.636ADVERSE. Derivedcandidateworkerbatch opens300to100, maxlive183to0, median.542to.317 butp95.750to.905/max.885to8.692ADVERSE retained. Baselinefinalcleanupoutside timers vs candidateinside prevents full-lifecycle/IO/speedup inference; ru_oublock0not zero physicalwrites.
+
+Source100mixed9600ordered/0workerwarnings/failures/timeouts/rejections butmaintenance927.824ms>500. GC/reconcile0submissions inthatfixture; workspace branch coverage fromseparate actualsource contracts/worker/writecomparisons, not modulepresence. GitHubCIartifact capture overlapped sourcefixture onhost; no idlehost/CPUcausalclaim.
+
+Native627GC1404.046ms/85.334SQLms118calls48rows, session-save798mslockchain, fullsession2489025B/2MiBfailures, maintenance/nativesuccessfulbusy/IO/GC/Git/filelock/connectfailure, provider/peer/log/receipt/startup/drain/pageAPI gaps remain. No nativecausefix/deployment/wholePAacceptance claimed.
+
+All716rows170concerns remainOPEN. Exact17dindependent scheduleracceptance unaccepted; originalbackup0331/b527andDB89957acceptedscopes stayclosed. No selfverifier/Done/cleanup/oldreceipt/effectreplay/model/default/config/GC/powerclockchanges.
+
+[Complete source evidence, actual PR628 integration and all private populations](benchmarks/systemic-workspace-connection-ownership-20261031.json). Existing worker ownership bounds normal returned handles and reduces repeated opens; it does not establish the cause of native GC stalls or whole-PA performance acceptance.
