@@ -13,10 +13,19 @@ baseline_source=subprocess.check_output(['git','show',args.baseline+':src/pa/rep
 def cls(text):return next(n for n in ast.parse(text).body if isinstance(n,ast.ClassDef)and n.name=='WorkspaceManager')
 old_class,new_class=cls(baseline_source),cls(source)
 def method(c,name):return copy.deepcopy(next(n for n in c.body if isinstance(n,ast.FunctionDef)and n.name==name))
+def owned_transactions(node):
+ # Permit exactly the reviewed ownership wrapper; keep SQL/native context AST.
+ node=copy.deepcopy(node)
+ approved=ast.parse('with derived_connection(self, self._connect) as conn, conn:\n pass').body[0]
+ for item in ast.walk(node):
+  if isinstance(item,ast.With):
+   if len(item.items)==2 and all(ast.dump(a,include_attributes=False)==ast.dump(b,include_attributes=False) for a,b in zip(item.items,approved.items)):
+    item.items=[ast.withitem(context_expr=ast.parse('self._connect()').body[0].value,optional_vars=ast.Name(id='conn',ctx=ast.Store()))]
+ return node
 original=method(old_class,'reconcile_terminal_state');expected=copy.deepcopy(original)
 loops=[n for n in ast.walk(expected)if isinstance(n,ast.For)and isinstance(n.iter,ast.Call)and isinstance(n.iter.func,ast.Attribute)and n.iter.func.attr=='list'];assert len(loops)==1 and not loops[0].iter.args and not loops[0].iter.keywords
 loops[0].iter.keywords=[ast.keyword(arg='include_cleaned',value=ast.Constant(False))]
-assert ast.dump(expected,include_attributes=False)==ast.dump(method(new_class,'reconcile_terminal_state'),include_attributes=False)
+assert ast.dump(owned_transactions(expected),include_attributes=False)==ast.dump(owned_transactions(method(new_class,'reconcile_terminal_state')),include_attributes=False)
 old_connect=method(old_class,'_connect');new_connect=method(new_class,'_connect')
 calls=[n for n in ast.walk(new_connect) if isinstance(n,ast.Call) and isinstance(n.func,ast.Attribute) and n.func.attr=='connect']
 assert len(calls)==1
@@ -24,7 +33,7 @@ factory=[k for k in calls[0].keywords if k.arg=='factory'];assert len(factory)==
 calls[0].keywords.remove(factory[0])
 assert ast.dump(old_connect,include_attributes=False)==ast.dump(new_connect,include_attributes=False)
 for name in ['list','_row','_cleanup_lease_locked','_card_completion_eligible','_refresh_origin_for_cleanup','collect_garbage']:
- assert ast.dump(method(old_class,name),include_attributes=False)==ast.dump(method(new_class,name),include_attributes=False),name
+ assert ast.dump(owned_transactions(method(old_class,name)),include_attributes=False)==ast.dump(owned_transactions(method(new_class,name)),include_attributes=False),name
 space=dict(vars(module));exec(compile(ast.fix_missing_locations(ast.Module(body=[original],type_ignores=[])),'<archived-reconciliation>','exec'),space);baseline_method=space['reconcile_terminal_state'];candidate=module.WorkspaceManager.reconcile_terminal_state
 
 now=datetime.now(timezone.utc);rows=[]
@@ -52,5 +61,5 @@ for shape,count,payload in [('none',0,''),('ascii',610,'a'*65536),('unicode',610
    row={'shape':shape,'pair':pair,'variant':variant,'wall_ms':wall_ms,'thread_cpu_ms':cpu_ms,'result':result,'pending_read_ids':pending,**counters};rows.append(row);pair_results.append((result,pending))
   assert pair_results[0]==pair_results[1]
 summary={shape:{variant:{'wall_ms':distribution([r['wall_ms']for r in rows if r['shape']==shape and r['variant']==variant]),'models':sum(r['models']for r in rows if r['shape']==shape and r['variant']==variant),'logical_utf8_bytes':sum(r['logical_utf8_bytes']for r in rows if r['shape']==shape and r['variant']==variant)}for variant in ['baseline','candidate']}for shape in ['none','ascii','unicode']}
-v={'contract':'pa.workspace-reconciliation-hydration-comparison/v1','observed_at':datetime.now(timezone.utc).isoformat(),'baseline':args.baseline,'baseline_source_sha256':hashlib.sha256(baseline_source.encode()).hexdigest(),'source_module':module.__file__,'source_sha256':hashlib.sha256(source.encode()).hexdigest(),'actual_candidate_method':ast.unparse(method(new_class,'reconcile_terminal_state')),'rows':rows,'summary':summary,'scope':'90 alternating private pairs/180calls; exact archivedbaseline versus ACTUAL sourcecandidate adding only list(include_cleaned=False). Private SQLite retains610cleaned proofs/42activeleases; all result counters/order/42pendingreads equal, no writes or realGit/cleanup/providers/admission. Installed627 comparison: list/row/finalcleanup/cardguard/Gitrefresh/GC ASTequal tobaseline; connection ASTequal after removing ONLY verified ObservedConnection factory keyword; fixture connection unchanged; no native protections altered. Does not establish live cleaned population/proof sizes,9.957sGC or historical cause/physicalIO. Need full native reconcile/pending/failed/missingcard/cleanup safety regressions before source change.'}
+v={'contract':'pa.workspace-reconciliation-hydration-comparison/v1','observed_at':datetime.now(timezone.utc).isoformat(),'baseline':args.baseline,'baseline_source_sha256':hashlib.sha256(baseline_source.encode()).hexdigest(),'source_module':module.__file__,'source_sha256':hashlib.sha256(source.encode()).hexdigest(),'actual_candidate_method':ast.unparse(method(new_class,'reconcile_terminal_state')),'rows':rows,'summary':summary,'scope':'90 alternating private pairs/180calls; exact archivedbaseline versus ACTUAL sourcecandidate adding only list(include_cleaned=False). Private SQLite retains610cleaned proofs/42activeleases; all result counters/order/42pendingreads equal, no writes or realGit/cleanup/providers/admission. Installed627 comparison: list/row/finalcleanup/cardguard/Gitrefresh/GC ASTequal tobaseline; connection ASTequal after removing ONLY verified ObservedConnection factory keyword; internal transaction ASTequal after removing ONLY exact derived_connection(self,self._connect) ownership wrappers; fixture connection unchanged; no native protections altered. Does not establish live cleaned population/proof sizes,9.957sGC or historical cause/physicalIO. Need full native reconcile/pending/failed/missingcard/cleanup safety regressions before source change.'}
 out=args.output;assert not out.exists();out.write_text(json.dumps(v,indent=2)+'\n');print(json.dumps({'output':str(out),'summary':summary}))

@@ -26,7 +26,7 @@ from urllib.parse import urlsplit, urlunsplit
 from pydantic import BaseModel, Field, field_validator
 
 from pa.config import Settings
-from pa.core.sqlite_metrics import ObservedConnection
+from pa.core.sqlite_metrics import ObservedConnection, derived_connection
 from pa.domain.models import Repository
 
 
@@ -358,7 +358,7 @@ class WorkspaceManager:
         return conn
 
     def _init_db(self) -> None:
-        with self._connect() as conn:
+        with derived_connection(self, self._connect) as conn, conn:
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS workspace_leases (
@@ -504,7 +504,7 @@ class WorkspaceManager:
         return re.sub(r"https?://\S+", replace, value)
 
     def _next_fence(self, repository_id: str) -> int:
-        with self._connect() as conn:
+        with derived_connection(self, self._connect) as conn, conn:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
                 "SELECT next_token FROM workspace_fences WHERE repository_id=?",
@@ -518,7 +518,7 @@ class WorkspaceManager:
             return token
 
     def _increment_metric(self, key: str, amount: int = 1) -> None:
-        with self._connect() as conn:
+        with derived_connection(self, self._connect) as conn, conn:
             conn.execute(
                 """INSERT INTO workspace_metrics(key,value) VALUES(?,?)
                    ON CONFLICT(key) DO UPDATE SET value=value+excluded.value""",
@@ -526,7 +526,7 @@ class WorkspaceManager:
             )
 
     def metrics(self) -> dict[str, int]:
-        with self._connect() as conn:
+        with derived_connection(self, self._connect) as conn, conn:
             rows = conn.execute("SELECT key,value FROM workspace_metrics").fetchall()
         return {str(row["key"]): int(row["value"]) for row in rows}
 
@@ -535,7 +535,7 @@ class WorkspaceManager:
         data["cleanup_evidence"] = json.dumps(
             data["cleanup_evidence"], sort_keys=True, separators=(",", ":")
         )
-        with self._connect() as conn:
+        with derived_connection(self, self._connect) as conn, conn:
             conn.execute(
                 """INSERT OR REPLACE INTO workspace_leases
                 (id, repository_id, repository_url, card_id, session_id, project_id,
@@ -562,7 +562,7 @@ class WorkspaceManager:
         return WorkspaceLease.model_validate(data)
 
     def get(self, repository_id: str, session_id: str) -> WorkspaceLease | None:
-        with self._connect() as conn:
+        with derived_connection(self, self._connect) as conn, conn:
             row = conn.execute(
                 "SELECT * FROM workspace_leases WHERE repository_id=? AND session_id=?",
                 (repository_id, session_id),
@@ -584,14 +584,14 @@ class WorkspaceManager:
                 else " WHERE state <> 'cleaned'"
             )
         query += " ORDER BY created_at"
-        with self._connect() as conn:
+        with derived_connection(self, self._connect) as conn, conn:
             rows = conn.execute(query, params).fetchall()
         return [self._row(row) for row in rows]
 
     def _save_artifact_lease(
         self, lease: ArtifactWorkspaceLease
     ) -> ArtifactWorkspaceLease:
-        with self._connect() as conn:
+        with derived_connection(self, self._connect) as conn, conn:
             conn.execute(
                 """INSERT OR REPLACE INTO artifact_workspace_leases
                 (id,session_id,card_id,project_id,path,kind,fencing_token,state,
@@ -603,7 +603,7 @@ class WorkspaceManager:
         return lease
 
     def get_artifact_lease(self, session_id: str) -> ArtifactWorkspaceLease | None:
-        with self._connect() as conn:
+        with derived_connection(self, self._connect) as conn, conn:
             row = conn.execute(
                 "SELECT * FROM artifact_workspace_leases WHERE session_id=?",
                 (session_id,),
@@ -1175,7 +1175,7 @@ class WorkspaceManager:
         if not self._card_completion_eligible(card_id):
             return 0
         now = datetime.now(UTC).isoformat()
-        with self._connect() as conn:
+        with derived_connection(self, self._connect) as conn, conn:
             cursor = conn.execute(
                 """UPDATE workspace_leases SET completed=1, merged=?, state='completed',
                    updated_at=? WHERE card_id=? AND state IN ('ready','cleanup_blocked','completed')""",
@@ -1279,7 +1279,7 @@ class WorkspaceManager:
     def expire_session(self, session_id: str, *, now: datetime | None = None) -> int:
         """Make a closed session's leases immediately eligible for safe cleanup."""
         now = now or datetime.now(UTC)
-        with self._connect() as conn:
+        with derived_connection(self, self._connect) as conn, conn:
             cursor = conn.execute(
                 """UPDATE workspace_leases SET updated_at=?, expires_at=?
                    WHERE session_id=? AND state!='cleaned'""",
@@ -1309,7 +1309,7 @@ class WorkspaceManager:
                                 "Closed workspace owner cannot renew past a successor"
                             )
             now = datetime.now(UTC)
-            with self._connect() as conn:
+            with derived_connection(self, self._connect) as conn, conn:
                 cursor = conn.execute(
                     """UPDATE workspace_leases SET updated_at=?, expires_at=?
                        WHERE session_id=? AND state!='cleaned'""",

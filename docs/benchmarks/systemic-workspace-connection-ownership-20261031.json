@@ -1,0 +1,6806 @@
+{
+  "contract": "pa.workspace-connection-ownership-source/v1",
+  "observed_at": "2026-10-31T18:45:57.866747+00:00",
+  "source_parent": "8a8a5b715cb2079cae1ef8c6b8ffdb341f7bb4c1",
+  "source_sha256": "e9fcc2b17b46980c08f90c710383ac8c526860abd19c48f525e143424160b269",
+  "source_delta": "Use existing derived_connection(self,self._connect) around12existing native transaction contexts. Same SQL/PRAGMA/timeout/rowfactory/Git/cleanup/fencing/admission/defaults. No active SQLiteworker scope: closes returned handleafter transaction. Active scope: ownthread reuse, closes atworker exit. _connect contractunchanged. Factoryfailurebeforehandle-return remainsseparategap.",
+  "pr628_integration": {
+    "pr": 628,
+    "head": "7f9824b38c7fb6b0ebffe6de827d742bc38c5ace",
+    "merge": "8a8a5b715cb2079cae1ef8c6b8ffdb341f7bb4c1",
+    "source_tree": "43346c6e2f0e86ae7ac7ace3c6759189b9a7d6fc",
+    "merge_tree": "43346c6e2f0e86ae7ac7ace3c6759189b9a7d6fc",
+    "watch": "f3b35399-38a3-48f5-ab56-430e05f7899d",
+    "stable_observations": 9,
+    "independent_checks": 5,
+    "required_approvals": 0,
+    "reviews": 0,
+    "threads": 0,
+    "pagination": "complete",
+    "attributed_commits": 1,
+    "no_bypass": true,
+    "head_ci": {
+      "id": 41230173681,
+      "attempt": 1,
+      "conclusion": "success",
+      "checks": 5
+    },
+    "main_ci": {
+      "id": 41230504340,
+      "attempt": 1,
+      "status": "in_progress"
+    },
+    "application_delta": 0,
+    "scope": "Exact628protectedintegration done; no install/restart/wholePAacceptance. Source/merge trees equal, cleanworktree preserved. FirstmainCIpending; source629candidate remainsprivate/unshipped. All715rows169concerns and nextresourcefinding remainopen."
+  },
+  "pr628_actual_main_ci": {
+    "observed_at": "2026-10-31T18:44:34.898531+00:00",
+    "stage": "main",
+    "run": {
+      "id": 41230504340,
+      "name": "CI",
+      "node_id": "WFR_kwLOSnxSCs8AAAAJmYeRlA",
+      "head_branch": "main",
+      "head_sha": "8a8a5b715cb2079cae1ef8c6b8ffdb341f7bb4c1",
+      "path": ".github/workflows/ci.yml",
+      "display_title": "Merge pull request #628 from petersky/pa/7894e44b-eef9-4d-45ae26f1-1e\u2026",
+      "run_number": 1665,
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "workflow_id": 307631205,
+      "check_suite_id": 111759172770,
+      "check_suite_node_id": "CS_kwDOSnxSCs8AAAAaBV2kog",
+      "url": "https://api.github.com/repos/petersky/pa/actions/runs/41230504340",
+      "html_url": "https://github.com/petersky/pa/actions/runs/41230504340",
+      "pull_requests": [],
+      "created_at": "2026-10-31T18:39:51Z",
+      "updated_at": "2026-10-31T18:43:42Z",
+      "actor": {
+        "login": "petersky",
+        "id": 1606386,
+        "node_id": "MDQ6VXNlcjE2MDYzODY=",
+        "avatar_url": "https://avatars.githubusercontent.com/u/1606386?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/petersky",
+        "html_url": "https://github.com/petersky",
+        "followers_url": "https://api.github.com/users/petersky/followers",
+        "following_url": "https://api.github.com/users/petersky/following{/other_user}",
+        "gists_url": "https://api.github.com/users/petersky/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/petersky/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/petersky/subscriptions",
+        "organizations_url": "https://api.github.com/users/petersky/orgs",
+        "repos_url": "https://api.github.com/users/petersky/repos",
+        "events_url": "https://api.github.com/users/petersky/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/petersky/received_events",
+        "type": "User",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "run_attempt": 1,
+      "referenced_workflows": [],
+      "run_started_at": "2026-10-31T18:39:51Z",
+      "triggering_actor": {
+        "login": "petersky",
+        "id": 1606386,
+        "node_id": "MDQ6VXNlcjE2MDYzODY=",
+        "avatar_url": "https://avatars.githubusercontent.com/u/1606386?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/petersky",
+        "html_url": "https://github.com/petersky",
+        "followers_url": "https://api.github.com/users/petersky/followers",
+        "following_url": "https://api.github.com/users/petersky/following{/other_user}",
+        "gists_url": "https://api.github.com/users/petersky/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/petersky/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/petersky/subscriptions",
+        "organizations_url": "https://api.github.com/users/petersky/orgs",
+        "repos_url": "https://api.github.com/users/petersky/repos",
+        "events_url": "https://api.github.com/users/petersky/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/petersky/received_events",
+        "type": "User",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "jobs_url": "https://api.github.com/repos/petersky/pa/actions/runs/41230504340/jobs",
+      "logs_url": "https://api.github.com/repos/petersky/pa/actions/runs/41230504340/logs",
+      "check_suite_url": "https://api.github.com/repos/petersky/pa/check-suites/111759172770",
+      "artifacts_url": "https://api.github.com/repos/petersky/pa/actions/runs/41230504340/artifacts",
+      "cancel_url": "https://api.github.com/repos/petersky/pa/actions/runs/41230504340/cancel",
+      "rerun_url": "https://api.github.com/repos/petersky/pa/actions/runs/41230504340/rerun",
+      "previous_attempt_url": null,
+      "workflow_url": "https://api.github.com/repos/petersky/pa/actions/workflows/307631205",
+      "head_commit": {
+        "id": "8a8a5b715cb2079cae1ef8c6b8ffdb341f7bb4c1",
+        "tree_id": "43346c6e2f0e86ae7ac7ace3c6759189b9a7d6fc",
+        "message": "Merge pull request #628 from petersky/pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c\n\nRetain installed627 performance outcomes and precise comparison guard",
+        "timestamp": "2026-10-31T18:39:48Z",
+        "author": {
+          "name": "Kyle Petersen",
+          "email": "petersky@users.noreply.github.com"
+        },
+        "committer": {
+          "name": "GitHub",
+          "email": "noreply@github.com"
+        }
+      },
+      "repository": {
+        "id": 1249661450,
+        "node_id": "R_kgDOSnxSCg",
+        "name": "pa",
+        "full_name": "petersky/pa",
+        "private": false,
+        "owner": {
+          "login": "petersky",
+          "id": 1606386,
+          "node_id": "MDQ6VXNlcjE2MDYzODY=",
+          "avatar_url": "https://avatars.githubusercontent.com/u/1606386?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/petersky",
+          "html_url": "https://github.com/petersky",
+          "followers_url": "https://api.github.com/users/petersky/followers",
+          "following_url": "https://api.github.com/users/petersky/following{/other_user}",
+          "gists_url": "https://api.github.com/users/petersky/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/petersky/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/petersky/subscriptions",
+          "organizations_url": "https://api.github.com/users/petersky/orgs",
+          "repos_url": "https://api.github.com/users/petersky/repos",
+          "events_url": "https://api.github.com/users/petersky/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/petersky/received_events",
+          "type": "User",
+          "user_view_type": "public",
+          "site_admin": false
+        },
+        "html_url": "https://github.com/petersky/pa",
+        "description": "Human\u2013agent orchestration: goals, tasks, knowledge, and distributed coordination",
+        "fork": false,
+        "url": "https://api.github.com/repos/petersky/pa",
+        "forks_url": "https://api.github.com/repos/petersky/pa/forks",
+        "keys_url": "https://api.github.com/repos/petersky/pa/keys{/key_id}",
+        "collaborators_url": "https://api.github.com/repos/petersky/pa/collaborators{/collaborator}",
+        "teams_url": "https://api.github.com/repos/petersky/pa/teams",
+        "hooks_url": "https://api.github.com/repos/petersky/pa/hooks",
+        "issue_events_url": "https://api.github.com/repos/petersky/pa/issues/events{/number}",
+        "events_url": "https://api.github.com/repos/petersky/pa/events",
+        "assignees_url": "https://api.github.com/repos/petersky/pa/assignees{/user}",
+        "branches_url": "https://api.github.com/repos/petersky/pa/branches{/branch}",
+        "tags_url": "https://api.github.com/repos/petersky/pa/tags",
+        "blobs_url": "https://api.github.com/repos/petersky/pa/git/blobs{/sha}",
+        "git_tags_url": "https://api.github.com/repos/petersky/pa/git/tags{/sha}",
+        "git_refs_url": "https://api.github.com/repos/petersky/pa/git/refs{/sha}",
+        "trees_url": "https://api.github.com/repos/petersky/pa/git/trees{/sha}",
+        "statuses_url": "https://api.github.com/repos/petersky/pa/statuses/{sha}",
+        "languages_url": "https://api.github.com/repos/petersky/pa/languages",
+        "stargazers_url": "https://api.github.com/repos/petersky/pa/stargazers",
+        "contributors_url": "https://api.github.com/repos/petersky/pa/contributors",
+        "subscribers_url": "https://api.github.com/repos/petersky/pa/subscribers",
+        "subscription_url": "https://api.github.com/repos/petersky/pa/subscription",
+        "commits_url": "https://api.github.com/repos/petersky/pa/commits{/sha}",
+        "git_commits_url": "https://api.github.com/repos/petersky/pa/git/commits{/sha}",
+        "comments_url": "https://api.github.com/repos/petersky/pa/comments{/number}",
+        "issue_comment_url": "https://api.github.com/repos/petersky/pa/issues/comments{/number}",
+        "contents_url": "https://api.github.com/repos/petersky/pa/contents/{+path}",
+        "compare_url": "https://api.github.com/repos/petersky/pa/compare/{base}...{head}",
+        "merges_url": "https://api.github.com/repos/petersky/pa/merges",
+        "archive_url": "https://api.github.com/repos/petersky/pa/{archive_format}{/ref}",
+        "downloads_url": "https://api.github.com/repos/petersky/pa/downloads",
+        "issues_url": "https://api.github.com/repos/petersky/pa/issues{/number}",
+        "pulls_url": "https://api.github.com/repos/petersky/pa/pulls{/number}",
+        "milestones_url": "https://api.github.com/repos/petersky/pa/milestones{/number}",
+        "notifications_url": "https://api.github.com/repos/petersky/pa/notifications{?since,all,participating}",
+        "labels_url": "https://api.github.com/repos/petersky/pa/labels{/name}",
+        "releases_url": "https://api.github.com/repos/petersky/pa/releases{/id}",
+        "deployments_url": "https://api.github.com/repos/petersky/pa/deployments"
+      },
+      "head_repository": {
+        "id": 1249661450,
+        "node_id": "R_kgDOSnxSCg",
+        "name": "pa",
+        "full_name": "petersky/pa",
+        "private": false,
+        "owner": {
+          "login": "petersky",
+          "id": 1606386,
+          "node_id": "MDQ6VXNlcjE2MDYzODY=",
+          "avatar_url": "https://avatars.githubusercontent.com/u/1606386?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/petersky",
+          "html_url": "https://github.com/petersky",
+          "followers_url": "https://api.github.com/users/petersky/followers",
+          "following_url": "https://api.github.com/users/petersky/following{/other_user}",
+          "gists_url": "https://api.github.com/users/petersky/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/petersky/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/petersky/subscriptions",
+          "organizations_url": "https://api.github.com/users/petersky/orgs",
+          "repos_url": "https://api.github.com/users/petersky/repos",
+          "events_url": "https://api.github.com/users/petersky/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/petersky/received_events",
+          "type": "User",
+          "user_view_type": "public",
+          "site_admin": false
+        },
+        "html_url": "https://github.com/petersky/pa",
+        "description": "Human\u2013agent orchestration: goals, tasks, knowledge, and distributed coordination",
+        "fork": false,
+        "url": "https://api.github.com/repos/petersky/pa",
+        "forks_url": "https://api.github.com/repos/petersky/pa/forks",
+        "keys_url": "https://api.github.com/repos/petersky/pa/keys{/key_id}",
+        "collaborators_url": "https://api.github.com/repos/petersky/pa/collaborators{/collaborator}",
+        "teams_url": "https://api.github.com/repos/petersky/pa/teams",
+        "hooks_url": "https://api.github.com/repos/petersky/pa/hooks",
+        "issue_events_url": "https://api.github.com/repos/petersky/pa/issues/events{/number}",
+        "events_url": "https://api.github.com/repos/petersky/pa/events",
+        "assignees_url": "https://api.github.com/repos/petersky/pa/assignees{/user}",
+        "branches_url": "https://api.github.com/repos/petersky/pa/branches{/branch}",
+        "tags_url": "https://api.github.com/repos/petersky/pa/tags",
+        "blobs_url": "https://api.github.com/repos/petersky/pa/git/blobs{/sha}",
+        "git_tags_url": "https://api.github.com/repos/petersky/pa/git/tags{/sha}",
+        "git_refs_url": "https://api.github.com/repos/petersky/pa/git/refs{/sha}",
+        "trees_url": "https://api.github.com/repos/petersky/pa/git/trees{/sha}",
+        "statuses_url": "https://api.github.com/repos/petersky/pa/statuses/{sha}",
+        "languages_url": "https://api.github.com/repos/petersky/pa/languages",
+        "stargazers_url": "https://api.github.com/repos/petersky/pa/stargazers",
+        "contributors_url": "https://api.github.com/repos/petersky/pa/contributors",
+        "subscribers_url": "https://api.github.com/repos/petersky/pa/subscribers",
+        "subscription_url": "https://api.github.com/repos/petersky/pa/subscription",
+        "commits_url": "https://api.github.com/repos/petersky/pa/commits{/sha}",
+        "git_commits_url": "https://api.github.com/repos/petersky/pa/git/commits{/sha}",
+        "comments_url": "https://api.github.com/repos/petersky/pa/comments{/number}",
+        "issue_comment_url": "https://api.github.com/repos/petersky/pa/issues/comments{/number}",
+        "contents_url": "https://api.github.com/repos/petersky/pa/contents/{+path}",
+        "compare_url": "https://api.github.com/repos/petersky/pa/compare/{base}...{head}",
+        "merges_url": "https://api.github.com/repos/petersky/pa/merges",
+        "archive_url": "https://api.github.com/repos/petersky/pa/{archive_format}{/ref}",
+        "downloads_url": "https://api.github.com/repos/petersky/pa/downloads",
+        "issues_url": "https://api.github.com/repos/petersky/pa/issues{/number}",
+        "pulls_url": "https://api.github.com/repos/petersky/pa/pulls{/number}",
+        "milestones_url": "https://api.github.com/repos/petersky/pa/milestones{/number}",
+        "notifications_url": "https://api.github.com/repos/petersky/pa/notifications{?since,all,participating}",
+        "labels_url": "https://api.github.com/repos/petersky/pa/labels{/name}",
+        "releases_url": "https://api.github.com/repos/petersky/pa/releases{/id}",
+        "deployments_url": "https://api.github.com/repos/petersky/pa/deployments"
+      }
+    },
+    "jobs": {
+      "total_count": 5,
+      "jobs": [
+        {
+          "id": 124623553421,
+          "run_id": 41230504340,
+          "workflow_name": "CI",
+          "head_branch": "main",
+          "run_url": "https://api.github.com/repos/petersky/pa/actions/runs/41230504340",
+          "run_attempt": 1,
+          "node_id": "CR_kwDOSnxSCs8AAAAdBCSDjQ",
+          "head_sha": "8a8a5b715cb2079cae1ef8c6b8ffdb341f7bb4c1",
+          "url": "https://api.github.com/repos/petersky/pa/actions/jobs/124623553421",
+          "html_url": "https://github.com/petersky/pa/actions/runs/41230504340/job/124623553421",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-31T18:39:52Z",
+          "started_at": "2026-10-31T18:39:53Z",
+          "completed_at": "2026-10-31T18:40:46Z",
+          "name": "smoke",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-31T18:39:54Z",
+              "completed_at": "2026-10-31T18:39:55Z"
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-31T18:39:55Z",
+              "completed_at": "2026-10-31T18:40:25Z"
+            },
+            {
+              "name": "Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-31T18:40:25Z",
+              "completed_at": "2026-10-31T18:40:28Z"
+            },
+            {
+              "name": "Set up Python",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-31T18:40:28Z",
+              "completed_at": "2026-10-31T18:40:28Z"
+            },
+            {
+              "name": "Install dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-31T18:40:28Z",
+              "completed_at": "2026-10-31T18:40:30Z"
+            },
+            {
+              "name": "Boot smoke test",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-31T18:40:30Z",
+              "completed_at": "2026-10-31T18:40:36Z"
+            },
+            {
+              "name": "Build published artifacts",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-31T18:40:36Z",
+              "completed_at": "2026-10-31T18:40:39Z"
+            },
+            {
+              "name": "Packaged MCP 2 stdio smoke",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-31T18:40:39Z",
+              "completed_at": "2026-10-31T18:40:43Z"
+            },
+            {
+              "name": "Channel resolution smoke",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9,
+              "started_at": "2026-10-31T18:40:43Z",
+              "completed_at": "2026-10-31T18:40:44Z"
+            },
+            {
+              "name": "Post Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17,
+              "started_at": "2026-10-31T18:40:44Z",
+              "completed_at": "2026-10-31T18:40:44Z"
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 18,
+              "started_at": "2026-10-31T18:40:44Z",
+              "completed_at": "2026-10-31T18:40:44Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 19,
+              "started_at": "2026-10-31T18:40:44Z",
+              "completed_at": "2026-10-31T18:40:44Z"
+            }
+          ],
+          "check_run_url": "https://api.github.com/repos/petersky/pa/check-runs/124623553421",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "runner_id": 1000005803,
+          "runner_name": "GitHub Actions 1000005803",
+          "runner_group_id": 0,
+          "runner_group_name": "GitHub Actions"
+        },
+        {
+          "id": 124623553721,
+          "run_id": 41230504340,
+          "workflow_name": "CI",
+          "head_branch": "main",
+          "run_url": "https://api.github.com/repos/petersky/pa/actions/runs/41230504340",
+          "run_attempt": 1,
+          "node_id": "CR_kwDOSnxSCs8AAAAdBCSEuQ",
+          "head_sha": "8a8a5b715cb2079cae1ef8c6b8ffdb341f7bb4c1",
+          "url": "https://api.github.com/repos/petersky/pa/actions/jobs/124623553721",
+          "html_url": "https://github.com/petersky/pa/actions/runs/41230504340/job/124623553721",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-31T18:39:52Z",
+          "started_at": "2026-10-31T18:39:54Z",
+          "completed_at": "2026-10-31T18:43:30Z",
+          "name": "test (2)",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-31T18:39:54Z",
+              "completed_at": "2026-10-31T18:39:56Z"
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-31T18:39:56Z",
+              "completed_at": "2026-10-31T18:40:28Z"
+            },
+            {
+              "name": "Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-31T18:40:28Z",
+              "completed_at": "2026-10-31T18:40:31Z"
+            },
+            {
+              "name": "Set up Python",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-31T18:40:31Z",
+              "completed_at": "2026-10-31T18:40:32Z"
+            },
+            {
+              "name": "Install dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-31T18:40:32Z",
+              "completed_at": "2026-10-31T18:40:33Z"
+            },
+            {
+              "name": "Warm up Chrome",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-31T18:40:33Z",
+              "completed_at": "2026-10-31T18:40:44Z"
+            },
+            {
+              "name": "Test",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-31T18:40:44Z",
+              "completed_at": "2026-10-31T18:43:27Z"
+            },
+            {
+              "name": "Retain bounded deadline evidence",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-31T18:43:27Z",
+              "completed_at": "2026-10-31T18:43:27Z"
+            },
+            {
+              "name": "Post Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 15,
+              "started_at": "2026-10-31T18:43:27Z",
+              "completed_at": "2026-10-31T18:43:27Z"
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 16,
+              "started_at": "2026-10-31T18:43:27Z",
+              "completed_at": "2026-10-31T18:43:27Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17,
+              "started_at": "2026-10-31T18:43:27Z",
+              "completed_at": "2026-10-31T18:43:27Z"
+            }
+          ],
+          "check_run_url": "https://api.github.com/repos/petersky/pa/check-runs/124623553721",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "runner_id": 1000005804,
+          "runner_name": "GitHub Actions 1000005804",
+          "runner_group_id": 0,
+          "runner_group_name": "GitHub Actions"
+        },
+        {
+          "id": 124623553722,
+          "run_id": 41230504340,
+          "workflow_name": "CI",
+          "head_branch": "main",
+          "run_url": "https://api.github.com/repos/petersky/pa/actions/runs/41230504340",
+          "run_attempt": 1,
+          "node_id": "CR_kwDOSnxSCs8AAAAdBCSEug",
+          "head_sha": "8a8a5b715cb2079cae1ef8c6b8ffdb341f7bb4c1",
+          "url": "https://api.github.com/repos/petersky/pa/actions/jobs/124623553722",
+          "html_url": "https://github.com/petersky/pa/actions/runs/41230504340/job/124623553722",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-31T18:39:52Z",
+          "started_at": "2026-10-31T18:39:54Z",
+          "completed_at": "2026-10-31T18:43:41Z",
+          "name": "test (1)",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-31T18:39:55Z",
+              "completed_at": "2026-10-31T18:39:57Z"
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-31T18:39:57Z",
+              "completed_at": "2026-10-31T18:40:53Z"
+            },
+            {
+              "name": "Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-31T18:40:53Z",
+              "completed_at": "2026-10-31T18:40:58Z"
+            },
+            {
+              "name": "Set up Python",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-31T18:40:58Z",
+              "completed_at": "2026-10-31T18:41:00Z"
+            },
+            {
+              "name": "Install dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-31T18:41:00Z",
+              "completed_at": "2026-10-31T18:41:03Z"
+            },
+            {
+              "name": "Warm up Chrome",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-31T18:41:03Z",
+              "completed_at": "2026-10-31T18:41:11Z"
+            },
+            {
+              "name": "Test",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-31T18:41:11Z",
+              "completed_at": "2026-10-31T18:43:35Z"
+            },
+            {
+              "name": "Retain bounded deadline evidence",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-31T18:43:35Z",
+              "completed_at": "2026-10-31T18:43:37Z"
+            },
+            {
+              "name": "Post Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 15,
+              "started_at": "2026-10-31T18:43:37Z",
+              "completed_at": "2026-10-31T18:43:37Z"
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 16,
+              "started_at": "2026-10-31T18:43:37Z",
+              "completed_at": "2026-10-31T18:43:37Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17,
+              "started_at": "2026-10-31T18:43:37Z",
+              "completed_at": "2026-10-31T18:43:37Z"
+            }
+          ],
+          "check_run_url": "https://api.github.com/repos/petersky/pa/check-runs/124623553722",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "runner_id": 1000005805,
+          "runner_name": "GitHub Actions 1000005805",
+          "runner_group_id": 0,
+          "runner_group_name": "GitHub Actions"
+        },
+        {
+          "id": 124623553866,
+          "run_id": 41230504340,
+          "workflow_name": "CI",
+          "head_branch": "main",
+          "run_url": "https://api.github.com/repos/petersky/pa/actions/runs/41230504340",
+          "run_attempt": 1,
+          "node_id": "CR_kwDOSnxSCs8AAAAdBCSFSg",
+          "head_sha": "8a8a5b715cb2079cae1ef8c6b8ffdb341f7bb4c1",
+          "url": "https://api.github.com/repos/petersky/pa/actions/jobs/124623553866",
+          "html_url": "https://github.com/petersky/pa/actions/runs/41230504340/job/124623553866",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-31T18:39:52Z",
+          "started_at": "2026-10-31T18:39:54Z",
+          "completed_at": "2026-10-31T18:43:01Z",
+          "name": "test (3)",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-31T18:39:54Z",
+              "completed_at": "2026-10-31T18:39:55Z"
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-31T18:39:55Z",
+              "completed_at": "2026-10-31T18:40:28Z"
+            },
+            {
+              "name": "Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-31T18:40:28Z",
+              "completed_at": "2026-10-31T18:40:30Z"
+            },
+            {
+              "name": "Set up Python",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-31T18:40:30Z",
+              "completed_at": "2026-10-31T18:40:31Z"
+            },
+            {
+              "name": "Install dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-31T18:40:31Z",
+              "completed_at": "2026-10-31T18:40:33Z"
+            },
+            {
+              "name": "Warm up Chrome",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-31T18:40:33Z",
+              "completed_at": "2026-10-31T18:40:34Z"
+            },
+            {
+              "name": "Test",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-31T18:40:34Z",
+              "completed_at": "2026-10-31T18:42:57Z"
+            },
+            {
+              "name": "Retain bounded deadline evidence",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-31T18:42:57Z",
+              "completed_at": "2026-10-31T18:42:58Z"
+            },
+            {
+              "name": "Post Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 15,
+              "started_at": "2026-10-31T18:42:58Z",
+              "completed_at": "2026-10-31T18:42:59Z"
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 16,
+              "started_at": "2026-10-31T18:42:59Z",
+              "completed_at": "2026-10-31T18:42:59Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17,
+              "started_at": "2026-10-31T18:42:59Z",
+              "completed_at": "2026-10-31T18:42:59Z"
+            }
+          ],
+          "check_run_url": "https://api.github.com/repos/petersky/pa/check-runs/124623553866",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "runner_id": 1000005807,
+          "runner_name": "GitHub Actions 1000005807",
+          "runner_group_id": 0,
+          "runner_group_name": "GitHub Actions"
+        },
+        {
+          "id": 124623553888,
+          "run_id": 41230504340,
+          "workflow_name": "CI",
+          "head_branch": "main",
+          "run_url": "https://api.github.com/repos/petersky/pa/actions/runs/41230504340",
+          "run_attempt": 1,
+          "node_id": "CR_kwDOSnxSCs8AAAAdBCSFYA",
+          "head_sha": "8a8a5b715cb2079cae1ef8c6b8ffdb341f7bb4c1",
+          "url": "https://api.github.com/repos/petersky/pa/actions/jobs/124623553888",
+          "html_url": "https://github.com/petersky/pa/actions/runs/41230504340/job/124623553888",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-31T18:39:52Z",
+          "started_at": "2026-10-31T18:39:54Z",
+          "completed_at": "2026-10-31T18:43:17Z",
+          "name": "test (0)",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-31T18:39:54Z",
+              "completed_at": "2026-10-31T18:39:55Z"
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-31T18:39:56Z",
+              "completed_at": "2026-10-31T18:40:26Z"
+            },
+            {
+              "name": "Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-31T18:40:26Z",
+              "completed_at": "2026-10-31T18:40:29Z"
+            },
+            {
+              "name": "Set up Python",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-31T18:40:29Z",
+              "completed_at": "2026-10-31T18:40:29Z"
+            },
+            {
+              "name": "Install dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-31T18:40:29Z",
+              "completed_at": "2026-10-31T18:40:30Z"
+            },
+            {
+              "name": "Warm up Chrome",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-31T18:40:30Z",
+              "completed_at": "2026-10-31T18:40:42Z"
+            },
+            {
+              "name": "Test",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-31T18:40:42Z",
+              "completed_at": "2026-10-31T18:43:13Z"
+            },
+            {
+              "name": "Retain bounded deadline evidence",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-31T18:43:13Z",
+              "completed_at": "2026-10-31T18:43:14Z"
+            },
+            {
+              "name": "Post Run astral-sh/setup-uv@v10.0.1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 15,
+              "started_at": "2026-10-31T18:43:14Z",
+              "completed_at": "2026-10-31T18:43:14Z"
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 16,
+              "started_at": "2026-10-31T18:43:14Z",
+              "completed_at": "2026-10-31T18:43:14Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17,
+              "started_at": "2026-10-31T18:43:14Z",
+              "completed_at": "2026-10-31T18:43:14Z"
+            }
+          ],
+          "check_run_url": "https://api.github.com/repos/petersky/pa/check-runs/124623553888",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "runner_id": 1000005806,
+          "runner_name": "GitHub Actions 1000005806",
+          "runner_group_id": 0,
+          "runner_group_name": "GitHub Actions"
+        }
+      ]
+    },
+    "raw_logs": {
+      "path": ".dev/pr628-main-ci-first-evidence-20261031.zip",
+      "bytes": 109611,
+      "sha256": "741f5cbedd3db67092167e8abdac7d379ff72c7c33ea3428e8683ad872e37ac1"
+    },
+    "numeric_artifacts": [
+      {
+        "id": 13053552154,
+        "name": "deadline-evidence-0-1",
+        "path": ".dev/pr628-main-first-deadline-evidence-13053552154-20261031.zip",
+        "bytes": 1825,
+        "sha256": "d6a46261f2995194b92258056ed156756f1ea06ab65b6df45d9548649228802e",
+        "numeric": {
+          "mixed-hot-path-loop-lag-54124a071dc04b339c92330dedb56c67.json": {
+            "contract": "pa.test-deadline-evidence/v1",
+            "python": "3.14.10",
+            "platform": "Linux",
+            "source_sha": "8a8a5b715cb2079cae1ef8c6b8ffdb341f7bb4c1",
+            "gc_thresholds": [
+              2000,
+              10,
+              10
+            ],
+            "loop_thread_id": 140334859888448,
+            "request_wall_ms": 93.43451600000208,
+            "request_loop_thread_cpu_ms": 10.271057000000638,
+            "gc_events_total": 0,
+            "gc_events_retained": 0,
+            "gc_events_dropped": 0,
+            "request_gc_overlaps": [],
+            "worker_calls_started": 6,
+            "worker_calls_total": 6,
+            "worker_calls_incomplete": 0,
+            "worker_events_dropped": 0,
+            "worker_intervals": [
+              {
+                "wall_ms": 40.10764199999528,
+                "thread_cpu_ms": 0.03896700000000001,
+                "thread_id": 140334466062016,
+                "start_relative_ms": 0.81923900000902,
+                "end_relative_ms": 40.9268810000043
+              },
+              {
+                "wall_ms": 40.36717200000339,
+                "thread_cpu_ms": 0.021381999999999998,
+                "thread_id": 140334482843328,
+                "start_relative_ms": 1.2557579999992186,
+                "end_relative_ms": 41.62293000000261
+              },
+              {
+                "wall_ms": 40.06555000000844,
+                "thread_cpu_ms": 0.014181,
+                "thread_id": 140334298298048,
+                "start_relative_ms": 2.208832999997412,
+                "end_relative_ms": 42.274383000005855
+              },
+              {
+                "wall_ms": 40.067702999991184,
+                "thread_cpu_ms": 0.017157,
+                "thread_id": 140334281516736,
+                "start_relative_ms": 3.979314000005729,
+                "end_relative_ms": 44.04701699999691
+              },
+              {
+                "wall_ms": 40.09069699999657,
+                "thread_cpu_ms": 0.03605399999999999,
+                "thread_id": 140334466062016,
+                "start_relative_ms": 41.69995200000187,
+                "end_relative_ms": 81.79064899999844
+              },
+              {
+                "wall_ms": 40.27099099999987,
+                "thread_cpu_ms": 0.039289,
+                "thread_id": 140334482843328,
+                "start_relative_ms": 42.0963520000015,
+                "end_relative_ms": 82.36734300000137
+              }
+            ],
+            "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+          },
+          "sync-unrelated-surfaces-0f747e1a24fa47509743854c3023e371.json": {
+            "contract": "pa.test-deadline-evidence/v1",
+            "python": "3.14.10",
+            "platform": "Linux",
+            "source_sha": "8a8a5b715cb2079cae1ef8c6b8ffdb341f7bb4c1",
+            "gc_thresholds": [
+              2000,
+              10,
+              10
+            ],
+            "loop_thread_id": 140334859888448,
+            "request_wall_ms": 6.577666999987741,
+            "request_loop_thread_cpu_ms": 6.576701000000185,
+            "gc_events_total": 0,
+            "gc_events_retained": 0,
+            "gc_events_dropped": 0,
+            "request_gc_overlaps": [],
+            "worker_calls_started": 1,
+            "worker_calls_total": 1,
+            "worker_calls_incomplete": 0,
+            "worker_events_dropped": 0,
+            "worker_intervals": [
+              {
+                "wall_ms": 200.1027219999969,
+                "thread_cpu_ms": 0.05142599999999999,
+                "thread_id": 140334499624640,
+                "start_relative_ms": -3.351992000006021,
+                "end_relative_ms": 196.75072999999088
+              }
+            ],
+            "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+          }
+        }
+      },
+      {
+        "id": 13053312642,
+        "name": "deadline-evidence-3-1",
+        "path": ".dev/pr628-main-first-deadline-evidence-13053312642-20261031.zip",
+        "bytes": 709,
+        "sha256": "3e490f4b8868d4f0a78f486874a9e23c93a733950cc5948533a047bbacbba9ca",
+        "numeric": {
+          "restart-drain-start-b1501b9a38df49d89181d81e255fc1e7.json": {
+            "contract": "pa.test-deadline-evidence/v1",
+            "python": "3.14.10",
+            "platform": "Linux",
+            "source_sha": "8a8a5b715cb2079cae1ef8c6b8ffdb341f7bb4c1",
+            "gc_thresholds": [
+              2000,
+              10,
+              10
+            ],
+            "loop_thread_id": 140596979640128,
+            "request_wall_ms": 0.02847300004304998,
+            "request_loop_thread_cpu_ms": 0.026297999994540078,
+            "gc_events_total": 0,
+            "gc_events_retained": 0,
+            "gc_events_dropped": 0,
+            "request_gc_overlaps": [],
+            "worker_calls_started": 0,
+            "worker_calls_total": 0,
+            "worker_calls_incomplete": 0,
+            "worker_events_dropped": 0,
+            "worker_intervals": [],
+            "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+          }
+        }
+      },
+      {
+        "id": 13053163609,
+        "name": "deadline-evidence-1-1",
+        "path": ".dev/pr628-main-first-deadline-evidence-13053163609-20261031.zip",
+        "bytes": 1554,
+        "sha256": "9c854670461778c875c1d91da856ae2f133952a439300fc91d6cc12a756e8735",
+        "numeric": {
+          "agent-snapshot-c9dc47ba87a2497dbd1830fbb0662ff4.json": {
+            "contract": "pa.test-deadline-evidence/v1",
+            "python": "3.14.10",
+            "platform": "Linux",
+            "source_sha": "8a8a5b715cb2079cae1ef8c6b8ffdb341f7bb4c1",
+            "gc_thresholds": [
+              2000,
+              10,
+              10
+            ],
+            "loop_thread_id": 139757400213312,
+            "request_wall_ms": 1.448990999989519,
+            "request_loop_thread_cpu_ms": 1.0949450000001804,
+            "gc_events_total": 0,
+            "gc_events_retained": 0,
+            "gc_events_dropped": 0,
+            "request_gc_overlaps": [],
+            "worker_calls_started": 1,
+            "worker_calls_total": 1,
+            "worker_calls_incomplete": 0,
+            "worker_events_dropped": 0,
+            "worker_intervals": [
+              {
+                "wall_ms": 0.28690700000311153,
+                "thread_cpu_ms": 0.287918,
+                "thread_id": 139756893632192,
+                "start_relative_ms": 0.26703599999677863,
+                "end_relative_ms": 0.5539429999998902
+              }
+            ],
+            "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+          },
+          "incomplete-worker-dfd010a977c84aa2aab1e0db892f99a0.json": {
+            "contract": "pa.test-deadline-evidence/v1",
+            "python": "3.14.10",
+            "platform": "Linux",
+            "source_sha": "8a8a5b715cb2079cae1ef8c6b8ffdb341f7bb4c1",
+            "gc_thresholds": [
+              2000,
+              10,
+              10
+            ],
+            "loop_thread_id": 139757400213312,
+            "request_wall_ms": 0.1387300000033065,
+            "request_loop_thread_cpu_ms": 0.0891969999994302,
+            "gc_events_total": 0,
+            "gc_events_retained": 0,
+            "gc_events_dropped": 0,
+            "request_gc_overlaps": [],
+            "worker_calls_started": 1,
+            "worker_calls_total": 1,
+            "worker_calls_incomplete": 0,
+            "worker_events_dropped": 0,
+            "worker_intervals": [
+              {
+                "wall_ms": 0.06726600000206417,
+                "thread_cpu_ms": 0.025979000000000002,
+                "thread_id": 139756876850880,
+                "start_relative_ms": 0.10998199999789904,
+                "end_relative_ms": 0.1772479999999632
+              }
+            ],
+            "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+          }
+        }
+      }
+    ],
+    "scope": "Actualfirst628CI5terminalSUCCESS/logs/numericartifacts; no retries. Allprior620+610firstfailures retainedunchanged; testCI isnot production/performanceacceptance. Rawlogs retainedLOCAL/hashonly publicly."
+  },
+  "source_tests": {
+    "started_at": "2026-10-31T18:43:16.830019+00:00",
+    "finished_at": "2026-10-31T18:43:41.717711+00:00",
+    "exit_code": 0,
+    "arguments": [
+      "-q",
+      "-o",
+      "pythonpath=",
+      "-o",
+      "addopts=",
+      "--junitxml=.dev/workspace-derived629-final-source-contracts-20261031.xml",
+      "tests/test_workspace_connection_ownership.py",
+      "tests/test_workspace_sql_observations.py",
+      "tests/test_workspace_gc_hydration.py",
+      "tests/test_repository_workspaces.py",
+      "tests/test_recovery_workspace_handoff.py",
+      "tests/test_collaboration_store_observations.py"
+    ],
+    "source_sha256": "e9fcc2b17b46980c08f90c710383ac8c526860abd19c48f525e143424160b269",
+    "log_sha256": "d6a872f8d2bd06330f1571cd7f40b4387004bc945939adc86acb954c0115f066",
+    "xml_sha256": "554e62b9cd485122ce0b8aa33ad7a9ab0d377eed6b860abb251a570d7eaa2965",
+    "scope": "Prospective existing derived_connection ownership only, sameconnection timeout/PRAGMA/rowfactory/nativeCcontext commitrollback/query/policy. Private roots beforeimports, exactinstalledinterpreter/sourcepath, unchangedpre-inspected mockflags/finallyrestore. No realprovider/liveStore/effect/default/thresholdchange. No626installedretest results replaced."
+  },
+  "worker_test": {
+    "started_at": "2026-10-31T18:45:05.968058+00:00",
+    "finished_at": "2026-10-31T18:45:06.830684+00:00",
+    "exit_code": 0,
+    "arguments": [
+      "-q",
+      "-o",
+      "pythonpath=",
+      "-o",
+      "addopts=",
+      "--junitxml=.dev/workspace-derived629-worker-source-contract-20261031.xml",
+      "tests/test_workspace_connection_ownership.py::test_actual_worker_reuses_and_closes_before_completion"
+    ],
+    "source_sha256": "e9fcc2b17b46980c08f90c710383ac8c526860abd19c48f525e143424160b269",
+    "log_sha256": "6262dd4ae1e1610248aa7a1d90c86e6b7861110a1a434aeede186690d3652770",
+    "xml_sha256": "6852679c952e9da9b013ac8ccecb165580d98ea3cdf77ce268b0830e12fe9a99",
+    "scope": "Prospective existing derived_connection ownership only, sameconnection timeout/PRAGMA/rowfactory/nativeCcontext commitrollback/query/policy. Private roots beforeimports, exactinstalledinterpreter/sourcepath, unchangedpre-inspected mockflags/finallyrestore. No realprovider/liveStore/effect/default/thresholdchange. No626installedretest results replaced."
+  },
+  "mixed": {
+    "latency": {
+      "/api/health": {
+        "samples": 100,
+        "max_ms": 1.77,
+        "p50_ms": 0.368,
+        "p95_ms": 0.681,
+        "p99_ms": 0.949
+      },
+      "progress.sequence_allocate": {
+        "samples": 100,
+        "max_ms": 12.644,
+        "p50_ms": 1.17,
+        "p95_ms": 6.49,
+        "p99_ms": 10.883
+      },
+      "fleet.overview_cache_write": {
+        "samples": 100,
+        "max_ms": 12.547,
+        "p50_ms": 1.916,
+        "p95_ms": 5.656,
+        "p99_ms": 8.521
+      },
+      "sqlite.execution_binding_materialize": {
+        "samples": 100,
+        "max_ms": 50.552,
+        "p50_ms": 5.32,
+        "p95_ms": 22.658,
+        "p99_ms": 40.906
+      },
+      "fleet.overview_cache_read": {
+        "samples": 100,
+        "max_ms": 5.131,
+        "p50_ms": 0.294,
+        "p95_ms": 1.34,
+        "p99_ms": 1.688
+      },
+      "acp.wire_append": {
+        "samples": 100,
+        "max_ms": 17.077,
+        "p50_ms": 0.545,
+        "p95_ms": 1.617,
+        "p99_ms": 3.612
+      },
+      "progress.checkpoint_write": {
+        "samples": 100,
+        "max_ms": 13.625,
+        "p50_ms": 1.334,
+        "p95_ms": 3.98,
+        "p99_ms": 8.712
+      },
+      "sync.commit_read": {
+        "samples": 100,
+        "max_ms": 15.295,
+        "p50_ms": 0.451,
+        "p95_ms": 2.742,
+        "p99_ms": 6.749
+      },
+      "dispatch.runnable_read": {
+        "samples": 100,
+        "max_ms": 5.694,
+        "p50_ms": 0.3,
+        "p95_ms": 1.625,
+        "p99_ms": 3.513
+      },
+      "reconciliation.dispatch_read": {
+        "samples": 100,
+        "max_ms": 2.953,
+        "p50_ms": 0.321,
+        "p95_ms": 1.345,
+        "p99_ms": 2.17
+      },
+      "/api/agent/sessions?view=chats": {
+        "samples": 100,
+        "max_ms": 33.573,
+        "p50_ms": 5.214,
+        "p95_ms": 11.433,
+        "p99_ms": 16.941
+      },
+      "sync.push_transaction": {
+        "samples": 100,
+        "max_ms": 46.71,
+        "p50_ms": 9.657,
+        "p95_ms": 24.068,
+        "p99_ms": 41.029
+      },
+      "transcript.drain": {
+        "samples": 300,
+        "max_ms": 72.358,
+        "p50_ms": 12.532,
+        "p95_ms": 29.406,
+        "p99_ms": 50.22
+      },
+      "sqlite.card_write": {
+        "samples": 10,
+        "max_ms": 19.222,
+        "p50_ms": 6.5,
+        "p95_ms": 19.222,
+        "p99_ms": 19.222
+      },
+      "/agent": {
+        "samples": 100,
+        "max_ms": 58.747,
+        "p50_ms": 9.108,
+        "p95_ms": 17.496,
+        "p99_ms": 31.858
+      },
+      "/partials/home/sections": {
+        "samples": 100,
+        "max_ms": 22.632,
+        "p50_ms": 2.53,
+        "p95_ms": 5.434,
+        "p99_ms": 8.425
+      },
+      "/api/status": {
+        "samples": 100,
+        "max_ms": 16.889,
+        "p50_ms": 9.802,
+        "p95_ms": 13.785,
+        "p99_ms": 16.027
+      },
+      "/api/runtime?section=sse": {
+        "samples": 100,
+        "max_ms": 2.581,
+        "p50_ms": 0.798,
+        "p95_ms": 1.078,
+        "p99_ms": 1.343
+      },
+      "sync.reconcile_head": {
+        "samples": 100,
+        "max_ms": 84.427,
+        "p50_ms": 8.184,
+        "p95_ms": 21.709,
+        "p99_ms": 59.316
+      },
+      "/api/fleet/dispatch-jobs": {
+        "samples": 100,
+        "max_ms": 18.936,
+        "p50_ms": 5.019,
+        "p95_ms": 10.232,
+        "p99_ms": 15.879
+      },
+      "/api/cards": {
+        "samples": 100,
+        "max_ms": 4.698,
+        "p50_ms": 1.2,
+        "p95_ms": 2.324,
+        "p99_ms": 4.478
+      },
+      "/api/cards/fixture-card": {
+        "samples": 100,
+        "max_ms": 3.328,
+        "p50_ms": 0.671,
+        "p95_ms": 1.283,
+        "p99_ms": 2.304
+      },
+      "/api/cards/fixture-card/history": {
+        "samples": 100,
+        "max_ms": 15.513,
+        "p50_ms": 3.854,
+        "p95_ms": 7.788,
+        "p99_ms": 9.982
+      },
+      "/api/agent/history/session-0?limit=64": {
+        "samples": 100,
+        "max_ms": 15.035,
+        "p50_ms": 3.254,
+        "p95_ms": 6.524,
+        "p99_ms": 12.519
+      },
+      "/api/agent/history/session-0?limit=64&message_boundaries=true": {
+        "samples": 100,
+        "max_ms": 61.669,
+        "p50_ms": 22.996,
+        "p95_ms": 54.853,
+        "p99_ms": 60.227
+      },
+      "/api/notifications": {
+        "samples": 100,
+        "max_ms": 4.101,
+        "p50_ms": 0.833,
+        "p95_ms": 2.3,
+        "p99_ms": 3.653
+      },
+      "/api/agent/preferences": {
+        "samples": 100,
+        "max_ms": 2.068,
+        "p50_ms": 0.686,
+        "p95_ms": 1.038,
+        "p99_ms": 2.008
+      },
+      "/api/execution/defaults": {
+        "samples": 100,
+        "max_ms": 6.016,
+        "p50_ms": 0.677,
+        "p95_ms": 0.947,
+        "p99_ms": 1.375
+      },
+      "/api/fleet/dispatch-queue": {
+        "samples": 100,
+        "max_ms": 3.508,
+        "p50_ms": 0.876,
+        "p95_ms": 1.705,
+        "p99_ms": 3.013
+      },
+      "/api/pr-supervisor/watches": {
+        "samples": 100,
+        "max_ms": 3.404,
+        "p50_ms": 0.976,
+        "p95_ms": 2.478,
+        "p99_ms": 3.027
+      },
+      "/api/pr-supervisor/capabilities": {
+        "samples": 100,
+        "max_ms": 7.627,
+        "p50_ms": 0.96,
+        "p95_ms": 1.949,
+        "p99_ms": 4.029
+      },
+      "/api/workspaces": {
+        "samples": 100,
+        "max_ms": 10.507,
+        "p50_ms": 1.358,
+        "p95_ms": 2.956,
+        "p99_ms": 4.753
+      },
+      "/api/health-journal/status": {
+        "samples": 100,
+        "max_ms": 4.279,
+        "p50_ms": 1.01,
+        "p95_ms": 1.986,
+        "p99_ms": 3.428
+      },
+      "/api/sync/status": {
+        "samples": 100,
+        "max_ms": 10.696,
+        "p50_ms": 1.633,
+        "p95_ms": 3.797,
+        "p99_ms": 6.283
+      },
+      "/api/sync/refs": {
+        "samples": 100,
+        "max_ms": 3.972,
+        "p50_ms": 0.532,
+        "p95_ms": 1.553,
+        "p99_ms": 3.837
+      },
+      "/settings?section=agent": {
+        "samples": 100,
+        "max_ms": 42.797,
+        "p50_ms": 2.755,
+        "p95_ms": 5.443,
+        "p99_ms": 12.133
+      },
+      "/settings?section=backups": {
+        "samples": 100,
+        "max_ms": 11.245,
+        "p50_ms": 2.407,
+        "p95_ms": 6.617,
+        "p99_ms": 11.223
+      },
+      "sync.object_collect": {
+        "samples": 10,
+        "max_ms": 148.584,
+        "p50_ms": 41.67,
+        "p95_ms": 148.584,
+        "p99_ms": 148.584
+      },
+      "/fleet": {
+        "samples": 100,
+        "max_ms": 71.193,
+        "p50_ms": 13.813,
+        "p95_ms": 23.206,
+        "p99_ms": 53.565
+      },
+      "/pull-requests": {
+        "samples": 100,
+        "max_ms": 26.326,
+        "p50_ms": 4.727,
+        "p95_ms": 9.673,
+        "p99_ms": 11.906
+      },
+      "/": {
+        "samples": 100,
+        "max_ms": 6.54,
+        "p50_ms": 1.709,
+        "p95_ms": 3.553,
+        "p99_ms": 4.796
+      },
+      "/work": {
+        "samples": 100,
+        "max_ms": 13.712,
+        "p50_ms": 1.802,
+        "p95_ms": 3.97,
+        "p99_ms": 5.684
+      },
+      "/api/runtime": {
+        "samples": 100,
+        "max_ms": 8.724,
+        "p50_ms": 5.295,
+        "p95_ms": 6.055,
+        "p99_ms": 7.642
+      },
+      "maintenance.run": {
+        "samples": 1,
+        "max_ms": 927.824,
+        "p50_ms": 927.824,
+        "p95_ms": 927.824,
+        "p99_ms": 927.824
+      }
+    },
+    "threshold_violations": {
+      "maintenance.run": 1
+    },
+    "warnings": {},
+    "retained": 9600,
+    "operation_counter_deltas": {
+      "acp.wire_append": {
+        "submitted": 100,
+        "completed": 100,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "agent.history_payload": {
+        "submitted": 200,
+        "completed": 200,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "agent.startup_state_read": {
+        "submitted": 0,
+        "completed": 0,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "dispatch.completion_pending_read": {
+        "submitted": 2,
+        "completed": 2,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "dispatch.followup_pending_read": {
+        "submitted": 2,
+        "completed": 2,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "dispatch.runnable_read": {
+        "submitted": 100,
+        "completed": 100,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "filesystem.github_credentials_read": {
+        "submitted": 7,
+        "completed": 7,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "fleet.overview.reachability": {
+        "submitted": 5,
+        "completed": 5,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "fleet.overview.status": {
+        "submitted": 5,
+        "completed": 5,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "fleet.overview.sync": {
+        "submitted": 5,
+        "completed": 5,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "fleet.overview_cache_read": {
+        "submitted": 205,
+        "completed": 205,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "fleet.overview_cache_write": {
+        "submitted": 115,
+        "completed": 115,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "fleet.update_recovery": {
+        "submitted": 0,
+        "completed": 0,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "goal.dispatch_lifecycle_index": {
+        "submitted": 0,
+        "completed": 0,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "health.canonical_obligation": {
+        "submitted": 0,
+        "completed": 0,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "history.card_page": {
+        "submitted": 100,
+        "completed": 100,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "http.dispatch_list": {
+        "submitted": 100,
+        "completed": 100,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "http.session_list": {
+        "submitted": 100,
+        "completed": 100,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "maintenance.run": {
+        "submitted": 1,
+        "completed": 1,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "notifications.list_page": {
+        "submitted": 100,
+        "completed": 100,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "notifications.present_page": {
+        "submitted": 100,
+        "completed": 100,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "progress.checkpoint_write": {
+        "submitted": 100,
+        "completed": 100,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "progress.pending_read": {
+        "submitted": 5,
+        "completed": 5,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "progress.sequence_allocate": {
+        "submitted": 100,
+        "completed": 100,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "reconciliation.dispatch_read": {
+        "submitted": 102,
+        "completed": 102,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "sqlite.agent_session_read": {
+        "submitted": 200,
+        "completed": 200,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "sqlite.card_read": {
+        "submitted": 0,
+        "completed": 0,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "sqlite.card_summary_read": {
+        "submitted": 11,
+        "completed": 11,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "sqlite.card_summary_write": {
+        "submitted": 11,
+        "completed": 11,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "sqlite.card_write": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "sqlite.execution_binding_materialize": {
+        "submitted": 100,
+        "completed": 100,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "sqlite.pr_supervisor_capability_write": {
+        "submitted": 0,
+        "completed": 0,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "sqlite.pr_supervisor_completion_due_read": {
+        "submitted": 7,
+        "completed": 7,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "sqlite.pr_supervisor_due_read": {
+        "submitted": 7,
+        "completed": 7,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "sqlite.restart_handoffs_pending": {
+        "submitted": 0,
+        "completed": 0,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "sqlite.transcript_append": {
+        "submitted": 300,
+        "completed": 300,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "sqlite.transcript_message_page": {
+        "submitted": 100,
+        "completed": 100,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "sqlite.transcript_read": {
+        "submitted": 200,
+        "completed": 200,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "startup.agent_manager": {
+        "submitted": 0,
+        "completed": 0,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "startup.async_backend_prepare": {
+        "submitted": 0,
+        "completed": 0,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "startup.openapi": {
+        "submitted": 0,
+        "completed": 0,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "sync.commit_read": {
+        "submitted": 100,
+        "completed": 100,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "sync.gc_resume": {
+        "submitted": 0,
+        "completed": 0,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "sync.object_collect": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "sync.push_transaction": {
+        "submitted": 100,
+        "completed": 100,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "sync.reconcile_head": {
+        "submitted": 100,
+        "completed": 100,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "sync.ref_read": {
+        "submitted": 1,
+        "completed": 1,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "sync.startup_reconcile": {
+        "submitted": 0,
+        "completed": 0,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "workspace.collect_garbage": {
+        "submitted": 0,
+        "completed": 0,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "workspace.reconcile_terminal_state": {
+        "submitted": 0,
+        "completed": 0,
+        "failed": 0,
+        "timed_out": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      }
+    },
+    "source_module_sha256": {
+      "pa.core.async_runtime": "a6c3124d7522e0198dedd2927e00715391e71b6ed4d2cc972fe5bbb5ffac7ca1",
+      "pa.core.performance": "726a50f93d0ba696d6c93b04431d1b40473ac2a9e8e38ad56ce2ccc8d72f64f1",
+      "pa.core.sqlite_metrics": "3559ba8ecf681922f0daf26a779f9df7e9dee404fa2786757b5613f7140612ca",
+      "pa.core.io": "df89c8e5fd47c9cf9051fc016824c81ec278b31648ff67018bbe41a1141c1c34",
+      "pa.core.operation_budget": "999886d7601472b87274f5503fab032f8bb59ec3cc50f662c4b197de1ac6fea4",
+      "pa.sync.object_store": "1b7660c2e28e881d207efa0f5f7fd0dcd3280889438c13d03a15f5af0ae1812b",
+      "pa.domain.projection": "d8475728a8981ab2b87f4f5cec9dc5459e38e311b2e4b915d6ec89c89186306e",
+      "pa.domain.transcript_storage": "89ed4ade240cd884830aa0642e7515e5c4a8e51067adce4fda1e0eeab2ab237e",
+      "pa.domain.card_summary_service": "a9c3b6154de1cbdd5b259a2d3b1128e0d0337a182cd856156c90cbc45f5eb2de",
+      "pa.modules.items": "d231406c6e8ca66f053e672f404f53578db3b73c18aabd59c5617f28485acc22",
+      "pa.execution.dispatch": "81988a943b9848246759cf1feb6867b0c251f98f4d0ed405794dc9b42f546649",
+      "pa.modules.fleet": "5d2daaf20f1ea751db385aba613863d8ff1de5383f4b0700d49eae5b910ce5dd",
+      "pa.fleet.overview": "ef2b5230b14a04d4a8c75571272a94dcdecd07f426ef0483fa0f26a51153dc80",
+      "pa.sync.engine": "7c5ce543b33c8644dcc461f4958af3601b01fca6720984e6491970a269bfc5fe",
+      "pa.sync.event_log": "0ac99f8e55e466d3d6621dbeb6bfa42b0ac56358bbb1a41c3d7828120604b19a",
+      "pa.sync.dag_index": "22455f5957c1bc21715b7e30ff8f3d476495382d6b4b7dc362b543cd6f070d8a",
+      "pa.acp.transcript_page": "2f6d8d13306e2afc6b191772047978e0c7a07deca6ed34c8fbc0c52862f0f382",
+      "pa.instance.agent_session": "153710d066924ac06c6aeb9f97339e9c7740cad3d231f8814f3d8cad5797aca7",
+      "pa.instance.maintenance": "a078943d932c36cb8cdd2c99d5392861a74bfaa71efadf6a043dac27ba209ea2",
+      "pa.pr_supervisor.store": "4e9333fe69daf06baef07f448eb05936301b8a98ecaa905461dddb2ad1d5904d",
+      "pa.pr_supervisor.service": "737c59995f9a7f1a166d0f0e7b2dc390ca23bf04a9a12e3cbf1d2558dfbcd75a",
+      "pa.status.info": "b664f11f7e6529d01fbfcef0d1dea8418d676f161fdcf23a7af77d446adbc341",
+      "pa.modules.instance": "df232e263af3267be7c7bd5e0da06025cf44e45720042f80564fd0a16643ca23",
+      "pa.core.kernel": "9ea2f2dc619382bc1e965ac64cdd77f7d819bfef17e29c9129070fc5bf219b78",
+      "pa.openapi": "b134db246118dc4b78fb59543f754f881114b90454d675e741b1677c757c9448",
+      "pa.server.schema_generation": "e6e5e180d9d3f3c53e7c0003b5316d87d41ea7c210ae25245b99148fbeb93aad",
+      "pa.server.readiness": "3b80087f851e5ed2fde27c15efa5ba9389d01d7b8e112dd4aae4b211b8a5bc66",
+      "pa.server.template_cache": "ad7d49cb5d11d4d72660d24fa51e24fe0105be73c24b9c6d8605a8cb07c45f35",
+      "pa.modules.ui_shell": "a7ffb69164987db95a1c0491f052d01964e33b38fc0c0e98fa64187c4bb7bb56",
+      "pa.server.fleet_compression": "ca370efd318b74fca6875b81d5e61118fce49571fb7443fc4865ddfe06c57e1d"
+    }
+  },
+  "write_comparison": {
+    "observed_at": "2026-10-31T18:42:10.760872+00:00",
+    "baseline_source_sha256": "d55f6d6f6e55f971266088ff6b8c16adb66a3b734a6eca51448661d58de12b61",
+    "candidate_source_sha256": "e9fcc2b17b46980c08f90c710383ac8c526860abd19c48f525e143424160b269",
+    "rows": [
+      {
+        "pair": 0,
+        "variant": "baseline",
+        "wall_ms": 0.719583,
+        "thread_cpu_ms": 0.700791,
+        "process_output_blocks_delta": 0,
+        "live_handles": 3,
+        "token": 1,
+        "metrics": {
+          "fixture": 1
+        }
+      },
+      {
+        "pair": 0,
+        "variant": "candidate",
+        "wall_ms": 0.377416,
+        "thread_cpu_ms": 0.358792,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 1,
+        "metrics": {
+          "fixture": 1
+        }
+      },
+      {
+        "pair": 1,
+        "variant": "candidate",
+        "wall_ms": 0.292958,
+        "thread_cpu_ms": 0.274291,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 2,
+        "metrics": {
+          "fixture": 2
+        }
+      },
+      {
+        "pair": 1,
+        "variant": "baseline",
+        "wall_ms": 0.590208,
+        "thread_cpu_ms": 0.571625,
+        "process_output_blocks_delta": 0,
+        "live_handles": 6,
+        "token": 2,
+        "metrics": {
+          "fixture": 2
+        }
+      },
+      {
+        "pair": 2,
+        "variant": "baseline",
+        "wall_ms": 0.564459,
+        "thread_cpu_ms": 0.545,
+        "process_output_blocks_delta": 0,
+        "live_handles": 9,
+        "token": 3,
+        "metrics": {
+          "fixture": 3
+        }
+      },
+      {
+        "pair": 2,
+        "variant": "candidate",
+        "wall_ms": 0.297,
+        "thread_cpu_ms": 0.277166,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 3,
+        "metrics": {
+          "fixture": 3
+        }
+      },
+      {
+        "pair": 3,
+        "variant": "candidate",
+        "wall_ms": 0.279,
+        "thread_cpu_ms": 0.260041,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 4,
+        "metrics": {
+          "fixture": 4
+        }
+      },
+      {
+        "pair": 3,
+        "variant": "baseline",
+        "wall_ms": 0.554208,
+        "thread_cpu_ms": 0.533208,
+        "process_output_blocks_delta": 0,
+        "live_handles": 12,
+        "token": 4,
+        "metrics": {
+          "fixture": 4
+        }
+      },
+      {
+        "pair": 4,
+        "variant": "baseline",
+        "wall_ms": 0.587,
+        "thread_cpu_ms": 0.567167,
+        "process_output_blocks_delta": 0,
+        "live_handles": 15,
+        "token": 5,
+        "metrics": {
+          "fixture": 5
+        }
+      },
+      {
+        "pair": 4,
+        "variant": "candidate",
+        "wall_ms": 0.317167,
+        "thread_cpu_ms": 0.297834,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 5,
+        "metrics": {
+          "fixture": 5
+        }
+      },
+      {
+        "pair": 5,
+        "variant": "candidate",
+        "wall_ms": 0.312375,
+        "thread_cpu_ms": 0.292958,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 6,
+        "metrics": {
+          "fixture": 6
+        }
+      },
+      {
+        "pair": 5,
+        "variant": "baseline",
+        "wall_ms": 0.629083,
+        "thread_cpu_ms": 0.609959,
+        "process_output_blocks_delta": 0,
+        "live_handles": 18,
+        "token": 6,
+        "metrics": {
+          "fixture": 6
+        }
+      },
+      {
+        "pair": 6,
+        "variant": "baseline",
+        "wall_ms": 0.627291,
+        "thread_cpu_ms": 0.608084,
+        "process_output_blocks_delta": 0,
+        "live_handles": 21,
+        "token": 7,
+        "metrics": {
+          "fixture": 7
+        }
+      },
+      {
+        "pair": 6,
+        "variant": "candidate",
+        "wall_ms": 0.316333,
+        "thread_cpu_ms": 0.298125,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 7,
+        "metrics": {
+          "fixture": 7
+        }
+      },
+      {
+        "pair": 7,
+        "variant": "candidate",
+        "wall_ms": 0.2995,
+        "thread_cpu_ms": 0.280542,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 8,
+        "metrics": {
+          "fixture": 8
+        }
+      },
+      {
+        "pair": 7,
+        "variant": "baseline",
+        "wall_ms": 0.565041,
+        "thread_cpu_ms": 0.546792,
+        "process_output_blocks_delta": 0,
+        "live_handles": 24,
+        "token": 8,
+        "metrics": {
+          "fixture": 8
+        }
+      },
+      {
+        "pair": 8,
+        "variant": "baseline",
+        "wall_ms": 0.836208,
+        "thread_cpu_ms": 0.550334,
+        "process_output_blocks_delta": 0,
+        "live_handles": 27,
+        "token": 9,
+        "metrics": {
+          "fixture": 9
+        }
+      },
+      {
+        "pair": 8,
+        "variant": "candidate",
+        "wall_ms": 0.296292,
+        "thread_cpu_ms": 0.28025,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 9,
+        "metrics": {
+          "fixture": 9
+        }
+      },
+      {
+        "pair": 9,
+        "variant": "candidate",
+        "wall_ms": 0.277917,
+        "thread_cpu_ms": 0.259125,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 10,
+        "metrics": {
+          "fixture": 10
+        }
+      },
+      {
+        "pair": 9,
+        "variant": "baseline",
+        "wall_ms": 0.532042,
+        "thread_cpu_ms": 0.513208,
+        "process_output_blocks_delta": 0,
+        "live_handles": 30,
+        "token": 10,
+        "metrics": {
+          "fixture": 10
+        }
+      },
+      {
+        "pair": 10,
+        "variant": "baseline",
+        "wall_ms": 0.546916,
+        "thread_cpu_ms": 0.528209,
+        "process_output_blocks_delta": 0,
+        "live_handles": 33,
+        "token": 11,
+        "metrics": {
+          "fixture": 11
+        }
+      },
+      {
+        "pair": 10,
+        "variant": "candidate",
+        "wall_ms": 0.306375,
+        "thread_cpu_ms": 0.287542,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 11,
+        "metrics": {
+          "fixture": 11
+        }
+      },
+      {
+        "pair": 11,
+        "variant": "candidate",
+        "wall_ms": 0.32675,
+        "thread_cpu_ms": 0.299917,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 12,
+        "metrics": {
+          "fixture": 12
+        }
+      },
+      {
+        "pair": 11,
+        "variant": "baseline",
+        "wall_ms": 0.527416,
+        "thread_cpu_ms": 0.508208,
+        "process_output_blocks_delta": 0,
+        "live_handles": 36,
+        "token": 12,
+        "metrics": {
+          "fixture": 12
+        }
+      },
+      {
+        "pair": 12,
+        "variant": "baseline",
+        "wall_ms": 0.666459,
+        "thread_cpu_ms": 0.648167,
+        "process_output_blocks_delta": 0,
+        "live_handles": 39,
+        "token": 13,
+        "metrics": {
+          "fixture": 13
+        }
+      },
+      {
+        "pair": 12,
+        "variant": "candidate",
+        "wall_ms": 0.370541,
+        "thread_cpu_ms": 0.351167,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 13,
+        "metrics": {
+          "fixture": 13
+        }
+      },
+      {
+        "pair": 13,
+        "variant": "candidate",
+        "wall_ms": 0.305917,
+        "thread_cpu_ms": 0.287083,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 14,
+        "metrics": {
+          "fixture": 14
+        }
+      },
+      {
+        "pair": 13,
+        "variant": "baseline",
+        "wall_ms": 0.686375,
+        "thread_cpu_ms": 0.668333,
+        "process_output_blocks_delta": 0,
+        "live_handles": 42,
+        "token": 14,
+        "metrics": {
+          "fixture": 14
+        }
+      },
+      {
+        "pair": 14,
+        "variant": "baseline",
+        "wall_ms": 0.586959,
+        "thread_cpu_ms": 0.569791,
+        "process_output_blocks_delta": 0,
+        "live_handles": 45,
+        "token": 15,
+        "metrics": {
+          "fixture": 15
+        }
+      },
+      {
+        "pair": 14,
+        "variant": "candidate",
+        "wall_ms": 0.374667,
+        "thread_cpu_ms": 0.355292,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 15,
+        "metrics": {
+          "fixture": 15
+        }
+      },
+      {
+        "pair": 15,
+        "variant": "candidate",
+        "wall_ms": 0.364625,
+        "thread_cpu_ms": 0.345625,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 16,
+        "metrics": {
+          "fixture": 16
+        }
+      },
+      {
+        "pair": 15,
+        "variant": "baseline",
+        "wall_ms": 0.582459,
+        "thread_cpu_ms": 0.5635,
+        "process_output_blocks_delta": 0,
+        "live_handles": 48,
+        "token": 16,
+        "metrics": {
+          "fixture": 16
+        }
+      },
+      {
+        "pair": 16,
+        "variant": "baseline",
+        "wall_ms": 0.545458,
+        "thread_cpu_ms": 0.52725,
+        "process_output_blocks_delta": 0,
+        "live_handles": 51,
+        "token": 17,
+        "metrics": {
+          "fixture": 17
+        }
+      },
+      {
+        "pair": 16,
+        "variant": "candidate",
+        "wall_ms": 0.287666,
+        "thread_cpu_ms": 0.269792,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 17,
+        "metrics": {
+          "fixture": 17
+        }
+      },
+      {
+        "pair": 17,
+        "variant": "candidate",
+        "wall_ms": 0.285375,
+        "thread_cpu_ms": 0.265792,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 18,
+        "metrics": {
+          "fixture": 18
+        }
+      },
+      {
+        "pair": 17,
+        "variant": "baseline",
+        "wall_ms": 0.540834,
+        "thread_cpu_ms": 0.522375,
+        "process_output_blocks_delta": 0,
+        "live_handles": 54,
+        "token": 18,
+        "metrics": {
+          "fixture": 18
+        }
+      },
+      {
+        "pair": 18,
+        "variant": "baseline",
+        "wall_ms": 0.552333,
+        "thread_cpu_ms": 0.53375,
+        "process_output_blocks_delta": 0,
+        "live_handles": 57,
+        "token": 19,
+        "metrics": {
+          "fixture": 19
+        }
+      },
+      {
+        "pair": 18,
+        "variant": "candidate",
+        "wall_ms": 0.341542,
+        "thread_cpu_ms": 0.321875,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 19,
+        "metrics": {
+          "fixture": 19
+        }
+      },
+      {
+        "pair": 19,
+        "variant": "candidate",
+        "wall_ms": 0.317875,
+        "thread_cpu_ms": 0.299417,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 20,
+        "metrics": {
+          "fixture": 20
+        }
+      },
+      {
+        "pair": 19,
+        "variant": "baseline",
+        "wall_ms": 0.552834,
+        "thread_cpu_ms": 0.534167,
+        "process_output_blocks_delta": 0,
+        "live_handles": 60,
+        "token": 20,
+        "metrics": {
+          "fixture": 20
+        }
+      },
+      {
+        "pair": 20,
+        "variant": "baseline",
+        "wall_ms": 0.548542,
+        "thread_cpu_ms": 0.530833,
+        "process_output_blocks_delta": 0,
+        "live_handles": 63,
+        "token": 21,
+        "metrics": {
+          "fixture": 21
+        }
+      },
+      {
+        "pair": 20,
+        "variant": "candidate",
+        "wall_ms": 0.273083,
+        "thread_cpu_ms": 0.2545,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 21,
+        "metrics": {
+          "fixture": 21
+        }
+      },
+      {
+        "pair": 21,
+        "variant": "candidate",
+        "wall_ms": 0.26775,
+        "thread_cpu_ms": 0.249792,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 22,
+        "metrics": {
+          "fixture": 22
+        }
+      },
+      {
+        "pair": 21,
+        "variant": "baseline",
+        "wall_ms": 0.515083,
+        "thread_cpu_ms": 0.497083,
+        "process_output_blocks_delta": 0,
+        "live_handles": 66,
+        "token": 22,
+        "metrics": {
+          "fixture": 22
+        }
+      },
+      {
+        "pair": 22,
+        "variant": "baseline",
+        "wall_ms": 0.547916,
+        "thread_cpu_ms": 0.529458,
+        "process_output_blocks_delta": 0,
+        "live_handles": 69,
+        "token": 23,
+        "metrics": {
+          "fixture": 23
+        }
+      },
+      {
+        "pair": 22,
+        "variant": "candidate",
+        "wall_ms": 0.276209,
+        "thread_cpu_ms": 0.25775,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 23,
+        "metrics": {
+          "fixture": 23
+        }
+      },
+      {
+        "pair": 23,
+        "variant": "candidate",
+        "wall_ms": 0.254959,
+        "thread_cpu_ms": 0.236166,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 24,
+        "metrics": {
+          "fixture": 24
+        }
+      },
+      {
+        "pair": 23,
+        "variant": "baseline",
+        "wall_ms": 0.516459,
+        "thread_cpu_ms": 0.498375,
+        "process_output_blocks_delta": 0,
+        "live_handles": 72,
+        "token": 24,
+        "metrics": {
+          "fixture": 24
+        }
+      },
+      {
+        "pair": 24,
+        "variant": "baseline",
+        "wall_ms": 0.523209,
+        "thread_cpu_ms": 0.505625,
+        "process_output_blocks_delta": 0,
+        "live_handles": 75,
+        "token": 25,
+        "metrics": {
+          "fixture": 25
+        }
+      },
+      {
+        "pair": 24,
+        "variant": "candidate",
+        "wall_ms": 0.277708,
+        "thread_cpu_ms": 0.259125,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 25,
+        "metrics": {
+          "fixture": 25
+        }
+      },
+      {
+        "pair": 25,
+        "variant": "candidate",
+        "wall_ms": 0.264875,
+        "thread_cpu_ms": 0.246792,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 26,
+        "metrics": {
+          "fixture": 26
+        }
+      },
+      {
+        "pair": 25,
+        "variant": "baseline",
+        "wall_ms": 0.506792,
+        "thread_cpu_ms": 0.488583,
+        "process_output_blocks_delta": 0,
+        "live_handles": 78,
+        "token": 26,
+        "metrics": {
+          "fixture": 26
+        }
+      },
+      {
+        "pair": 26,
+        "variant": "baseline",
+        "wall_ms": 0.541625,
+        "thread_cpu_ms": 0.522166,
+        "process_output_blocks_delta": 0,
+        "live_handles": 81,
+        "token": 27,
+        "metrics": {
+          "fixture": 27
+        }
+      },
+      {
+        "pair": 26,
+        "variant": "candidate",
+        "wall_ms": 0.281125,
+        "thread_cpu_ms": 0.262166,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 27,
+        "metrics": {
+          "fixture": 27
+        }
+      },
+      {
+        "pair": 27,
+        "variant": "candidate",
+        "wall_ms": 0.254916,
+        "thread_cpu_ms": 0.236083,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 28,
+        "metrics": {
+          "fixture": 28
+        }
+      },
+      {
+        "pair": 27,
+        "variant": "baseline",
+        "wall_ms": 0.502584,
+        "thread_cpu_ms": 0.48375,
+        "process_output_blocks_delta": 0,
+        "live_handles": 84,
+        "token": 28,
+        "metrics": {
+          "fixture": 28
+        }
+      },
+      {
+        "pair": 28,
+        "variant": "baseline",
+        "wall_ms": 0.584916,
+        "thread_cpu_ms": 0.562125,
+        "process_output_blocks_delta": 0,
+        "live_handles": 87,
+        "token": 29,
+        "metrics": {
+          "fixture": 29
+        }
+      },
+      {
+        "pair": 28,
+        "variant": "candidate",
+        "wall_ms": 0.269333,
+        "thread_cpu_ms": 0.252083,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 29,
+        "metrics": {
+          "fixture": 29
+        }
+      },
+      {
+        "pair": 29,
+        "variant": "candidate",
+        "wall_ms": 0.260208,
+        "thread_cpu_ms": 0.241666,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 30,
+        "metrics": {
+          "fixture": 30
+        }
+      },
+      {
+        "pair": 29,
+        "variant": "baseline",
+        "wall_ms": 0.507542,
+        "thread_cpu_ms": 0.488917,
+        "process_output_blocks_delta": 0,
+        "live_handles": 90,
+        "token": 30,
+        "metrics": {
+          "fixture": 30
+        }
+      },
+      {
+        "pair": 30,
+        "variant": "baseline",
+        "wall_ms": 0.516875,
+        "thread_cpu_ms": 0.497458,
+        "process_output_blocks_delta": 0,
+        "live_handles": 93,
+        "token": 31,
+        "metrics": {
+          "fixture": 31
+        }
+      },
+      {
+        "pair": 30,
+        "variant": "candidate",
+        "wall_ms": 0.383875,
+        "thread_cpu_ms": 0.292708,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 31,
+        "metrics": {
+          "fixture": 31
+        }
+      },
+      {
+        "pair": 31,
+        "variant": "candidate",
+        "wall_ms": 0.255959,
+        "thread_cpu_ms": 0.237084,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 32,
+        "metrics": {
+          "fixture": 32
+        }
+      },
+      {
+        "pair": 31,
+        "variant": "baseline",
+        "wall_ms": 0.525709,
+        "thread_cpu_ms": 0.507208,
+        "process_output_blocks_delta": 0,
+        "live_handles": 96,
+        "token": 32,
+        "metrics": {
+          "fixture": 32
+        }
+      },
+      {
+        "pair": 32,
+        "variant": "baseline",
+        "wall_ms": 0.5115,
+        "thread_cpu_ms": 0.495125,
+        "process_output_blocks_delta": 0,
+        "live_handles": 99,
+        "token": 33,
+        "metrics": {
+          "fixture": 33
+        }
+      },
+      {
+        "pair": 32,
+        "variant": "candidate",
+        "wall_ms": 0.258708,
+        "thread_cpu_ms": 0.240666,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 33,
+        "metrics": {
+          "fixture": 33
+        }
+      },
+      {
+        "pair": 33,
+        "variant": "candidate",
+        "wall_ms": 0.258708,
+        "thread_cpu_ms": 0.240917,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 34,
+        "metrics": {
+          "fixture": 34
+        }
+      },
+      {
+        "pair": 33,
+        "variant": "baseline",
+        "wall_ms": 0.513167,
+        "thread_cpu_ms": 0.496542,
+        "process_output_blocks_delta": 0,
+        "live_handles": 102,
+        "token": 34,
+        "metrics": {
+          "fixture": 34
+        }
+      },
+      {
+        "pair": 34,
+        "variant": "baseline",
+        "wall_ms": 0.539917,
+        "thread_cpu_ms": 0.520458,
+        "process_output_blocks_delta": 0,
+        "live_handles": 105,
+        "token": 35,
+        "metrics": {
+          "fixture": 35
+        }
+      },
+      {
+        "pair": 34,
+        "variant": "candidate",
+        "wall_ms": 0.279459,
+        "thread_cpu_ms": 0.26075,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 35,
+        "metrics": {
+          "fixture": 35
+        }
+      },
+      {
+        "pair": 35,
+        "variant": "candidate",
+        "wall_ms": 0.263708,
+        "thread_cpu_ms": 0.244417,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 36,
+        "metrics": {
+          "fixture": 36
+        }
+      },
+      {
+        "pair": 35,
+        "variant": "baseline",
+        "wall_ms": 0.48775,
+        "thread_cpu_ms": 0.470208,
+        "process_output_blocks_delta": 0,
+        "live_handles": 108,
+        "token": 36,
+        "metrics": {
+          "fixture": 36
+        }
+      },
+      {
+        "pair": 36,
+        "variant": "baseline",
+        "wall_ms": 0.520625,
+        "thread_cpu_ms": 0.501875,
+        "process_output_blocks_delta": 0,
+        "live_handles": 111,
+        "token": 37,
+        "metrics": {
+          "fixture": 37
+        }
+      },
+      {
+        "pair": 36,
+        "variant": "candidate",
+        "wall_ms": 0.2775,
+        "thread_cpu_ms": 0.259458,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 37,
+        "metrics": {
+          "fixture": 37
+        }
+      },
+      {
+        "pair": 37,
+        "variant": "candidate",
+        "wall_ms": 0.267334,
+        "thread_cpu_ms": 0.248708,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 38,
+        "metrics": {
+          "fixture": 38
+        }
+      },
+      {
+        "pair": 37,
+        "variant": "baseline",
+        "wall_ms": 0.5085,
+        "thread_cpu_ms": 0.490083,
+        "process_output_blocks_delta": 0,
+        "live_handles": 114,
+        "token": 38,
+        "metrics": {
+          "fixture": 38
+        }
+      },
+      {
+        "pair": 38,
+        "variant": "baseline",
+        "wall_ms": 0.515834,
+        "thread_cpu_ms": 0.497625,
+        "process_output_blocks_delta": 0,
+        "live_handles": 117,
+        "token": 39,
+        "metrics": {
+          "fixture": 39
+        }
+      },
+      {
+        "pair": 38,
+        "variant": "candidate",
+        "wall_ms": 0.269584,
+        "thread_cpu_ms": 0.250792,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 39,
+        "metrics": {
+          "fixture": 39
+        }
+      },
+      {
+        "pair": 39,
+        "variant": "candidate",
+        "wall_ms": 0.250625,
+        "thread_cpu_ms": 0.232292,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 40,
+        "metrics": {
+          "fixture": 40
+        }
+      },
+      {
+        "pair": 39,
+        "variant": "baseline",
+        "wall_ms": 0.507541,
+        "thread_cpu_ms": 0.488458,
+        "process_output_blocks_delta": 0,
+        "live_handles": 120,
+        "token": 40,
+        "metrics": {
+          "fixture": 40
+        }
+      },
+      {
+        "pair": 40,
+        "variant": "baseline",
+        "wall_ms": 0.510791,
+        "thread_cpu_ms": 0.492583,
+        "process_output_blocks_delta": 0,
+        "live_handles": 123,
+        "token": 41,
+        "metrics": {
+          "fixture": 41
+        }
+      },
+      {
+        "pair": 40,
+        "variant": "candidate",
+        "wall_ms": 0.272167,
+        "thread_cpu_ms": 0.255541,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 41,
+        "metrics": {
+          "fixture": 41
+        }
+      },
+      {
+        "pair": 41,
+        "variant": "candidate",
+        "wall_ms": 0.250542,
+        "thread_cpu_ms": 0.232709,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 42,
+        "metrics": {
+          "fixture": 42
+        }
+      },
+      {
+        "pair": 41,
+        "variant": "baseline",
+        "wall_ms": 0.500875,
+        "thread_cpu_ms": 0.482,
+        "process_output_blocks_delta": 0,
+        "live_handles": 126,
+        "token": 42,
+        "metrics": {
+          "fixture": 42
+        }
+      },
+      {
+        "pair": 42,
+        "variant": "baseline",
+        "wall_ms": 0.542542,
+        "thread_cpu_ms": 0.524334,
+        "process_output_blocks_delta": 0,
+        "live_handles": 129,
+        "token": 43,
+        "metrics": {
+          "fixture": 43
+        }
+      },
+      {
+        "pair": 42,
+        "variant": "candidate",
+        "wall_ms": 0.307041,
+        "thread_cpu_ms": 0.27225,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 43,
+        "metrics": {
+          "fixture": 43
+        }
+      },
+      {
+        "pair": 43,
+        "variant": "candidate",
+        "wall_ms": 0.39275,
+        "thread_cpu_ms": 0.339584,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 44,
+        "metrics": {
+          "fixture": 44
+        }
+      },
+      {
+        "pair": 43,
+        "variant": "baseline",
+        "wall_ms": 0.884667,
+        "thread_cpu_ms": 0.670958,
+        "process_output_blocks_delta": 0,
+        "live_handles": 132,
+        "token": 44,
+        "metrics": {
+          "fixture": 44
+        }
+      },
+      {
+        "pair": 44,
+        "variant": "baseline",
+        "wall_ms": 0.698084,
+        "thread_cpu_ms": 0.516666,
+        "process_output_blocks_delta": 0,
+        "live_handles": 135,
+        "token": 45,
+        "metrics": {
+          "fixture": 45
+        }
+      },
+      {
+        "pair": 44,
+        "variant": "candidate",
+        "wall_ms": 0.286666,
+        "thread_cpu_ms": 0.268417,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 45,
+        "metrics": {
+          "fixture": 45
+        }
+      },
+      {
+        "pair": 45,
+        "variant": "candidate",
+        "wall_ms": 0.257375,
+        "thread_cpu_ms": 0.238958,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 46,
+        "metrics": {
+          "fixture": 46
+        }
+      },
+      {
+        "pair": 45,
+        "variant": "baseline",
+        "wall_ms": 0.5115,
+        "thread_cpu_ms": 0.49425,
+        "process_output_blocks_delta": 0,
+        "live_handles": 138,
+        "token": 46,
+        "metrics": {
+          "fixture": 46
+        }
+      },
+      {
+        "pair": 46,
+        "variant": "baseline",
+        "wall_ms": 0.560875,
+        "thread_cpu_ms": 0.541708,
+        "process_output_blocks_delta": 0,
+        "live_handles": 141,
+        "token": 47,
+        "metrics": {
+          "fixture": 47
+        }
+      },
+      {
+        "pair": 46,
+        "variant": "candidate",
+        "wall_ms": 0.272833,
+        "thread_cpu_ms": 0.254125,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 47,
+        "metrics": {
+          "fixture": 47
+        }
+      },
+      {
+        "pair": 47,
+        "variant": "candidate",
+        "wall_ms": 0.2675,
+        "thread_cpu_ms": 0.250459,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 48,
+        "metrics": {
+          "fixture": 48
+        }
+      },
+      {
+        "pair": 47,
+        "variant": "baseline",
+        "wall_ms": 0.514875,
+        "thread_cpu_ms": 0.494459,
+        "process_output_blocks_delta": 0,
+        "live_handles": 144,
+        "token": 48,
+        "metrics": {
+          "fixture": 48
+        }
+      },
+      {
+        "pair": 48,
+        "variant": "baseline",
+        "wall_ms": 0.542334,
+        "thread_cpu_ms": 0.522333,
+        "process_output_blocks_delta": 0,
+        "live_handles": 147,
+        "token": 49,
+        "metrics": {
+          "fixture": 49
+        }
+      },
+      {
+        "pair": 48,
+        "variant": "candidate",
+        "wall_ms": 0.307667,
+        "thread_cpu_ms": 0.288333,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 49,
+        "metrics": {
+          "fixture": 49
+        }
+      },
+      {
+        "pair": 49,
+        "variant": "candidate",
+        "wall_ms": 0.253625,
+        "thread_cpu_ms": 0.235416,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 50,
+        "metrics": {
+          "fixture": 50
+        }
+      },
+      {
+        "pair": 49,
+        "variant": "baseline",
+        "wall_ms": 0.491416,
+        "thread_cpu_ms": 0.473916,
+        "process_output_blocks_delta": 0,
+        "live_handles": 150,
+        "token": 50,
+        "metrics": {
+          "fixture": 50
+        }
+      },
+      {
+        "pair": 50,
+        "variant": "baseline",
+        "wall_ms": 0.513292,
+        "thread_cpu_ms": 0.494708,
+        "process_output_blocks_delta": 0,
+        "live_handles": 153,
+        "token": 51,
+        "metrics": {
+          "fixture": 51
+        }
+      },
+      {
+        "pair": 50,
+        "variant": "candidate",
+        "wall_ms": 0.273708,
+        "thread_cpu_ms": 0.25525,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 51,
+        "metrics": {
+          "fixture": 51
+        }
+      },
+      {
+        "pair": 51,
+        "variant": "candidate",
+        "wall_ms": 0.252417,
+        "thread_cpu_ms": 0.233084,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 52,
+        "metrics": {
+          "fixture": 52
+        }
+      },
+      {
+        "pair": 51,
+        "variant": "baseline",
+        "wall_ms": 0.523542,
+        "thread_cpu_ms": 0.504792,
+        "process_output_blocks_delta": 0,
+        "live_handles": 156,
+        "token": 52,
+        "metrics": {
+          "fixture": 52
+        }
+      },
+      {
+        "pair": 52,
+        "variant": "baseline",
+        "wall_ms": 0.513125,
+        "thread_cpu_ms": 0.494417,
+        "process_output_blocks_delta": 0,
+        "live_handles": 159,
+        "token": 53,
+        "metrics": {
+          "fixture": 53
+        }
+      },
+      {
+        "pair": 52,
+        "variant": "candidate",
+        "wall_ms": 0.25775,
+        "thread_cpu_ms": 0.238792,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 53,
+        "metrics": {
+          "fixture": 53
+        }
+      },
+      {
+        "pair": 53,
+        "variant": "candidate",
+        "wall_ms": 0.262416,
+        "thread_cpu_ms": 0.243458,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 54,
+        "metrics": {
+          "fixture": 54
+        }
+      },
+      {
+        "pair": 53,
+        "variant": "baseline",
+        "wall_ms": 0.520458,
+        "thread_cpu_ms": 0.502417,
+        "process_output_blocks_delta": 0,
+        "live_handles": 162,
+        "token": 54,
+        "metrics": {
+          "fixture": 54
+        }
+      },
+      {
+        "pair": 54,
+        "variant": "baseline",
+        "wall_ms": 0.507416,
+        "thread_cpu_ms": 0.488709,
+        "process_output_blocks_delta": 0,
+        "live_handles": 165,
+        "token": 55,
+        "metrics": {
+          "fixture": 55
+        }
+      },
+      {
+        "pair": 54,
+        "variant": "candidate",
+        "wall_ms": 0.273375,
+        "thread_cpu_ms": 0.254791,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 55,
+        "metrics": {
+          "fixture": 55
+        }
+      },
+      {
+        "pair": 55,
+        "variant": "candidate",
+        "wall_ms": 0.260875,
+        "thread_cpu_ms": 0.241167,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 56,
+        "metrics": {
+          "fixture": 56
+        }
+      },
+      {
+        "pair": 55,
+        "variant": "baseline",
+        "wall_ms": 0.513542,
+        "thread_cpu_ms": 0.49625,
+        "process_output_blocks_delta": 0,
+        "live_handles": 168,
+        "token": 56,
+        "metrics": {
+          "fixture": 56
+        }
+      },
+      {
+        "pair": 56,
+        "variant": "baseline",
+        "wall_ms": 0.517875,
+        "thread_cpu_ms": 0.498417,
+        "process_output_blocks_delta": 0,
+        "live_handles": 171,
+        "token": 57,
+        "metrics": {
+          "fixture": 57
+        }
+      },
+      {
+        "pair": 56,
+        "variant": "candidate",
+        "wall_ms": 0.266459,
+        "thread_cpu_ms": 0.247542,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 57,
+        "metrics": {
+          "fixture": 57
+        }
+      },
+      {
+        "pair": 57,
+        "variant": "candidate",
+        "wall_ms": 0.265875,
+        "thread_cpu_ms": 0.246875,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 58,
+        "metrics": {
+          "fixture": 58
+        }
+      },
+      {
+        "pair": 57,
+        "variant": "baseline",
+        "wall_ms": 0.514542,
+        "thread_cpu_ms": 0.4955,
+        "process_output_blocks_delta": 0,
+        "live_handles": 174,
+        "token": 58,
+        "metrics": {
+          "fixture": 58
+        }
+      },
+      {
+        "pair": 58,
+        "variant": "baseline",
+        "wall_ms": 0.512417,
+        "thread_cpu_ms": 0.493834,
+        "process_output_blocks_delta": 0,
+        "live_handles": 177,
+        "token": 59,
+        "metrics": {
+          "fixture": 59
+        }
+      },
+      {
+        "pair": 58,
+        "variant": "candidate",
+        "wall_ms": 0.289125,
+        "thread_cpu_ms": 0.271375,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 59,
+        "metrics": {
+          "fixture": 59
+        }
+      },
+      {
+        "pair": 59,
+        "variant": "candidate",
+        "wall_ms": 0.558166,
+        "thread_cpu_ms": 0.293959,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 60,
+        "metrics": {
+          "fixture": 60
+        }
+      },
+      {
+        "pair": 59,
+        "variant": "baseline",
+        "wall_ms": 0.532333,
+        "thread_cpu_ms": 0.514125,
+        "process_output_blocks_delta": 0,
+        "live_handles": 180,
+        "token": 60,
+        "metrics": {
+          "fixture": 60
+        }
+      },
+      {
+        "pair": 60,
+        "variant": "baseline",
+        "wall_ms": 0.520625,
+        "thread_cpu_ms": 0.502208,
+        "process_output_blocks_delta": 0,
+        "live_handles": 183,
+        "token": 61,
+        "metrics": {
+          "fixture": 61
+        }
+      },
+      {
+        "pair": 60,
+        "variant": "candidate",
+        "wall_ms": 8.692083,
+        "thread_cpu_ms": 8.490333,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 61,
+        "metrics": {
+          "fixture": 61
+        }
+      },
+      {
+        "pair": 61,
+        "variant": "candidate",
+        "wall_ms": 0.658333,
+        "thread_cpu_ms": 0.601,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 62,
+        "metrics": {
+          "fixture": 62
+        }
+      },
+      {
+        "pair": 61,
+        "variant": "baseline",
+        "wall_ms": 0.750125,
+        "thread_cpu_ms": 0.719208,
+        "process_output_blocks_delta": 0,
+        "live_handles": 3,
+        "token": 62,
+        "metrics": {
+          "fixture": 62
+        }
+      },
+      {
+        "pair": 62,
+        "variant": "baseline",
+        "wall_ms": 0.500208,
+        "thread_cpu_ms": 0.4815,
+        "process_output_blocks_delta": 0,
+        "live_handles": 6,
+        "token": 63,
+        "metrics": {
+          "fixture": 63
+        }
+      },
+      {
+        "pair": 62,
+        "variant": "candidate",
+        "wall_ms": 0.557459,
+        "thread_cpu_ms": 0.506,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 63,
+        "metrics": {
+          "fixture": 63
+        }
+      },
+      {
+        "pair": 63,
+        "variant": "candidate",
+        "wall_ms": 0.986625,
+        "thread_cpu_ms": 0.609625,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 64,
+        "metrics": {
+          "fixture": 64
+        }
+      },
+      {
+        "pair": 63,
+        "variant": "baseline",
+        "wall_ms": 0.528875,
+        "thread_cpu_ms": 0.510084,
+        "process_output_blocks_delta": 0,
+        "live_handles": 9,
+        "token": 64,
+        "metrics": {
+          "fixture": 64
+        }
+      },
+      {
+        "pair": 64,
+        "variant": "baseline",
+        "wall_ms": 0.490416,
+        "thread_cpu_ms": 0.472292,
+        "process_output_blocks_delta": 0,
+        "live_handles": 12,
+        "token": 65,
+        "metrics": {
+          "fixture": 65
+        }
+      },
+      {
+        "pair": 64,
+        "variant": "candidate",
+        "wall_ms": 0.586959,
+        "thread_cpu_ms": 0.530625,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 65,
+        "metrics": {
+          "fixture": 65
+        }
+      },
+      {
+        "pair": 65,
+        "variant": "candidate",
+        "wall_ms": 0.67025,
+        "thread_cpu_ms": 0.618167,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 66,
+        "metrics": {
+          "fixture": 66
+        }
+      },
+      {
+        "pair": 65,
+        "variant": "baseline",
+        "wall_ms": 0.519459,
+        "thread_cpu_ms": 0.50075,
+        "process_output_blocks_delta": 0,
+        "live_handles": 15,
+        "token": 66,
+        "metrics": {
+          "fixture": 66
+        }
+      },
+      {
+        "pair": 66,
+        "variant": "baseline",
+        "wall_ms": 0.557791,
+        "thread_cpu_ms": 0.539375,
+        "process_output_blocks_delta": 0,
+        "live_handles": 18,
+        "token": 67,
+        "metrics": {
+          "fixture": 67
+        }
+      },
+      {
+        "pair": 66,
+        "variant": "candidate",
+        "wall_ms": 0.574917,
+        "thread_cpu_ms": 0.518208,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 67,
+        "metrics": {
+          "fixture": 67
+        }
+      },
+      {
+        "pair": 67,
+        "variant": "candidate",
+        "wall_ms": 0.622333,
+        "thread_cpu_ms": 0.568541,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 68,
+        "metrics": {
+          "fixture": 68
+        }
+      },
+      {
+        "pair": 67,
+        "variant": "baseline",
+        "wall_ms": 0.532417,
+        "thread_cpu_ms": 0.513708,
+        "process_output_blocks_delta": 0,
+        "live_handles": 21,
+        "token": 68,
+        "metrics": {
+          "fixture": 68
+        }
+      },
+      {
+        "pair": 68,
+        "variant": "baseline",
+        "wall_ms": 0.530458,
+        "thread_cpu_ms": 0.512167,
+        "process_output_blocks_delta": 0,
+        "live_handles": 24,
+        "token": 69,
+        "metrics": {
+          "fixture": 69
+        }
+      },
+      {
+        "pair": 68,
+        "variant": "candidate",
+        "wall_ms": 0.567,
+        "thread_cpu_ms": 0.5125,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 69,
+        "metrics": {
+          "fixture": 69
+        }
+      },
+      {
+        "pair": 69,
+        "variant": "candidate",
+        "wall_ms": 0.867209,
+        "thread_cpu_ms": 0.573125,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 70,
+        "metrics": {
+          "fixture": 70
+        }
+      },
+      {
+        "pair": 69,
+        "variant": "baseline",
+        "wall_ms": 0.534792,
+        "thread_cpu_ms": 0.51575,
+        "process_output_blocks_delta": 0,
+        "live_handles": 27,
+        "token": 70,
+        "metrics": {
+          "fixture": 70
+        }
+      },
+      {
+        "pair": 70,
+        "variant": "baseline",
+        "wall_ms": 0.51375,
+        "thread_cpu_ms": 0.495875,
+        "process_output_blocks_delta": 0,
+        "live_handles": 30,
+        "token": 71,
+        "metrics": {
+          "fixture": 71
+        }
+      },
+      {
+        "pair": 70,
+        "variant": "candidate",
+        "wall_ms": 0.565583,
+        "thread_cpu_ms": 0.509958,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 71,
+        "metrics": {
+          "fixture": 71
+        }
+      },
+      {
+        "pair": 71,
+        "variant": "candidate",
+        "wall_ms": 0.612833,
+        "thread_cpu_ms": 0.559625,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 72,
+        "metrics": {
+          "fixture": 72
+        }
+      },
+      {
+        "pair": 71,
+        "variant": "baseline",
+        "wall_ms": 0.541291,
+        "thread_cpu_ms": 0.522125,
+        "process_output_blocks_delta": 0,
+        "live_handles": 33,
+        "token": 72,
+        "metrics": {
+          "fixture": 72
+        }
+      },
+      {
+        "pair": 72,
+        "variant": "baseline",
+        "wall_ms": 0.548208,
+        "thread_cpu_ms": 0.528541,
+        "process_output_blocks_delta": 0,
+        "live_handles": 36,
+        "token": 73,
+        "metrics": {
+          "fixture": 73
+        }
+      },
+      {
+        "pair": 72,
+        "variant": "candidate",
+        "wall_ms": 0.561458,
+        "thread_cpu_ms": 0.503417,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 73,
+        "metrics": {
+          "fixture": 73
+        }
+      },
+      {
+        "pair": 73,
+        "variant": "candidate",
+        "wall_ms": 0.597542,
+        "thread_cpu_ms": 0.543834,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 74,
+        "metrics": {
+          "fixture": 74
+        }
+      },
+      {
+        "pair": 73,
+        "variant": "baseline",
+        "wall_ms": 0.745291,
+        "thread_cpu_ms": 0.726625,
+        "process_output_blocks_delta": 0,
+        "live_handles": 39,
+        "token": 74,
+        "metrics": {
+          "fixture": 74
+        }
+      },
+      {
+        "pair": 74,
+        "variant": "baseline",
+        "wall_ms": 0.847417,
+        "thread_cpu_ms": 0.803875,
+        "process_output_blocks_delta": 0,
+        "live_handles": 42,
+        "token": 75,
+        "metrics": {
+          "fixture": 75
+        }
+      },
+      {
+        "pair": 74,
+        "variant": "candidate",
+        "wall_ms": 0.904958,
+        "thread_cpu_ms": 0.822958,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 75,
+        "metrics": {
+          "fixture": 75
+        }
+      },
+      {
+        "pair": 75,
+        "variant": "candidate",
+        "wall_ms": 1.189917,
+        "thread_cpu_ms": 0.7935,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 76,
+        "metrics": {
+          "fixture": 76
+        }
+      },
+      {
+        "pair": 75,
+        "variant": "baseline",
+        "wall_ms": 0.770416,
+        "thread_cpu_ms": 0.747042,
+        "process_output_blocks_delta": 0,
+        "live_handles": 45,
+        "token": 76,
+        "metrics": {
+          "fixture": 76
+        }
+      },
+      {
+        "pair": 76,
+        "variant": "baseline",
+        "wall_ms": 0.701833,
+        "thread_cpu_ms": 0.683,
+        "process_output_blocks_delta": 0,
+        "live_handles": 48,
+        "token": 77,
+        "metrics": {
+          "fixture": 77
+        }
+      },
+      {
+        "pair": 76,
+        "variant": "candidate",
+        "wall_ms": 0.663084,
+        "thread_cpu_ms": 0.604458,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 77,
+        "metrics": {
+          "fixture": 77
+        }
+      },
+      {
+        "pair": 77,
+        "variant": "candidate",
+        "wall_ms": 0.678583,
+        "thread_cpu_ms": 0.621958,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 78,
+        "metrics": {
+          "fixture": 78
+        }
+      },
+      {
+        "pair": 77,
+        "variant": "baseline",
+        "wall_ms": 0.694166,
+        "thread_cpu_ms": 0.67475,
+        "process_output_blocks_delta": 0,
+        "live_handles": 51,
+        "token": 78,
+        "metrics": {
+          "fixture": 78
+        }
+      },
+      {
+        "pair": 78,
+        "variant": "baseline",
+        "wall_ms": 0.564208,
+        "thread_cpu_ms": 0.544708,
+        "process_output_blocks_delta": 0,
+        "live_handles": 54,
+        "token": 79,
+        "metrics": {
+          "fixture": 79
+        }
+      },
+      {
+        "pair": 78,
+        "variant": "candidate",
+        "wall_ms": 0.635709,
+        "thread_cpu_ms": 0.579792,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 79,
+        "metrics": {
+          "fixture": 79
+        }
+      },
+      {
+        "pair": 79,
+        "variant": "candidate",
+        "wall_ms": 0.70025,
+        "thread_cpu_ms": 0.642917,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 80,
+        "metrics": {
+          "fixture": 80
+        }
+      },
+      {
+        "pair": 79,
+        "variant": "baseline",
+        "wall_ms": 0.575458,
+        "thread_cpu_ms": 0.556083,
+        "process_output_blocks_delta": 0,
+        "live_handles": 57,
+        "token": 80,
+        "metrics": {
+          "fixture": 80
+        }
+      },
+      {
+        "pair": 80,
+        "variant": "baseline",
+        "wall_ms": 0.539375,
+        "thread_cpu_ms": 0.52,
+        "process_output_blocks_delta": 0,
+        "live_handles": 60,
+        "token": 81,
+        "metrics": {
+          "fixture": 81
+        }
+      },
+      {
+        "pair": 80,
+        "variant": "candidate",
+        "wall_ms": 0.579583,
+        "thread_cpu_ms": 0.522416,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 81,
+        "metrics": {
+          "fixture": 81
+        }
+      },
+      {
+        "pair": 81,
+        "variant": "candidate",
+        "wall_ms": 0.650167,
+        "thread_cpu_ms": 0.592666,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 82,
+        "metrics": {
+          "fixture": 82
+        }
+      },
+      {
+        "pair": 81,
+        "variant": "baseline",
+        "wall_ms": 0.8105,
+        "thread_cpu_ms": 0.553458,
+        "process_output_blocks_delta": 0,
+        "live_handles": 63,
+        "token": 82,
+        "metrics": {
+          "fixture": 82
+        }
+      },
+      {
+        "pair": 82,
+        "variant": "baseline",
+        "wall_ms": 0.53025,
+        "thread_cpu_ms": 0.512041,
+        "process_output_blocks_delta": 0,
+        "live_handles": 66,
+        "token": 83,
+        "metrics": {
+          "fixture": 83
+        }
+      },
+      {
+        "pair": 82,
+        "variant": "candidate",
+        "wall_ms": 0.583125,
+        "thread_cpu_ms": 0.529208,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 83,
+        "metrics": {
+          "fixture": 83
+        }
+      },
+      {
+        "pair": 83,
+        "variant": "candidate",
+        "wall_ms": 0.615208,
+        "thread_cpu_ms": 0.563792,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 84,
+        "metrics": {
+          "fixture": 84
+        }
+      },
+      {
+        "pair": 83,
+        "variant": "baseline",
+        "wall_ms": 0.570625,
+        "thread_cpu_ms": 0.550667,
+        "process_output_blocks_delta": 0,
+        "live_handles": 69,
+        "token": 84,
+        "metrics": {
+          "fixture": 84
+        }
+      },
+      {
+        "pair": 84,
+        "variant": "baseline",
+        "wall_ms": 0.528875,
+        "thread_cpu_ms": 0.510541,
+        "process_output_blocks_delta": 0,
+        "live_handles": 72,
+        "token": 85,
+        "metrics": {
+          "fixture": 85
+        }
+      },
+      {
+        "pair": 84,
+        "variant": "candidate",
+        "wall_ms": 0.588542,
+        "thread_cpu_ms": 0.532666,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 85,
+        "metrics": {
+          "fixture": 85
+        }
+      },
+      {
+        "pair": 85,
+        "variant": "candidate",
+        "wall_ms": 0.700042,
+        "thread_cpu_ms": 0.646792,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 86,
+        "metrics": {
+          "fixture": 86
+        }
+      },
+      {
+        "pair": 85,
+        "variant": "baseline",
+        "wall_ms": 0.678666,
+        "thread_cpu_ms": 0.642042,
+        "process_output_blocks_delta": 0,
+        "live_handles": 75,
+        "token": 86,
+        "metrics": {
+          "fixture": 86
+        }
+      },
+      {
+        "pair": 86,
+        "variant": "baseline",
+        "wall_ms": 0.64975,
+        "thread_cpu_ms": 0.631333,
+        "process_output_blocks_delta": 0,
+        "live_handles": 78,
+        "token": 87,
+        "metrics": {
+          "fixture": 87
+        }
+      },
+      {
+        "pair": 86,
+        "variant": "candidate",
+        "wall_ms": 0.656417,
+        "thread_cpu_ms": 0.600708,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 87,
+        "metrics": {
+          "fixture": 87
+        }
+      },
+      {
+        "pair": 87,
+        "variant": "candidate",
+        "wall_ms": 1.388459,
+        "thread_cpu_ms": 0.74275,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 88,
+        "metrics": {
+          "fixture": 88
+        }
+      },
+      {
+        "pair": 87,
+        "variant": "baseline",
+        "wall_ms": 0.650333,
+        "thread_cpu_ms": 0.631125,
+        "process_output_blocks_delta": 0,
+        "live_handles": 81,
+        "token": 88,
+        "metrics": {
+          "fixture": 88
+        }
+      },
+      {
+        "pair": 88,
+        "variant": "baseline",
+        "wall_ms": 0.537167,
+        "thread_cpu_ms": 0.5175,
+        "process_output_blocks_delta": 0,
+        "live_handles": 84,
+        "token": 89,
+        "metrics": {
+          "fixture": 89
+        }
+      },
+      {
+        "pair": 88,
+        "variant": "candidate",
+        "wall_ms": 0.609916,
+        "thread_cpu_ms": 0.543709,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 89,
+        "metrics": {
+          "fixture": 89
+        }
+      },
+      {
+        "pair": 89,
+        "variant": "candidate",
+        "wall_ms": 0.818333,
+        "thread_cpu_ms": 0.619791,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 90,
+        "metrics": {
+          "fixture": 90
+        }
+      },
+      {
+        "pair": 89,
+        "variant": "baseline",
+        "wall_ms": 0.55925,
+        "thread_cpu_ms": 0.5405,
+        "process_output_blocks_delta": 0,
+        "live_handles": 87,
+        "token": 90,
+        "metrics": {
+          "fixture": 90
+        }
+      },
+      {
+        "pair": 90,
+        "variant": "baseline",
+        "wall_ms": 0.527166,
+        "thread_cpu_ms": 0.507625,
+        "process_output_blocks_delta": 0,
+        "live_handles": 90,
+        "token": 91,
+        "metrics": {
+          "fixture": 91
+        }
+      },
+      {
+        "pair": 90,
+        "variant": "candidate",
+        "wall_ms": 0.615875,
+        "thread_cpu_ms": 0.559958,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 91,
+        "metrics": {
+          "fixture": 91
+        }
+      },
+      {
+        "pair": 91,
+        "variant": "candidate",
+        "wall_ms": 0.639792,
+        "thread_cpu_ms": 0.588584,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 92,
+        "metrics": {
+          "fixture": 92
+        }
+      },
+      {
+        "pair": 91,
+        "variant": "baseline",
+        "wall_ms": 0.563542,
+        "thread_cpu_ms": 0.543459,
+        "process_output_blocks_delta": 0,
+        "live_handles": 93,
+        "token": 92,
+        "metrics": {
+          "fixture": 92
+        }
+      },
+      {
+        "pair": 92,
+        "variant": "baseline",
+        "wall_ms": 0.548334,
+        "thread_cpu_ms": 0.528875,
+        "process_output_blocks_delta": 0,
+        "live_handles": 96,
+        "token": 93,
+        "metrics": {
+          "fixture": 93
+        }
+      },
+      {
+        "pair": 92,
+        "variant": "candidate",
+        "wall_ms": 0.574125,
+        "thread_cpu_ms": 0.519083,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 93,
+        "metrics": {
+          "fixture": 93
+        }
+      },
+      {
+        "pair": 93,
+        "variant": "candidate",
+        "wall_ms": 0.617375,
+        "thread_cpu_ms": 0.56375,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 94,
+        "metrics": {
+          "fixture": 94
+        }
+      },
+      {
+        "pair": 93,
+        "variant": "baseline",
+        "wall_ms": 0.566167,
+        "thread_cpu_ms": 0.547125,
+        "process_output_blocks_delta": 0,
+        "live_handles": 99,
+        "token": 94,
+        "metrics": {
+          "fixture": 94
+        }
+      },
+      {
+        "pair": 94,
+        "variant": "baseline",
+        "wall_ms": 0.586167,
+        "thread_cpu_ms": 0.573875,
+        "process_output_blocks_delta": 0,
+        "live_handles": 102,
+        "token": 95,
+        "metrics": {
+          "fixture": 95
+        }
+      },
+      {
+        "pair": 94,
+        "variant": "candidate",
+        "wall_ms": 0.6335,
+        "thread_cpu_ms": 0.57525,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 95,
+        "metrics": {
+          "fixture": 95
+        }
+      },
+      {
+        "pair": 95,
+        "variant": "candidate",
+        "wall_ms": 0.708917,
+        "thread_cpu_ms": 0.652792,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 96,
+        "metrics": {
+          "fixture": 96
+        }
+      },
+      {
+        "pair": 95,
+        "variant": "baseline",
+        "wall_ms": 0.646916,
+        "thread_cpu_ms": 0.628583,
+        "process_output_blocks_delta": 0,
+        "live_handles": 105,
+        "token": 96,
+        "metrics": {
+          "fixture": 96
+        }
+      },
+      {
+        "pair": 96,
+        "variant": "baseline",
+        "wall_ms": 0.560833,
+        "thread_cpu_ms": 0.542709,
+        "process_output_blocks_delta": 0,
+        "live_handles": 108,
+        "token": 97,
+        "metrics": {
+          "fixture": 97
+        }
+      },
+      {
+        "pair": 96,
+        "variant": "candidate",
+        "wall_ms": 0.602416,
+        "thread_cpu_ms": 0.546583,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 97,
+        "metrics": {
+          "fixture": 97
+        }
+      },
+      {
+        "pair": 97,
+        "variant": "candidate",
+        "wall_ms": 0.658166,
+        "thread_cpu_ms": 0.60025,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 98,
+        "metrics": {
+          "fixture": 98
+        }
+      },
+      {
+        "pair": 97,
+        "variant": "baseline",
+        "wall_ms": 0.564,
+        "thread_cpu_ms": 0.545375,
+        "process_output_blocks_delta": 0,
+        "live_handles": 111,
+        "token": 98,
+        "metrics": {
+          "fixture": 98
+        }
+      },
+      {
+        "pair": 98,
+        "variant": "baseline",
+        "wall_ms": 0.547584,
+        "thread_cpu_ms": 0.529584,
+        "process_output_blocks_delta": 0,
+        "live_handles": 114,
+        "token": 99,
+        "metrics": {
+          "fixture": 99
+        }
+      },
+      {
+        "pair": 98,
+        "variant": "candidate",
+        "wall_ms": 0.5705,
+        "thread_cpu_ms": 0.512834,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 99,
+        "metrics": {
+          "fixture": 99
+        }
+      },
+      {
+        "pair": 99,
+        "variant": "candidate",
+        "wall_ms": 1.00725,
+        "thread_cpu_ms": 0.63675,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 100,
+        "metrics": {
+          "fixture": 100
+        }
+      },
+      {
+        "pair": 99,
+        "variant": "baseline",
+        "wall_ms": 0.601125,
+        "thread_cpu_ms": 0.582375,
+        "process_output_blocks_delta": 0,
+        "live_handles": 117,
+        "token": 100,
+        "metrics": {
+          "fixture": 100
+        }
+      }
+    ],
+    "summary": {
+      "baseline": {
+        "wall_ms": {
+          "samples": 100,
+          "max": 0.885,
+          "p50": 0.542,
+          "p95": 0.75,
+          "p99": 0.847
+        },
+        "thread_cpu_ms": {
+          "samples": 100,
+          "max": 0.804,
+          "p50": 0.522,
+          "p95": 0.683,
+          "p99": 0.747
+        },
+        "output_blocks_total": 0,
+        "max_live_handles": 183,
+        "connection_opens": 300
+      },
+      "candidate": {
+        "wall_ms": {
+          "samples": 100,
+          "max": 8.692,
+          "p50": 0.317,
+          "p95": 0.905,
+          "p99": 1.388
+        },
+        "thread_cpu_ms": {
+          "samples": 100,
+          "max": 8.49,
+          "p50": 0.294,
+          "p95": 0.647,
+          "p99": 0.823
+        },
+        "output_blocks_total": 0,
+        "max_live_handles": 0,
+        "connection_opens": 100
+      }
+    },
+    "scope": "UNSHIPPED existingderivedconnection private100alternatingpairs/200worker-scopedbatches each durablefence+metricwrite+metricsread, exacttokens/values. Timers include existing sqlite_connection_scope entry/exit and deterministic candidateclose; same scopebaseline. Candidate reusesone connection for3calls withinworker, baselineopens3. Native transaction/SQL/PRAGMA/timeout unchanged. Process ru_oublock deltas not physicaldiskwrites/fsynccounts; grouped3calls perbatch not perquery. No forcedGC/policy/provider/Git/productionwrites/defaultchanges/native1404ms causal/hardwareacceptance claim. Preserve adverse writecost/amplification before source adoption."
+  },
+  "explicit_close_comparison_unadopted": {
+    "observed_at": "2026-10-31T18:41:29.705532+00:00",
+    "baseline_source_sha256": "d55f6d6f6e55f971266088ff6b8c16adb66a3b734a6eca51448661d58de12b61",
+    "candidate_source_sha256": "bf57f1cbc1e836d7f59a72eace2c517d867c0cd1961e329d189d967328d71b84",
+    "rows": [
+      {
+        "pair": 0,
+        "variant": "baseline",
+        "wall_ms": 0.545708,
+        "thread_cpu_ms": 0.52225,
+        "process_output_blocks_delta": 0,
+        "live_handles": 3,
+        "token": 1,
+        "metrics": {
+          "fixture": 1
+        }
+      },
+      {
+        "pair": 0,
+        "variant": "candidate",
+        "wall_ms": 0.499875,
+        "thread_cpu_ms": 0.475833,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 1,
+        "metrics": {
+          "fixture": 1
+        }
+      },
+      {
+        "pair": 1,
+        "variant": "candidate",
+        "wall_ms": 0.410417,
+        "thread_cpu_ms": 0.398875,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 2,
+        "metrics": {
+          "fixture": 2
+        }
+      },
+      {
+        "pair": 1,
+        "variant": "baseline",
+        "wall_ms": 0.434875,
+        "thread_cpu_ms": 0.42,
+        "process_output_blocks_delta": 0,
+        "live_handles": 6,
+        "token": 2,
+        "metrics": {
+          "fixture": 2
+        }
+      },
+      {
+        "pair": 2,
+        "variant": "baseline",
+        "wall_ms": 0.486667,
+        "thread_cpu_ms": 0.47,
+        "process_output_blocks_delta": 0,
+        "live_handles": 9,
+        "token": 3,
+        "metrics": {
+          "fixture": 3
+        }
+      },
+      {
+        "pair": 2,
+        "variant": "candidate",
+        "wall_ms": 0.426375,
+        "thread_cpu_ms": 0.409916,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 3,
+        "metrics": {
+          "fixture": 3
+        }
+      },
+      {
+        "pair": 3,
+        "variant": "candidate",
+        "wall_ms": 0.430792,
+        "thread_cpu_ms": 0.407583,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 4,
+        "metrics": {
+          "fixture": 4
+        }
+      },
+      {
+        "pair": 3,
+        "variant": "baseline",
+        "wall_ms": 0.467833,
+        "thread_cpu_ms": 0.443917,
+        "process_output_blocks_delta": 0,
+        "live_handles": 12,
+        "token": 4,
+        "metrics": {
+          "fixture": 4
+        }
+      },
+      {
+        "pair": 4,
+        "variant": "baseline",
+        "wall_ms": 0.492583,
+        "thread_cpu_ms": 0.476416,
+        "process_output_blocks_delta": 0,
+        "live_handles": 15,
+        "token": 5,
+        "metrics": {
+          "fixture": 5
+        }
+      },
+      {
+        "pair": 4,
+        "variant": "candidate",
+        "wall_ms": 0.47575,
+        "thread_cpu_ms": 0.4625,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 5,
+        "metrics": {
+          "fixture": 5
+        }
+      },
+      {
+        "pair": 5,
+        "variant": "candidate",
+        "wall_ms": 0.474042,
+        "thread_cpu_ms": 0.459,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 6,
+        "metrics": {
+          "fixture": 6
+        }
+      },
+      {
+        "pair": 5,
+        "variant": "baseline",
+        "wall_ms": 0.460791,
+        "thread_cpu_ms": 0.448875,
+        "process_output_blocks_delta": 0,
+        "live_handles": 18,
+        "token": 6,
+        "metrics": {
+          "fixture": 6
+        }
+      },
+      {
+        "pair": 6,
+        "variant": "baseline",
+        "wall_ms": 0.449959,
+        "thread_cpu_ms": 0.429417,
+        "process_output_blocks_delta": 0,
+        "live_handles": 21,
+        "token": 7,
+        "metrics": {
+          "fixture": 7
+        }
+      },
+      {
+        "pair": 6,
+        "variant": "candidate",
+        "wall_ms": 0.422667,
+        "thread_cpu_ms": 0.401208,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 7,
+        "metrics": {
+          "fixture": 7
+        }
+      },
+      {
+        "pair": 7,
+        "variant": "candidate",
+        "wall_ms": 0.396,
+        "thread_cpu_ms": 0.374625,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 8,
+        "metrics": {
+          "fixture": 8
+        }
+      },
+      {
+        "pair": 7,
+        "variant": "baseline",
+        "wall_ms": 0.432666,
+        "thread_cpu_ms": 0.410959,
+        "process_output_blocks_delta": 0,
+        "live_handles": 24,
+        "token": 8,
+        "metrics": {
+          "fixture": 8
+        }
+      },
+      {
+        "pair": 8,
+        "variant": "baseline",
+        "wall_ms": 0.46225,
+        "thread_cpu_ms": 0.441166,
+        "process_output_blocks_delta": 0,
+        "live_handles": 27,
+        "token": 9,
+        "metrics": {
+          "fixture": 9
+        }
+      },
+      {
+        "pair": 8,
+        "variant": "candidate",
+        "wall_ms": 0.411,
+        "thread_cpu_ms": 0.395917,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 9,
+        "metrics": {
+          "fixture": 9
+        }
+      },
+      {
+        "pair": 9,
+        "variant": "candidate",
+        "wall_ms": 0.391291,
+        "thread_cpu_ms": 0.374833,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 10,
+        "metrics": {
+          "fixture": 10
+        }
+      },
+      {
+        "pair": 9,
+        "variant": "baseline",
+        "wall_ms": 0.426333,
+        "thread_cpu_ms": 0.40725,
+        "process_output_blocks_delta": 0,
+        "live_handles": 30,
+        "token": 10,
+        "metrics": {
+          "fixture": 10
+        }
+      },
+      {
+        "pair": 10,
+        "variant": "baseline",
+        "wall_ms": 0.446542,
+        "thread_cpu_ms": 0.432292,
+        "process_output_blocks_delta": 0,
+        "live_handles": 33,
+        "token": 11,
+        "metrics": {
+          "fixture": 11
+        }
+      },
+      {
+        "pair": 10,
+        "variant": "candidate",
+        "wall_ms": 0.416334,
+        "thread_cpu_ms": 0.401333,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 11,
+        "metrics": {
+          "fixture": 11
+        }
+      },
+      {
+        "pair": 11,
+        "variant": "candidate",
+        "wall_ms": 0.420833,
+        "thread_cpu_ms": 0.404959,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 12,
+        "metrics": {
+          "fixture": 12
+        }
+      },
+      {
+        "pair": 11,
+        "variant": "baseline",
+        "wall_ms": 0.426041,
+        "thread_cpu_ms": 0.412167,
+        "process_output_blocks_delta": 0,
+        "live_handles": 36,
+        "token": 12,
+        "metrics": {
+          "fixture": 12
+        }
+      },
+      {
+        "pair": 12,
+        "variant": "baseline",
+        "wall_ms": 0.468667,
+        "thread_cpu_ms": 0.450958,
+        "process_output_blocks_delta": 0,
+        "live_handles": 39,
+        "token": 13,
+        "metrics": {
+          "fixture": 13
+        }
+      },
+      {
+        "pair": 12,
+        "variant": "candidate",
+        "wall_ms": 0.430208,
+        "thread_cpu_ms": 0.415167,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 13,
+        "metrics": {
+          "fixture": 13
+        }
+      },
+      {
+        "pair": 13,
+        "variant": "candidate",
+        "wall_ms": 0.392125,
+        "thread_cpu_ms": 0.377666,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 14,
+        "metrics": {
+          "fixture": 14
+        }
+      },
+      {
+        "pair": 13,
+        "variant": "baseline",
+        "wall_ms": 0.419583,
+        "thread_cpu_ms": 0.404167,
+        "process_output_blocks_delta": 0,
+        "live_handles": 42,
+        "token": 14,
+        "metrics": {
+          "fixture": 14
+        }
+      },
+      {
+        "pair": 14,
+        "variant": "baseline",
+        "wall_ms": 0.4315,
+        "thread_cpu_ms": 0.411958,
+        "process_output_blocks_delta": 0,
+        "live_handles": 45,
+        "token": 15,
+        "metrics": {
+          "fixture": 15
+        }
+      },
+      {
+        "pair": 14,
+        "variant": "candidate",
+        "wall_ms": 0.443917,
+        "thread_cpu_ms": 0.421417,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 15,
+        "metrics": {
+          "fixture": 15
+        }
+      },
+      {
+        "pair": 15,
+        "variant": "candidate",
+        "wall_ms": 0.400667,
+        "thread_cpu_ms": 0.376416,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 16,
+        "metrics": {
+          "fixture": 16
+        }
+      },
+      {
+        "pair": 15,
+        "variant": "baseline",
+        "wall_ms": 0.462875,
+        "thread_cpu_ms": 0.440417,
+        "process_output_blocks_delta": 0,
+        "live_handles": 48,
+        "token": 16,
+        "metrics": {
+          "fixture": 16
+        }
+      },
+      {
+        "pair": 16,
+        "variant": "baseline",
+        "wall_ms": 0.4775,
+        "thread_cpu_ms": 0.461958,
+        "process_output_blocks_delta": 0,
+        "live_handles": 51,
+        "token": 17,
+        "metrics": {
+          "fixture": 17
+        }
+      },
+      {
+        "pair": 16,
+        "variant": "candidate",
+        "wall_ms": 0.423334,
+        "thread_cpu_ms": 0.408,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 17,
+        "metrics": {
+          "fixture": 17
+        }
+      },
+      {
+        "pair": 17,
+        "variant": "candidate",
+        "wall_ms": 0.423959,
+        "thread_cpu_ms": 0.406292,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 18,
+        "metrics": {
+          "fixture": 18
+        }
+      },
+      {
+        "pair": 17,
+        "variant": "baseline",
+        "wall_ms": 0.4195,
+        "thread_cpu_ms": 0.405084,
+        "process_output_blocks_delta": 0,
+        "live_handles": 54,
+        "token": 18,
+        "metrics": {
+          "fixture": 18
+        }
+      },
+      {
+        "pair": 18,
+        "variant": "baseline",
+        "wall_ms": 0.526709,
+        "thread_cpu_ms": 0.494,
+        "process_output_blocks_delta": 0,
+        "live_handles": 57,
+        "token": 19,
+        "metrics": {
+          "fixture": 19
+        }
+      },
+      {
+        "pair": 18,
+        "variant": "candidate",
+        "wall_ms": 0.473708,
+        "thread_cpu_ms": 0.450959,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 19,
+        "metrics": {
+          "fixture": 19
+        }
+      },
+      {
+        "pair": 19,
+        "variant": "candidate",
+        "wall_ms": 0.438916,
+        "thread_cpu_ms": 0.421667,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 20,
+        "metrics": {
+          "fixture": 20
+        }
+      },
+      {
+        "pair": 19,
+        "variant": "baseline",
+        "wall_ms": 0.428,
+        "thread_cpu_ms": 0.407417,
+        "process_output_blocks_delta": 0,
+        "live_handles": 60,
+        "token": 20,
+        "metrics": {
+          "fixture": 20
+        }
+      },
+      {
+        "pair": 20,
+        "variant": "baseline",
+        "wall_ms": 0.436834,
+        "thread_cpu_ms": 0.4175,
+        "process_output_blocks_delta": 0,
+        "live_handles": 63,
+        "token": 21,
+        "metrics": {
+          "fixture": 21
+        }
+      },
+      {
+        "pair": 20,
+        "variant": "candidate",
+        "wall_ms": 0.42425,
+        "thread_cpu_ms": 0.404084,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 21,
+        "metrics": {
+          "fixture": 21
+        }
+      },
+      {
+        "pair": 21,
+        "variant": "candidate",
+        "wall_ms": 0.40325,
+        "thread_cpu_ms": 0.38575,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 22,
+        "metrics": {
+          "fixture": 22
+        }
+      },
+      {
+        "pair": 21,
+        "variant": "baseline",
+        "wall_ms": 0.447042,
+        "thread_cpu_ms": 0.428042,
+        "process_output_blocks_delta": 0,
+        "live_handles": 66,
+        "token": 22,
+        "metrics": {
+          "fixture": 22
+        }
+      },
+      {
+        "pair": 22,
+        "variant": "baseline",
+        "wall_ms": 0.480042,
+        "thread_cpu_ms": 0.457333,
+        "process_output_blocks_delta": 0,
+        "live_handles": 69,
+        "token": 23,
+        "metrics": {
+          "fixture": 23
+        }
+      },
+      {
+        "pair": 22,
+        "variant": "candidate",
+        "wall_ms": 0.434625,
+        "thread_cpu_ms": 0.415166,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 23,
+        "metrics": {
+          "fixture": 23
+        }
+      },
+      {
+        "pair": 23,
+        "variant": "candidate",
+        "wall_ms": 0.3915,
+        "thread_cpu_ms": 0.374334,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 24,
+        "metrics": {
+          "fixture": 24
+        }
+      },
+      {
+        "pair": 23,
+        "variant": "baseline",
+        "wall_ms": 0.44725,
+        "thread_cpu_ms": 0.430083,
+        "process_output_blocks_delta": 0,
+        "live_handles": 72,
+        "token": 24,
+        "metrics": {
+          "fixture": 24
+        }
+      },
+      {
+        "pair": 24,
+        "variant": "baseline",
+        "wall_ms": 0.556459,
+        "thread_cpu_ms": 0.538625,
+        "process_output_blocks_delta": 0,
+        "live_handles": 75,
+        "token": 25,
+        "metrics": {
+          "fixture": 25
+        }
+      },
+      {
+        "pair": 24,
+        "variant": "candidate",
+        "wall_ms": 0.539125,
+        "thread_cpu_ms": 0.521209,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 25,
+        "metrics": {
+          "fixture": 25
+        }
+      },
+      {
+        "pair": 25,
+        "variant": "candidate",
+        "wall_ms": 0.436334,
+        "thread_cpu_ms": 0.414459,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 26,
+        "metrics": {
+          "fixture": 26
+        }
+      },
+      {
+        "pair": 25,
+        "variant": "baseline",
+        "wall_ms": 0.482167,
+        "thread_cpu_ms": 0.461166,
+        "process_output_blocks_delta": 0,
+        "live_handles": 78,
+        "token": 26,
+        "metrics": {
+          "fixture": 26
+        }
+      },
+      {
+        "pair": 26,
+        "variant": "baseline",
+        "wall_ms": 0.525041,
+        "thread_cpu_ms": 0.506041,
+        "process_output_blocks_delta": 0,
+        "live_handles": 81,
+        "token": 27,
+        "metrics": {
+          "fixture": 27
+        }
+      },
+      {
+        "pair": 26,
+        "variant": "candidate",
+        "wall_ms": 0.531333,
+        "thread_cpu_ms": 0.497666,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 27,
+        "metrics": {
+          "fixture": 27
+        }
+      },
+      {
+        "pair": 27,
+        "variant": "candidate",
+        "wall_ms": 0.506583,
+        "thread_cpu_ms": 0.4825,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 28,
+        "metrics": {
+          "fixture": 28
+        }
+      },
+      {
+        "pair": 27,
+        "variant": "baseline",
+        "wall_ms": 0.5395,
+        "thread_cpu_ms": 0.5155,
+        "process_output_blocks_delta": 0,
+        "live_handles": 84,
+        "token": 28,
+        "metrics": {
+          "fixture": 28
+        }
+      },
+      {
+        "pair": 28,
+        "variant": "baseline",
+        "wall_ms": 0.560209,
+        "thread_cpu_ms": 0.545125,
+        "process_output_blocks_delta": 0,
+        "live_handles": 87,
+        "token": 29,
+        "metrics": {
+          "fixture": 29
+        }
+      },
+      {
+        "pair": 28,
+        "variant": "candidate",
+        "wall_ms": 0.589292,
+        "thread_cpu_ms": 0.568458,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 29,
+        "metrics": {
+          "fixture": 29
+        }
+      },
+      {
+        "pair": 29,
+        "variant": "candidate",
+        "wall_ms": 0.433458,
+        "thread_cpu_ms": 0.419667,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 30,
+        "metrics": {
+          "fixture": 30
+        }
+      },
+      {
+        "pair": 29,
+        "variant": "baseline",
+        "wall_ms": 0.44525,
+        "thread_cpu_ms": 0.431292,
+        "process_output_blocks_delta": 0,
+        "live_handles": 90,
+        "token": 30,
+        "metrics": {
+          "fixture": 30
+        }
+      },
+      {
+        "pair": 30,
+        "variant": "baseline",
+        "wall_ms": 0.46025,
+        "thread_cpu_ms": 0.430834,
+        "process_output_blocks_delta": 0,
+        "live_handles": 93,
+        "token": 31,
+        "metrics": {
+          "fixture": 31
+        }
+      },
+      {
+        "pair": 30,
+        "variant": "candidate",
+        "wall_ms": 0.428625,
+        "thread_cpu_ms": 0.406708,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 31,
+        "metrics": {
+          "fixture": 31
+        }
+      },
+      {
+        "pair": 31,
+        "variant": "candidate",
+        "wall_ms": 0.39925,
+        "thread_cpu_ms": 0.381666,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 32,
+        "metrics": {
+          "fixture": 32
+        }
+      },
+      {
+        "pair": 31,
+        "variant": "baseline",
+        "wall_ms": 0.426083,
+        "thread_cpu_ms": 0.404125,
+        "process_output_blocks_delta": 0,
+        "live_handles": 96,
+        "token": 32,
+        "metrics": {
+          "fixture": 32
+        }
+      },
+      {
+        "pair": 32,
+        "variant": "baseline",
+        "wall_ms": 0.429417,
+        "thread_cpu_ms": 0.413542,
+        "process_output_blocks_delta": 0,
+        "live_handles": 99,
+        "token": 33,
+        "metrics": {
+          "fixture": 33
+        }
+      },
+      {
+        "pair": 32,
+        "variant": "candidate",
+        "wall_ms": 0.422125,
+        "thread_cpu_ms": 0.407959,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 33,
+        "metrics": {
+          "fixture": 33
+        }
+      },
+      {
+        "pair": 33,
+        "variant": "candidate",
+        "wall_ms": 0.410625,
+        "thread_cpu_ms": 0.394625,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 34,
+        "metrics": {
+          "fixture": 34
+        }
+      },
+      {
+        "pair": 33,
+        "variant": "baseline",
+        "wall_ms": 0.440042,
+        "thread_cpu_ms": 0.418458,
+        "process_output_blocks_delta": 0,
+        "live_handles": 102,
+        "token": 34,
+        "metrics": {
+          "fixture": 34
+        }
+      },
+      {
+        "pair": 34,
+        "variant": "baseline",
+        "wall_ms": 0.4305,
+        "thread_cpu_ms": 0.408333,
+        "process_output_blocks_delta": 0,
+        "live_handles": 105,
+        "token": 35,
+        "metrics": {
+          "fixture": 35
+        }
+      },
+      {
+        "pair": 34,
+        "variant": "candidate",
+        "wall_ms": 0.456208,
+        "thread_cpu_ms": 0.433209,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 35,
+        "metrics": {
+          "fixture": 35
+        }
+      },
+      {
+        "pair": 35,
+        "variant": "candidate",
+        "wall_ms": 0.419167,
+        "thread_cpu_ms": 0.397417,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 36,
+        "metrics": {
+          "fixture": 36
+        }
+      },
+      {
+        "pair": 35,
+        "variant": "baseline",
+        "wall_ms": 0.457208,
+        "thread_cpu_ms": 0.434958,
+        "process_output_blocks_delta": 0,
+        "live_handles": 108,
+        "token": 36,
+        "metrics": {
+          "fixture": 36
+        }
+      },
+      {
+        "pair": 36,
+        "variant": "baseline",
+        "wall_ms": 0.453959,
+        "thread_cpu_ms": 0.431833,
+        "process_output_blocks_delta": 0,
+        "live_handles": 111,
+        "token": 37,
+        "metrics": {
+          "fixture": 37
+        }
+      },
+      {
+        "pair": 36,
+        "variant": "candidate",
+        "wall_ms": 0.435208,
+        "thread_cpu_ms": 0.41325,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 37,
+        "metrics": {
+          "fixture": 37
+        }
+      },
+      {
+        "pair": 37,
+        "variant": "candidate",
+        "wall_ms": 0.427667,
+        "thread_cpu_ms": 0.404,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 38,
+        "metrics": {
+          "fixture": 38
+        }
+      },
+      {
+        "pair": 37,
+        "variant": "baseline",
+        "wall_ms": 0.468333,
+        "thread_cpu_ms": 0.439791,
+        "process_output_blocks_delta": 0,
+        "live_handles": 114,
+        "token": 38,
+        "metrics": {
+          "fixture": 38
+        }
+      },
+      {
+        "pair": 38,
+        "variant": "baseline",
+        "wall_ms": 0.457083,
+        "thread_cpu_ms": 0.442584,
+        "process_output_blocks_delta": 0,
+        "live_handles": 117,
+        "token": 39,
+        "metrics": {
+          "fixture": 39
+        }
+      },
+      {
+        "pair": 38,
+        "variant": "candidate",
+        "wall_ms": 0.429166,
+        "thread_cpu_ms": 0.414167,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 39,
+        "metrics": {
+          "fixture": 39
+        }
+      },
+      {
+        "pair": 39,
+        "variant": "candidate",
+        "wall_ms": 0.394709,
+        "thread_cpu_ms": 0.380958,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 40,
+        "metrics": {
+          "fixture": 40
+        }
+      },
+      {
+        "pair": 39,
+        "variant": "baseline",
+        "wall_ms": 0.418958,
+        "thread_cpu_ms": 0.405125,
+        "process_output_blocks_delta": 0,
+        "live_handles": 120,
+        "token": 40,
+        "metrics": {
+          "fixture": 40
+        }
+      },
+      {
+        "pair": 40,
+        "variant": "baseline",
+        "wall_ms": 0.434542,
+        "thread_cpu_ms": 0.420833,
+        "process_output_blocks_delta": 0,
+        "live_handles": 123,
+        "token": 41,
+        "metrics": {
+          "fixture": 41
+        }
+      },
+      {
+        "pair": 40,
+        "variant": "candidate",
+        "wall_ms": 0.418833,
+        "thread_cpu_ms": 0.404834,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 41,
+        "metrics": {
+          "fixture": 41
+        }
+      },
+      {
+        "pair": 41,
+        "variant": "candidate",
+        "wall_ms": 0.392958,
+        "thread_cpu_ms": 0.379042,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 42,
+        "metrics": {
+          "fixture": 42
+        }
+      },
+      {
+        "pair": 41,
+        "variant": "baseline",
+        "wall_ms": 0.442292,
+        "thread_cpu_ms": 0.428375,
+        "process_output_blocks_delta": 0,
+        "live_handles": 126,
+        "token": 42,
+        "metrics": {
+          "fixture": 42
+        }
+      },
+      {
+        "pair": 42,
+        "variant": "baseline",
+        "wall_ms": 0.441958,
+        "thread_cpu_ms": 0.426542,
+        "process_output_blocks_delta": 0,
+        "live_handles": 129,
+        "token": 43,
+        "metrics": {
+          "fixture": 43
+        }
+      },
+      {
+        "pair": 42,
+        "variant": "candidate",
+        "wall_ms": 0.447959,
+        "thread_cpu_ms": 0.428167,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 43,
+        "metrics": {
+          "fixture": 43
+        }
+      },
+      {
+        "pair": 43,
+        "variant": "candidate",
+        "wall_ms": 0.407125,
+        "thread_cpu_ms": 0.391875,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 44,
+        "metrics": {
+          "fixture": 44
+        }
+      },
+      {
+        "pair": 43,
+        "variant": "baseline",
+        "wall_ms": 0.417208,
+        "thread_cpu_ms": 0.403416,
+        "process_output_blocks_delta": 0,
+        "live_handles": 132,
+        "token": 44,
+        "metrics": {
+          "fixture": 44
+        }
+      },
+      {
+        "pair": 44,
+        "variant": "baseline",
+        "wall_ms": 0.462625,
+        "thread_cpu_ms": 0.44725,
+        "process_output_blocks_delta": 0,
+        "live_handles": 135,
+        "token": 45,
+        "metrics": {
+          "fixture": 45
+        }
+      },
+      {
+        "pair": 44,
+        "variant": "candidate",
+        "wall_ms": 0.432375,
+        "thread_cpu_ms": 0.416917,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 45,
+        "metrics": {
+          "fixture": 45
+        }
+      },
+      {
+        "pair": 45,
+        "variant": "candidate",
+        "wall_ms": 0.402583,
+        "thread_cpu_ms": 0.386,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 46,
+        "metrics": {
+          "fixture": 46
+        }
+      },
+      {
+        "pair": 45,
+        "variant": "baseline",
+        "wall_ms": 0.441458,
+        "thread_cpu_ms": 0.418083,
+        "process_output_blocks_delta": 0,
+        "live_handles": 138,
+        "token": 46,
+        "metrics": {
+          "fixture": 46
+        }
+      },
+      {
+        "pair": 46,
+        "variant": "baseline",
+        "wall_ms": 0.475042,
+        "thread_cpu_ms": 0.453917,
+        "process_output_blocks_delta": 0,
+        "live_handles": 141,
+        "token": 47,
+        "metrics": {
+          "fixture": 47
+        }
+      },
+      {
+        "pair": 46,
+        "variant": "candidate",
+        "wall_ms": 0.431375,
+        "thread_cpu_ms": 0.408625,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 47,
+        "metrics": {
+          "fixture": 47
+        }
+      },
+      {
+        "pair": 47,
+        "variant": "candidate",
+        "wall_ms": 0.383666,
+        "thread_cpu_ms": 0.361625,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 48,
+        "metrics": {
+          "fixture": 48
+        }
+      },
+      {
+        "pair": 47,
+        "variant": "baseline",
+        "wall_ms": 0.426042,
+        "thread_cpu_ms": 0.404291,
+        "process_output_blocks_delta": 0,
+        "live_handles": 144,
+        "token": 48,
+        "metrics": {
+          "fixture": 48
+        }
+      },
+      {
+        "pair": 48,
+        "variant": "baseline",
+        "wall_ms": 0.458625,
+        "thread_cpu_ms": 0.444083,
+        "process_output_blocks_delta": 0,
+        "live_handles": 147,
+        "token": 49,
+        "metrics": {
+          "fixture": 49
+        }
+      },
+      {
+        "pair": 48,
+        "variant": "candidate",
+        "wall_ms": 0.449167,
+        "thread_cpu_ms": 0.426,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 49,
+        "metrics": {
+          "fixture": 49
+        }
+      },
+      {
+        "pair": 49,
+        "variant": "candidate",
+        "wall_ms": 0.464083,
+        "thread_cpu_ms": 0.43925,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 50,
+        "metrics": {
+          "fixture": 50
+        }
+      },
+      {
+        "pair": 49,
+        "variant": "baseline",
+        "wall_ms": 0.504667,
+        "thread_cpu_ms": 0.482708,
+        "process_output_blocks_delta": 0,
+        "live_handles": 150,
+        "token": 50,
+        "metrics": {
+          "fixture": 50
+        }
+      },
+      {
+        "pair": 50,
+        "variant": "baseline",
+        "wall_ms": 0.454042,
+        "thread_cpu_ms": 0.431125,
+        "process_output_blocks_delta": 0,
+        "live_handles": 153,
+        "token": 51,
+        "metrics": {
+          "fixture": 51
+        }
+      },
+      {
+        "pair": 50,
+        "variant": "candidate",
+        "wall_ms": 0.495334,
+        "thread_cpu_ms": 0.479875,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 51,
+        "metrics": {
+          "fixture": 51
+        }
+      },
+      {
+        "pair": 51,
+        "variant": "candidate",
+        "wall_ms": 0.499916,
+        "thread_cpu_ms": 0.4785,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 52,
+        "metrics": {
+          "fixture": 52
+        }
+      },
+      {
+        "pair": 51,
+        "variant": "baseline",
+        "wall_ms": 0.473916,
+        "thread_cpu_ms": 0.450834,
+        "process_output_blocks_delta": 0,
+        "live_handles": 156,
+        "token": 52,
+        "metrics": {
+          "fixture": 52
+        }
+      },
+      {
+        "pair": 52,
+        "variant": "baseline",
+        "wall_ms": 0.488166,
+        "thread_cpu_ms": 0.465292,
+        "process_output_blocks_delta": 0,
+        "live_handles": 159,
+        "token": 53,
+        "metrics": {
+          "fixture": 53
+        }
+      },
+      {
+        "pair": 52,
+        "variant": "candidate",
+        "wall_ms": 0.419917,
+        "thread_cpu_ms": 0.3975,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 53,
+        "metrics": {
+          "fixture": 53
+        }
+      },
+      {
+        "pair": 53,
+        "variant": "candidate",
+        "wall_ms": 0.397333,
+        "thread_cpu_ms": 0.38175,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 54,
+        "metrics": {
+          "fixture": 54
+        }
+      },
+      {
+        "pair": 53,
+        "variant": "baseline",
+        "wall_ms": 0.421875,
+        "thread_cpu_ms": 0.407,
+        "process_output_blocks_delta": 0,
+        "live_handles": 162,
+        "token": 54,
+        "metrics": {
+          "fixture": 54
+        }
+      },
+      {
+        "pair": 54,
+        "variant": "baseline",
+        "wall_ms": 0.431875,
+        "thread_cpu_ms": 0.416292,
+        "process_output_blocks_delta": 0,
+        "live_handles": 165,
+        "token": 55,
+        "metrics": {
+          "fixture": 55
+        }
+      },
+      {
+        "pair": 54,
+        "variant": "candidate",
+        "wall_ms": 0.409583,
+        "thread_cpu_ms": 0.397291,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 55,
+        "metrics": {
+          "fixture": 55
+        }
+      },
+      {
+        "pair": 55,
+        "variant": "candidate",
+        "wall_ms": 0.408709,
+        "thread_cpu_ms": 0.385542,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 56,
+        "metrics": {
+          "fixture": 56
+        }
+      },
+      {
+        "pair": 55,
+        "variant": "baseline",
+        "wall_ms": 0.42925,
+        "thread_cpu_ms": 0.404584,
+        "process_output_blocks_delta": 0,
+        "live_handles": 168,
+        "token": 56,
+        "metrics": {
+          "fixture": 56
+        }
+      },
+      {
+        "pair": 56,
+        "variant": "baseline",
+        "wall_ms": 0.46125,
+        "thread_cpu_ms": 0.442584,
+        "process_output_blocks_delta": 0,
+        "live_handles": 171,
+        "token": 57,
+        "metrics": {
+          "fixture": 57
+        }
+      },
+      {
+        "pair": 56,
+        "variant": "candidate",
+        "wall_ms": 0.422125,
+        "thread_cpu_ms": 0.407459,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 57,
+        "metrics": {
+          "fixture": 57
+        }
+      },
+      {
+        "pair": 57,
+        "variant": "candidate",
+        "wall_ms": 0.416083,
+        "thread_cpu_ms": 0.401167,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 58,
+        "metrics": {
+          "fixture": 58
+        }
+      },
+      {
+        "pair": 57,
+        "variant": "baseline",
+        "wall_ms": 0.451125,
+        "thread_cpu_ms": 0.436708,
+        "process_output_blocks_delta": 0,
+        "live_handles": 174,
+        "token": 58,
+        "metrics": {
+          "fixture": 58
+        }
+      },
+      {
+        "pair": 58,
+        "variant": "baseline",
+        "wall_ms": 0.451,
+        "thread_cpu_ms": 0.436417,
+        "process_output_blocks_delta": 0,
+        "live_handles": 177,
+        "token": 59,
+        "metrics": {
+          "fixture": 59
+        }
+      },
+      {
+        "pair": 58,
+        "variant": "candidate",
+        "wall_ms": 0.424375,
+        "thread_cpu_ms": 0.407167,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 59,
+        "metrics": {
+          "fixture": 59
+        }
+      },
+      {
+        "pair": 59,
+        "variant": "candidate",
+        "wall_ms": 0.421625,
+        "thread_cpu_ms": 0.402542,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 60,
+        "metrics": {
+          "fixture": 60
+        }
+      },
+      {
+        "pair": 59,
+        "variant": "baseline",
+        "wall_ms": 6.202792,
+        "thread_cpu_ms": 6.161833,
+        "process_output_blocks_delta": 0,
+        "live_handles": 2,
+        "token": 60,
+        "metrics": {
+          "fixture": 60
+        }
+      },
+      {
+        "pair": 60,
+        "variant": "baseline",
+        "wall_ms": 0.424667,
+        "thread_cpu_ms": 0.4035,
+        "process_output_blocks_delta": 0,
+        "live_handles": 5,
+        "token": 61,
+        "metrics": {
+          "fixture": 61
+        }
+      },
+      {
+        "pair": 60,
+        "variant": "candidate",
+        "wall_ms": 1.488916,
+        "thread_cpu_ms": 1.35875,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 61,
+        "metrics": {
+          "fixture": 61
+        }
+      },
+      {
+        "pair": 61,
+        "variant": "candidate",
+        "wall_ms": 1.489291,
+        "thread_cpu_ms": 1.34625,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 62,
+        "metrics": {
+          "fixture": 62
+        }
+      },
+      {
+        "pair": 61,
+        "variant": "baseline",
+        "wall_ms": 0.444583,
+        "thread_cpu_ms": 0.423,
+        "process_output_blocks_delta": 0,
+        "live_handles": 8,
+        "token": 62,
+        "metrics": {
+          "fixture": 62
+        }
+      },
+      {
+        "pair": 62,
+        "variant": "baseline",
+        "wall_ms": 0.432667,
+        "thread_cpu_ms": 0.409875,
+        "process_output_blocks_delta": 0,
+        "live_handles": 11,
+        "token": 63,
+        "metrics": {
+          "fixture": 63
+        }
+      },
+      {
+        "pair": 62,
+        "variant": "candidate",
+        "wall_ms": 1.403083,
+        "thread_cpu_ms": 1.265416,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 63,
+        "metrics": {
+          "fixture": 63
+        }
+      },
+      {
+        "pair": 63,
+        "variant": "candidate",
+        "wall_ms": 1.332792,
+        "thread_cpu_ms": 1.205625,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 64,
+        "metrics": {
+          "fixture": 64
+        }
+      },
+      {
+        "pair": 63,
+        "variant": "baseline",
+        "wall_ms": 0.738667,
+        "thread_cpu_ms": 0.460834,
+        "process_output_blocks_delta": 0,
+        "live_handles": 14,
+        "token": 64,
+        "metrics": {
+          "fixture": 64
+        }
+      },
+      {
+        "pair": 64,
+        "variant": "baseline",
+        "wall_ms": 0.449292,
+        "thread_cpu_ms": 0.42975,
+        "process_output_blocks_delta": 0,
+        "live_handles": 17,
+        "token": 65,
+        "metrics": {
+          "fixture": 65
+        }
+      },
+      {
+        "pair": 64,
+        "variant": "candidate",
+        "wall_ms": 1.323916,
+        "thread_cpu_ms": 1.207834,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 65,
+        "metrics": {
+          "fixture": 65
+        }
+      },
+      {
+        "pair": 65,
+        "variant": "candidate",
+        "wall_ms": 1.350292,
+        "thread_cpu_ms": 1.236875,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 66,
+        "metrics": {
+          "fixture": 66
+        }
+      },
+      {
+        "pair": 65,
+        "variant": "baseline",
+        "wall_ms": 0.426209,
+        "thread_cpu_ms": 0.40975,
+        "process_output_blocks_delta": 0,
+        "live_handles": 20,
+        "token": 66,
+        "metrics": {
+          "fixture": 66
+        }
+      },
+      {
+        "pair": 66,
+        "variant": "baseline",
+        "wall_ms": 0.452375,
+        "thread_cpu_ms": 0.431542,
+        "process_output_blocks_delta": 0,
+        "live_handles": 23,
+        "token": 67,
+        "metrics": {
+          "fixture": 67
+        }
+      },
+      {
+        "pair": 66,
+        "variant": "candidate",
+        "wall_ms": 1.308416,
+        "thread_cpu_ms": 1.195666,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 67,
+        "metrics": {
+          "fixture": 67
+        }
+      },
+      {
+        "pair": 67,
+        "variant": "candidate",
+        "wall_ms": 1.50925,
+        "thread_cpu_ms": 1.136541,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 68,
+        "metrics": {
+          "fixture": 68
+        }
+      },
+      {
+        "pair": 67,
+        "variant": "baseline",
+        "wall_ms": 0.429208,
+        "thread_cpu_ms": 0.409958,
+        "process_output_blocks_delta": 0,
+        "live_handles": 26,
+        "token": 68,
+        "metrics": {
+          "fixture": 68
+        }
+      },
+      {
+        "pair": 68,
+        "variant": "baseline",
+        "wall_ms": 0.439583,
+        "thread_cpu_ms": 0.421542,
+        "process_output_blocks_delta": 0,
+        "live_handles": 29,
+        "token": 69,
+        "metrics": {
+          "fixture": 69
+        }
+      },
+      {
+        "pair": 68,
+        "variant": "candidate",
+        "wall_ms": 1.240917,
+        "thread_cpu_ms": 1.131334,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 69,
+        "metrics": {
+          "fixture": 69
+        }
+      },
+      {
+        "pair": 69,
+        "variant": "candidate",
+        "wall_ms": 1.259708,
+        "thread_cpu_ms": 1.152083,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 70,
+        "metrics": {
+          "fixture": 70
+        }
+      },
+      {
+        "pair": 69,
+        "variant": "baseline",
+        "wall_ms": 0.410167,
+        "thread_cpu_ms": 0.392625,
+        "process_output_blocks_delta": 0,
+        "live_handles": 32,
+        "token": 70,
+        "metrics": {
+          "fixture": 70
+        }
+      },
+      {
+        "pair": 70,
+        "variant": "baseline",
+        "wall_ms": 0.439833,
+        "thread_cpu_ms": 0.421917,
+        "process_output_blocks_delta": 0,
+        "live_handles": 35,
+        "token": 71,
+        "metrics": {
+          "fixture": 71
+        }
+      },
+      {
+        "pair": 70,
+        "variant": "candidate",
+        "wall_ms": 1.246333,
+        "thread_cpu_ms": 1.142375,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 71,
+        "metrics": {
+          "fixture": 71
+        }
+      },
+      {
+        "pair": 71,
+        "variant": "candidate",
+        "wall_ms": 1.565834,
+        "thread_cpu_ms": 1.168208,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 72,
+        "metrics": {
+          "fixture": 72
+        }
+      },
+      {
+        "pair": 71,
+        "variant": "baseline",
+        "wall_ms": 0.451875,
+        "thread_cpu_ms": 0.434041,
+        "process_output_blocks_delta": 0,
+        "live_handles": 38,
+        "token": 72,
+        "metrics": {
+          "fixture": 72
+        }
+      },
+      {
+        "pair": 72,
+        "variant": "baseline",
+        "wall_ms": 0.423083,
+        "thread_cpu_ms": 0.405917,
+        "process_output_blocks_delta": 0,
+        "live_handles": 41,
+        "token": 73,
+        "metrics": {
+          "fixture": 73
+        }
+      },
+      {
+        "pair": 72,
+        "variant": "candidate",
+        "wall_ms": 1.255584,
+        "thread_cpu_ms": 1.150458,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 73,
+        "metrics": {
+          "fixture": 73
+        }
+      },
+      {
+        "pair": 73,
+        "variant": "candidate",
+        "wall_ms": 1.33,
+        "thread_cpu_ms": 1.221166,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 74,
+        "metrics": {
+          "fixture": 74
+        }
+      },
+      {
+        "pair": 73,
+        "variant": "baseline",
+        "wall_ms": 0.431125,
+        "thread_cpu_ms": 0.413875,
+        "process_output_blocks_delta": 0,
+        "live_handles": 44,
+        "token": 74,
+        "metrics": {
+          "fixture": 74
+        }
+      },
+      {
+        "pair": 74,
+        "variant": "baseline",
+        "wall_ms": 0.434333,
+        "thread_cpu_ms": 0.416834,
+        "process_output_blocks_delta": 0,
+        "live_handles": 47,
+        "token": 75,
+        "metrics": {
+          "fixture": 75
+        }
+      },
+      {
+        "pair": 74,
+        "variant": "candidate",
+        "wall_ms": 1.497209,
+        "thread_cpu_ms": 1.138291,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 75,
+        "metrics": {
+          "fixture": 75
+        }
+      },
+      {
+        "pair": 75,
+        "variant": "candidate",
+        "wall_ms": 1.383,
+        "thread_cpu_ms": 1.272584,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 76,
+        "metrics": {
+          "fixture": 76
+        }
+      },
+      {
+        "pair": 75,
+        "variant": "baseline",
+        "wall_ms": 0.454416,
+        "thread_cpu_ms": 0.436542,
+        "process_output_blocks_delta": 0,
+        "live_handles": 50,
+        "token": 76,
+        "metrics": {
+          "fixture": 76
+        }
+      },
+      {
+        "pair": 76,
+        "variant": "baseline",
+        "wall_ms": 0.389542,
+        "thread_cpu_ms": 0.372125,
+        "process_output_blocks_delta": 0,
+        "live_handles": 53,
+        "token": 77,
+        "metrics": {
+          "fixture": 77
+        }
+      },
+      {
+        "pair": 76,
+        "variant": "candidate",
+        "wall_ms": 1.748042,
+        "thread_cpu_ms": 1.094834,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 77,
+        "metrics": {
+          "fixture": 77
+        }
+      },
+      {
+        "pair": 77,
+        "variant": "candidate",
+        "wall_ms": 7.6355,
+        "thread_cpu_ms": 1.24375,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 78,
+        "metrics": {
+          "fixture": 78
+        }
+      },
+      {
+        "pair": 77,
+        "variant": "baseline",
+        "wall_ms": 1.50075,
+        "thread_cpu_ms": 1.435625,
+        "process_output_blocks_delta": 0,
+        "live_handles": 56,
+        "token": 78,
+        "metrics": {
+          "fixture": 78
+        }
+      },
+      {
+        "pair": 78,
+        "variant": "baseline",
+        "wall_ms": 1.013875,
+        "thread_cpu_ms": 0.987084,
+        "process_output_blocks_delta": 0,
+        "live_handles": 59,
+        "token": 79,
+        "metrics": {
+          "fixture": 79
+        }
+      },
+      {
+        "pair": 78,
+        "variant": "candidate",
+        "wall_ms": 2.582,
+        "thread_cpu_ms": 1.728459,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 79,
+        "metrics": {
+          "fixture": 79
+        }
+      },
+      {
+        "pair": 79,
+        "variant": "candidate",
+        "wall_ms": 4.016167,
+        "thread_cpu_ms": 1.83575,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 80,
+        "metrics": {
+          "fixture": 80
+        }
+      },
+      {
+        "pair": 79,
+        "variant": "baseline",
+        "wall_ms": 0.5845,
+        "thread_cpu_ms": 0.56925,
+        "process_output_blocks_delta": 0,
+        "live_handles": 62,
+        "token": 80,
+        "metrics": {
+          "fixture": 80
+        }
+      },
+      {
+        "pair": 80,
+        "variant": "baseline",
+        "wall_ms": 2.621125,
+        "thread_cpu_ms": 0.968666,
+        "process_output_blocks_delta": 0,
+        "live_handles": 65,
+        "token": 81,
+        "metrics": {
+          "fixture": 81
+        }
+      },
+      {
+        "pair": 80,
+        "variant": "candidate",
+        "wall_ms": 4.911625,
+        "thread_cpu_ms": 3.031417,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 81,
+        "metrics": {
+          "fixture": 81
+        }
+      },
+      {
+        "pair": 81,
+        "variant": "candidate",
+        "wall_ms": 3.396334,
+        "thread_cpu_ms": 2.777542,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 82,
+        "metrics": {
+          "fixture": 82
+        }
+      },
+      {
+        "pair": 81,
+        "variant": "baseline",
+        "wall_ms": 1.736959,
+        "thread_cpu_ms": 1.078709,
+        "process_output_blocks_delta": 0,
+        "live_handles": 68,
+        "token": 82,
+        "metrics": {
+          "fixture": 82
+        }
+      },
+      {
+        "pair": 82,
+        "variant": "baseline",
+        "wall_ms": 0.500916,
+        "thread_cpu_ms": 0.471417,
+        "process_output_blocks_delta": 0,
+        "live_handles": 71,
+        "token": 83,
+        "metrics": {
+          "fixture": 83
+        }
+      },
+      {
+        "pair": 82,
+        "variant": "candidate",
+        "wall_ms": 1.496583,
+        "thread_cpu_ms": 1.358792,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 83,
+        "metrics": {
+          "fixture": 83
+        }
+      },
+      {
+        "pair": 83,
+        "variant": "candidate",
+        "wall_ms": 1.577125,
+        "thread_cpu_ms": 1.440875,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 84,
+        "metrics": {
+          "fixture": 84
+        }
+      },
+      {
+        "pair": 83,
+        "variant": "baseline",
+        "wall_ms": 1.220834,
+        "thread_cpu_ms": 0.91225,
+        "process_output_blocks_delta": 0,
+        "live_handles": 74,
+        "token": 84,
+        "metrics": {
+          "fixture": 84
+        }
+      },
+      {
+        "pair": 84,
+        "variant": "baseline",
+        "wall_ms": 1.234417,
+        "thread_cpu_ms": 1.217375,
+        "process_output_blocks_delta": 0,
+        "live_handles": 77,
+        "token": 85,
+        "metrics": {
+          "fixture": 85
+        }
+      },
+      {
+        "pair": 84,
+        "variant": "candidate",
+        "wall_ms": 1.938459,
+        "thread_cpu_ms": 1.8165,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 85,
+        "metrics": {
+          "fixture": 85
+        }
+      },
+      {
+        "pair": 85,
+        "variant": "candidate",
+        "wall_ms": 1.910625,
+        "thread_cpu_ms": 1.515625,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 86,
+        "metrics": {
+          "fixture": 86
+        }
+      },
+      {
+        "pair": 85,
+        "variant": "baseline",
+        "wall_ms": 1.597834,
+        "thread_cpu_ms": 1.190875,
+        "process_output_blocks_delta": 0,
+        "live_handles": 80,
+        "token": 86,
+        "metrics": {
+          "fixture": 86
+        }
+      },
+      {
+        "pair": 86,
+        "variant": "baseline",
+        "wall_ms": 0.46225,
+        "thread_cpu_ms": 0.437292,
+        "process_output_blocks_delta": 0,
+        "live_handles": 83,
+        "token": 87,
+        "metrics": {
+          "fixture": 87
+        }
+      },
+      {
+        "pair": 86,
+        "variant": "candidate",
+        "wall_ms": 1.331958,
+        "thread_cpu_ms": 1.200416,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 87,
+        "metrics": {
+          "fixture": 87
+        }
+      },
+      {
+        "pair": 87,
+        "variant": "candidate",
+        "wall_ms": 1.371416,
+        "thread_cpu_ms": 1.241917,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 88,
+        "metrics": {
+          "fixture": 88
+        }
+      },
+      {
+        "pair": 87,
+        "variant": "baseline",
+        "wall_ms": 0.555708,
+        "thread_cpu_ms": 0.532708,
+        "process_output_blocks_delta": 0,
+        "live_handles": 86,
+        "token": 88,
+        "metrics": {
+          "fixture": 88
+        }
+      },
+      {
+        "pair": 88,
+        "variant": "baseline",
+        "wall_ms": 0.557625,
+        "thread_cpu_ms": 0.534,
+        "process_output_blocks_delta": 0,
+        "live_handles": 89,
+        "token": 89,
+        "metrics": {
+          "fixture": 89
+        }
+      },
+      {
+        "pair": 88,
+        "variant": "candidate",
+        "wall_ms": 1.704416,
+        "thread_cpu_ms": 1.309167,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 89,
+        "metrics": {
+          "fixture": 89
+        }
+      },
+      {
+        "pair": 89,
+        "variant": "candidate",
+        "wall_ms": 1.418666,
+        "thread_cpu_ms": 1.265417,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 90,
+        "metrics": {
+          "fixture": 90
+        }
+      },
+      {
+        "pair": 89,
+        "variant": "baseline",
+        "wall_ms": 0.494292,
+        "thread_cpu_ms": 0.471,
+        "process_output_blocks_delta": 0,
+        "live_handles": 92,
+        "token": 90,
+        "metrics": {
+          "fixture": 90
+        }
+      },
+      {
+        "pair": 90,
+        "variant": "baseline",
+        "wall_ms": 0.458916,
+        "thread_cpu_ms": 0.436666,
+        "process_output_blocks_delta": 0,
+        "live_handles": 95,
+        "token": 91,
+        "metrics": {
+          "fixture": 91
+        }
+      },
+      {
+        "pair": 90,
+        "variant": "candidate",
+        "wall_ms": 1.310208,
+        "thread_cpu_ms": 1.16475,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 91,
+        "metrics": {
+          "fixture": 91
+        }
+      },
+      {
+        "pair": 91,
+        "variant": "candidate",
+        "wall_ms": 1.368583,
+        "thread_cpu_ms": 1.228917,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 92,
+        "metrics": {
+          "fixture": 92
+        }
+      },
+      {
+        "pair": 91,
+        "variant": "baseline",
+        "wall_ms": 0.494041,
+        "thread_cpu_ms": 0.471541,
+        "process_output_blocks_delta": 0,
+        "live_handles": 98,
+        "token": 92,
+        "metrics": {
+          "fixture": 92
+        }
+      },
+      {
+        "pair": 92,
+        "variant": "baseline",
+        "wall_ms": 0.480958,
+        "thread_cpu_ms": 0.458416,
+        "process_output_blocks_delta": 0,
+        "live_handles": 101,
+        "token": 93,
+        "metrics": {
+          "fixture": 93
+        }
+      },
+      {
+        "pair": 92,
+        "variant": "candidate",
+        "wall_ms": 1.368125,
+        "thread_cpu_ms": 1.241917,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 93,
+        "metrics": {
+          "fixture": 93
+        }
+      },
+      {
+        "pair": 93,
+        "variant": "candidate",
+        "wall_ms": 1.267333,
+        "thread_cpu_ms": 1.13725,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 94,
+        "metrics": {
+          "fixture": 94
+        }
+      },
+      {
+        "pair": 93,
+        "variant": "baseline",
+        "wall_ms": 0.460459,
+        "thread_cpu_ms": 0.438959,
+        "process_output_blocks_delta": 0,
+        "live_handles": 104,
+        "token": 94,
+        "metrics": {
+          "fixture": 94
+        }
+      },
+      {
+        "pair": 94,
+        "variant": "baseline",
+        "wall_ms": 0.462542,
+        "thread_cpu_ms": 0.444917,
+        "process_output_blocks_delta": 0,
+        "live_handles": 107,
+        "token": 95,
+        "metrics": {
+          "fixture": 95
+        }
+      },
+      {
+        "pair": 94,
+        "variant": "candidate",
+        "wall_ms": 1.218708,
+        "thread_cpu_ms": 1.082375,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 95,
+        "metrics": {
+          "fixture": 95
+        }
+      },
+      {
+        "pair": 95,
+        "variant": "candidate",
+        "wall_ms": 1.297917,
+        "thread_cpu_ms": 1.159292,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 96,
+        "metrics": {
+          "fixture": 96
+        }
+      },
+      {
+        "pair": 95,
+        "variant": "baseline",
+        "wall_ms": 0.491834,
+        "thread_cpu_ms": 0.469042,
+        "process_output_blocks_delta": 0,
+        "live_handles": 110,
+        "token": 96,
+        "metrics": {
+          "fixture": 96
+        }
+      },
+      {
+        "pair": 96,
+        "variant": "baseline",
+        "wall_ms": 0.450208,
+        "thread_cpu_ms": 0.4275,
+        "process_output_blocks_delta": 0,
+        "live_handles": 113,
+        "token": 97,
+        "metrics": {
+          "fixture": 97
+        }
+      },
+      {
+        "pair": 96,
+        "variant": "candidate",
+        "wall_ms": 1.268292,
+        "thread_cpu_ms": 1.146417,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 97,
+        "metrics": {
+          "fixture": 97
+        }
+      },
+      {
+        "pair": 97,
+        "variant": "candidate",
+        "wall_ms": 1.30475,
+        "thread_cpu_ms": 1.1635,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 98,
+        "metrics": {
+          "fixture": 98
+        }
+      },
+      {
+        "pair": 97,
+        "variant": "baseline",
+        "wall_ms": 0.689791,
+        "thread_cpu_ms": 0.666208,
+        "process_output_blocks_delta": 0,
+        "live_handles": 116,
+        "token": 98,
+        "metrics": {
+          "fixture": 98
+        }
+      },
+      {
+        "pair": 98,
+        "variant": "baseline",
+        "wall_ms": 0.658041,
+        "thread_cpu_ms": 0.636708,
+        "process_output_blocks_delta": 0,
+        "live_handles": 119,
+        "token": 99,
+        "metrics": {
+          "fixture": 99
+        }
+      },
+      {
+        "pair": 98,
+        "variant": "candidate",
+        "wall_ms": 2.0325,
+        "thread_cpu_ms": 1.6025,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 99,
+        "metrics": {
+          "fixture": 99
+        }
+      },
+      {
+        "pair": 99,
+        "variant": "candidate",
+        "wall_ms": 1.648291,
+        "thread_cpu_ms": 1.50475,
+        "process_output_blocks_delta": 0,
+        "live_handles": 0,
+        "token": 100,
+        "metrics": {
+          "fixture": 100
+        }
+      },
+      {
+        "pair": 99,
+        "variant": "baseline",
+        "wall_ms": 0.477625,
+        "thread_cpu_ms": 0.452791,
+        "process_output_blocks_delta": 0,
+        "live_handles": 122,
+        "token": 100,
+        "metrics": {
+          "fixture": 100
+        }
+      }
+    ],
+    "summary": {
+      "baseline": {
+        "wall_ms": {
+          "samples": 100,
+          "max": 6.203,
+          "p50": 0.457,
+          "p95": 1.234,
+          "p99": 2.621
+        },
+        "thread_cpu_ms": {
+          "samples": 100,
+          "max": 6.162,
+          "p50": 0.437,
+          "p95": 0.987,
+          "p99": 1.436
+        },
+        "output_blocks_total": 0,
+        "max_live_handles": 177
+      },
+      "candidate": {
+        "wall_ms": {
+          "samples": 100,
+          "max": 7.636,
+          "p50": 0.464,
+          "p95": 2.033,
+          "p99": 4.912
+        },
+        "thread_cpu_ms": {
+          "samples": 100,
+          "max": 3.031,
+          "p50": 0.439,
+          "p95": 1.603,
+          "p99": 2.778
+        },
+        "output_blocks_total": 0,
+        "max_live_handles": 0
+      }
+    },
+    "scope": "UNSHIPPED private100alternatingpairs/200batches each durablefence+metricwrite+metricsread, exacttokens/values. Timers include deterministicclose for candidate. Native transaction/SQL/PRAGMA/timeout unchanged. Process ru_oublock deltas not physicaldiskwrites/fsynccounts; grouped3calls perbatch not perquery. No forcedGC/policy/provider/Git/productionwrites/defaultchanges/native1404ms causal/hardwareacceptance claim. Preserve adverse writecost/amplification before source adoption."
+  },
+  "timing_limits": {
+    "scope": "Additional interpretation only; no numericrows/timings/populations changed or rerun.",
+    "baseline_cleanup": "Baseline handles can remain live under naturalGC; final explicit private fixture cleanup occurs AFTER timedbatches. Candidate closes atoperation/workerboundary INSIDE timedbatches. These are perbatchreturn/ownership observations, not full-lifecycle/physicalIO comparisons or speedup claims.",
+    "resource_counters": "Darwin processru_oublock zeros are not zero physicalwrites/fsync/busytime proof.",
+    "adverse": "Explicitclose p951.234to2.033ms/max6.203to7.636 retained. Derivedscope p95.750to.905ms/max.885to8.692ADVERSE retained; median.542to.317ms is not fullpathacceptance. Exacttokens/metrics retained; opens300to100/livehandles0 measured.",
+    "residual": "_connect factory/PRAGMA failure before returning ahandle still occurs outside returned-handle derivedownership and remains a separate unverified failure-path resource gap. NativeGC1404ms remains unattributed. No productionfault injection/GCpolicychange."
+  },
+  "report": {
+    "report_id": "861aef1f-3d04-461d-8594-fc5b4260ccf2",
+    "revision": 242,
+    "created_at": "2026-10-31T18:45:28.498506+00:00",
+    "raw_local_custody": {
+      "bytes": 442,
+      "sha256": "fdb729c435837d524b7b5e3505c54a796cf48a120defaf36a576b7e20ad662c5"
+    }
+  },
+  "coverage": {
+    "previous_rows": 715,
+    "previous_concerns": 169,
+    "rows": 716,
+    "concerns": 170,
+    "all_open": true,
+    "completion_requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+    "accepted": false
+  },
+  "limits": [
+    "All prior73191978Bparent bytes/full70998181/70019082/allolderlayers preserved. Raw private prompts/writers/native receipts/quarantineddraft/log/XML/ZIP bodies LOCAL/hash-only publicly;10attachments unchanged.",
+    "PR628 merged8a8a5b71 from7f9824b3/equaltree43346c6e/watchf3b35399; stablegreen9 andindependent5SUCCESS/0requiredapprovals/0reviews0threads/fullpagination/attributedcommit/CLEAN/unchangedrules/no bypass. Head41230173681/main41230504340 first5success/noretries. No applicationchange/install/restart in628.",
+    "Source101contracts pass; separate actualworker1pass. Copiedsource98+3pass retained separately. Initial explicitclosecopiedsource97pass/1thread-affinitytestharnessfailure preserved; onlyfaileditemowner-threadcorrection1pass, no threadguardrelaxation. Initial preparationimporttext/missingdriver andtemp-rootguard failures beforePAworkload retained.",
+    "Private100actualconnectcontexts retained100handles;233actualhelpercalls retained233. Native transactions committed exactvalues; handles retained under naturalGC, no forcedGC/GCpolicychanges or independentFDcount/permanentleak claim.",
+    "Explicitclosecandidate remainsunadopted afterp951.234to2.033ms/max6.203to7.636ADVERSE. Derivedcandidateworkerbatch opens300to100, maxlive183to0, median.542to.317 butp95.750to.905/max.885to8.692ADVERSE retained. Baselinefinalcleanupoutside timers vs candidateinside prevents full-lifecycle/IO/speedup inference; ru_oublock0not zero physicalwrites.",
+    "Source100mixed9600ordered/0workerwarnings/failures/timeouts/rejections butmaintenance927.824ms>500. GC/reconcile0submissions inthatfixture; workspace branch coverage fromseparate actualsource contracts/worker/writecomparisons, not modulepresence. GitHubCIartifact capture overlapped sourcefixture onhost; no idlehost/CPUcausalclaim.",
+    "Native627GC1404.046ms/85.334SQLms118calls48rows, session-save798mslockchain, fullsession2489025B/2MiBfailures, maintenance/nativesuccessfulbusy/IO/GC/Git/filelock/connectfailure, provider/peer/log/receipt/startup/drain/pageAPI gaps remain. No nativecausefix/deployment/wholePAacceptance claimed.",
+    "All716rows170concerns remainOPEN. Exact17dindependent scheduleracceptance unaccepted; originalbackup0331/b527andDB89957acceptedscopes stayclosed. No selfverifier/Done/cleanup/oldreceipt/effectreplay/model/default/config/GC/powerclockchanges."
+  ],
+  "complete_lossless_bundle": {
+    "path": "docs/benchmarks/systemic-workspace-connection-ownership-20261031.raw.json.gz",
+    "bytes": 74107650,
+    "sha256": "d0bd189b7de2037cae643d2219c1a5e21519cacdb54f444e9512446a9848e640"
+  },
+  "input_versions": 47
+}
