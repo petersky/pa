@@ -1212,6 +1212,9 @@ class WorkspaceManager:
             if lease.state == "cleaned":
                 continue
             result["examined"] += 1
+            if self.store.pending_restart_continuation(session_id=lease.session_id):
+                result["retained"] += 1
+                continue
             session_status = sessions.get(lease.session_id)
             session_closed = session_status == "closed"
             terminal = False
@@ -1585,6 +1588,8 @@ class WorkspaceManager:
         worktree = Path(lease.worktree_path)
         cache = Path(lease.cache_path)
         try:
+            if self.store.pending_restart_continuation(session_id=lease.session_id):
+                raise WorkspaceProvisioningError("restart continuation is pending")
             if lease.card_id and not self._card_completion_eligible(lease.card_id):
                 raise WorkspaceProvisioningError("card completion requirements are pending")
             self._assert_managed_path(worktree)
@@ -1642,6 +1647,8 @@ class WorkspaceManager:
                     }
                 if lease.card_id and not self._card_completion_eligible(lease.card_id):
                     raise WorkspaceProvisioningError("card completion requirements changed before cleanup")
+                if self.store.pending_restart_continuation(session_id=lease.session_id):
+                    raise WorkspaceProvisioningError("restart continuation became pending before cleanup")
                 self._git("-C", str(cache), "worktree", "remove", str(worktree))
                 for empty_parent in (worktree.parent, worktree.parent.parent):
                     try:

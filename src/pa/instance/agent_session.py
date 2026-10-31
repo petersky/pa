@@ -3126,6 +3126,12 @@ class AgentSessionRuntime:
     ) -> bool:
         if self._closed:
             return False
+        if await self._offload(
+            "sqlite.restart_continuation_pending", self.store.pending_restart_continuation,
+            session_id=self.session_id,
+        ):
+            from pa.domain.completion import CompletionConflict
+            raise CompletionConflict("restart_continuation_pending")
         prior_status = self.session.status
         logger.info(
             "Closing live agent session",
@@ -3670,6 +3676,23 @@ class AgentSessionManager:
         prior_context = dict(prior_config.get("execution_context") or {})
         binding = dict(session.execution_binding or {})
         persisted_binding = dict(binding)
+        if not fresh_admission and await self._offload(
+            "sqlite.restart_continuation_pending", self.store.pending_restart_continuation,
+            session_id=session.id,
+        ):
+            leases = await self._offload(
+                "workspace.restart_context_leases",
+                lambda: [lease for lease in self.workspace_manager.list() if lease.session_id == session.id],
+            )
+            paths = list(binding.get("worktree_paths") or [])
+            paths.extend(lease.worktree_path for lease in leases)
+            if any(lease.state == "cleaned" for lease in leases) or any(
+                not Path(path).is_dir() for path in paths
+            ) or (binding.get("lease_ids") and not leases):
+                raise WorkspaceBindingMismatch(
+                    "Pending restart continuation lost its original leased workspace; "
+                    "preserve the receipt and restore the original context before exact-session recovery."
+                )
         dispatch_provenance = {
             "dispatch_id": session.dispatch_id,
             "realm_id": session.realm_id,

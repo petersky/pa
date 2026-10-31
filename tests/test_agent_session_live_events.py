@@ -304,6 +304,8 @@ class AgentSessionLiveEventTests(unittest.TestCase):
         runtime._permission_requests = {}
         runtime.connection = None
         runtime.manager = MagicMock()
+        runtime.store = MagicMock()
+        runtime._offload = AsyncMock(return_value=False)
         runtime._append_transcript = MagicMock()
         runtime._flush_transcript = MagicMock()
         runtime._drain_transcripts = AsyncMock()

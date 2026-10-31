@@ -1703,6 +1703,7 @@ class AgentChatSseTests(unittest.TestCase):
         )
         store = MagicMock()
         store.get_session.return_value = orphan
+        store.pending_restart_continuation.return_value = False
         store.next_transcript_seq.return_value = 42
         store.append_transcript_events.return_value = []
         manager = MagicMock()

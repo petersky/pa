@@ -2645,6 +2645,12 @@ class PRSupervisor:
                     except Exception as exc:
                         await self._defer_card_completion(watch, str(exc))
                         return
+        if await self._offload(
+            "sqlite.restart_continuation_pending",
+            self.domain_store.pending_restart_continuation, card_id=watch.card_id,
+        ):
+            await self._defer_card_completion(watch, "restart_continuation_pending")
+            return
         decision = decide_card_disposition(
             disposition_for_merged_watch(watch),
             current_lane=card.lane,

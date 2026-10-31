@@ -1198,6 +1198,7 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
             peers=[],
         )
         self.domain = MagicMock()
+        self.domain.pending_restart_continuation.return_value = False
         self.domain.db_path = None  # This fixture has no authoritative SQLite projection.
         self.domain.update_card.side_effect = lambda _id, data, **kwargs: self.domain.get_card.return_value.model_copy(update={"lane": data.lane})
         self.domain.list_cards.return_value = []
@@ -2393,6 +2394,20 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(current.state["card_disposition"]["status"], "applied")
         update = self.domain.update_card.call_args
         self.assertEqual(update.args[1].lane, CardLane.DONE)
+
+    async def test_pending_restart_blocks_merge_completion_and_cleanup(self) -> None:
+        service = await self.make_service([])
+        self.domain.pending_restart_continuation.return_value = True
+        self.store.set_terminal("watch-1", PRWatchStatus.MERGED)
+        workspace = MagicMock()
+        service.workspace_manager = workspace
+        self.domain.update_card.reset_mock()
+        await service._complete_merged_card(self.store.get_watch("watch-1"))
+        current = self.store.get_watch("watch-1")
+        self.assertNotEqual(current.state.get("card_lane"), "done")
+        self.assertIn("restart_continuation_pending", str(current.state["card_completion_retry"]))
+        self.domain.update_card.assert_not_called()
+        workspace.mark_card_completed.assert_not_called()
 
     async def test_missing_merged_card_has_durable_backoff_and_can_recover(self) -> None:
         service = await self.make_service([])

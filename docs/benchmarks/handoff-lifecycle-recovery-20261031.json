@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "card_id": "52afbcf9-3a62-4e7e-936d-3227c84d7042",
+  "related_repair_card": "05a2801e-c660-4f06-92ff-b4c7f0054d95",
+  "session_id": "39ae9d9a-c865-4a94-9df1-98e5678498fa",
+  "dispatch_id": "d50bbecb-58cc-4f0f-a045-f9244c032b6b",
+  "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+  "repository": "https://github.com/petersky/pa",
+  "branch": "pa/52afbcf9-3a62-4e-36760adf-39ae9d9a-c865-4a-c9db1695-266ade2c",
+  "base_sha": "0576edcfd5a62b50fbd9555eff4c5fa3801c8958",
+  "completion_requirement_revision": "6b89092b-adc7-44ff-9d07-f8dc7f9b72e9",
+  "runtime_before": {
+    "loaded_revision": "e324d1b8fbaa14dc8eb52051913f6e2aadbc4850",
+    "pid": 10872,
+    "sync_consistent": true
+  },
+  "saved_restart": {
+    "handoff_id": "95b7f48a-fc62-5c9a-a187-c57f0761d409",
+    "session_id": "33dceb9d-0638-48dc-8d8b-bf9ee35c1092",
+    "key": "continuation-recovery-pr622-load-e324d1b8-same-repair-session-20261030-v1",
+    "status": "restarting",
+    "reason": "exact_session_closed",
+    "effect": "unknown",
+    "delivered_at": null,
+    "lease_state": "cleaned",
+    "cleanup_at": "2026-10-30T02:18:03.818951Z"
+  },
+  "saved_followup": {
+    "key": "systemic-exact70a176d0-post-settlement-same-session-20261029-v1",
+    "dispatch_id": "2df203b7-e511-4438-bf07-1705aeb1171f",
+    "prompt_id": "1996ebfd-7779-5bd3-80f7-758025a0f30e",
+    "request_fingerprint": "4915a901c0040400ea75725d8a5789be85839f4955e0bfbe0e6f79ce8b00e87a"
+  },
+  "tests": {
+    "result": "353 passed, 76 subtests passed",
+    "files": [
+      "test_restart_handoff.py",
+      "test_agent_session_live_events.py",
+      "test_session_lifecycle.py",
+      "test_pr_supervisor.py",
+      "test_repository_workspaces.py",
+      "test_workspace_gc_hydration.py",
+      "test_recovery_workspace_handoff.py",
+      "test_completion_requirements.py"
+    ]
+  },
+  "acceptance": "open; merge is not runtime recovery",
+  "next_actor": "repair session: integrate reviewed exact head, install once, managed restart, verify loaded revision and supported exact recovery without replacement context"
+}

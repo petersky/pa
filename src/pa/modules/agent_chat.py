@@ -4361,6 +4361,12 @@ async def session_close(request: Request, session_id: str, preserve_workspace: b
     dispatch, releasing its lease without running workspace garbage collection.
     """
     mgr = _require_session_traffic_ready(request)
+    if await _offload(mgr, "sqlite.restart_continuation_pending",
+        mgr.store.pending_restart_continuation, session_id=session_id):
+        raise HTTPException(status_code=409, detail={
+            "code": "restart_continuation_pending",
+            "message": "The saved restart continuation must be reconciled before closing its exact session.",
+        })
     if preserve_workspace:
         return await _close_recovery_preserving_workspace(request, mgr, session_id)
     durable_session = await _offload(

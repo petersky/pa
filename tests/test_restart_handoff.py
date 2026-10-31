@@ -1938,3 +1938,72 @@ def test_public_restart_receipts_consume_shared_observation_without_losing_resid
             assert any(item['error'] == 'enqueue acknowledgement lost' for item in store.get_restart_handoff(receipt.id).transition_history)
     reset_store()
     reset_instance_agent()
+
+
+@pytest.mark.parametrize("status", ["requested", "restarting", "resuming", "continuation_queued", "failed"])
+def test_pending_continuation_fences_session_close_and_preserves_receipt(tmp_path, status):
+    from pa.domain.completion import CompletionConflict
+    store = CardProjection(tmp_path / "pa.db")
+    session = store.save_session(AgentSession(id="protected", agent_name="codex"))
+    receipt = store.create_restart_handoff(RestartHandoff(
+        session_id=session.id, idempotency_key="preserve", continuation_prompt="saved",
+        continuation_prompt_id="exact-saved-prompt", status=status,
+    ))
+    before = receipt.model_dump()
+    with pytest.raises(CompletionConflict, match="restart_continuation_pending"):
+        store.close_session(session.id, reason="auto:dispatch_completed")
+    session.status = "closed"
+    with pytest.raises(CompletionConflict, match="restart_continuation_pending"):
+        store.save_session(session)
+    assert store.get_session(session.id).status != "closed"
+    assert store.get_restart_handoff(receipt.id).model_dump() == before
+    assert store.pending_restart_continuation(session_id=session.id)
+
+
+def test_startup_preserves_legacy_closed_session_receipt_without_rearming(tmp_path):
+    from pa.instance.restart_lifecycle import restart_observation_fields
+    store = CardProjection(tmp_path / "pa.db")
+    # Legacy fixture: emulate an old database boundary, never a live repair.
+    session = store.save_session(AgentSession(id="legacy-closed", agent_name="codex", status="closed"))
+    receipt = RestartHandoff(session_id=session.id, idempotency_key="old", continuation_prompt="saved",
+        continuation_prompt_id="old-exact-prompt", status="restarting")
+    # Seed before the new admission guard to represent existing persisted data.
+    session.status = "idle"
+    store.save_session(session)
+    store.create_restart_handoff(receipt)
+    with store._conn() as conn:
+        conn.execute("UPDATE agent_sessions SET status='closed' WHERE id=?", (session.id,))
+    manager = AgentSessionManager(Settings(data_dir=tmp_path), store)
+    manager.recover_session = AsyncMock()
+    manager._schedule_restart_handoff = MagicMock()
+    asyncio.run(manager._resume_restart_handoffs())
+    manager.recover_session.assert_not_awaited()
+    manager._schedule_restart_handoff.assert_not_called()
+    assert store.get_restart_handoff(receipt.id).model_dump() == receipt.model_dump()
+    observation = restart_observation_fields(receipt, session=store.get_session(session.id))
+    assert observation["reason_code"] == "exact_session_closed"
+    assert observation["effect"] == "unknown"
+    assert observation["phase"] == "waiting"
+
+
+def test_pending_restart_blocks_card_done_until_original_prompt_completes(tmp_path):
+    from pa.domain.models import CardUpdate, CardLane
+    from pa.domain.completion import CompletionConflict
+    from tests.test_completion_requirements import projection
+    store = projection(tmp_path)
+    card = store.create_card(CardCreate(title="runtime required"))
+    session = store.save_session(AgentSession(id="s", agent_name="codex", card_id=card.id))
+    receipt = store.create_restart_handoff(RestartHandoff(session_id=session.id, card_id=card.id,
+        idempotency_key="saved", continuation_prompt="saved", continuation_prompt_id="exact"))
+    with pytest.raises(CompletionConflict, match="restart_continuation_pending"):
+        store.update_card(card.id, CardUpdate(lane=CardLane.DONE))
+    assert store.card_completion_eligible(card.id) is False
+    _advance_restart_fixture(store, receipt.id, status="continuation_delivered")
+    store.update_card(card.id, CardUpdate(lane=CardLane.DONE))
+    assert store.card_completion_eligible(card.id) is True
+    closed, prior = store.close_session(session.id, reason="auto:dispatch_completed")
+    assert closed.status == "closed" and prior is not None
+    # Original same-key receipt stays readable after closure, while new admission is fenced.
+    assert store.create_restart_handoff(receipt).id == receipt.id
+    with pytest.raises(CompletionConflict, match="exact_session_closed"):
+        store.create_restart_handoff(RestartHandoff(session_id=session.id, idempotency_key="new", continuation_prompt_id="new-exact"))
