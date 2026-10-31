@@ -2,7 +2,7 @@
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import pytest
 
@@ -48,6 +48,37 @@ def test_gc_does_not_hydrate_cleaned_proofs_but_retains_full_durable_history(tmp
     assert hydrated == [row.id for row in retained]
     monkeypatch.setattr(manager, '_row', original)
     assert manager.list() == [*cleaned, *retained]
+
+
+def test_reconciliation_skips_cleaned_proofs_and_preserves_pending_context(tmp_path, monkeypatch):
+    manager = private_manager(tmp_path)
+    cleaned = lease(manager, 'cleaned', state='cleaned', cleanup_evidence={'proof': 'é' * 65536})
+    retained = [lease(manager, state, state=state) for state in ('ready', 'failed', 'cleanup_blocked')]
+    pending = lease(manager, 'pending', card_id='pending-card', completed=False, merged=False)
+    manager.store.list_card_lanes = lambda: {'card-a': 'active', 'pending-card': 'done'}
+    manager.store.list_session_statuses = lambda: {'pending': 'closed'}
+    manager.store.pending_restart_continuation = Mock(
+        side_effect=lambda *, session_id: session_id == pending.session_id
+    )
+    original = manager._row
+    hydrated = []
+
+    def check(row):
+        assert row['state'] != 'cleaned', 'Reconciliation must not decode ignored proofs'
+        hydrated.append(row['id'])
+        return original(row)
+
+    monkeypatch.setattr(manager, '_row', check)
+    result = manager.reconcile_terminal_state()
+    assert result == dict(examined=4, cards_completed=0, standalone_completed=0,
+                         orphaned_completed=0, closed_expired=0, missing_cards=0,
+                         nonterminal_cards=3, retained=4)
+    assert hydrated == [row.id for row in [*retained, pending]]
+    assert manager.store.pending_restart_continuation.call_args_list == [
+        call(session_id=row.session_id) for row in [*retained, pending]
+    ]
+    monkeypatch.setattr(manager, '_row', original)
+    assert manager.list() == [cleaned, *retained, pending]
 
 
 @pytest.mark.parametrize('reason', ['active', 'incomplete', 'unmerged', 'unexpired'])
