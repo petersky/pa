@@ -437,6 +437,15 @@ class SessionLifecycleDecisionTests(unittest.IsolatedAsyncioTestCase):
             now=datetime.now(UTC),
         )
 
+    async def test_pending_restart_retains_terminal_dispatch_session(self):
+        manager = _Manager()
+        manager.store.pending_restart_continuation = lambda **kwargs: True
+        policy = SessionLifecyclePolicy(manager, {})
+        session = _session(lifecycle_owner="dispatch")
+        result = await policy._decision(session, sessions=[session], dispatches=[_dispatch()],
+            watches=[], leases=[], now=datetime.now(UTC))
+        self.assertEqual(result, ("retained", "restart_continuation_pending"))
+
     async def test_acknowledged_terminal_dispatch_closes(self):
         self.assertEqual(
             await self.decide(

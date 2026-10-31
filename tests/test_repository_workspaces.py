@@ -76,6 +76,7 @@ def manager_for(
     repository = Repository(id="repo-1", url=str(remote), name="PA")
     project = SimpleNamespace(tool_config={})
     store = MagicMock()
+    store.pending_restart_continuation.return_value = False
     store.get_card.return_value = None
     store.get_project.return_value = project
     store.list_project_repositories.return_value = [
@@ -1593,3 +1594,22 @@ def test_duplicate_waiting_for_card_lock_survives_first_provision(tmp_path, scop
         else:
             replay, duplicate = second.result()
             assert duplicate and replay.dispatch_id == first.dispatch_id
+
+
+def test_pending_restart_preserves_closed_done_workspace(tmp_path):
+    from pa.domain.models import RestartHandoff
+    manager, _, linked = manager_for(tmp_path)
+    lease = manager.provision_repository(linked, project_id="project-1", session_id="session-1", card_id="card-1")
+    # Use the native projection for pending evidence; other lease lookups remain fixture data.
+    projection = CardProjection(tmp_path / "receipt.db")
+    projection.create_restart_handoff(RestartHandoff(session_id="session-1", card_id="card-1",
+        idempotency_key="saved", continuation_prompt="saved", continuation_prompt_id="exact", status="restarting"))
+    manager.store.pending_restart_continuation.side_effect = projection.pending_restart_continuation
+    manager.store.list_card_lanes.return_value = {"card-1": "done"}
+    manager.store.list_session_statuses.return_value = {"session-1": "closed"}
+    result = manager.reconcile_terminal_state()
+    assert result["retained"] == 1
+    assert not manager.list()[0].completed
+    assert manager._cleanup_lease_locked(lease) is False
+    assert Path(lease.worktree_path).exists()
+    assert manager.get("repo-1", "session-1").cleanup_decision != "safe_remote_ancestry"

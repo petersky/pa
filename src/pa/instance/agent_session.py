@@ -3126,6 +3126,12 @@ class AgentSessionRuntime:
     ) -> bool:
         if self._closed:
             return False
+        if await self._offload(
+            "sqlite.restart_continuation_pending", self.store.pending_restart_continuation,
+            session_id=self.session_id,
+        ):
+            from pa.domain.completion import CompletionConflict
+            raise CompletionConflict("restart_continuation_pending")
         prior_status = self.session.status
         logger.info(
             "Closing live agent session",

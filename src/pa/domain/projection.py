@@ -2955,6 +2955,8 @@ class CardProjection:
         from pa.domain.completion import completion_state
         with self._conn() as conn:
             row = conn.execute("SELECT lane, completion_requirement, completion_evidence FROM cards WHERE id=?", (card_id,)).fetchone()
+        if self.pending_restart_continuation(card_id=card_id):
+            return False
         if row is None:
             return None
         return row["lane"] == "done" and completion_state(
@@ -3706,6 +3708,8 @@ class CardProjection:
                 raise CompletionConflict("completion_acceptance_unauthorized")
             acceptance = acceptance.model_copy(update={"actor": principal_id, "instance_id": instance_id, "recorded_at": now, "idempotency_key": idempotency_key, "outcome": "accepted", "actor_kind": "human" if direct_human else "bound_session", "actor_session_id": actor_session_id, "actor_dispatch_id": actor_dispatch_id})
             receipts.append(acceptance)
+        if updates.get("lane") == CardLane.DONE and self.pending_restart_continuation(card_id=card_id):
+            raise CompletionConflict("restart_continuation_pending")
         if requirement and updates.get("lane") == CardLane.DONE and card.lane != CardLane.DONE:
             if direct_human and principal_id.startswith("user:"):
                 if data.expected_version is None:
@@ -4889,6 +4893,9 @@ class CardProjection:
         self, session: AgentSession, *, expected_connection_id: str | None = None
     ) -> AgentSession:
         with self._conn() as conn:
+            if (session.status == "closed" or session.archived_at) and self._pending_restart_continuation(conn, session_id=session.id):
+                from pa.domain.completion import CompletionConflict
+                raise CompletionConflict("restart_continuation_pending")
             saved = conn.execute(
                 """
                 INSERT INTO agent_sessions
@@ -5476,6 +5483,10 @@ class CardProjection:
                         "Restart handoff idempotency key was reused with different content"
                     )
                 return prior
+            session = conn.execute("SELECT status, archived_at FROM agent_sessions WHERE id=?", (handoff.session_id,)).fetchone()
+            if session and (session["status"] == "closed" or session["archived_at"]):
+                from pa.domain.completion import CompletionConflict
+                raise CompletionConflict("exact_session_closed")
             active = conn.execute(
                 """SELECT * FROM agent_restart_handoffs
                    WHERE session_id=? AND status NOT IN ('failed', 'continuation_delivered', 'restart_completed')
@@ -5515,6 +5526,27 @@ class CardProjection:
                 ),
             )
         return handoff
+
+    def pending_restart_continuation(self, *, session_id: str | None = None, card_id: str | None = None) -> bool:
+        """Retain exact context until delivery is confirmed, including failed attempts.
+
+        Failure is not evidence that the continuation had no effect. This lookup
+        deliberately never rearms a restart or changes a saved receipt.
+        """
+        if session_id is None and card_id is None:
+            raise ValueError("An exact session or card is required")
+        with self._conn() as conn:
+            return self._pending_restart_continuation(conn, session_id=session_id, card_id=card_id)
+
+    @staticmethod
+    def _pending_restart_continuation(conn, *, session_id=None, card_id=None) -> bool:
+        field, value = ("session_id", session_id) if session_id is not None else ("card_id", card_id)
+        return conn.execute(
+            f"SELECT 1 FROM agent_restart_handoffs WHERE {field}=? "
+            "AND continuation_prompt != '' AND delivered_at IS NULL "
+            "AND status NOT IN ('continuation_delivered', 'restart_completed') LIMIT 1",
+            (value,),
+        ).fetchone() is not None
 
     def get_restart_handoff(self, handoff_id: str) -> RestartHandoff | None:
         with self._conn() as conn:
@@ -6020,6 +6052,9 @@ class CardProjection:
                     if diagnostics is not None:
                         diagnostics["terminal_result"] = "already_closed"
                     return session, None
+                if self._pending_restart_continuation(conn, session_id=session_id):
+                    from pa.domain.completion import CompletionConflict
+                    raise CompletionConflict("restart_continuation_pending")
                 prior_status = session.status
                 conn.execute(
                     "UPDATE agent_sessions SET status='closed', updated_at=? WHERE id=?",

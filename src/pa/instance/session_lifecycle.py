@@ -362,6 +362,11 @@ class SessionLifecyclePolicy:
     ) -> tuple[str, str]:
         if session.status == "closed":
             return "skipped", "already_closed"
+        pending = getattr(self.manager.store, "pending_restart_continuation", None)
+        if callable(pending) and await self._offload(
+            "session_lifecycle.restart_pending", pending, session_id=session.id,
+        ):
+            return "retained", "restart_continuation_pending"
         runtime = self.manager.get(session.id)
         if runtime:
             if runtime.prompting or runtime._queue:
