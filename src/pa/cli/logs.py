@@ -252,7 +252,9 @@ def _severity(value: str) -> int:
     return _LEVELS.get(value.upper(), 20)
 
 
-def _iter_deduplicated(records: Iterable[LogRecord]) -> Iterator[LogRecord]:
+def _iter_deduplicated(
+    records: Iterable[LogRecord], *, preserve_fields: bool = False
+) -> Iterator[LogRecord]:
     """Deduplicate an ordered stream with state bounded to the two-second window."""
     seen: dict[tuple[str, bytes], datetime] = {}
     expiry: deque[tuple[datetime, tuple[str, bytes]]] = deque()
@@ -268,6 +270,11 @@ def _iter_deduplicated(records: Iterable[LogRecord]) -> Iterator[LogRecord]:
         if (
             previous is not None
             and abs((record.timestamp - previous).total_seconds()) <= 2
+            # A human stderr copy can precede its fractional-timestamp JSON
+            # record. JSON consumers still need the latter's diagnostic fields.
+            # Keep each such observation; these are source records, not an
+            # incident count. The human display keeps its existing deduplication.
+            and not (preserve_fields and record.fields)
         ):
             continue
         seen[key] = record.timestamp
@@ -625,7 +632,7 @@ def show_logs(
         (record.timestamp for record in journal),
         default=datetime.fromtimestamp(0, UTC),
     )
-    for record in _iter_deduplicated(merged):
+    for record in _iter_deduplicated(merged, preserve_fields=json_output):
         if not _matches(
             record, since=threshold, severity=severity, component=component
         ):
@@ -647,7 +654,7 @@ def show_logs(
             for follower in followers:
                 for record in follower.poll():
                     key = _record_key(record)
-                    if key not in recent and _matches(
+                    if (key not in recent or (json_output and record.fields)) and _matches(
                         record,
                         since=threshold,
                         severity=severity,
@@ -665,7 +672,7 @@ def show_logs(
                     key = _record_key(record)
                     if (
                         record.timestamp > journal_cursor
-                        and key not in recent
+                        and (key not in recent or (json_output and record.fields))
                         and _matches(
                             record,
                             since=threshold,

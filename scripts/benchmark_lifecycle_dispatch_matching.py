@@ -30,7 +30,9 @@ async def run(output):
         expected = [r for r in records if r.session_id == session.id
                     or (session.dispatch_id and r.dispatch_id == session.dispatch_id)]
         assert [id(r) for r in index.for_session(session)] == [id(r) for r in expected]
-    policy = module.SessionLifecyclePolicy(SimpleNamespace(get=lambda _: None,
+    # This sparse-link fixture excludes receipt SQL, while preserving the
+    # manager interface used by the optional continuation capability check.
+    policy = module.SessionLifecyclePolicy(SimpleNamespace(get=lambda _: None, store=SimpleNamespace(),
         settings=SimpleNamespace(agent_session_idle_retention_hours=24)), {})
     expected = [("retained", "dispatch_active" if i % 2 else "conversation_available")
                 for i in range(1000)]
@@ -56,7 +58,9 @@ async def run(output):
               "and lookup at the original guard point are included. Every decision and ordered OR occurrence "
               "matches, including both-key and equal distinct rows. No SQL, durable closure, real provider, "
               "service state or whole-sweep/historical cause/acceptance claim. Imported path/hash distinguishes "
-              "source from installed code. Host load and normal GC remain uncontrolled.")
+              "source from installed code. Host load and normal GC remain uncontrolled. "
+              "The fixture has no receipt-read capability; native pending-continuation "
+              "protection is covered separately by lifecycle contracts.")
     output.write_text(json.dumps(value, indent=2)+"\n")
     print(json.dumps(value))
 

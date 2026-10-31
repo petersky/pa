@@ -6804,3 +6804,38 @@ PR620 is integrated at bc3637a1 with equal trees and five first-success head che
 A controlled80ms private read reproduces the original fixture failure. The fixture now applies40ms only to the intake/transcript writes under test, retaining the10ms drain,60ms cancellation gap and1s response limit. Four cancellation variants include ordinary/delayed acceptance reads; a separate blocked-read test proves an explicit40ms read deadline still expires while native execution retains its slot. All43 scoped tests pass. No production runtime/default/deadline/GC change or performance-acceptance claim follows.
 
 The reviewed620 wheel and19 prepared adapters remain unused: no installation, restart or installed620 workload ran. The complete [first-failure and correction evidence](benchmarks/systemic-main620-deadline-20261029.json) embeds the entire63,269,758-byte previous source bundle and all older histories. All708 findings/164 concerns, full-session payload failures, maintenance violations, shared-lock/native-IO attribution and real-path/peer/log acceptance gaps remain open.
+
+
+Current88 installed validation and diagnostic custody (2026-10-31)
+
+Original621 handoff is complete/attempt1; the exact original1996ebfd follow-up was recovered and is running in the same session. Current88a6a66a/packageade/PID25384/lease358/config86968 is separately attested. No installation, restart, prompt replay or model/default/policy change occurred in this turn. PR622/623/624 are reused; exact621 interpreter/workload tests were superseded and are not inferred from current88.
+
+The installed62-file first run retained1183 passes,85 subtests and12 fixture failures. The12 failed items passed after narrowly scoped private fixture corrections. All19 private and14 additional stages completed after retained fixture/preflight failures; every prior negative/adverse result remains. Mixed100 retains9600 ordered events and zero worker warnings/failures/timeouts/rejections, but maintenance755.192ms violates500ms.95 ordinary owner GETs have zero violations/max133.733ms; summary1171025B,8encoding and8cachedFleet pass. All5 full10-session lists still fail2MiB: HTTP200/Content-Length2413600/read2097153/no decode/schema unverified. Bounds/pages/data were not changed.
+
+The complete runtime inventory contains130operations/22prefix families/55routes,185 CSV rows. Lifetime maxima and counters, bounded last256windows and failure/slow tails remain distinct. All fifteen operation names with lifetime max>=500ms follow; no warning counts are inferred from maxima.
+
+| Operation | Lifetime max ms | Failed | Timed out | Slow-worker counter |
+| --- | ---: | ---: | ---: | ---: |
+| agent.startup_state_read | 1320.922 | 0 | 0 | 1 |
+| fleet.overview.mcp_bootstrap | 1017.164 | 0 | 0 | 1 |
+| http.fleet_agent | 3363.447 | 0 | 0 | 0 |
+| http.fleet_overview | 4012.353 | 899 | 899 | 0 |
+| http.github | 606.018 | 0 | 0 | 0 |
+| http.github_snapshot | 2378.621 | 0 | 0 | 0 |
+| http.pr_supervisor_peer | 5056.035 | 200 | 0 | 0 |
+| maintenance.run | 11012.572 | 0 | 0 | 0 |
+| provider.status.cursor | 1078.62 | 0 | 0 | 1 |
+| reconciliation.session_read | 902.397 | 0 | 0 | 1 |
+| sqlite.prompt_acceptance_read | 1165.895 | 0 | 0 | 1 |
+| sync.peer_http | 3005.554 | 20 | 0 | 0 |
+| sync.reconcile_head | 645.409 | 0 | 0 | 2 |
+| workspace.collect_garbage | 9957.173 | 0 | 0 | 1 |
+| workspace.project_provision | 1452.291 | 1 | 0 | 0 |
+
+Cached natural maintenance15:41:06.191330–15:41:17.409474Z has11011.815ms inclusive phasewall/3511.919CPU: migration+freshhealth4605.282, projection4980.018 including initialintegrity2813.110 andVACUUM1963.872ms. GC9957.173wall/295.275CPU/8.899ms observedSQL66calls21rows remains mostly unattributed: workspace own SQLite connection is not observed. Temporal overlap is not soleVACUUM/nativebusy/physicalIO causality; inclusive spans must not sum.
+
+The supported24h log scan returned427558records, cap1000000not reached, stderr2026-10-30T16:57:10Z–2026-10-31T16:57:14Z,stdout16:57:11Z–16:57:13Z,structured2026-10-30T20:19:12.995560Z–2026-10-31T16:56:43.848607Z. It retains13slow-source warnings/8names7families,7pagefamilies/66accessfamilies; unmatched access templates are hash-only coverage gaps. Every slow name/source count/quantile/max and numeric page/access sample is in the linked full inventory; source records are not distinct incidents. Separate structured-only read under the same cutoff retains12phase records. Frozen25record replay proves JSON deduplication discards those diagnostics after earlier stderr copies:13outputs/0phases→25sourceoutputs/12phases. The source fix preserves structured fields in JSON initial/follow streams with the existing bounded state; human output is unchanged.53 log/rotation tests pass after two reproduced red failures. Production logging/default/deadline/warning policy is unchanged.
+
+Logging status now reports2402failures/5683571droppedB, additional6/42811B over historical2396/5640760. Zero current rotation/compression/prune/pump counters do not resolve past loss. Current stdout/stderr arepipes; pumpFD linkage, rotated ownership, older retention and peer logs/builds remain unverified. Peer Fleet/PR/sync failures and all realKernel/provider/MCP/placement/admission/startup/drain/concurrency acceptance remain open.
+
+[Complete current evidence](benchmarks/systemic-current88-log-diagnostics-20261031.json) embeds the byte-identical64295402-byte full621 gzip bundle as base64, with explicit decode instructions, plus all current numeric results/helpers/corrections and private receipt/log/XML custody hashes. Nothing is replaced by counts or a summary. All708 original ledger rows/164 concerns and every field remain unchanged; two observed required624operations and one confirmed diagnostic concern extend coverage to711rows/165concerns. Independent17d acceptance remains scheduler-owned/unaccepted. Accepted backup0331/b527 andDB89957 original scopes stay closed.
