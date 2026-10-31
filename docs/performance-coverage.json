@@ -355672,5 +355672,20 @@
       "accepted": false
     },
     "scope": "Actual626activation/retests completewithretainednegatives; sourceobservercandidateonly. No wholePAacceptance."
+  },
+  "installed627_outcomes_20261031": {
+    "artifact": "docs/benchmarks/systemic-installed627-outcomes-20261031.json",
+    "bundle": {
+      "path": "docs/benchmarks/systemic-installed627-outcomes-20261031.raw.json.gz",
+      "bytes": 73191978,
+      "sha256": "00d5d6a73bb52c39b6c88602c7ffb36de699b87bcf13768398b6b3d9c68516ad"
+    },
+    "coverage": {
+      "rows": 715,
+      "concerns": 169,
+      "all_open": true,
+      "completion_requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57"
+    },
+    "status": "Activated and subset retested; full performance acceptance OPEN."
   }
 }
