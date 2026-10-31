@@ -26,6 +26,7 @@ from urllib.parse import urlsplit, urlunsplit
 from pydantic import BaseModel, Field, field_validator
 
 from pa.config import Settings
+from pa.core.sqlite_metrics import ObservedConnection
 from pa.domain.models import Repository
 
 
@@ -350,7 +351,7 @@ class WorkspaceManager:
 
     def _connect(self) -> sqlite3.Connection:
         self._assert_managed_path(self.db_path)
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = sqlite3.connect(self.db_path, timeout=30, factory=ObservedConnection)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=30000")
