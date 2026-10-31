@@ -358168,5 +358168,26 @@
       "completion_requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
       "accepted": false
     }
+  },
+  "current627_log_inventory_20261031": {
+    "artifact": "docs/benchmarks/systemic-current627-log-inventory-20261031.json",
+    "bundle": {
+      "path": "docs/benchmarks/systemic-current627-log-inventory-20261031.raw.json.gz",
+      "bytes": 74901717,
+      "sha256": "93794c2bd2b2ba7f3a4e3a9364e84e0d2f969a448f81474781aab267b350d462"
+    },
+    "coverage": {
+      "rows": 716,
+      "concerns": 170,
+      "all_open": true,
+      "new_slow_names_not_already_retained": []
+    },
+    "status": {
+      "source_repair": "PR629 integratedc530d5a1/headf3a27bc9/equaltree5898edbe/watch66c92ed9. Stablegreen10/independent5SUCCESS/0requiredapprovals/0reviews0threads/fullpagination/attributedcommit/CLEAN/unchangedrules/no bypass. Head41231105483/main41231513626 first5success/noretries.",
+      "deployment": "PA still installed/loaded6273d76/package329/PID63296/startupea8eaedc beforeandaftercapture. PR629 has NOT been installed/activated/retested asrunningservice. No extra install/restart inthis NONRESTARTphase.",
+      "resolution": "WholePAacceptanceOPEN; source/resource/observability subsets neverblanketclosure.",
+      "next_actor": "Same systemic session/card for remainingrepairs and authorizedactivation/retest; independent scheduler owns exact17dacceptance.",
+      "next_action": "Retain all716findings170concerns, failed/adversepopulations; finish fullrealKernel/provider/MCP/placement/admission/startup/drain/concurrency/pageAPI/peer/log/nativebusyIO acceptance without replay/defaultchanges."
+    }
   }
 }
