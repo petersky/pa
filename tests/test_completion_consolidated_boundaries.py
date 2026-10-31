@@ -203,7 +203,7 @@ def test_http_outbox_completion_terminal_vocabulary_reaches_session_lifecycle(tm
             assert delivered.reconciliation_recoverable == (outcome == 'conflict_requires_resolution')
             session = AgentSession(id='worker-session', agent_name='codex', status='idle',
                                    purpose='automated_run', card_id=card.id)
-            manager = SimpleNamespace(settings=settings, get=lambda _: None)
+            manager = SimpleNamespace(settings=settings, store=store, get=lambda _: None)
             policy = SessionLifecyclePolicy(manager, {})
             try:
                 decision = await policy._decision(session, sessions=[session], dispatches=[delivered],
