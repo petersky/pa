@@ -6877,3 +6877,30 @@ The prospective source change uses the existing `ObservedConnection` factory for
 A separate 90-pair encoding prototype preserves complete JSON schema, selection, order and values and reduces response bytes, but worsens all p95 times: ASCII 4.155→4.934, Unicode 6.042→8.594 and structured 38.319→47.714 ms. It remains unadopted. Its first helper lacked the pytest harness before fixtures or measurements; the full original body, failure and harness-path-only correction are retained.
 
 [Complete source, activation, retest, inventory, comparison and custody evidence](benchmarks/systemic-workspace-sql-observations-20261031.json) embeds the entire 67,614,947-byte prior bundle and every older layer unchanged. All 714 prior rows, 168 concerns, fields and ten attachments remain preserved. The explicit workspace SQL coverage gap extends the ledger to 715 rows and 169 concerns, all open. Scheduler-owned independent acceptance revision `17d034a6` and the full real Kernel/provider/MCP/placement/admission/startup/drain/concurrency/page/API, shared maintenance, payload, peer, log and receipt obligations remain open. Accepted backup and database original scopes remain closed. No self-verification, Done transition, cleanup, replay, default or policy change is authorized by this evidence.
+
+
+Installed PR627 outcomes (2026-10-31)
+
+Exact627 activated once; all older effects remain settled/unknown as recorded, never replayed. No install/restart/model/default/configuration/GC/power/clock policy changes in this verification stage.
+
+1325 tests/85subtests and19private pass. Additional first14 pass then _connect source guard failed BEFORE loops/timings/output; original failure kept. Narrow factory-only AST normalization proves all other connection AST equal; remaining3 separately measured, not first-population results.
+
+Mixed9600ordered/zero workerwarnings/failures/timeouts/rejections BUT maintenance760.454ms exceeds500ms. All older failures/adverses retained.
+
+95ordinaryGET0violations max219.235ms; summary5/encoding8/cachedFleet8 pass. Full10lists5 failures HTTP200 Content-Length2489025/read2097153/status_and_encoded_bound/no JSONdecode/schemaunverified. Bounds5s/2MiB unchanged, no shorter pages/deleted durable data.
+
+Public cached-read interval overlapped last3 private recovery stages on samehost after original stage15 guard failure. No sequential/idlehost/CPUcausality claim for overlap; no blindrerun.
+
+Native101operations20families30routes131CSVrows/5slowtail64failedtail2failedHTTP. All numeric rows/families/counts/bytes/quantiles/max preserved; lifetime/window/tail/log populations distinct.
+
+Natural maintenance18:27:13.464677–19.466434Z phase5989.121wall2649.439CPUms; projection2731.493inclintegrity1245.950/VACUUM1224.404ms; checkpoint deferredbusy though compactedtrue. Inclusive phases nonsummable; no soleVACUUM/successfulbusy/IOcause.
+
+WorkspaceGC1404.046wall/1403.142service/291.686CPU/85.334SQLms118calls48rows. Factory now includes ownSQL; most elapsed remains outside those observations, not assigned to connect/GC/Git/nativebusy/IO without proof.
+
+Session save798.020ms/hold797.775/SQL415.411/commit382.257, pairedwait796.582 confirms sharedlockchain; underlying busy/IO cause unassigned.
+
+Additional retentionUnicodep957.980→9.098ms/observeron.404→.409ms ADVERSE retained. All raw comparisons/rows/hashes retained in inputs; no speedup or hardwarebound claim.
+
+Peer causes/builds/logs, historical dropped logs/FDrotation/retention, fullrealKernel/provider/MCP/placement/admission/startup/drain/concurrency/pageAPI acceptance remain open. Original accepted backup0331/b527 andDB89957scopes stayclosed. Tenattachments/privateunknownreceipt/notification custody unchanged.
+
+[Full numeric outcomes, all operation/route rows, comparisons, first failures and complete prior evidence](benchmarks/systemic-installed627-outcomes-20261031.json). All 715 rows and 169 concerns remain open under the unchanged independent acceptance requirement.
