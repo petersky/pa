@@ -16,7 +16,23 @@ baseline_tree=ast.parse(baseline_source);baseline_class=next(n for n in baseline
 namespace=dict(vars(module));exec(compile(ast.fix_missing_locations(ast.Module(body=methods,type_ignores=[])),'<archived-GC-baseline>','exec'),namespace);baseline_list=namespace['list'];baseline_gc=namespace['collect_garbage']
 for name in ['_row','_cleanup_lease_locked','_card_completion_eligible','_refresh_origin_for_cleanup']:
  current_class=next(n for n in ast.parse(source).body if isinstance(n,ast.ClassDef)and n.name=='WorkspaceManager')
- before=next(n for n in baseline_class.body if isinstance(n,ast.FunctionDef)and n.name==name);after=next(n for n in current_class.body if isinstance(n,ast.FunctionDef)and n.name==name);assert ast.dump(before,include_attributes=False)==ast.dump(after,include_attributes=False),name
+ before=next(n for n in baseline_class.body if isinstance(n,ast.FunctionDef)and n.name==name)
+ after=copy.deepcopy(next(n for n in current_class.body if isinstance(n,ast.FunctionDef)and n.name==name))
+ if name=='_cleanup_lease_locked':
+  # PR624 added two mandatory pending-continuation guards. This retained-only
+  # fixture never calls cleanup; verify exactly those additions without
+  # substituting the archived cleanup method into the actual candidate.
+  approved=[ast.parse("if self.store.pending_restart_continuation(session_id=lease.session_id):\n raise WorkspaceProvisioningError("+repr(message)+")").body[0] for message in ('restart continuation is pending','restart continuation became pending before cleanup')]
+  seen=[]
+  class VerifyContinuationGuards(ast.NodeTransformer):
+   def visit_If(self,node):
+    for index,guard in enumerate(approved):
+     if ast.dump(node,include_attributes=False)==ast.dump(guard,include_attributes=False):
+      seen.append(index);return None
+    return self.generic_visit(node)
+  after=VerifyContinuationGuards().visit(after)
+  assert sorted(seen)==[0,1],seen
+ assert ast.dump(before,include_attributes=False)==ast.dump(after,include_attributes=False),name
 now=datetime.now(timezone.utc);rows=[]
 for shape,cleaned_count,payload in [('no_cleaned',0,''),('cleaned_ascii',610,'a'*65536),('cleaned_unicode',610,'é'*65536)]:
  db=root/(shape+'.db');conn=sqlite3.connect(db);lease=WorkspaceLease(id='x',repository_id='private',repository_url='https://example.invalid/private',session_id='x',card_id='private-card',cache_path=str(root/'cache'),worktree_path=str(root/'worktree'),branch='private',base_sha='0'*40,fencing_token=1,expires_at=now+timedelta(hours=1),state='ready',completed=True,merged=True);data=lease.model_dump(mode='json');columns=list(data);conn.execute('CREATE TABLE workspace_leases ('+','.join(k+' TEXT'for k in columns)+')');batch=[]
@@ -37,4 +53,4 @@ for shape,cleaned_count,payload in [('no_cleaned',0,''),('cleaned_ascii',610,'a'
    assert counts['models']==(cleaned_count+42 if variant=='baseline'else 42)and counts['completion_reads']==(42 if variant=='baseline' else 0)
    rows.append(dict(shape=shape,pair=pair,variant=variant,wall_ms=wall_ms,thread_cpu_ms=cpu_ms,result=result,**counts))
  summary={shape:{variant:dict(wall_ms=distribution([r['wall_ms']for r in rows if r['shape']==shape and r['variant']==variant]),models=sum(r['models']for r in rows if r['shape']==shape and r['variant']==variant),logical_evidence_utf8_bytes=sum(r['logical_evidence_utf8_bytes']for r in rows if r['shape']==shape and r['variant']==variant))for variant in ['baseline','candidate']}for shape in ['no_cleaned','cleaned_ascii','cleaned_unicode']}
-out=args.output;assert not out.exists();out.write_text(json.dumps(dict(baseline=args.baseline,baseline_source_sha256=hashlib.sha256(baseline_source.encode()).hexdigest(),observed_at=datetime.now(timezone.utc).isoformat(),source_sha256=hashlib.sha256(source.encode()).hexdigest(),rows=rows,summary=summary,scope='Archived878GC/listmethods comparedwithACTUALcandidate WorkspaceManager source. Existing_row/finalcleanup/cardguard/GitrefreshASTequal; defaultpubliclisthistory andrealcleanupfencing checkedseparately byregressions. 610synthetic cleanedleases with64Kcharacterproof plus42unexpired retainedleases;30alternatingpairs per3shapes. Everyresult/retainedcount exact;completionreads42to0foralreadyunexpiredretainedleases. AllrawalternatingwallCPU/model/bytecountsretained. LogicalmaterializedUTF8bytes notphysicalIO; no productioncard/worktree/Git/cleanup/admission/provider effects. Doesnotestablish livecleanedpopulation/payloadsizes or1.684srootcause. Future sourceimplementation needs fullcleanup/fencing/active/failed/missingcard/dirty safetyregressions.'),indent=2)+'\n');print(json.dumps(dict(path=str(out),summary=summary)))
+out=args.output;assert not out.exists();out.write_text(json.dumps(dict(baseline=args.baseline,baseline_source_sha256=hashlib.sha256(baseline_source.encode()).hexdigest(),observed_at=datetime.now(timezone.utc).isoformat(),source_sha256=hashlib.sha256(source.encode()).hexdigest(),rows=rows,summary=summary,scope='Archived878GC/listmethods comparedwithACTUALcandidate WorkspaceManager source. Existing_row/cardguard/GitrefreshASTequal; finalcleanupASTequalsarchivedexcepttwoexactverifiedPR624pending-continuationguards;actualcandidatecleanupunchangedandunexecutedinretained-onlyfixture; defaultpubliclisthistory andrealcleanupfencing checkedseparately byregressions. 610synthetic cleanedleases with64Kcharacterproof plus42unexpired retainedleases;30alternatingpairs per3shapes. Everyresult/retainedcount exact;completionreads42to0foralreadyunexpiredretainedleases. AllrawalternatingwallCPU/model/bytecountsretained. LogicalmaterializedUTF8bytes notphysicalIO; no productioncard/worktree/Git/cleanup/admission/provider effects. Doesnotestablish livecleanedpopulation/payloadsizes or1.684srootcause. Future sourceimplementation needs fullcleanup/fencing/active/failed/missingcard/dirty safetyregressions.'),indent=2)+'\n');print(json.dumps(dict(path=str(out),summary=summary)))

@@ -26,7 +26,9 @@ async def run(output):
     for session in sessions:
         expected = [r for r in leases if r.session_id == session.id]
         assert [id(r) for r in index.for_session(session)] == [id(r) for r in expected]
-    policy = module.SessionLifecyclePolicy(SimpleNamespace(get=lambda _: None,
+    # Sparse matching excludes native receipt reads; retain the manager shape
+    # expected by the optional pending-continuation capability check.
+    policy = module.SessionLifecyclePolicy(SimpleNamespace(get=lambda _: None, store=SimpleNamespace(),
         settings=SimpleNamespace(agent_session_idle_retention_hours=24)), {})
     expected = [("retained", "conversation_available")] * len(sessions)
     samples = []
@@ -52,7 +54,8 @@ async def run(output):
               "every decision match. SQL enumeration, fresh model copying, git status probes, durable closure, "
               "real provider and service state are excluded. Not whole-sweep or historical cause/acceptance "
               "evidence. Imported path/hash identifies source versus installed code. Host load and normal GC "
-              "remain uncontrolled.")
+              "remain uncontrolled. The fixture has no receipt-read capability; native pending-"
+              "continuation protection is covered separately by the lifecycle contracts.")
     output.write_text(json.dumps(value, indent=2)+"\n")
     print(json.dumps(value))
 

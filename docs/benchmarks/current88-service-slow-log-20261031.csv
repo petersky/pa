@@ -1,0 +1,9 @@
+operation,source,count,p50_ms,p95_ms,p99_ms,max_ms
+agent.startup_state_read,stderr,1,1320.9,1320.9,1320.9,1320.9
+fleet.overview.mcp_bootstrap,stderr,2,1017.2,1030.7,1030.7,1030.7
+provider.status.cursor,stderr,2,1078.6,1080.8,1080.8,1080.8
+reconciliation.session_read,stderr,1,902.4,902.4,902.4,902.4
+sqlite.prompt_acceptance_read,stderr,1,1165.9,1165.9,1165.9,1165.9
+sync.reconcile_head,stderr,4,552.4,645.4,645.4,645.4
+workspace.collect_garbage,stderr,1,9957.2,9957.2,9957.2,9957.2
+workspace.project_provision,stderr,1,6391.9,6391.9,6391.9,6391.9
