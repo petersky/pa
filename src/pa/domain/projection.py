@@ -5541,10 +5541,12 @@ class CardProjection:
     @staticmethod
     def _pending_restart_continuation(conn, *, session_id=None, card_id=None) -> bool:
         field, value = ("session_id", session_id) if session_id is not None else ("card_id", card_id)
+        # Reject delivered/terminal rows before reading their retained prompts.
         return conn.execute(
             f"SELECT 1 FROM agent_restart_handoffs WHERE {field}=? "
-            "AND continuation_prompt != '' AND delivered_at IS NULL "
-            "AND status NOT IN ('continuation_delivered', 'restart_completed') LIMIT 1",
+            "AND delivered_at IS NULL "
+            "AND status NOT IN ('continuation_delivered', 'restart_completed') "
+            "AND continuation_prompt != '' LIMIT 1",
             (value,),
         ).fetchone() is not None
 

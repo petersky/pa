@@ -1208,7 +1208,7 @@ class WorkspaceManager:
         }
         cards = self.store.list_card_lanes()
         sessions = self.store.list_session_statuses()
-        for lease in self.list():
+        for lease in self.list(include_cleaned=False):
             if lease.state == "cleaned":
                 continue
             result["examined"] += 1
