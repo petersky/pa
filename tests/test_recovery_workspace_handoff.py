@@ -184,3 +184,16 @@ async def test_pending_restart_cannot_silently_rematerialize_cleaned_context(rec
         await manager._prepare_workspace(source, requested_cwd=source.cwd, provider_id="codex")
     assert store.get_session(source.id).model_dump() == before
     assert manager.workspace_manager.get(lease.repository_id, source.id).state == "cleaned"
+
+
+@pytest.mark.asyncio
+async def test_native_close_reports_pending_restart_conflict(recovery):
+    from pa.domain.models import RestartHandoff
+    r = recovery
+    r.store.create_restart_handoff(RestartHandoff(session_id=r.source.id, card_id=r.card.id,
+        idempotency_key="saved", continuation_prompt="saved", continuation_prompt_id="exact", status="restarting"))
+    with pytest.raises(HTTPException) as failure:
+        await session_close(r.request, r.source.id, preserve_workspace=True)
+    assert failure.value.status_code == 409
+    assert failure.value.detail["code"] == "restart_continuation_pending"
+    assert r.store.get_session(r.source.id).status == "recovery_blocked"
