@@ -960,11 +960,16 @@ class AcpProviderTests(unittest.TestCase):
         job = store.create()
         store.start(job, str(script))
         deadline = time.monotonic() + 3
-        while not job.terminal and time.monotonic() < deadline:
+        # Terminal state becomes visible before its worker finishes persisting.
+        # Keep this fixture alive through the existing process cleanup boundary.
+        while (
+            not job.terminal or job.job_id in store._processes
+        ) and time.monotonic() < deadline:
             time.sleep(0.01)
         self.assertEqual(job.state, LoginState.SUCCEEDED)
         self.assertEqual(job.verification_url, "https://auth.openai.com/device")
         self.assertEqual(job.user_code, "ABCD-EFGH")
+        self.assertNotIn(job.job_id, store._processes)
 
     @unittest.skipIf(__import__("os").name == "nt", "Unix process-group cleanup")
     def test_login_with_no_output_fails_actionably_and_reaps(self) -> None:

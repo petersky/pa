@@ -1862,6 +1862,7 @@ def list_agent_sessions(
             for item in bounded if item["id"] not in runtimes
         })
     watch_summaries = None
+    watch_payloads = None
     card_summaries = None
     project_labels = None
     origin_names = None
@@ -1902,12 +1903,29 @@ def list_agent_sessions(
             watch_summaries = supervisor.session_watch_summaries_for_sessions(
                 [sessions[item["id"]] for item in bounded]
             )
+    elif request is not None:
+        from pa.pr_supervisor.store import PRSupervisorStore
+        supervisor = request.app.state.ctx.services.get("pr_supervisor_store")
+        if (
+            isinstance(supervisor, PRSupervisorStore)
+            and all(
+                inspect.isfunction(getattr(PRSupervisorStore, name))
+                and inspect.getattr_static(supervisor, name)
+                is inspect.getattr_static(PRSupervisorStore, name)
+                for name in ("list_watches", "_row_to_watch", "list_session_watches",
+                             "session_watch_payloads_for_sessions")
+            )
+        ):
+            watch_payloads = supervisor.session_watch_payloads_for_sessions(
+                [sessions[item["id"]] for item in bounded]
+            )
     return [
         _session_list_item(
             request, sessions[item["id"]], runtime=runtimes.get(item["id"]),
             include_diagnostics=False,
             summary=detail == "summary",
             watch_summaries=watch_summaries,
+            watch_payloads=watch_payloads,
             card_summaries=card_summaries,
             project_labels=project_labels,
             origin_names=origin_names,
@@ -2209,6 +2227,7 @@ def _session_list_item(
     include_diagnostics: bool = True,
     summary: bool = False,
     watch_summaries: dict[str, list[dict]] | None = None,
+    watch_payloads: dict[str, list[dict]] | None = None,
     card_summaries: dict[str, list[dict]] | None = None,
     project_labels: dict[tuple[str, str], dict | None] | None = None,
     origin_names: dict[tuple[str | None, str | None], str] | None = None,
@@ -2319,6 +2338,7 @@ def _session_list_item(
         "last_seq": runtime._seq if runtime else durable.get("last_event_cursor", 0),
         "updated_at": session.updated_at.isoformat(),
         "pr_watches": (watch_summaries.get(session.id, []) if watch_summaries is not None
+                       else watch_payloads.get(session.id, []) if watch_payloads is not None
                        else _session_pr_watches(request, session, summary=summary)),
         "card_reconciliation": _session_reconciliation(request, session.id),
         "observability": observability,

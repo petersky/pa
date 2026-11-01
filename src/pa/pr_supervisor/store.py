@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections import Counter
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -444,6 +445,49 @@ class PRSupervisorStore:
         with self._conn() as conn:
             rows = conn.execute(query, params).fetchall()
         return [self._row_to_watch(row) for row in rows]
+
+    def session_watch_payloads_for_sessions(self, sessions) -> dict[str, list[dict]]:
+        """Full related evidence from a fresh, bounded read per response batch.
+
+        Unlike sidebar summaries, full details include retired and cross-realm
+        watches. Validate each matching row once per batch, then serialize it
+        independently for every related session so response rows own their data.
+        No proof or model survives this invocation.
+        """
+        result = {session.id: [] for session in sessions}
+        card_counts = Counter(session.card_id for session in sessions if session.card_id)
+        shared = []
+        for session in sessions:
+            if session.card_id and card_counts[session.card_id] > 1:
+                shared.append(session)
+            else:
+                # Without repeated card evidence, retain the existing small
+                # independent read rather than materializing one large batch.
+                result[session.id] = [watch.model_dump(mode="json")
+                                      for watch in self.list_session_watches(session)]
+        for offset in range(0, len(shared), 250):
+            batch = shared[offset:offset + 250]
+            ids = [session.id for session in batch]
+            by_card: dict[str, set[str]] = {}
+            for session in batch:
+                if session.card_id:
+                    by_card.setdefault(session.card_id, set()).add(session.id)
+            cards = list(by_card)
+            query = "SELECT * FROM pr_watches WHERE originating_session_id IN (" + ",".join("?" for _ in ids) + ")"
+            if cards:
+                query += " OR card_id IN (" + ",".join("?" for _ in cards) + ")"
+            query += " ORDER BY updated_at DESC"
+            with self._conn() as conn:
+                rows = conn.execute(query, [*ids, *cards]).fetchall()
+            selected = set(ids)
+            for row in rows:
+                watch = self._row_to_watch(row)
+                linked = set(by_card.get(watch.card_id, ()))
+                if watch.originating_session_id in selected:
+                    linked.add(watch.originating_session_id)
+                for session_id in linked:
+                    result[session_id].append(watch.model_dump(mode="json"))
+        return result
 
     def lifecycle_watch_links(self) -> list[_LifecycleWatchLink]:
         """Fresh lifecycle obligations without retained observations or proofs.

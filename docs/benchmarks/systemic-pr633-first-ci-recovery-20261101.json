@@ -1,0 +1,807 @@
+{
+  "contract": "pa.pr633-first-ci-recovery/v1",
+  "observed_at": "2026-11-01T01:14:06.084571+00:00",
+  "first_failure": {
+    "run_id": 41259676195,
+    "head": "b5e3d79e930f171fc47a76228a4da959355fd156",
+    "attempt": 1,
+    "conclusion": "failure",
+    "successful_checks": 4,
+    "failed_checks": 1,
+    "failures": [
+      "fake-login fixture directory cleanup before worker final persistence",
+      "unchanged mixed-loop40ms bound: p95lag225.052ms"
+    ],
+    "deadline_evidence": {
+      "contract": "pa.test-deadline-evidence/v1",
+      "python": "3.14.10",
+      "platform": "Linux",
+      "source_sha": "123ad0bac38af78168c40f65da24c5b6ba3ea131",
+      "gc_thresholds": [
+        2000,
+        10,
+        10
+      ],
+      "loop_thread_id": 139886499280704,
+      "request_wall_ms": 315.3544550000049,
+      "request_loop_thread_cpu_ms": 233.56725199999852,
+      "gc_events_total": 1,
+      "gc_events_retained": 1,
+      "gc_events_dropped": 0,
+      "request_gc_overlaps": [
+        {
+          "wall_ms": 222.69680399998038,
+          "thread_cpu_ms": 221.8910429999994,
+          "thread_id": 139886499280704,
+          "generation": 2,
+          "collected": 68015,
+          "uncollectable": 0,
+          "start_relative_ms": 4.762147000008099,
+          "end_relative_ms": 227.45895099998847
+        }
+      ],
+      "worker_calls_started": 6,
+      "worker_calls_total": 6,
+      "worker_calls_incomplete": 0,
+      "worker_events_dropped": 0,
+      "worker_intervals": [
+        {
+          "wall_ms": 208.21057699998846,
+          "thread_cpu_ms": 0.67693,
+          "thread_id": 139886107547328,
+          "start_relative_ms": 0.6823820000079195,
+          "end_relative_ms": 208.89295899999638
+        },
+        {
+          "wall_ms": 207.57036599999878,
+          "thread_cpu_ms": 0.518053,
+          "thread_id": 139886253004480,
+          "start_relative_ms": 1.17332700000361,
+          "end_relative_ms": 208.7436930000024
+        },
+        {
+          "wall_ms": 207.18224300000543,
+          "thread_cpu_ms": 0.46142700000000003,
+          "thread_id": 139886124328640,
+          "start_relative_ms": 1.6450249999877542,
+          "end_relative_ms": 208.82726799999318
+        },
+        {
+          "wall_ms": 205.41772699999683,
+          "thread_cpu_ms": 0.5980249999999999,
+          "thread_id": 139885943977664,
+          "start_relative_ms": 3.5587689999942995,
+          "end_relative_ms": 208.97649599999113
+        },
+        {
+          "wall_ms": 40.10472100000584,
+          "thread_cpu_ms": 0.04544499999999997,
+          "thread_id": 139886124328640,
+          "start_relative_ms": 231.65218899998763,
+          "end_relative_ms": 271.75690999999347
+        },
+        {
+          "wall_ms": 40.134854000001496,
+          "thread_cpu_ms": 0.029334,
+          "thread_id": 139886107547328,
+          "start_relative_ms": 231.684773000012,
+          "end_relative_ms": 271.8196270000135
+        }
+      ],
+      "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+    },
+    "checkout": {
+      "commit": "123ad0bac38af78168c40f65da24c5b6ba3ea131",
+      "tree": "cedc0306c382136a0e49e546764b0962a40ee14c",
+      "parents": [
+        "dda3ef7ab258523ae5d57c48f1bad4e40745faaf",
+        "b5e3d79e930f171fc47a76228a4da959355fd156"
+      ]
+    },
+    "raw_logs": {
+      "path": ".dev/pr633-updated-base-first-failure-full-ci-20261101.LOCAL.zip",
+      "bytes": 119471,
+      "sha256": "c2f70adca062b792c7f9288e06902eb96a5c297dbb11672f15a4962e800e1e06"
+    },
+    "numeric_artifacts": [
+      {
+        "id": 13064393499,
+        "name": "deadline-evidence-0-1",
+        "path": ".dev/pr633-first-failure-deadline-13064393499-20261101.LOCAL.zip",
+        "bytes": 1913,
+        "sha256": "727a45916b54c72be30722d1b80810a8b6c43c074d1701a8baccbf044bd1df52",
+        "numeric": {
+          "mixed-hot-path-loop-lag-be288ebb275946529c7e0b5ea12776f2.json": {
+            "contract": "pa.test-deadline-evidence/v1",
+            "python": "3.14.10",
+            "platform": "Linux",
+            "source_sha": "123ad0bac38af78168c40f65da24c5b6ba3ea131",
+            "gc_thresholds": [
+              2000,
+              10,
+              10
+            ],
+            "loop_thread_id": 139886499280704,
+            "request_wall_ms": 315.3544550000049,
+            "request_loop_thread_cpu_ms": 233.56725199999852,
+            "gc_events_total": 1,
+            "gc_events_retained": 1,
+            "gc_events_dropped": 0,
+            "request_gc_overlaps": [
+              {
+                "wall_ms": 222.69680399998038,
+                "thread_cpu_ms": 221.8910429999994,
+                "thread_id": 139886499280704,
+                "generation": 2,
+                "collected": 68015,
+                "uncollectable": 0,
+                "start_relative_ms": 4.762147000008099,
+                "end_relative_ms": 227.45895099998847
+              }
+            ],
+            "worker_calls_started": 6,
+            "worker_calls_total": 6,
+            "worker_calls_incomplete": 0,
+            "worker_events_dropped": 0,
+            "worker_intervals": [
+              {
+                "wall_ms": 208.21057699998846,
+                "thread_cpu_ms": 0.67693,
+                "thread_id": 139886107547328,
+                "start_relative_ms": 0.6823820000079195,
+                "end_relative_ms": 208.89295899999638
+              },
+              {
+                "wall_ms": 207.57036599999878,
+                "thread_cpu_ms": 0.518053,
+                "thread_id": 139886253004480,
+                "start_relative_ms": 1.17332700000361,
+                "end_relative_ms": 208.7436930000024
+              },
+              {
+                "wall_ms": 207.18224300000543,
+                "thread_cpu_ms": 0.46142700000000003,
+                "thread_id": 139886124328640,
+                "start_relative_ms": 1.6450249999877542,
+                "end_relative_ms": 208.82726799999318
+              },
+              {
+                "wall_ms": 205.41772699999683,
+                "thread_cpu_ms": 0.5980249999999999,
+                "thread_id": 139885943977664,
+                "start_relative_ms": 3.5587689999942995,
+                "end_relative_ms": 208.97649599999113
+              },
+              {
+                "wall_ms": 40.10472100000584,
+                "thread_cpu_ms": 0.04544499999999997,
+                "thread_id": 139886124328640,
+                "start_relative_ms": 231.65218899998763,
+                "end_relative_ms": 271.75690999999347
+              },
+              {
+                "wall_ms": 40.134854000001496,
+                "thread_cpu_ms": 0.029334,
+                "thread_id": 139886107547328,
+                "start_relative_ms": 231.684773000012,
+                "end_relative_ms": 271.8196270000135
+              }
+            ],
+            "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+          },
+          "sync-unrelated-surfaces-f849988b09c14604b1b76dcb47249452.json": {
+            "contract": "pa.test-deadline-evidence/v1",
+            "python": "3.14.10",
+            "platform": "Linux",
+            "source_sha": "123ad0bac38af78168c40f65da24c5b6ba3ea131",
+            "gc_thresholds": [
+              2000,
+              10,
+              10
+            ],
+            "loop_thread_id": 139886499280704,
+            "request_wall_ms": 10.93487200000709,
+            "request_loop_thread_cpu_ms": 10.917915000000278,
+            "gc_events_total": 0,
+            "gc_events_retained": 0,
+            "gc_events_dropped": 0,
+            "request_gc_overlaps": [],
+            "worker_calls_started": 1,
+            "worker_calls_total": 1,
+            "worker_calls_incomplete": 0,
+            "worker_events_dropped": 0,
+            "worker_intervals": [
+              {
+                "wall_ms": 200.09136799998828,
+                "thread_cpu_ms": 0.045855,
+                "thread_id": 139886141109952,
+                "start_relative_ms": -4.666729999996733,
+                "end_relative_ms": 195.42463799999155
+              }
+            ],
+            "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+          }
+        }
+      },
+      {
+        "id": 13064303835,
+        "name": "deadline-evidence-1-1",
+        "path": ".dev/pr633-first-failure-deadline-13064303835-20261101.LOCAL.zip",
+        "bytes": 2230,
+        "sha256": "7af780523ed24930f679fb73161a0b475ba9d51b05a6593e96c49f89668e25a3",
+        "numeric": {
+          "agent-snapshot-06d68fd714e343e58de05b3bdcbd2e4e.json": {
+            "contract": "pa.test-deadline-evidence/v1",
+            "python": "3.14.10",
+            "platform": "Linux",
+            "source_sha": "123ad0bac38af78168c40f65da24c5b6ba3ea131",
+            "gc_thresholds": [
+              2000,
+              10,
+              10
+            ],
+            "loop_thread_id": 139821457327936,
+            "request_wall_ms": 1.568293000005383,
+            "request_loop_thread_cpu_ms": 1.2375489999989497,
+            "gc_events_total": 0,
+            "gc_events_retained": 0,
+            "gc_events_dropped": 0,
+            "request_gc_overlaps": [],
+            "worker_calls_started": 1,
+            "worker_calls_total": 1,
+            "worker_calls_incomplete": 0,
+            "worker_events_dropped": 0,
+            "worker_intervals": [
+              {
+                "wall_ms": 0.2638999999931002,
+                "thread_cpu_ms": 0.264573,
+                "thread_id": 139821116815040,
+                "start_relative_ms": 0.2688170000055834,
+                "end_relative_ms": 0.5327169999986836
+              }
+            ],
+            "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+          },
+          "restart-drain-start-2fcad97563e24cbbb7242f365bacc045.json": {
+            "contract": "pa.test-deadline-evidence/v1",
+            "python": "3.14.10",
+            "platform": "Linux",
+            "source_sha": "123ad0bac38af78168c40f65da24c5b6ba3ea131",
+            "gc_thresholds": [
+              2000,
+              10,
+              10
+            ],
+            "loop_thread_id": 140469074253632,
+            "request_wall_ms": 0.02889399999617126,
+            "request_loop_thread_cpu_ms": 0.025967999995657465,
+            "gc_events_total": 0,
+            "gc_events_retained": 0,
+            "gc_events_dropped": 0,
+            "request_gc_overlaps": [],
+            "worker_calls_started": 0,
+            "worker_calls_total": 0,
+            "worker_calls_incomplete": 0,
+            "worker_events_dropped": 0,
+            "worker_intervals": [],
+            "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+          },
+          "incomplete-worker-8d50adc9beab4afb9bb0b0a5dd42eac8.json": {
+            "contract": "pa.test-deadline-evidence/v1",
+            "python": "3.14.10",
+            "platform": "Linux",
+            "source_sha": "123ad0bac38af78168c40f65da24c5b6ba3ea131",
+            "gc_thresholds": [
+              2000,
+              10,
+              10
+            ],
+            "loop_thread_id": 139821457327936,
+            "request_wall_ms": 0.1207119999975248,
+            "request_loop_thread_cpu_ms": 0.07564300000062474,
+            "gc_events_total": 0,
+            "gc_events_retained": 0,
+            "gc_events_dropped": 0,
+            "request_gc_overlaps": [],
+            "worker_calls_started": 1,
+            "worker_calls_total": 1,
+            "worker_calls_incomplete": 0,
+            "worker_events_dropped": 0,
+            "worker_intervals": [
+              {
+                "wall_ms": 0.05473199999528333,
+                "thread_cpu_ms": 0.019770000000000003,
+                "thread_id": 139821083252416,
+                "start_relative_ms": 0.09745799999905103,
+                "end_relative_ms": 0.15218999999433436
+              }
+            ],
+            "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+          }
+        }
+      }
+    ],
+    "scope": "All original outcomes retained, no retries.222.697ms on-loop gen2GC/221.891msCPU/68015collected observed; allocation owner and native historical causes remain unassigned. Isolated pass is not a GC repair."
+  },
+  "fixture_correction": {
+    "id": "concern:fake-login-fixture-terminal-persistence-boundary",
+    "kind": "concern",
+    "finding": "Fake login fixture tears down state before terminal-result persistence finishes",
+    "family": "testing",
+    "cause_classification": "confirmed_private_fixture_lifetime_race",
+    "cause": "The test polls shared job.terminal, set inside _finish before final _persist and finally process-map removal. CI temporary-directory cleanup overlapped that worker. Private final-persist latch deterministically confirms the early terminal window.",
+    "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+    "implemented": "Fixture waits for both terminal state and existing process cleanup marker under the unchanged3s bound, then asserts marker removal. Same sibling-test pattern. Production auth/start/durability semantics untouched.",
+    "measurement": {
+      "first_failure": {
+        "run_id": 41259676195,
+        "head": "b5e3d79e930f171fc47a76228a4da959355fd156",
+        "attempt": 1,
+        "conclusion": "failure",
+        "successful_checks": 4,
+        "failed_checks": 1,
+        "failures": [
+          "fake-login fixture directory cleanup before worker final persistence",
+          "unchanged mixed-loop40ms bound: p95lag225.052ms"
+        ],
+        "deadline_evidence": {
+          "contract": "pa.test-deadline-evidence/v1",
+          "python": "3.14.10",
+          "platform": "Linux",
+          "source_sha": "123ad0bac38af78168c40f65da24c5b6ba3ea131",
+          "gc_thresholds": [
+            2000,
+            10,
+            10
+          ],
+          "loop_thread_id": 139886499280704,
+          "request_wall_ms": 315.3544550000049,
+          "request_loop_thread_cpu_ms": 233.56725199999852,
+          "gc_events_total": 1,
+          "gc_events_retained": 1,
+          "gc_events_dropped": 0,
+          "request_gc_overlaps": [
+            {
+              "wall_ms": 222.69680399998038,
+              "thread_cpu_ms": 221.8910429999994,
+              "thread_id": 139886499280704,
+              "generation": 2,
+              "collected": 68015,
+              "uncollectable": 0,
+              "start_relative_ms": 4.762147000008099,
+              "end_relative_ms": 227.45895099998847
+            }
+          ],
+          "worker_calls_started": 6,
+          "worker_calls_total": 6,
+          "worker_calls_incomplete": 0,
+          "worker_events_dropped": 0,
+          "worker_intervals": [
+            {
+              "wall_ms": 208.21057699998846,
+              "thread_cpu_ms": 0.67693,
+              "thread_id": 139886107547328,
+              "start_relative_ms": 0.6823820000079195,
+              "end_relative_ms": 208.89295899999638
+            },
+            {
+              "wall_ms": 207.57036599999878,
+              "thread_cpu_ms": 0.518053,
+              "thread_id": 139886253004480,
+              "start_relative_ms": 1.17332700000361,
+              "end_relative_ms": 208.7436930000024
+            },
+            {
+              "wall_ms": 207.18224300000543,
+              "thread_cpu_ms": 0.46142700000000003,
+              "thread_id": 139886124328640,
+              "start_relative_ms": 1.6450249999877542,
+              "end_relative_ms": 208.82726799999318
+            },
+            {
+              "wall_ms": 205.41772699999683,
+              "thread_cpu_ms": 0.5980249999999999,
+              "thread_id": 139885943977664,
+              "start_relative_ms": 3.5587689999942995,
+              "end_relative_ms": 208.97649599999113
+            },
+            {
+              "wall_ms": 40.10472100000584,
+              "thread_cpu_ms": 0.04544499999999997,
+              "thread_id": 139886124328640,
+              "start_relative_ms": 231.65218899998763,
+              "end_relative_ms": 271.75690999999347
+            },
+            {
+              "wall_ms": 40.134854000001496,
+              "thread_cpu_ms": 0.029334,
+              "thread_id": 139886107547328,
+              "start_relative_ms": 231.684773000012,
+              "end_relative_ms": 271.8196270000135
+            }
+          ],
+          "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+        },
+        "checkout": {
+          "commit": "123ad0bac38af78168c40f65da24c5b6ba3ea131",
+          "tree": "cedc0306c382136a0e49e546764b0962a40ee14c",
+          "parents": [
+            "dda3ef7ab258523ae5d57c48f1bad4e40745faaf",
+            "b5e3d79e930f171fc47a76228a4da959355fd156"
+          ]
+        },
+        "raw_logs": {
+          "path": ".dev/pr633-updated-base-first-failure-full-ci-20261101.LOCAL.zip",
+          "bytes": 119471,
+          "sha256": "c2f70adca062b792c7f9288e06902eb96a5c297dbb11672f15a4962e800e1e06"
+        },
+        "numeric_artifacts": [
+          {
+            "id": 13064393499,
+            "name": "deadline-evidence-0-1",
+            "path": ".dev/pr633-first-failure-deadline-13064393499-20261101.LOCAL.zip",
+            "bytes": 1913,
+            "sha256": "727a45916b54c72be30722d1b80810a8b6c43c074d1701a8baccbf044bd1df52",
+            "numeric": {
+              "mixed-hot-path-loop-lag-be288ebb275946529c7e0b5ea12776f2.json": {
+                "contract": "pa.test-deadline-evidence/v1",
+                "python": "3.14.10",
+                "platform": "Linux",
+                "source_sha": "123ad0bac38af78168c40f65da24c5b6ba3ea131",
+                "gc_thresholds": [
+                  2000,
+                  10,
+                  10
+                ],
+                "loop_thread_id": 139886499280704,
+                "request_wall_ms": 315.3544550000049,
+                "request_loop_thread_cpu_ms": 233.56725199999852,
+                "gc_events_total": 1,
+                "gc_events_retained": 1,
+                "gc_events_dropped": 0,
+                "request_gc_overlaps": [
+                  {
+                    "wall_ms": 222.69680399998038,
+                    "thread_cpu_ms": 221.8910429999994,
+                    "thread_id": 139886499280704,
+                    "generation": 2,
+                    "collected": 68015,
+                    "uncollectable": 0,
+                    "start_relative_ms": 4.762147000008099,
+                    "end_relative_ms": 227.45895099998847
+                  }
+                ],
+                "worker_calls_started": 6,
+                "worker_calls_total": 6,
+                "worker_calls_incomplete": 0,
+                "worker_events_dropped": 0,
+                "worker_intervals": [
+                  {
+                    "wall_ms": 208.21057699998846,
+                    "thread_cpu_ms": 0.67693,
+                    "thread_id": 139886107547328,
+                    "start_relative_ms": 0.6823820000079195,
+                    "end_relative_ms": 208.89295899999638
+                  },
+                  {
+                    "wall_ms": 207.57036599999878,
+                    "thread_cpu_ms": 0.518053,
+                    "thread_id": 139886253004480,
+                    "start_relative_ms": 1.17332700000361,
+                    "end_relative_ms": 208.7436930000024
+                  },
+                  {
+                    "wall_ms": 207.18224300000543,
+                    "thread_cpu_ms": 0.46142700000000003,
+                    "thread_id": 139886124328640,
+                    "start_relative_ms": 1.6450249999877542,
+                    "end_relative_ms": 208.82726799999318
+                  },
+                  {
+                    "wall_ms": 205.41772699999683,
+                    "thread_cpu_ms": 0.5980249999999999,
+                    "thread_id": 139885943977664,
+                    "start_relative_ms": 3.5587689999942995,
+                    "end_relative_ms": 208.97649599999113
+                  },
+                  {
+                    "wall_ms": 40.10472100000584,
+                    "thread_cpu_ms": 0.04544499999999997,
+                    "thread_id": 139886124328640,
+                    "start_relative_ms": 231.65218899998763,
+                    "end_relative_ms": 271.75690999999347
+                  },
+                  {
+                    "wall_ms": 40.134854000001496,
+                    "thread_cpu_ms": 0.029334,
+                    "thread_id": 139886107547328,
+                    "start_relative_ms": 231.684773000012,
+                    "end_relative_ms": 271.8196270000135
+                  }
+                ],
+                "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+              },
+              "sync-unrelated-surfaces-f849988b09c14604b1b76dcb47249452.json": {
+                "contract": "pa.test-deadline-evidence/v1",
+                "python": "3.14.10",
+                "platform": "Linux",
+                "source_sha": "123ad0bac38af78168c40f65da24c5b6ba3ea131",
+                "gc_thresholds": [
+                  2000,
+                  10,
+                  10
+                ],
+                "loop_thread_id": 139886499280704,
+                "request_wall_ms": 10.93487200000709,
+                "request_loop_thread_cpu_ms": 10.917915000000278,
+                "gc_events_total": 0,
+                "gc_events_retained": 0,
+                "gc_events_dropped": 0,
+                "request_gc_overlaps": [],
+                "worker_calls_started": 1,
+                "worker_calls_total": 1,
+                "worker_calls_incomplete": 0,
+                "worker_events_dropped": 0,
+                "worker_intervals": [
+                  {
+                    "wall_ms": 200.09136799998828,
+                    "thread_cpu_ms": 0.045855,
+                    "thread_id": 139886141109952,
+                    "start_relative_ms": -4.666729999996733,
+                    "end_relative_ms": 195.42463799999155
+                  }
+                ],
+                "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+              }
+            }
+          },
+          {
+            "id": 13064303835,
+            "name": "deadline-evidence-1-1",
+            "path": ".dev/pr633-first-failure-deadline-13064303835-20261101.LOCAL.zip",
+            "bytes": 2230,
+            "sha256": "7af780523ed24930f679fb73161a0b475ba9d51b05a6593e96c49f89668e25a3",
+            "numeric": {
+              "agent-snapshot-06d68fd714e343e58de05b3bdcbd2e4e.json": {
+                "contract": "pa.test-deadline-evidence/v1",
+                "python": "3.14.10",
+                "platform": "Linux",
+                "source_sha": "123ad0bac38af78168c40f65da24c5b6ba3ea131",
+                "gc_thresholds": [
+                  2000,
+                  10,
+                  10
+                ],
+                "loop_thread_id": 139821457327936,
+                "request_wall_ms": 1.568293000005383,
+                "request_loop_thread_cpu_ms": 1.2375489999989497,
+                "gc_events_total": 0,
+                "gc_events_retained": 0,
+                "gc_events_dropped": 0,
+                "request_gc_overlaps": [],
+                "worker_calls_started": 1,
+                "worker_calls_total": 1,
+                "worker_calls_incomplete": 0,
+                "worker_events_dropped": 0,
+                "worker_intervals": [
+                  {
+                    "wall_ms": 0.2638999999931002,
+                    "thread_cpu_ms": 0.264573,
+                    "thread_id": 139821116815040,
+                    "start_relative_ms": 0.2688170000055834,
+                    "end_relative_ms": 0.5327169999986836
+                  }
+                ],
+                "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+              },
+              "restart-drain-start-2fcad97563e24cbbb7242f365bacc045.json": {
+                "contract": "pa.test-deadline-evidence/v1",
+                "python": "3.14.10",
+                "platform": "Linux",
+                "source_sha": "123ad0bac38af78168c40f65da24c5b6ba3ea131",
+                "gc_thresholds": [
+                  2000,
+                  10,
+                  10
+                ],
+                "loop_thread_id": 140469074253632,
+                "request_wall_ms": 0.02889399999617126,
+                "request_loop_thread_cpu_ms": 0.025967999995657465,
+                "gc_events_total": 0,
+                "gc_events_retained": 0,
+                "gc_events_dropped": 0,
+                "request_gc_overlaps": [],
+                "worker_calls_started": 0,
+                "worker_calls_total": 0,
+                "worker_calls_incomplete": 0,
+                "worker_events_dropped": 0,
+                "worker_intervals": [],
+                "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+              },
+              "incomplete-worker-8d50adc9beab4afb9bb0b0a5dd42eac8.json": {
+                "contract": "pa.test-deadline-evidence/v1",
+                "python": "3.14.10",
+                "platform": "Linux",
+                "source_sha": "123ad0bac38af78168c40f65da24c5b6ba3ea131",
+                "gc_thresholds": [
+                  2000,
+                  10,
+                  10
+                ],
+                "loop_thread_id": 139821457327936,
+                "request_wall_ms": 0.1207119999975248,
+                "request_loop_thread_cpu_ms": 0.07564300000062474,
+                "gc_events_total": 0,
+                "gc_events_retained": 0,
+                "gc_events_dropped": 0,
+                "request_gc_overlaps": [],
+                "worker_calls_started": 1,
+                "worker_calls_total": 1,
+                "worker_calls_incomplete": 0,
+                "worker_events_dropped": 0,
+                "worker_intervals": [
+                  {
+                    "wall_ms": 0.05473199999528333,
+                    "thread_cpu_ms": 0.019770000000000003,
+                    "thread_id": 139821083252416,
+                    "start_relative_ms": 0.09745799999905103,
+                    "end_relative_ms": 0.15218999999433436
+                  }
+                ],
+                "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+              }
+            }
+          }
+        ],
+        "scope": "All original outcomes retained, no retries.222.697ms on-loop gen2GC/221.891msCPU/68015collected observed; allocation owner and native historical causes remain unassigned. Isolated pass is not a GC repair."
+      },
+      "probe": {
+        "contract": "pa.private-login-fixture-terminal-window/v1",
+        "observed_at": "2026-11-01T01:12:38.525310+00:00",
+        "terminal_before_final_persistence_confirmed": true,
+        "corrected_guard_keeps_fixture_alive": true,
+        "process_cleanup_before_directory_teardown": true,
+        "original_3s_deadline_unchanged": true,
+        "source_sha256": "13327871e9494e6cc2d7d16103351986c92e0e02f620ecefa237577f82c5903f",
+        "scope": "Private fake CLI only; deliberately latched final persistence, never deleted state during active worker. No real provider/authentication/default/config/production state or source mutation. Confirms fixture boundary, not a live-provider causal diagnosis."
+      },
+      "isolated_contracts": {
+        "started_at": "2026-11-01T01:12:38.681595+00:00",
+        "finished_at": "2026-11-01T01:12:40.789289+00:00",
+        "exit_code": 0,
+        "arguments": [
+          "-o",
+          "pythonpath=",
+          "-o",
+          "addopts=",
+          "-q",
+          "--junitxml=.dev/exact633-ci-regression-contracts-20261101.xml",
+          "tests/test_acp_providers.py::AcpProviderTests::test_login_uses_pty_to_surface_unterminated_device_instructions",
+          "tests/test_acp_providers.py::AcpProviderTests::test_login_with_no_output_fails_actionably_and_reaps",
+          "tests/test_acp_providers.py::AcpProviderTests::test_login_with_non_actionable_output_times_out_and_reaps",
+          "tests/test_async_responsiveness.py::MixedLoadLoopLagTests"
+        ],
+        "log_sha256": "2985969a354412130a75541d9cf0cd0396e3907174a28b7998121fc152124d80",
+        "xml_sha256": "f142fa226b1afd430b71f5d37d5a62ef140238a0f7ebe1dcb09887b688434a29",
+        "scope": "Private fake-provider/loop fixtures only; same3s cleanup deadline and40ms loop bounds/normalGC unchanged. A passing isolated run is not a resolution of original222.7msCI gen2 pause, allocation ownership remains unverified. No first failed CI rerun."
+      }
+    },
+    "merged": [],
+    "deployed": "Not applicable to fixture-only correction; production633 still uninstalled",
+    "retested": "Five scoped private fake-provider/loop tests pass; whole corrected-head CI pending. Existing222.7msCI GC pause remains open.",
+    "resolution": "open",
+    "next_actor": "same systemic card/session",
+    "next_action": "Retain original failure and verify corrected-headCI without changing loop bounds/GC. Continue native/provider acceptance separately."
+  },
+  "upstream": {
+    "current_head": "b5e3d79e930f171fc47a76228a4da959355fd156",
+    "upstream_base": "dda3ef7ab258523ae5d57c48f1bad4e40745faaf",
+    "original_head": "639d0cd0425b23225ea9363df204de19dd09bf69",
+    "original_ci": 41259260186,
+    "current_ci": 41259676195,
+    "original_source_parent": "d0027d0e587c048209d8e079389152205d2e6939",
+    "source_base_advanced_by_existing_pr": 632,
+    "reuse_owner_card": "4e4b35b7-4c25-428b-aa74-d5697daf1312",
+    "upstream_head": "0ad3008d253cc3c71b1e8dfbf980cff377cd515d",
+    "changed_upstream_files": [
+      "src/pa/repository/state.py",
+      "src/pa/repository/workspace.py",
+      "tests/test_repository_git_environment.py"
+    ],
+    "source_change_vs_current_main": [
+      "src/pa/modules/agent_chat.py",
+      "src/pa/pr_supervisor/store.py"
+    ],
+    "installed_comparison_delta": [
+      "src/pa/modules/agent_chat.py",
+      "src/pa/pr_supervisor/store.py",
+      "src/pa/repository/state.py",
+      "src/pa/repository/workspace.py"
+    ],
+    "source_contracts": {
+      "passed": 226,
+      "subtests": 12,
+      "exit_code": 0
+    },
+    "mixed": {
+      "maintenance": {
+        "samples": 1,
+        "max_ms": 895.592,
+        "p50_ms": 895.592,
+        "p95_ms": 895.592,
+        "p99_ms": 895.592
+      },
+      "warnings": {},
+      "threshold_violations": {
+        "maintenance.run": 1
+      },
+      "retained": 9600,
+      "module_hashes": {
+        "pa.core.async_runtime": "a6c3124d7522e0198dedd2927e00715391e71b6ed4d2cc972fe5bbb5ffac7ca1",
+        "pa.core.performance": "726a50f93d0ba696d6c93b04431d1b40473ac2a9e8e38ad56ce2ccc8d72f64f1",
+        "pa.core.sqlite_metrics": "3559ba8ecf681922f0daf26a779f9df7e9dee404fa2786757b5613f7140612ca",
+        "pa.core.io": "df89c8e5fd47c9cf9051fc016824c81ec278b31648ff67018bbe41a1141c1c34",
+        "pa.core.operation_budget": "999886d7601472b87274f5503fab032f8bb59ec3cc50f662c4b197de1ac6fea4",
+        "pa.sync.object_store": "1b7660c2e28e881d207efa0f5f7fd0dcd3280889438c13d03a15f5af0ae1812b",
+        "pa.domain.projection": "d8475728a8981ab2b87f4f5cec9dc5459e38e311b2e4b915d6ec89c89186306e",
+        "pa.domain.transcript_storage": "89ed4ade240cd884830aa0642e7515e5c4a8e51067adce4fda1e0eeab2ab237e",
+        "pa.domain.card_summary_service": "a9c3b6154de1cbdd5b259a2d3b1128e0d0337a182cd856156c90cbc45f5eb2de",
+        "pa.modules.items": "d231406c6e8ca66f053e672f404f53578db3b73c18aabd59c5617f28485acc22",
+        "pa.execution.dispatch": "81988a943b9848246759cf1feb6867b0c251f98f4d0ed405794dc9b42f546649",
+        "pa.modules.fleet": "5d2daaf20f1ea751db385aba613863d8ff1de5383f4b0700d49eae5b910ce5dd",
+        "pa.fleet.overview": "ef2b5230b14a04d4a8c75571272a94dcdecd07f426ef0483fa0f26a51153dc80",
+        "pa.sync.engine": "7c5ce543b33c8644dcc461f4958af3601b01fca6720984e6491970a269bfc5fe",
+        "pa.sync.event_log": "0ac99f8e55e466d3d6621dbeb6bfa42b0ac56358bbb1a41c3d7828120604b19a",
+        "pa.sync.dag_index": "22455f5957c1bc21715b7e30ff8f3d476495382d6b4b7dc362b543cd6f070d8a",
+        "pa.acp.transcript_page": "2f6d8d13306e2afc6b191772047978e0c7a07deca6ed34c8fbc0c52862f0f382",
+        "pa.instance.agent_session": "153710d066924ac06c6aeb9f97339e9c7740cad3d231f8814f3d8cad5797aca7",
+        "pa.instance.maintenance": "a078943d932c36cb8cdd2c99d5392861a74bfaa71efadf6a043dac27ba209ea2",
+        "pa.pr_supervisor.store": "bf6c0ba3bc3d1fe5dc08a7466133700f66e48ec6df4c3401e75608134fbcfc3c",
+        "pa.pr_supervisor.service": "737c59995f9a7f1a166d0f0e7b2dc390ca23bf04a9a12e3cbf1d2558dfbcd75a",
+        "pa.status.info": "b664f11f7e6529d01fbfcef0d1dea8418d676f161fdcf23a7af77d446adbc341",
+        "pa.modules.instance": "df232e263af3267be7c7bd5e0da06025cf44e45720042f80564fd0a16643ca23",
+        "pa.core.kernel": "9ea2f2dc619382bc1e965ac64cdd77f7d819bfef17e29c9129070fc5bf219b78",
+        "pa.openapi": "b134db246118dc4b78fb59543f754f881114b90454d675e741b1677c757c9448",
+        "pa.server.schema_generation": "e6e5e180d9d3f3c53e7c0003b5316d87d41ea7c210ae25245b99148fbeb93aad",
+        "pa.server.readiness": "3b80087f851e5ed2fde27c15efa5ba9389d01d7b8e112dd4aae4b211b8a5bc66",
+        "pa.server.template_cache": "ad7d49cb5d11d4d72660d24fa51e24fe0105be73c24b9c6d8605a8cb07c45f35",
+        "pa.modules.ui_shell": "a7ffb69164987db95a1c0491f052d01964e33b38fc0c0e98fa64187c4bb7bb56",
+        "pa.server.fleet_compression": "ca370efd318b74fca6875b81d5e61118fce49571fb7443fc4865ddfe06c57e1d"
+      }
+    },
+    "scope": "PR633 source branch includes inspected alreadyintegrated PR632 unchanged. First639head5success remainsunmerged/unretried, firstbaseguardfailure retained. b5 exactbase/head CI running, no merge/install/restart. Running exact630 unchanged. Every earlier artifact/population remains valid for its exact hash/tree, not reassigned to updated tree. Error log files are exact tool-output transcriptions retained LOCAL; no invented execution timestamps."
+  },
+  "loop_and_provider_sources_unchanged": {
+    "tests/test_async_responsiveness.py": {
+      "bytes": 34566,
+      "sha256": "d15e112140bff8cbed0b95d36610e1500b51e20489e96d3fff2e7f6af44f3730"
+    },
+    "src/pa/acp/providers/codex_auth.py": {
+      "bytes": 22141,
+      "sha256": "13327871e9494e6cc2d7d16103351986c92e0e02f620ecefa237577f82c5903f"
+    }
+  },
+  "coverage": {
+    "rows": 717,
+    "concerns": 171,
+    "all_open": true,
+    "completion_requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57"
+  },
+  "limits": [
+    "Actual PR633/watch0954308e; artifact632 is stage identity. Original639headCI41259260186 first5SUCCESS retained. Independent merge guard stopped on upstream main advance; no stale-base merge. Existing PR632 dda3ef7a from owner4e4b35b7 is inspected/reused unchanged (system Git configuration preservation), not duplicated.",
+    "Updated base b5e3d79e treecedc0306 includes existing upstream repository/state.py and workspace.py plus this card agent_chat.py/pr_supervisor/store.py. Own PR source delta remains two files; prospective installed delta from0b3 is four.226tests12subtests pass; separate updated-base100mixed9600ordered/zero workerwarnings/failures/timeouts/rejections BUTmaintenance895.592ms>500. Earlier876.602/810.058 and all old populations remain separate.",
+    "First updated-base CI41259676195 attempt1 FAIL with4success/1failed check;1160passed227subtests/two failed tests in shard0. Actual testmerge123ad0bactreecedc equals b5headtree, so source custody is explicit. Originalrun/logs/numeric ZIPs retained/unretried, not erased by later corrected-head checks.",
+    "Fake-PTY fixture terminal-state polling allowed teardown before the last atomic persistence completed. Private latched fake CLI proves terminal-visible/process-still-owned window without deleting active state. Fixture now waits the existing process marker as its siblings already do; unchanged3s deadline and assertions plus marker removal. No production login/provider/model/auth/default/config semantics changed.",
+    "Unchanged mixed-loop assertion observed p95lag225.052ms with on-loop gen2GC222.697wall/221.891CPU/68015objects. Request315.354wall/233.567CPU. This confirms a collection pause in this CI fixture, not the allocation owner or a native PA cause. Tests retain40ms lag bound/normalGC settings; no precollection/GCquiet/suppression/threshold increase. Five isolated regression tests pass, NOT a GC fix or whole performance acceptance.",
+    "Preparation-only package-helper string substitution failed before any build/PAimport/native effect; full firstbody/error retained, narrow v2 only removes already-applied duplicate contract substitution and verifies existing prepared bytes. Initial base-guard failure and every source/prototype failure/adverse result remain.",
+    "Private retention-selection probe180pairs over0/301/30000rows with observeroff/on:301rows generate303execute/fetch calls from ONEstatement. Warm observedp95.256ms/native versus.058ms unadoptedfetchall;30000rows24.345versus7.358ms. No claim that these warm fixture costs explain native165.940ms/offCPU/maintenance; no selection source change shipped.",
+    "Complete78963195B parent/allolder layers embedded byte-identically; full actual first failures and helpers added, raw private prompts/writers/answers/native/control/status/card/log/XML/ZIP LOCAL/hash-only. All old716rows170concerns/fields unchanged; new fixture concern yields717rows171concerns, allOPEN. Ten attachments preserved.",
+    "Currentowner still source0b3/package1984/PID28674/startup5b31d7b3; no additional build/install/restart or oldeffect replay. Reviewed future target still needs fresh correlated authorization beyond630. Independent17d acceptance, maintenance/payload/peer/logloss/FD/retention/unknownreceipts/missingobject/work/fullKernel/provider/MCP/placement/startup/drain/concurrency/pageAPI gaps remain. Accepted original backup/DB scopes stayclosed; no cleanup/policy/CASloops/selfverifier."
+  ],
+  "complete_lossless_bundle": {
+    "path": "docs/benchmarks/systemic-pr633-first-ci-recovery-20261101.raw.json.gz",
+    "bytes": 79934323,
+    "sha256": "002bc9de2454099ffa8967aad8f7552b0e7e8db018f3a99fa42f06b8eed6a300"
+  },
+  "input_versions": 38
+}

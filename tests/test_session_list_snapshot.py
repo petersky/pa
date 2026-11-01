@@ -115,6 +115,93 @@ def test_live_runtime_wins_and_is_not_replaced_with_snapshot_details(listing):
     assert result == [live.model_dump()]
 
 
+def test_full_watch_batch_preserves_entire_response_and_decodes_shared_proof_once(listing):
+    import sys
+    from pa.pr_supervisor.models import PRWatch
+    from pa.pr_supervisor.store import PRSupervisorStore
+    projection, _, request = listing
+    supervisor = PRSupervisorStore(projection.db_path.parent / "watches.db")
+    request.app.state.ctx.services["pr_supervisor_store"] = supervisor
+    for s in projection.list_sessions():
+        s.card_id = "shared"
+        projection.save_session(s)
+    supervisor.upsert_watch(PRWatch(
+        id="shared-watch", card_id="shared", repository="fixture/repo", pr_number=1,
+        pr_url="https://example.invalid/1", originating_instance_id="fixture",
+        originating_session_id="s-01", realm_id="other", retired_at=NOW,
+        state={"proof": ["retained" * 4096]},
+    ), preserve_lease=False)
+    # A custom batching method must preserve the preexisting per-row contract.
+    with patch.object(supervisor, "session_watch_payloads_for_sessions", side_effect=AssertionError("custom batch bypassed")):
+        expected = agent_chat.list_agent_sessions(request, view="all", detail="full", limit=10)
+    calls = []
+    code = PRSupervisorStore._row_to_watch.__code__
+    def profile(frame, event, arg):
+        if event == "call" and frame.f_code is code:
+            calls.append(True)
+    previous = sys.getprofile()
+    sys.setprofile(profile)
+    try:
+        actual = agent_chat.list_agent_sessions(request, view="all", detail="full", limit=10)
+    finally:
+        sys.setprofile(previous)
+    assert actual == expected and len(calls) == 1
+    actual[0]["pr_watches"][0]["state"]["proof"].append("response only")
+    assert actual[1]["pr_watches"] == expected[1]["pr_watches"]
+    changed = supervisor.get_watch("shared-watch")
+    changed.state = {"fresh": True}
+    supervisor.upsert_watch(changed, preserve_lease=False)
+    assert all(row["pr_watches"][0]["state"] == {"fresh": True}
+               for row in agent_chat.list_agent_sessions(request, view="all", detail="full", limit=10))
+
+
+@pytest.mark.parametrize("reader", ["list_watches", "_row_to_watch", "list_session_watches"])
+@pytest.mark.parametrize("extension", ["instance", "subclass"])
+def test_full_list_custom_watch_reader_retains_per_row_contract(listing, reader, extension):
+    import sys
+    from pa.pr_supervisor.models import PRWatch
+    from pa.pr_supervisor.store import PRSupervisorStore
+    projection, _, request = listing
+    class CustomStore(PRSupervisorStore):
+        pass
+    supervisor = (CustomStore if extension == "subclass" else PRSupervisorStore)(projection.db_path.parent / "watches.db")
+    for s in projection.list_sessions():
+        s.card_id = "shared"
+        projection.save_session(s)
+    supervisor.upsert_watch(PRWatch(
+        id="watch", card_id="shared", repository="fixture/repo", pr_number=1,
+        pr_url="https://example.invalid/1", originating_instance_id="fixture",
+        originating_session_id="s-00", state={"proof": ["retained"]},
+    ), preserve_lease=False)
+    calls = []
+    native = getattr(PRSupervisorStore, reader)
+    def custom_method(self, *args, **kwargs):
+        calls.append(True)
+        return native(self, *args, **kwargs)
+    def custom_row(row):
+        calls.append(True)
+        return native(row)
+    if extension == "subclass":
+        setattr(CustomStore, reader, staticmethod(custom_row) if reader == "_row_to_watch" else custom_method)
+    else:
+        setattr(supervisor, reader, custom_row if reader == "_row_to_watch" else custom_method.__get__(supervisor))
+    request.app.state.ctx.services["pr_supervisor_store"] = supervisor
+    batch_calls = []
+    batch_code = PRSupervisorStore.session_watch_payloads_for_sessions.__code__
+    def profile(frame, event, arg):
+        if event == "call" and frame.f_code is batch_code:
+            batch_calls.append(True)
+    previous = sys.getprofile()
+    sys.setprofile(profile)
+    try:
+        actual = agent_chat.list_agent_sessions(request, view="all", detail="full", limit=2)
+    finally:
+        sys.setprofile(previous)
+    assert len(actual) == 2
+    assert not batch_calls and len(calls) == 2
+    assert all(row["pr_watches"][0]["state"] == {"proof": ["retained"]} for row in actual)
+
+
 @pytest.mark.parametrize("raw", ['{"last":1,"last":2}', '{malformed', 'null', '[]'])
 def test_selected_details_retain_existing_json_decoder_and_errors(listing, raw):
     store, _, _ = listing
