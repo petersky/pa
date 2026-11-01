@@ -6998,3 +6998,26 @@ Complete77920345B parent and every older source/activation/failure layer byte-id
 All716rows170concerns remain OPEN under exact17d independent_agent_v1 scheduler-owned acceptance. Existing accepted backup/DB scopes stay closed; remaining maintenance/provider/session/workspace/queue/payload/peers/logloss/FD/retention/unknownreceipts/attachment413/missingobject/work/full realKernel/MCP/placement/admission/startup/drain/concurrency/pageAPI obligations remain. No selfverifier/fabricated milestones/Done/CASloops/worktree cleanup.
 
 [Complete numeric populations and every prior evidence layer](benchmarks/systemic-full-watch-batch632-20261101.json).
+
+
+PR633 first-CI correction and retained GC finding (2026-11-01)
+
+Actual PR633/watch0954308e; artifact632 is stage identity. Original639headCI41259260186 first5SUCCESS retained. Independent merge guard stopped on upstream main advance; no stale-base merge. Existing PR632 dda3ef7a from owner4e4b35b7 is inspected/reused unchanged (system Git configuration preservation), not duplicated.
+
+Updated base b5e3d79e treecedc0306 includes existing upstream repository/state.py and workspace.py plus this card agent_chat.py/pr_supervisor/store.py. Own PR source delta remains two files; prospective installed delta from0b3 is four.226tests12subtests pass; separate updated-base100mixed9600ordered/zero workerwarnings/failures/timeouts/rejections BUTmaintenance895.592ms>500. Earlier876.602/810.058 and all old populations remain separate.
+
+First updated-base CI41259676195 attempt1 FAIL with4success/1failed check;1160passed227subtests/two failed tests in shard0. Actual testmerge123ad0bactreecedc equals b5headtree, so source custody is explicit. Originalrun/logs/numeric ZIPs retained/unretried, not erased by later corrected-head checks.
+
+Fake-PTY fixture terminal-state polling allowed teardown before the last atomic persistence completed. Private latched fake CLI proves terminal-visible/process-still-owned window without deleting active state. Fixture now waits the existing process marker as its siblings already do; unchanged3s deadline and assertions plus marker removal. No production login/provider/model/auth/default/config semantics changed.
+
+Unchanged mixed-loop assertion observed p95lag225.052ms with on-loop gen2GC222.697wall/221.891CPU/68015objects. Request315.354wall/233.567CPU. This confirms a collection pause in this CI fixture, not the allocation owner or a native PA cause. Tests retain40ms lag bound/normalGC settings; no precollection/GCquiet/suppression/threshold increase. Five isolated regression tests pass, NOT a GC fix or whole performance acceptance.
+
+Preparation-only package-helper string substitution failed before any build/PAimport/native effect; full firstbody/error retained, narrow v2 only removes already-applied duplicate contract substitution and verifies existing prepared bytes. Initial base-guard failure and every source/prototype failure/adverse result remain.
+
+Private retention-selection probe180pairs over0/301/30000rows with observeroff/on:301rows generate303execute/fetch calls from ONEstatement. Warm observedp95.256ms/native versus.058ms unadoptedfetchall;30000rows24.345versus7.358ms. No claim that these warm fixture costs explain native165.940ms/offCPU/maintenance; no selection source change shipped.
+
+Complete78963195B parent/allolder layers embedded byte-identically; full actual first failures and helpers added, raw private prompts/writers/answers/native/control/status/card/log/XML/ZIP LOCAL/hash-only. All old716rows170concerns/fields unchanged; new fixture concern yields717rows171concerns, allOPEN. Ten attachments preserved.
+
+Currentowner still source0b3/package1984/PID28674/startup5b31d7b3; no additional build/install/restart or oldeffect replay. Reviewed future target still needs fresh correlated authorization beyond630. Independent17d acceptance, maintenance/payload/peer/logloss/FD/retention/unknownreceipts/missingobject/work/fullKernel/provider/MCP/placement/startup/drain/concurrency/pageAPI gaps remain. Accepted original backup/DB scopes stayclosed; no cleanup/policy/CASloops/selfverifier.
+
+[Complete numeric first failure, fixture proof, every prior layer](benchmarks/systemic-pr633-first-ci-recovery-20261101.json).
