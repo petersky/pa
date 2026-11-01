@@ -6973,3 +6973,28 @@ Complete75893497Bparent and allolderfullsource/activation/failure layers byte-id
 All716rows170concerns remainOPEN under17d independent_agent_v1 scheduler-owned acceptance. Originalacceptedbackup/DB scopes remainclosed; allpeer/logloss/FDrotation/retention/unknownreceipts/attachment413/missingobject/work/notification/fullrealKernel/provider/MCP/placement/admission/startup/drain/concurrency/pageAPI concerns remain. No selfverifier/fabricatedmilestones/Done/CASloops/worktreecleanup.
 
 [Complete numeric outcomes, every operation/route row, comparison and prior evidence](benchmarks/systemic-installed630-outcomes-20261101.json).
+
+
+Shared-card full-watch source repair (2026-11-01)
+
+Source-only shared-card full-watch read repair. Same session/lease358/macbook, base d0027d0e (PR631 verified equal trees); running installed630 remains0b3/package1984. No further install/restart/default/model/config/dependency/GC/power/clock changes.
+
+Full list rows sharing a card use fresh queries of at most250 selected sessions/500 parameters. Retired/cross-realm session-or-card predicate/order/native validation/full proofs retained. Each response row gets its own complete nested model dump. Independent rows and custom readers retain per-session reads; no cross-request proof cache.
+
+First six new contracts failed on missing batch method. Then94 tests,203 tests12subtests, strengthened203/12 and final shared-only204/12 PASS (overlapping, not additive). First raw logs/XML/bodies/hashes retained locally; numeric metadata and full helpers retained. Tests include malformed/unrelated evidence, ties/nonlexical insertion, OR dedup,501sessions/batches/rebind/freshness/concurrent ownership/custom instance+subclass fallback/full-response equality.
+
+Final120alternating source pairs: shared ASCII910to100models, p95166.059to22.737ms; Unicode910to100models,p95888.298to104.140ms. Independent100to100,p9513.744to13.687ms; empty0to0,p954.003to3.734ms. Adverse p50 independent11.569to11.611/empty3.224to3.323 retained. Complete results/order unchanged. Watch-only response sizes60876082/180151602/6689413/151B; not full HTTP serialization or 2MiB passing payloads.
+
+First unrestricted source120pair comparison remains UNADOPTED with independent p9513.126to21.806ms ADVERSE; full byte-identical original body is hash verified against first measurement. Separate v1/v2 private prototypes and final shared-only source population retained, never pooled/reassigned. Logical decoded-state UTF8 bytes are not physical IO/live proof sizes/native historical causes.
+
+First final-source100mixed retains9600ordered events/zero workerwarnings/failures/timeouts/rejections, but maintenance876.602ms>500. All30loaded module hashes match frozen source, full timings/bytes/SQL/GC/CPU/disk-block metadata retained. Presence is not branch coverage; full-watch shared branch is proved separately. No idle-host/PAsoleCPU/nativebusy/disk/VACUUM/GC cause claim.
+
+PR631 source/evidence integration DONE: stablegreen9, independently5SUCCESS/0reviews0threads/completepagination/attributedcommit/CLEAN/unchanged protections; merge d0027d0e equals e889fcd5 treeb6509572. Head41258417763/main41258775002 each5FIRSTsuccess/no retry. All original620/610 first failures remain unretried in complete parent chain.
+
+Actual630 installed first public failures remain: all5full10 listsHTTP200 Content-Length2623563/read2097153/status_and_encoded_bound/no decode/schemaunverified. Original5s2MiB/page sizes unchanged, no discarded durable fields/data or claim that batching fixes payload limits.95ordinaryPASSmax173.668ms remains separate from source fixture.
+
+Complete77920345B parent and every older source/activation/failure layer byte-identically embedded. Full earlier630 installation/handoff/positive activation/private/public/native inventories and every adverse/failure remain; raw private prompts/writers/answers/native/control/status/card/log/XML/ZIP/quarantined drafts LOCAL/hash-only, all ten attachments preserved.
+
+All716rows170concerns remain OPEN under exact17d independent_agent_v1 scheduler-owned acceptance. Existing accepted backup/DB scopes stay closed; remaining maintenance/provider/session/workspace/queue/payload/peers/logloss/FD/retention/unknownreceipts/attachment413/missingobject/work/full realKernel/MCP/placement/admission/startup/drain/concurrency/pageAPI obligations remain. No selfverifier/fabricated milestones/Done/CASloops/worktree cleanup.
+
+[Complete numeric populations and every prior evidence layer](benchmarks/systemic-full-watch-batch632-20261101.json).

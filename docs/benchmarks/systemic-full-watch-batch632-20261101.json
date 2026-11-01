@@ -1,0 +1,2413 @@
+{
+  "contract": "pa.full-watch-shared-batch-source/v1",
+  "observed_at": "2026-11-01T00:59:40.145176+00:00",
+  "source_base": "d0027d0e587c048209d8e079389152205d2e6939",
+  "source_sha256": {
+    "src/pa/pr_supervisor/store.py": "bf6c0ba3bc3d1fe5dc08a7466133700f66e48ec6df4c3401e75608134fbcfc3c",
+    "src/pa/modules/agent_chat.py": "deb0687ff2306207ccc0dd0f7ecf1d298fb5d5a6f691b4b2e4da282e695694c0"
+  },
+  "contracts": {
+    "passed": 204,
+    "subtests": 12,
+    "exit_code": 0
+  },
+  "comparison": {
+    "contract": "pa.full-watch-batch-comparison/v1",
+    "baseline": "d0027d0e587c048209d8e079389152205d2e6939",
+    "source_sha256": "bf6c0ba3bc3d1fe5dc08a7466133700f66e48ec6df4c3401e75608134fbcfc3c",
+    "populations": {
+      "shared_ascii": {
+        "rows": [
+          {
+            "pair": 0,
+            "variant": "baseline",
+            "wall_ms": 142.153042,
+            "thread_cpu_ms": 131.730625
+          },
+          {
+            "pair": 0,
+            "variant": "candidate",
+            "wall_ms": 19.431875,
+            "thread_cpu_ms": 18.1425
+          },
+          {
+            "pair": 1,
+            "variant": "candidate",
+            "wall_ms": 19.201833,
+            "thread_cpu_ms": 18.005292
+          },
+          {
+            "pair": 1,
+            "variant": "baseline",
+            "wall_ms": 141.321333,
+            "thread_cpu_ms": 128.130292
+          },
+          {
+            "pair": 2,
+            "variant": "baseline",
+            "wall_ms": 144.079834,
+            "thread_cpu_ms": 131.579458
+          },
+          {
+            "pair": 2,
+            "variant": "candidate",
+            "wall_ms": 19.086625,
+            "thread_cpu_ms": 17.612083
+          },
+          {
+            "pair": 3,
+            "variant": "candidate",
+            "wall_ms": 19.083416,
+            "thread_cpu_ms": 17.452375
+          },
+          {
+            "pair": 3,
+            "variant": "baseline",
+            "wall_ms": 145.056459,
+            "thread_cpu_ms": 132.036042
+          },
+          {
+            "pair": 4,
+            "variant": "baseline",
+            "wall_ms": 156.533416,
+            "thread_cpu_ms": 132.1505
+          },
+          {
+            "pair": 4,
+            "variant": "candidate",
+            "wall_ms": 19.347833,
+            "thread_cpu_ms": 17.987417
+          },
+          {
+            "pair": 5,
+            "variant": "candidate",
+            "wall_ms": 19.385583,
+            "thread_cpu_ms": 17.779291
+          },
+          {
+            "pair": 5,
+            "variant": "baseline",
+            "wall_ms": 142.245667,
+            "thread_cpu_ms": 128.587375
+          },
+          {
+            "pair": 6,
+            "variant": "baseline",
+            "wall_ms": 149.412584,
+            "thread_cpu_ms": 132.367208
+          },
+          {
+            "pair": 6,
+            "variant": "candidate",
+            "wall_ms": 20.208333,
+            "thread_cpu_ms": 18.52625
+          },
+          {
+            "pair": 7,
+            "variant": "candidate",
+            "wall_ms": 21.447458,
+            "thread_cpu_ms": 17.986917
+          },
+          {
+            "pair": 7,
+            "variant": "baseline",
+            "wall_ms": 147.114459,
+            "thread_cpu_ms": 130.567666
+          },
+          {
+            "pair": 8,
+            "variant": "baseline",
+            "wall_ms": 137.209917,
+            "thread_cpu_ms": 127.029292
+          },
+          {
+            "pair": 8,
+            "variant": "candidate",
+            "wall_ms": 18.863459,
+            "thread_cpu_ms": 17.636292
+          },
+          {
+            "pair": 9,
+            "variant": "candidate",
+            "wall_ms": 21.267667,
+            "thread_cpu_ms": 19.654333
+          },
+          {
+            "pair": 9,
+            "variant": "baseline",
+            "wall_ms": 141.848708,
+            "thread_cpu_ms": 128.014417
+          },
+          {
+            "pair": 10,
+            "variant": "baseline",
+            "wall_ms": 146.041208,
+            "thread_cpu_ms": 135.940959
+          },
+          {
+            "pair": 10,
+            "variant": "candidate",
+            "wall_ms": 20.334667,
+            "thread_cpu_ms": 19.123375
+          },
+          {
+            "pair": 11,
+            "variant": "candidate",
+            "wall_ms": 19.568917,
+            "thread_cpu_ms": 18.661375
+          },
+          {
+            "pair": 11,
+            "variant": "baseline",
+            "wall_ms": 166.058916,
+            "thread_cpu_ms": 142.717125
+          },
+          {
+            "pair": 12,
+            "variant": "baseline",
+            "wall_ms": 147.324209,
+            "thread_cpu_ms": 136.610042
+          },
+          {
+            "pair": 12,
+            "variant": "candidate",
+            "wall_ms": 19.8565,
+            "thread_cpu_ms": 18.651625
+          },
+          {
+            "pair": 13,
+            "variant": "candidate",
+            "wall_ms": 19.8005,
+            "thread_cpu_ms": 18.565917
+          },
+          {
+            "pair": 13,
+            "variant": "baseline",
+            "wall_ms": 148.763542,
+            "thread_cpu_ms": 139.525042
+          },
+          {
+            "pair": 14,
+            "variant": "baseline",
+            "wall_ms": 158.679375,
+            "thread_cpu_ms": 144.976667
+          },
+          {
+            "pair": 14,
+            "variant": "candidate",
+            "wall_ms": 20.964041,
+            "thread_cpu_ms": 20.062333
+          },
+          {
+            "pair": 15,
+            "variant": "candidate",
+            "wall_ms": 19.138375,
+            "thread_cpu_ms": 18.087833
+          },
+          {
+            "pair": 15,
+            "variant": "baseline",
+            "wall_ms": 143.114791,
+            "thread_cpu_ms": 133.931083
+          },
+          {
+            "pair": 16,
+            "variant": "baseline",
+            "wall_ms": 146.035208,
+            "thread_cpu_ms": 136.34725
+          },
+          {
+            "pair": 16,
+            "variant": "candidate",
+            "wall_ms": 21.827708,
+            "thread_cpu_ms": 20.832583
+          },
+          {
+            "pair": 17,
+            "variant": "candidate",
+            "wall_ms": 20.903875,
+            "thread_cpu_ms": 19.843625
+          },
+          {
+            "pair": 17,
+            "variant": "baseline",
+            "wall_ms": 155.475417,
+            "thread_cpu_ms": 142.808583
+          },
+          {
+            "pair": 18,
+            "variant": "baseline",
+            "wall_ms": 186.234625,
+            "thread_cpu_ms": 150.804458
+          },
+          {
+            "pair": 18,
+            "variant": "candidate",
+            "wall_ms": 19.388709,
+            "thread_cpu_ms": 18.475167
+          },
+          {
+            "pair": 19,
+            "variant": "candidate",
+            "wall_ms": 19.874084,
+            "thread_cpu_ms": 18.738708
+          },
+          {
+            "pair": 19,
+            "variant": "baseline",
+            "wall_ms": 150.933583,
+            "thread_cpu_ms": 141.19075
+          },
+          {
+            "pair": 20,
+            "variant": "baseline",
+            "wall_ms": 148.438125,
+            "thread_cpu_ms": 139.338916
+          },
+          {
+            "pair": 20,
+            "variant": "candidate",
+            "wall_ms": 23.65325,
+            "thread_cpu_ms": 20.773
+          },
+          {
+            "pair": 21,
+            "variant": "candidate",
+            "wall_ms": 20.6395,
+            "thread_cpu_ms": 19.712209
+          },
+          {
+            "pair": 21,
+            "variant": "baseline",
+            "wall_ms": 156.500291,
+            "thread_cpu_ms": 142.579209
+          },
+          {
+            "pair": 22,
+            "variant": "baseline",
+            "wall_ms": 160.119875,
+            "thread_cpu_ms": 150.6945
+          },
+          {
+            "pair": 22,
+            "variant": "candidate",
+            "wall_ms": 21.244916,
+            "thread_cpu_ms": 20.334917
+          },
+          {
+            "pair": 23,
+            "variant": "candidate",
+            "wall_ms": 20.114084,
+            "thread_cpu_ms": 18.960083
+          },
+          {
+            "pair": 23,
+            "variant": "baseline",
+            "wall_ms": 153.252959,
+            "thread_cpu_ms": 140.878833
+          },
+          {
+            "pair": 24,
+            "variant": "baseline",
+            "wall_ms": 145.303042,
+            "thread_cpu_ms": 135.513042
+          },
+          {
+            "pair": 24,
+            "variant": "candidate",
+            "wall_ms": 20.940666,
+            "thread_cpu_ms": 19.817042
+          },
+          {
+            "pair": 25,
+            "variant": "candidate",
+            "wall_ms": 22.091292,
+            "thread_cpu_ms": 19.958958
+          },
+          {
+            "pair": 25,
+            "variant": "baseline",
+            "wall_ms": 146.569375,
+            "thread_cpu_ms": 137.262541
+          },
+          {
+            "pair": 26,
+            "variant": "baseline",
+            "wall_ms": 146.300791,
+            "thread_cpu_ms": 136.518584
+          },
+          {
+            "pair": 26,
+            "variant": "candidate",
+            "wall_ms": 19.601042,
+            "thread_cpu_ms": 18.675959
+          },
+          {
+            "pair": 27,
+            "variant": "candidate",
+            "wall_ms": 19.43425,
+            "thread_cpu_ms": 18.539792
+          },
+          {
+            "pair": 27,
+            "variant": "baseline",
+            "wall_ms": 144.377458,
+            "thread_cpu_ms": 134.956875
+          },
+          {
+            "pair": 28,
+            "variant": "baseline",
+            "wall_ms": 163.32725,
+            "thread_cpu_ms": 151.104333
+          },
+          {
+            "pair": 28,
+            "variant": "candidate",
+            "wall_ms": 20.45025,
+            "thread_cpu_ms": 19.023875
+          },
+          {
+            "pair": 29,
+            "variant": "candidate",
+            "wall_ms": 22.737,
+            "thread_cpu_ms": 19.023125
+          },
+          {
+            "pair": 29,
+            "variant": "baseline",
+            "wall_ms": 148.418459,
+            "thread_cpu_ms": 138.221167
+          }
+        ],
+        "latency_ms": {
+          "baseline": {
+            "samples": 30,
+            "max": 186.235,
+            "p50": 147.114,
+            "p95": 166.059,
+            "p99": 186.235
+          },
+          "candidate": {
+            "samples": 30,
+            "max": 23.653,
+            "p50": 19.874,
+            "p95": 22.737,
+            "p99": 23.653
+          }
+        },
+        "untimed_amplification": {
+          "baseline": {
+            "models": 910,
+            "logical_state_utf8_bytes": 59649590
+          },
+          "candidate": {
+            "models": 100,
+            "logical_state_utf8_bytes": 6554900
+          }
+        },
+        "response_utf8_bytes": 60876082,
+        "response_sha256": "d5bc444128ebbd0b4b66bed34ca19b4fda5b10c0675398caf257d0f86a578f6f",
+        "complete_values_equal": true
+      },
+      "shared_unicode": {
+        "rows": [
+          {
+            "pair": 0,
+            "variant": "baseline",
+            "wall_ms": 889.500625,
+            "thread_cpu_ms": 864.584125
+          },
+          {
+            "pair": 0,
+            "variant": "candidate",
+            "wall_ms": 99.842667,
+            "thread_cpu_ms": 96.054916
+          },
+          {
+            "pair": 1,
+            "variant": "candidate",
+            "wall_ms": 95.415625,
+            "thread_cpu_ms": 91.907208
+          },
+          {
+            "pair": 1,
+            "variant": "baseline",
+            "wall_ms": 847.370708,
+            "thread_cpu_ms": 825.984083
+          },
+          {
+            "pair": 2,
+            "variant": "baseline",
+            "wall_ms": 847.771958,
+            "thread_cpu_ms": 824.863583
+          },
+          {
+            "pair": 2,
+            "variant": "candidate",
+            "wall_ms": 94.315541,
+            "thread_cpu_ms": 92.217291
+          },
+          {
+            "pair": 3,
+            "variant": "candidate",
+            "wall_ms": 99.667708,
+            "thread_cpu_ms": 90.54575
+          },
+          {
+            "pair": 3,
+            "variant": "baseline",
+            "wall_ms": 798.097375,
+            "thread_cpu_ms": 776.687917
+          },
+          {
+            "pair": 4,
+            "variant": "baseline",
+            "wall_ms": 795.9705,
+            "thread_cpu_ms": 771.481666
+          },
+          {
+            "pair": 4,
+            "variant": "candidate",
+            "wall_ms": 89.971,
+            "thread_cpu_ms": 88.162292
+          },
+          {
+            "pair": 5,
+            "variant": "candidate",
+            "wall_ms": 95.628625,
+            "thread_cpu_ms": 89.604167
+          },
+          {
+            "pair": 5,
+            "variant": "baseline",
+            "wall_ms": 840.584708,
+            "thread_cpu_ms": 823.621
+          },
+          {
+            "pair": 6,
+            "variant": "baseline",
+            "wall_ms": 863.098292,
+            "thread_cpu_ms": 837.972417
+          },
+          {
+            "pair": 6,
+            "variant": "candidate",
+            "wall_ms": 96.811125,
+            "thread_cpu_ms": 95.149333
+          },
+          {
+            "pair": 7,
+            "variant": "candidate",
+            "wall_ms": 107.878209,
+            "thread_cpu_ms": 102.074541
+          },
+          {
+            "pair": 7,
+            "variant": "baseline",
+            "wall_ms": 882.976042,
+            "thread_cpu_ms": 869.261709
+          },
+          {
+            "pair": 8,
+            "variant": "baseline",
+            "wall_ms": 888.298,
+            "thread_cpu_ms": 851.360375
+          },
+          {
+            "pair": 8,
+            "variant": "candidate",
+            "wall_ms": 96.508,
+            "thread_cpu_ms": 94.977292
+          },
+          {
+            "pair": 9,
+            "variant": "candidate",
+            "wall_ms": 101.5085,
+            "thread_cpu_ms": 96.552708
+          },
+          {
+            "pair": 9,
+            "variant": "baseline",
+            "wall_ms": 854.881083,
+            "thread_cpu_ms": 833.470083
+          },
+          {
+            "pair": 10,
+            "variant": "baseline",
+            "wall_ms": 881.716167,
+            "thread_cpu_ms": 859.811333
+          },
+          {
+            "pair": 10,
+            "variant": "candidate",
+            "wall_ms": 94.258792,
+            "thread_cpu_ms": 92.319167
+          },
+          {
+            "pair": 11,
+            "variant": "candidate",
+            "wall_ms": 104.140041,
+            "thread_cpu_ms": 97.156833
+          },
+          {
+            "pair": 11,
+            "variant": "baseline",
+            "wall_ms": 859.062667,
+            "thread_cpu_ms": 837.31575
+          },
+          {
+            "pair": 12,
+            "variant": "baseline",
+            "wall_ms": 865.622791,
+            "thread_cpu_ms": 843.701584
+          },
+          {
+            "pair": 12,
+            "variant": "candidate",
+            "wall_ms": 94.509375,
+            "thread_cpu_ms": 92.683833
+          },
+          {
+            "pair": 13,
+            "variant": "candidate",
+            "wall_ms": 95.057917,
+            "thread_cpu_ms": 92.314167
+          },
+          {
+            "pair": 13,
+            "variant": "baseline",
+            "wall_ms": 813.815084,
+            "thread_cpu_ms": 794.255334
+          },
+          {
+            "pair": 14,
+            "variant": "baseline",
+            "wall_ms": 839.249583,
+            "thread_cpu_ms": 816.578625
+          },
+          {
+            "pair": 14,
+            "variant": "candidate",
+            "wall_ms": 93.968583,
+            "thread_cpu_ms": 92.291084
+          },
+          {
+            "pair": 15,
+            "variant": "candidate",
+            "wall_ms": 102.031167,
+            "thread_cpu_ms": 96.735125
+          },
+          {
+            "pair": 15,
+            "variant": "baseline",
+            "wall_ms": 867.073291,
+            "thread_cpu_ms": 846.831667
+          },
+          {
+            "pair": 16,
+            "variant": "baseline",
+            "wall_ms": 847.261916,
+            "thread_cpu_ms": 829.535583
+          },
+          {
+            "pair": 16,
+            "variant": "candidate",
+            "wall_ms": 98.458417,
+            "thread_cpu_ms": 96.827375
+          },
+          {
+            "pair": 17,
+            "variant": "candidate",
+            "wall_ms": 99.320917,
+            "thread_cpu_ms": 95.959334
+          },
+          {
+            "pair": 17,
+            "variant": "baseline",
+            "wall_ms": 843.518666,
+            "thread_cpu_ms": 826.416416
+          },
+          {
+            "pair": 18,
+            "variant": "baseline",
+            "wall_ms": 860.698917,
+            "thread_cpu_ms": 840.914833
+          },
+          {
+            "pair": 18,
+            "variant": "candidate",
+            "wall_ms": 97.073334,
+            "thread_cpu_ms": 94.509667
+          },
+          {
+            "pair": 19,
+            "variant": "candidate",
+            "wall_ms": 101.001833,
+            "thread_cpu_ms": 97.177208
+          },
+          {
+            "pair": 19,
+            "variant": "baseline",
+            "wall_ms": 833.642959,
+            "thread_cpu_ms": 816.637625
+          },
+          {
+            "pair": 20,
+            "variant": "baseline",
+            "wall_ms": 882.679333,
+            "thread_cpu_ms": 861.119042
+          },
+          {
+            "pair": 20,
+            "variant": "candidate",
+            "wall_ms": 98.641458,
+            "thread_cpu_ms": 93.137292
+          },
+          {
+            "pair": 21,
+            "variant": "candidate",
+            "wall_ms": 95.509417,
+            "thread_cpu_ms": 93.728542
+          },
+          {
+            "pair": 21,
+            "variant": "baseline",
+            "wall_ms": 833.753542,
+            "thread_cpu_ms": 816.215625
+          },
+          {
+            "pair": 22,
+            "variant": "baseline",
+            "wall_ms": 839.454375,
+            "thread_cpu_ms": 822.01525
+          },
+          {
+            "pair": 22,
+            "variant": "candidate",
+            "wall_ms": 95.821583,
+            "thread_cpu_ms": 94.074875
+          },
+          {
+            "pair": 23,
+            "variant": "candidate",
+            "wall_ms": 92.609208,
+            "thread_cpu_ms": 90.642625
+          },
+          {
+            "pair": 23,
+            "variant": "baseline",
+            "wall_ms": 808.054792,
+            "thread_cpu_ms": 777.905542
+          },
+          {
+            "pair": 24,
+            "variant": "baseline",
+            "wall_ms": 792.794125,
+            "thread_cpu_ms": 769.351292
+          },
+          {
+            "pair": 24,
+            "variant": "candidate",
+            "wall_ms": 96.546833,
+            "thread_cpu_ms": 94.816667
+          },
+          {
+            "pair": 25,
+            "variant": "candidate",
+            "wall_ms": 96.618583,
+            "thread_cpu_ms": 94.892
+          },
+          {
+            "pair": 25,
+            "variant": "baseline",
+            "wall_ms": 852.324667,
+            "thread_cpu_ms": 832.881458
+          },
+          {
+            "pair": 26,
+            "variant": "baseline",
+            "wall_ms": 879.092666,
+            "thread_cpu_ms": 851.504
+          },
+          {
+            "pair": 26,
+            "variant": "candidate",
+            "wall_ms": 101.855,
+            "thread_cpu_ms": 96.443584
+          },
+          {
+            "pair": 27,
+            "variant": "candidate",
+            "wall_ms": 99.675834,
+            "thread_cpu_ms": 97.899625
+          },
+          {
+            "pair": 27,
+            "variant": "baseline",
+            "wall_ms": 862.71075,
+            "thread_cpu_ms": 844.76
+          },
+          {
+            "pair": 28,
+            "variant": "baseline",
+            "wall_ms": 869.084625,
+            "thread_cpu_ms": 851.552417
+          },
+          {
+            "pair": 28,
+            "variant": "candidate",
+            "wall_ms": 96.326458,
+            "thread_cpu_ms": 94.44525
+          },
+          {
+            "pair": 29,
+            "variant": "candidate",
+            "wall_ms": 98.996208,
+            "thread_cpu_ms": 97.474208
+          },
+          {
+            "pair": 29,
+            "variant": "baseline",
+            "wall_ms": 846.267583,
+            "thread_cpu_ms": 824.160542
+          }
+        ],
+        "latency_ms": {
+          "baseline": {
+            "samples": 30,
+            "max": 889.501,
+            "p50": 847.772,
+            "p95": 888.298,
+            "p99": 889.501
+          },
+          "candidate": {
+            "samples": 30,
+            "max": 107.878,
+            "p50": 96.619,
+            "p95": 104.14,
+            "p99": 107.878
+          }
+        },
+        "untimed_amplification": {
+          "baseline": {
+            "models": 910,
+            "logical_state_utf8_bytes": 357838390
+          },
+          "candidate": {
+            "models": 100,
+            "logical_state_utf8_bytes": 39322900
+          }
+        },
+        "response_utf8_bytes": 180151602,
+        "response_sha256": "e0e16d0072349379940311ca6518e6db4807a41c3db7ec450d1fa887ceb22c27",
+        "complete_values_equal": true
+      },
+      "independent": {
+        "rows": [
+          {
+            "pair": 0,
+            "variant": "baseline",
+            "wall_ms": 12.09875,
+            "thread_cpu_ms": 11.93625
+          },
+          {
+            "pair": 0,
+            "variant": "candidate",
+            "wall_ms": 11.61125,
+            "thread_cpu_ms": 11.452459
+          },
+          {
+            "pair": 1,
+            "variant": "candidate",
+            "wall_ms": 11.489959,
+            "thread_cpu_ms": 11.334375
+          },
+          {
+            "pair": 1,
+            "variant": "baseline",
+            "wall_ms": 11.461667,
+            "thread_cpu_ms": 11.316
+          },
+          {
+            "pair": 2,
+            "variant": "baseline",
+            "wall_ms": 11.675667,
+            "thread_cpu_ms": 11.523708
+          },
+          {
+            "pair": 2,
+            "variant": "candidate",
+            "wall_ms": 11.860875,
+            "thread_cpu_ms": 11.708167
+          },
+          {
+            "pair": 3,
+            "variant": "candidate",
+            "wall_ms": 11.502208,
+            "thread_cpu_ms": 11.345792
+          },
+          {
+            "pair": 3,
+            "variant": "baseline",
+            "wall_ms": 11.537625,
+            "thread_cpu_ms": 11.384959
+          },
+          {
+            "pair": 4,
+            "variant": "baseline",
+            "wall_ms": 11.395583,
+            "thread_cpu_ms": 11.237875
+          },
+          {
+            "pair": 4,
+            "variant": "candidate",
+            "wall_ms": 11.559834,
+            "thread_cpu_ms": 11.386292
+          },
+          {
+            "pair": 5,
+            "variant": "candidate",
+            "wall_ms": 11.960083,
+            "thread_cpu_ms": 11.462833
+          },
+          {
+            "pair": 5,
+            "variant": "baseline",
+            "wall_ms": 11.857375,
+            "thread_cpu_ms": 11.693
+          },
+          {
+            "pair": 6,
+            "variant": "baseline",
+            "wall_ms": 11.435958,
+            "thread_cpu_ms": 11.274542
+          },
+          {
+            "pair": 6,
+            "variant": "candidate",
+            "wall_ms": 11.550959,
+            "thread_cpu_ms": 11.339833
+          },
+          {
+            "pair": 7,
+            "variant": "candidate",
+            "wall_ms": 11.576792,
+            "thread_cpu_ms": 11.382042
+          },
+          {
+            "pair": 7,
+            "variant": "baseline",
+            "wall_ms": 11.603416,
+            "thread_cpu_ms": 11.413042
+          },
+          {
+            "pair": 8,
+            "variant": "baseline",
+            "wall_ms": 11.941916,
+            "thread_cpu_ms": 11.746792
+          },
+          {
+            "pair": 8,
+            "variant": "candidate",
+            "wall_ms": 11.505416,
+            "thread_cpu_ms": 11.329291
+          },
+          {
+            "pair": 9,
+            "variant": "candidate",
+            "wall_ms": 11.633291,
+            "thread_cpu_ms": 11.469833
+          },
+          {
+            "pair": 9,
+            "variant": "baseline",
+            "wall_ms": 11.427292,
+            "thread_cpu_ms": 11.278792
+          },
+          {
+            "pair": 10,
+            "variant": "baseline",
+            "wall_ms": 11.345875,
+            "thread_cpu_ms": 11.200334
+          },
+          {
+            "pair": 10,
+            "variant": "candidate",
+            "wall_ms": 11.358417,
+            "thread_cpu_ms": 11.209542
+          },
+          {
+            "pair": 11,
+            "variant": "candidate",
+            "wall_ms": 11.476625,
+            "thread_cpu_ms": 11.322541
+          },
+          {
+            "pair": 11,
+            "variant": "baseline",
+            "wall_ms": 11.357917,
+            "thread_cpu_ms": 11.213792
+          },
+          {
+            "pair": 12,
+            "variant": "baseline",
+            "wall_ms": 11.55475,
+            "thread_cpu_ms": 11.401708
+          },
+          {
+            "pair": 12,
+            "variant": "candidate",
+            "wall_ms": 11.416334,
+            "thread_cpu_ms": 11.267708
+          },
+          {
+            "pair": 13,
+            "variant": "candidate",
+            "wall_ms": 11.276625,
+            "thread_cpu_ms": 11.132167
+          },
+          {
+            "pair": 13,
+            "variant": "baseline",
+            "wall_ms": 11.323416,
+            "thread_cpu_ms": 11.174667
+          },
+          {
+            "pair": 14,
+            "variant": "baseline",
+            "wall_ms": 11.484125,
+            "thread_cpu_ms": 11.337458
+          },
+          {
+            "pair": 14,
+            "variant": "candidate",
+            "wall_ms": 11.31,
+            "thread_cpu_ms": 11.158042
+          },
+          {
+            "pair": 15,
+            "variant": "candidate",
+            "wall_ms": 11.293625,
+            "thread_cpu_ms": 11.147917
+          },
+          {
+            "pair": 15,
+            "variant": "baseline",
+            "wall_ms": 11.324708,
+            "thread_cpu_ms": 11.185375
+          },
+          {
+            "pair": 16,
+            "variant": "baseline",
+            "wall_ms": 13.027042,
+            "thread_cpu_ms": 11.340167
+          },
+          {
+            "pair": 16,
+            "variant": "candidate",
+            "wall_ms": 11.412375,
+            "thread_cpu_ms": 11.221208
+          },
+          {
+            "pair": 17,
+            "variant": "candidate",
+            "wall_ms": 11.38,
+            "thread_cpu_ms": 11.177875
+          },
+          {
+            "pair": 17,
+            "variant": "baseline",
+            "wall_ms": 11.568459,
+            "thread_cpu_ms": 11.293958
+          },
+          {
+            "pair": 18,
+            "variant": "baseline",
+            "wall_ms": 11.511958,
+            "thread_cpu_ms": 11.316959
+          },
+          {
+            "pair": 18,
+            "variant": "candidate",
+            "wall_ms": 11.720875,
+            "thread_cpu_ms": 11.519041
+          },
+          {
+            "pair": 19,
+            "variant": "candidate",
+            "wall_ms": 13.686667,
+            "thread_cpu_ms": 13.3335
+          },
+          {
+            "pair": 19,
+            "variant": "baseline",
+            "wall_ms": 13.744334,
+            "thread_cpu_ms": 13.389875
+          },
+          {
+            "pair": 20,
+            "variant": "baseline",
+            "wall_ms": 13.62425,
+            "thread_cpu_ms": 13.273083
+          },
+          {
+            "pair": 20,
+            "variant": "candidate",
+            "wall_ms": 12.64825,
+            "thread_cpu_ms": 12.486458
+          },
+          {
+            "pair": 21,
+            "variant": "candidate",
+            "wall_ms": 15.239833,
+            "thread_cpu_ms": 14.73525
+          },
+          {
+            "pair": 21,
+            "variant": "baseline",
+            "wall_ms": 17.997167,
+            "thread_cpu_ms": 17.328125
+          },
+          {
+            "pair": 22,
+            "variant": "baseline",
+            "wall_ms": 13.552083,
+            "thread_cpu_ms": 13.232833
+          },
+          {
+            "pair": 22,
+            "variant": "candidate",
+            "wall_ms": 13.677083,
+            "thread_cpu_ms": 13.30525
+          },
+          {
+            "pair": 23,
+            "variant": "candidate",
+            "wall_ms": 11.919625,
+            "thread_cpu_ms": 11.736625
+          },
+          {
+            "pair": 23,
+            "variant": "baseline",
+            "wall_ms": 12.742125,
+            "thread_cpu_ms": 12.569541
+          },
+          {
+            "pair": 24,
+            "variant": "baseline",
+            "wall_ms": 12.103292,
+            "thread_cpu_ms": 11.773333
+          },
+          {
+            "pair": 24,
+            "variant": "candidate",
+            "wall_ms": 11.89625,
+            "thread_cpu_ms": 11.719291
+          },
+          {
+            "pair": 25,
+            "variant": "candidate",
+            "wall_ms": 11.930375,
+            "thread_cpu_ms": 11.769334
+          },
+          {
+            "pair": 25,
+            "variant": "baseline",
+            "wall_ms": 11.807667,
+            "thread_cpu_ms": 11.6395
+          },
+          {
+            "pair": 26,
+            "variant": "baseline",
+            "wall_ms": 11.568625,
+            "thread_cpu_ms": 11.377583
+          },
+          {
+            "pair": 26,
+            "variant": "candidate",
+            "wall_ms": 11.722709,
+            "thread_cpu_ms": 11.383834
+          },
+          {
+            "pair": 27,
+            "variant": "candidate",
+            "wall_ms": 11.618333,
+            "thread_cpu_ms": 11.417083
+          },
+          {
+            "pair": 27,
+            "variant": "baseline",
+            "wall_ms": 11.638375,
+            "thread_cpu_ms": 11.453542
+          },
+          {
+            "pair": 28,
+            "variant": "baseline",
+            "wall_ms": 11.400625,
+            "thread_cpu_ms": 11.212334
+          },
+          {
+            "pair": 28,
+            "variant": "candidate",
+            "wall_ms": 11.934583,
+            "thread_cpu_ms": 11.762417
+          },
+          {
+            "pair": 29,
+            "variant": "candidate",
+            "wall_ms": 11.647042,
+            "thread_cpu_ms": 11.452209
+          },
+          {
+            "pair": 29,
+            "variant": "baseline",
+            "wall_ms": 11.682584,
+            "thread_cpu_ms": 11.50325
+          }
+        ],
+        "latency_ms": {
+          "baseline": {
+            "samples": 30,
+            "max": 17.997,
+            "p50": 11.569,
+            "p95": 13.744,
+            "p99": 17.997
+          },
+          "candidate": {
+            "samples": 30,
+            "max": 15.24,
+            "p50": 11.611,
+            "p95": 13.687,
+            "p99": 15.24
+          }
+        },
+        "untimed_amplification": {
+          "baseline": {
+            "models": 100,
+            "logical_state_utf8_bytes": 6554900
+          },
+          "candidate": {
+            "models": 100,
+            "logical_state_utf8_bytes": 6554900
+          }
+        },
+        "response_utf8_bytes": 6689413,
+        "response_sha256": "8f639b2c4953936bd5f403e9fd12691805e4c472e6853270c422f7e8eac2461b",
+        "complete_values_equal": true
+      },
+      "empty": {
+        "rows": [
+          {
+            "pair": 0,
+            "variant": "baseline",
+            "wall_ms": 3.691709,
+            "thread_cpu_ms": 3.499833
+          },
+          {
+            "pair": 0,
+            "variant": "candidate",
+            "wall_ms": 3.74525,
+            "thread_cpu_ms": 3.571708
+          },
+          {
+            "pair": 1,
+            "variant": "candidate",
+            "wall_ms": 3.734417,
+            "thread_cpu_ms": 3.584125
+          },
+          {
+            "pair": 1,
+            "variant": "baseline",
+            "wall_ms": 3.916583,
+            "thread_cpu_ms": 3.706458
+          },
+          {
+            "pair": 2,
+            "variant": "baseline",
+            "wall_ms": 3.661792,
+            "thread_cpu_ms": 3.477042
+          },
+          {
+            "pair": 2,
+            "variant": "candidate",
+            "wall_ms": 3.594959,
+            "thread_cpu_ms": 3.411959
+          },
+          {
+            "pair": 3,
+            "variant": "candidate",
+            "wall_ms": 3.324833,
+            "thread_cpu_ms": 3.182083
+          },
+          {
+            "pair": 3,
+            "variant": "baseline",
+            "wall_ms": 3.055125,
+            "thread_cpu_ms": 2.922042
+          },
+          {
+            "pair": 4,
+            "variant": "baseline",
+            "wall_ms": 3.216125,
+            "thread_cpu_ms": 3.079042
+          },
+          {
+            "pair": 4,
+            "variant": "candidate",
+            "wall_ms": 3.54,
+            "thread_cpu_ms": 3.394375
+          },
+          {
+            "pair": 5,
+            "variant": "candidate",
+            "wall_ms": 3.410875,
+            "thread_cpu_ms": 3.260417
+          },
+          {
+            "pair": 5,
+            "variant": "baseline",
+            "wall_ms": 3.075583,
+            "thread_cpu_ms": 2.936375
+          },
+          {
+            "pair": 6,
+            "variant": "baseline",
+            "wall_ms": 3.129625,
+            "thread_cpu_ms": 2.993542
+          },
+          {
+            "pair": 6,
+            "variant": "candidate",
+            "wall_ms": 3.106625,
+            "thread_cpu_ms": 2.973292
+          },
+          {
+            "pair": 7,
+            "variant": "candidate",
+            "wall_ms": 3.393917,
+            "thread_cpu_ms": 3.25725
+          },
+          {
+            "pair": 7,
+            "variant": "baseline",
+            "wall_ms": 3.130125,
+            "thread_cpu_ms": 2.991334
+          },
+          {
+            "pair": 8,
+            "variant": "baseline",
+            "wall_ms": 3.123208,
+            "thread_cpu_ms": 2.985709
+          },
+          {
+            "pair": 8,
+            "variant": "candidate",
+            "wall_ms": 3.138875,
+            "thread_cpu_ms": 3.004
+          },
+          {
+            "pair": 9,
+            "variant": "candidate",
+            "wall_ms": 3.061333,
+            "thread_cpu_ms": 2.923084
+          },
+          {
+            "pair": 9,
+            "variant": "baseline",
+            "wall_ms": 3.133084,
+            "thread_cpu_ms": 2.983792
+          },
+          {
+            "pair": 10,
+            "variant": "baseline",
+            "wall_ms": 4.003333,
+            "thread_cpu_ms": 3.824167
+          },
+          {
+            "pair": 10,
+            "variant": "candidate",
+            "wall_ms": 3.665625,
+            "thread_cpu_ms": 3.50375
+          },
+          {
+            "pair": 11,
+            "variant": "candidate",
+            "wall_ms": 3.432958,
+            "thread_cpu_ms": 3.292833
+          },
+          {
+            "pair": 11,
+            "variant": "baseline",
+            "wall_ms": 3.112125,
+            "thread_cpu_ms": 2.977375
+          },
+          {
+            "pair": 12,
+            "variant": "baseline",
+            "wall_ms": 3.114542,
+            "thread_cpu_ms": 2.969792
+          },
+          {
+            "pair": 12,
+            "variant": "candidate",
+            "wall_ms": 3.461042,
+            "thread_cpu_ms": 3.315708
+          },
+          {
+            "pair": 13,
+            "variant": "candidate",
+            "wall_ms": 3.369166,
+            "thread_cpu_ms": 3.05175
+          },
+          {
+            "pair": 13,
+            "variant": "baseline",
+            "wall_ms": 3.309708,
+            "thread_cpu_ms": 3.158667
+          },
+          {
+            "pair": 14,
+            "variant": "baseline",
+            "wall_ms": 3.330959,
+            "thread_cpu_ms": 3.201625
+          },
+          {
+            "pair": 14,
+            "variant": "candidate",
+            "wall_ms": 3.148209,
+            "thread_cpu_ms": 2.99375
+          },
+          {
+            "pair": 15,
+            "variant": "candidate",
+            "wall_ms": 3.120875,
+            "thread_cpu_ms": 2.964708
+          },
+          {
+            "pair": 15,
+            "variant": "baseline",
+            "wall_ms": 5.114458,
+            "thread_cpu_ms": 3.531333
+          },
+          {
+            "pair": 16,
+            "variant": "baseline",
+            "wall_ms": 3.462291,
+            "thread_cpu_ms": 3.264417
+          },
+          {
+            "pair": 16,
+            "variant": "candidate",
+            "wall_ms": 3.403042,
+            "thread_cpu_ms": 3.232709
+          },
+          {
+            "pair": 17,
+            "variant": "candidate",
+            "wall_ms": 3.412625,
+            "thread_cpu_ms": 3.23975
+          },
+          {
+            "pair": 17,
+            "variant": "baseline",
+            "wall_ms": 3.1545,
+            "thread_cpu_ms": 3.014375
+          },
+          {
+            "pair": 18,
+            "variant": "baseline",
+            "wall_ms": 3.240667,
+            "thread_cpu_ms": 3.092084
+          },
+          {
+            "pair": 18,
+            "variant": "candidate",
+            "wall_ms": 3.264875,
+            "thread_cpu_ms": 3.13425
+          },
+          {
+            "pair": 19,
+            "variant": "candidate",
+            "wall_ms": 3.148958,
+            "thread_cpu_ms": 3.01375
+          },
+          {
+            "pair": 19,
+            "variant": "baseline",
+            "wall_ms": 3.222417,
+            "thread_cpu_ms": 3.024333
+          },
+          {
+            "pair": 20,
+            "variant": "baseline",
+            "wall_ms": 3.275791,
+            "thread_cpu_ms": 3.136375
+          },
+          {
+            "pair": 20,
+            "variant": "candidate",
+            "wall_ms": 3.179542,
+            "thread_cpu_ms": 3.039958
+          },
+          {
+            "pair": 21,
+            "variant": "candidate",
+            "wall_ms": 3.208292,
+            "thread_cpu_ms": 3.079666
+          },
+          {
+            "pair": 21,
+            "variant": "baseline",
+            "wall_ms": 3.678791,
+            "thread_cpu_ms": 3.5385
+          },
+          {
+            "pair": 22,
+            "variant": "baseline",
+            "wall_ms": 3.436125,
+            "thread_cpu_ms": 3.294917
+          },
+          {
+            "pair": 22,
+            "variant": "candidate",
+            "wall_ms": 3.404709,
+            "thread_cpu_ms": 3.235833
+          },
+          {
+            "pair": 23,
+            "variant": "candidate",
+            "wall_ms": 3.322708,
+            "thread_cpu_ms": 3.163542
+          },
+          {
+            "pair": 23,
+            "variant": "baseline",
+            "wall_ms": 3.184125,
+            "thread_cpu_ms": 3.021667
+          },
+          {
+            "pair": 24,
+            "variant": "baseline",
+            "wall_ms": 3.559708,
+            "thread_cpu_ms": 3.36125
+          },
+          {
+            "pair": 24,
+            "variant": "candidate",
+            "wall_ms": 3.191583,
+            "thread_cpu_ms": 3.031333
+          },
+          {
+            "pair": 25,
+            "variant": "candidate",
+            "wall_ms": 3.205667,
+            "thread_cpu_ms": 3.023709
+          },
+          {
+            "pair": 25,
+            "variant": "baseline",
+            "wall_ms": 3.203666,
+            "thread_cpu_ms": 3.020667
+          },
+          {
+            "pair": 26,
+            "variant": "baseline",
+            "wall_ms": 3.223708,
+            "thread_cpu_ms": 3.027709
+          },
+          {
+            "pair": 26,
+            "variant": "candidate",
+            "wall_ms": 3.153875,
+            "thread_cpu_ms": 2.969083
+          },
+          {
+            "pair": 27,
+            "variant": "candidate",
+            "wall_ms": 3.641625,
+            "thread_cpu_ms": 3.466958
+          },
+          {
+            "pair": 27,
+            "variant": "baseline",
+            "wall_ms": 3.273875,
+            "thread_cpu_ms": 3.116625
+          },
+          {
+            "pair": 28,
+            "variant": "baseline",
+            "wall_ms": 3.467042,
+            "thread_cpu_ms": 3.317542
+          },
+          {
+            "pair": 28,
+            "variant": "candidate",
+            "wall_ms": 3.119041,
+            "thread_cpu_ms": 2.97575
+          },
+          {
+            "pair": 29,
+            "variant": "candidate",
+            "wall_ms": 3.102,
+            "thread_cpu_ms": 2.950208
+          },
+          {
+            "pair": 29,
+            "variant": "baseline",
+            "wall_ms": 3.16625,
+            "thread_cpu_ms": 3.023667
+          }
+        ],
+        "latency_ms": {
+          "baseline": {
+            "samples": 30,
+            "max": 5.114,
+            "p50": 3.224,
+            "p95": 4.003,
+            "p99": 5.114
+          },
+          "candidate": {
+            "samples": 30,
+            "max": 3.745,
+            "p50": 3.323,
+            "p95": 3.734,
+            "p99": 3.745
+          }
+        },
+        "untimed_amplification": {
+          "baseline": {
+            "models": 0,
+            "logical_state_utf8_bytes": 0
+          },
+          "candidate": {
+            "models": 0,
+            "logical_state_utf8_bytes": 0
+          }
+        },
+        "response_utf8_bytes": 151,
+        "response_sha256": "87a6c5435063348364c1f4fa81606be94f95e673f80ffcf4409d5accb23fcc19",
+        "complete_values_equal": true
+      }
+    },
+    "scope": "120 alternating private pairs, four separate fixture shapes. Current source method versus unchanged exact baseline single-session reader. Complete watch values/order and independent dumps retained; no response serialization/profile/verification inside timers. Logical UTF8 counts are not physical IO. Watch payloads only, not entire HTTP session response. Normal GC unchanged; shared host, no idle-host/native-cause or 2MiB acceptance claim. All adverse samples retained."
+  },
+  "mixed": {
+    "latency": {
+      "/api/health": {
+        "samples": 100,
+        "max_ms": 2.154,
+        "p50_ms": 0.354,
+        "p95_ms": 0.596,
+        "p99_ms": 0.661
+      },
+      "progress.sequence_allocate": {
+        "samples": 100,
+        "max_ms": 18.501,
+        "p50_ms": 1.192,
+        "p95_ms": 7.168,
+        "p99_ms": 16.876
+      },
+      "fleet.overview_cache_write": {
+        "samples": 100,
+        "max_ms": 33.754,
+        "p50_ms": 1.745,
+        "p95_ms": 7.494,
+        "p99_ms": 22.788
+      },
+      "sqlite.execution_binding_materialize": {
+        "samples": 100,
+        "max_ms": 75.761,
+        "p50_ms": 5.491,
+        "p95_ms": 29.053,
+        "p99_ms": 47.963
+      },
+      "fleet.overview_cache_read": {
+        "samples": 100,
+        "max_ms": 7.708,
+        "p50_ms": 0.29,
+        "p95_ms": 1.555,
+        "p99_ms": 3.002
+      },
+      "acp.wire_append": {
+        "samples": 100,
+        "max_ms": 14.114,
+        "p50_ms": 0.632,
+        "p95_ms": 2.55,
+        "p99_ms": 6.061
+      },
+      "progress.checkpoint_write": {
+        "samples": 100,
+        "max_ms": 10.327,
+        "p50_ms": 1.418,
+        "p95_ms": 4.91,
+        "p99_ms": 7.827
+      },
+      "sync.commit_read": {
+        "samples": 100,
+        "max_ms": 3.33,
+        "p50_ms": 0.439,
+        "p95_ms": 1.938,
+        "p99_ms": 3.327
+      },
+      "dispatch.runnable_read": {
+        "samples": 100,
+        "max_ms": 2.469,
+        "p50_ms": 0.358,
+        "p95_ms": 1.49,
+        "p99_ms": 2.36
+      },
+      "reconciliation.dispatch_read": {
+        "samples": 100,
+        "max_ms": 16.904,
+        "p50_ms": 0.3,
+        "p95_ms": 2.008,
+        "p99_ms": 12.766
+      },
+      "/api/agent/sessions?view=chats": {
+        "samples": 100,
+        "max_ms": 24.512,
+        "p50_ms": 5.088,
+        "p95_ms": 9.426,
+        "p99_ms": 13.771
+      },
+      "sync.push_transaction": {
+        "samples": 100,
+        "max_ms": 52.553,
+        "p50_ms": 9.071,
+        "p95_ms": 29.398,
+        "p99_ms": 51.252
+      },
+      "transcript.drain": {
+        "samples": 300,
+        "max_ms": 77.315,
+        "p50_ms": 12.847,
+        "p95_ms": 40.386,
+        "p99_ms": 64.193
+      },
+      "sqlite.card_write": {
+        "samples": 10,
+        "max_ms": 22.079,
+        "p50_ms": 8.357,
+        "p95_ms": 22.079,
+        "p99_ms": 22.079
+      },
+      "/agent": {
+        "samples": 100,
+        "max_ms": 54.423,
+        "p50_ms": 9.014,
+        "p95_ms": 21.291,
+        "p99_ms": 38.062
+      },
+      "/partials/home/sections": {
+        "samples": 100,
+        "max_ms": 24.359,
+        "p50_ms": 2.502,
+        "p95_ms": 7.148,
+        "p99_ms": 9.038
+      },
+      "/api/status": {
+        "samples": 100,
+        "max_ms": 31.655,
+        "p50_ms": 9.593,
+        "p95_ms": 12.75,
+        "p99_ms": 16.009
+      },
+      "/api/runtime?section=sse": {
+        "samples": 100,
+        "max_ms": 2.207,
+        "p50_ms": 0.783,
+        "p95_ms": 0.894,
+        "p99_ms": 1.321
+      },
+      "/api/fleet/dispatch-jobs": {
+        "samples": 100,
+        "max_ms": 18.672,
+        "p50_ms": 4.93,
+        "p95_ms": 10.721,
+        "p99_ms": 15.129
+      },
+      "sync.reconcile_head": {
+        "samples": 100,
+        "max_ms": 82.87,
+        "p50_ms": 8.817,
+        "p95_ms": 27.802,
+        "p99_ms": 35.863
+      },
+      "/api/cards": {
+        "samples": 100,
+        "max_ms": 5.111,
+        "p50_ms": 1.164,
+        "p95_ms": 1.879,
+        "p99_ms": 3.923
+      },
+      "/api/cards/fixture-card": {
+        "samples": 100,
+        "max_ms": 3.156,
+        "p50_ms": 0.659,
+        "p95_ms": 1.948,
+        "p99_ms": 2.942
+      },
+      "/api/cards/fixture-card/history": {
+        "samples": 100,
+        "max_ms": 23.603,
+        "p50_ms": 3.847,
+        "p95_ms": 8.429,
+        "p99_ms": 15.772
+      },
+      "/api/agent/history/session-0?limit=64": {
+        "samples": 100,
+        "max_ms": 11.785,
+        "p50_ms": 3.282,
+        "p95_ms": 6.429,
+        "p99_ms": 11.019
+      },
+      "/api/agent/history/session-0?limit=64&message_boundaries=true": {
+        "samples": 100,
+        "max_ms": 58.108,
+        "p50_ms": 22.911,
+        "p95_ms": 50.126,
+        "p99_ms": 56.066
+      },
+      "/api/notifications": {
+        "samples": 100,
+        "max_ms": 3.836,
+        "p50_ms": 0.815,
+        "p95_ms": 1.829,
+        "p99_ms": 2.85
+      },
+      "/api/agent/preferences": {
+        "samples": 100,
+        "max_ms": 3.338,
+        "p50_ms": 0.674,
+        "p95_ms": 1.54,
+        "p99_ms": 2.306
+      },
+      "/api/execution/defaults": {
+        "samples": 100,
+        "max_ms": 6.888,
+        "p50_ms": 0.683,
+        "p95_ms": 1.129,
+        "p99_ms": 1.352
+      },
+      "/api/fleet/dispatch-queue": {
+        "samples": 100,
+        "max_ms": 3.161,
+        "p50_ms": 0.874,
+        "p95_ms": 1.517,
+        "p99_ms": 2.46
+      },
+      "/api/pr-supervisor/watches": {
+        "samples": 100,
+        "max_ms": 5.771,
+        "p50_ms": 0.978,
+        "p95_ms": 2.034,
+        "p99_ms": 3.166
+      },
+      "/api/pr-supervisor/capabilities": {
+        "samples": 100,
+        "max_ms": 2.577,
+        "p50_ms": 0.949,
+        "p95_ms": 1.461,
+        "p99_ms": 2.3
+      },
+      "/api/workspaces": {
+        "samples": 100,
+        "max_ms": 6.822,
+        "p50_ms": 1.367,
+        "p95_ms": 3.225,
+        "p99_ms": 5.402
+      },
+      "/api/health-journal/status": {
+        "samples": 100,
+        "max_ms": 3.969,
+        "p50_ms": 0.995,
+        "p95_ms": 2.163,
+        "p99_ms": 3.813
+      },
+      "/api/sync/status": {
+        "samples": 100,
+        "max_ms": 10.194,
+        "p50_ms": 1.6,
+        "p95_ms": 4.207,
+        "p99_ms": 8.091
+      },
+      "/api/sync/refs": {
+        "samples": 100,
+        "max_ms": 4.331,
+        "p50_ms": 0.537,
+        "p95_ms": 1.614,
+        "p99_ms": 3.715
+      },
+      "/settings?section=agent": {
+        "samples": 100,
+        "max_ms": 44.732,
+        "p50_ms": 2.742,
+        "p95_ms": 5.567,
+        "p99_ms": 29.317
+      },
+      "/settings?section=backups": {
+        "samples": 100,
+        "max_ms": 23.154,
+        "p50_ms": 2.402,
+        "p95_ms": 6.356,
+        "p99_ms": 13.131
+      },
+      "sync.object_collect": {
+        "samples": 10,
+        "max_ms": 168.131,
+        "p50_ms": 39.215,
+        "p95_ms": 168.131,
+        "p99_ms": 168.131
+      },
+      "/fleet": {
+        "samples": 100,
+        "max_ms": 67.578,
+        "p50_ms": 13.738,
+        "p95_ms": 22.974,
+        "p99_ms": 30.823
+      },
+      "/pull-requests": {
+        "samples": 100,
+        "max_ms": 33.256,
+        "p50_ms": 4.649,
+        "p95_ms": 9.908,
+        "p99_ms": 13.119
+      },
+      "/": {
+        "samples": 100,
+        "max_ms": 7.319,
+        "p50_ms": 1.687,
+        "p95_ms": 4.336,
+        "p99_ms": 6.218
+      },
+      "/work": {
+        "samples": 100,
+        "max_ms": 18.795,
+        "p50_ms": 1.785,
+        "p95_ms": 4.298,
+        "p99_ms": 6.1
+      },
+      "/api/runtime": {
+        "samples": 100,
+        "max_ms": 6.285,
+        "p50_ms": 5.372,
+        "p95_ms": 5.913,
+        "p99_ms": 6.129
+      },
+      "maintenance.run": {
+        "samples": 1,
+        "max_ms": 876.602,
+        "p50_ms": 876.602,
+        "p95_ms": 876.602,
+        "p99_ms": 876.602
+      }
+    },
+    "warnings": {},
+    "threshold_violations": {
+      "maintenance.run": 1
+    },
+    "retained": 9600
+  },
+  "integration": {
+    "number": 631,
+    "head": "e889fcd5a38e4e5dd4780f53eec40bd9d7436c59",
+    "merge": "d0027d0e587c048209d8e079389152205d2e6939",
+    "tree": "b6509572507444c688e7d3d30f8843503dcd0a58",
+    "watch_id": "ec59dd4a-1032-412c-b437-fb7b05bb72d1",
+    "main_ci": {
+      "id": 41258775002,
+      "status": "completed",
+      "conclusion": "success",
+      "run_attempt": 1,
+      "head_sha": "d0027d0e587c048209d8e079389152205d2e6939"
+    },
+    "head_ci": 41258417763,
+    "stable_green_observations": 10,
+    "independent_checks": 5,
+    "reviews": 0,
+    "threads": 0,
+    "first_attempt_success": true,
+    "proof_sha256": "d8a98dc432f5ea442c27c3eeb54e9b6a916df05fa697fcba59fffb24faf35d84",
+    "scope": "Derived integration facts only; full native/control/review/CI receipts/logs retained LOCAL/hash-only. Complete prior installed630 evidence is the canonical parent.",
+    "head_ci_evidence": {
+      "run_id": 41258417763,
+      "sha": "e889fcd5a38e4e5dd4780f53eec40bd9d7436c59",
+      "run_attempt": 1,
+      "conclusion": "success",
+      "checks": 5,
+      "raw_logs": {
+        "path": ".dev/pr631-head-ci-first-evidence-20261101.zip",
+        "bytes": 114005,
+        "sha256": "22947aa769ea2c971813d6db424974c7c779876760cf8bb81994573d6b514d99"
+      },
+      "numeric_artifacts": [
+        {
+          "id": 13064475671,
+          "name": "deadline-evidence-0-1",
+          "path": ".dev/pr631-head-first-deadline-evidence-13064475671-20261101.zip",
+          "bytes": 1834,
+          "sha256": "2a8bc5992c9380b3d8d9695940732598ca8bdff6d37b8050bc6b8a74cddee44a",
+          "numeric": {
+            "mixed-hot-path-loop-lag-622ac0437c44471dbd6e4f58e6de650d.json": {
+              "contract": "pa.test-deadline-evidence/v1",
+              "python": "3.14.10",
+              "platform": "Linux",
+              "source_sha": "dbab603cce0cb83c3d742e81d4627e4432d10557",
+              "gc_thresholds": [
+                2000,
+                10,
+                10
+              ],
+              "loop_thread_id": 140246639376192,
+              "request_wall_ms": 97.34467900000254,
+              "request_loop_thread_cpu_ms": 13.185926000000237,
+              "gc_events_total": 0,
+              "gc_events_retained": 0,
+              "gc_events_dropped": 0,
+              "request_gc_overlaps": [],
+              "worker_calls_started": 6,
+              "worker_calls_total": 6,
+              "worker_calls_incomplete": 0,
+              "worker_events_dropped": 0,
+              "worker_intervals": [
+                {
+                  "wall_ms": 40.95844700000839,
+                  "thread_cpu_ms": 0.052156999999999995,
+                  "thread_id": 140246117250752,
+                  "start_relative_ms": 2.13414099999909,
+                  "end_relative_ms": 43.09258800000748
+                },
+                {
+                  "wall_ms": 40.2485020000114,
+                  "thread_cpu_ms": 0.019407,
+                  "thread_id": 140246375225024,
+                  "start_relative_ms": 3.8493539999961968,
+                  "end_relative_ms": 44.097856000007596
+                },
+                {
+                  "wall_ms": 40.59353599998872,
+                  "thread_cpu_ms": 0.04970400000000001,
+                  "thread_id": 140246100469440,
+                  "start_relative_ms": 4.841252000005625,
+                  "end_relative_ms": 45.43478799999434
+                },
+                {
+                  "wall_ms": 40.07990800000982,
+                  "thread_cpu_ms": 0.03517499999999999,
+                  "thread_id": 140246083688128,
+                  "start_relative_ms": 9.312633999996933,
+                  "end_relative_ms": 49.392542000006756
+                },
+                {
+                  "wall_ms": 40.0806389999957,
+                  "thread_cpu_ms": 0.024554999999999997,
+                  "thread_id": 140246117250752,
+                  "start_relative_ms": 43.76584400000638,
+                  "end_relative_ms": 83.84648300000208
+                },
+                {
+                  "wall_ms": 40.07450800000356,
+                  "thread_cpu_ms": 0.018334000000000003,
+                  "thread_id": 140246375225024,
+                  "start_relative_ms": 46.09766400000126,
+                  "end_relative_ms": 86.17217200000482
+                }
+              ],
+              "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+            },
+            "sync-unrelated-surfaces-7fa3f024ca5c435983c634d7a5ab9295.json": {
+              "contract": "pa.test-deadline-evidence/v1",
+              "python": "3.14.10",
+              "platform": "Linux",
+              "source_sha": "dbab603cce0cb83c3d742e81d4627e4432d10557",
+              "gc_thresholds": [
+                2000,
+                10,
+                10
+              ],
+              "loop_thread_id": 140246639376192,
+              "request_wall_ms": 11.966817000001129,
+              "request_loop_thread_cpu_ms": 11.949289999998669,
+              "gc_events_total": 0,
+              "gc_events_retained": 0,
+              "gc_events_dropped": 0,
+              "request_gc_overlaps": [],
+              "worker_calls_started": 1,
+              "worker_calls_total": 1,
+              "worker_calls_incomplete": 0,
+              "worker_events_dropped": 0,
+              "worker_intervals": [
+                {
+                  "wall_ms": 200.10722199999975,
+                  "thread_cpu_ms": 0.04719799999999999,
+                  "thread_id": 140246349006528,
+                  "start_relative_ms": -4.512187999992534,
+                  "end_relative_ms": 195.59503400000722
+                }
+              ],
+              "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+            }
+          }
+        },
+        {
+          "id": 13064201603,
+          "name": "deadline-evidence-3-1",
+          "path": ".dev/pr631-head-first-deadline-evidence-13064201603-20261101.zip",
+          "bytes": 709,
+          "sha256": "25aef61e31e1db0f97289941f680e9efa047f52ee4341594ec2b3c55f068bdf7",
+          "numeric": {
+            "restart-drain-start-cabc20a55dc3465f972b6f56f26958ab.json": {
+              "contract": "pa.test-deadline-evidence/v1",
+              "python": "3.14.10",
+              "platform": "Linux",
+              "source_sha": "dbab603cce0cb83c3d742e81d4627e4432d10557",
+              "gc_thresholds": [
+                2000,
+                10,
+                10
+              ],
+              "loop_thread_id": 139628083713856,
+              "request_wall_ms": 0.026058999992528697,
+              "request_loop_thread_cpu_ms": 0.023534000000324795,
+              "gc_events_total": 0,
+              "gc_events_retained": 0,
+              "gc_events_dropped": 0,
+              "request_gc_overlaps": [],
+              "worker_calls_started": 0,
+              "worker_calls_total": 0,
+              "worker_calls_incomplete": 0,
+              "worker_events_dropped": 0,
+              "worker_intervals": [],
+              "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+            }
+          }
+        },
+        {
+          "id": 13063319362,
+          "name": "deadline-evidence-1-1",
+          "path": ".dev/pr631-head-first-deadline-evidence-13063319362-20261101.zip",
+          "bytes": 1561,
+          "sha256": "9feadf77bcb394fef78289bccdb31402a95e978b2483e20405bd6c5e72ce3d75",
+          "numeric": {
+            "agent-snapshot-bc2018cfe2d44ae89a6e395c19aa1cc2.json": {
+              "contract": "pa.test-deadline-evidence/v1",
+              "python": "3.14.10",
+              "platform": "Linux",
+              "source_sha": "dbab603cce0cb83c3d742e81d4627e4432d10557",
+              "gc_thresholds": [
+                2000,
+                10,
+                10
+              ],
+              "loop_thread_id": 139673064822592,
+              "request_wall_ms": 1.6909889999965344,
+              "request_loop_thread_cpu_ms": 1.2945870000002913,
+              "gc_events_total": 1,
+              "gc_events_retained": 1,
+              "gc_events_dropped": 0,
+              "request_gc_overlaps": [],
+              "worker_calls_started": 1,
+              "worker_calls_total": 1,
+              "worker_calls_incomplete": 0,
+              "worker_events_dropped": 0,
+              "worker_intervals": [
+                {
+                  "wall_ms": 0.2988200000118013,
+                  "thread_cpu_ms": 0.29977899999999996,
+                  "thread_id": 139672819553984,
+                  "start_relative_ms": 0.3363710000030551,
+                  "end_relative_ms": 0.6351910000148564
+                }
+              ],
+              "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+            },
+            "incomplete-worker-1ee3440093c94e7daec8b665065b6a4e.json": {
+              "contract": "pa.test-deadline-evidence/v1",
+              "python": "3.14.10",
+              "platform": "Linux",
+              "source_sha": "dbab603cce0cb83c3d742e81d4627e4432d10557",
+              "gc_thresholds": [
+                2000,
+                10,
+                10
+              ],
+              "loop_thread_id": 139673064822592,
+              "request_wall_ms": 0.21998199997597112,
+              "request_loop_thread_cpu_ms": 0.15157300000012697,
+              "gc_events_total": 0,
+              "gc_events_retained": 0,
+              "gc_events_dropped": 0,
+              "request_gc_overlaps": [],
+              "worker_calls_started": 1,
+              "worker_calls_total": 1,
+              "worker_calls_incomplete": 0,
+              "worker_events_dropped": 0,
+              "worker_intervals": [
+                {
+                  "wall_ms": 0.08479900000679663,
+                  "thread_cpu_ms": 0.027861999999999998,
+                  "thread_id": 139672758957760,
+                  "start_relative_ms": 0.18380499997761035,
+                  "end_relative_ms": 0.268603999984407
+                }
+              ],
+              "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+            }
+          }
+        }
+      ]
+    },
+    "main_ci_evidence": {
+      "run_id": 41258775002,
+      "sha": "d0027d0e587c048209d8e079389152205d2e6939",
+      "run_attempt": 1,
+      "conclusion": "success",
+      "checks": 5,
+      "raw_logs": {
+        "path": ".dev/pr631-main-ci-first-evidence-20261101.zip",
+        "bytes": 109555,
+        "sha256": "31a7c6cd7a48f9c7d15289dc8a97b4954dfc8ac19e65c3a554be768317b1b3d6"
+      },
+      "numeric_artifacts": [
+        {
+          "id": 13064466474,
+          "name": "deadline-evidence-1-1",
+          "path": ".dev/pr631-main-first-deadline-evidence-13064466474-20261101.zip",
+          "bytes": 1552,
+          "sha256": "053d48300f12f0274fc2a8523a80f4e9013c199a40c40e018bea90158592c60a",
+          "numeric": {
+            "agent-snapshot-95f6da03215b41c6862b502b3e674d82.json": {
+              "contract": "pa.test-deadline-evidence/v1",
+              "python": "3.14.10",
+              "platform": "Linux",
+              "source_sha": "d0027d0e587c048209d8e079389152205d2e6939",
+              "gc_thresholds": [
+                2000,
+                10,
+                10
+              ],
+              "loop_thread_id": 139681873663808,
+              "request_wall_ms": 2.233052000008229,
+              "request_loop_thread_cpu_ms": 1.8216989999988442,
+              "gc_events_total": 1,
+              "gc_events_retained": 1,
+              "gc_events_dropped": 0,
+              "request_gc_overlaps": [],
+              "worker_calls_started": 1,
+              "worker_calls_total": 1,
+              "worker_calls_incomplete": 0,
+              "worker_events_dropped": 0,
+              "worker_intervals": [
+                {
+                  "wall_ms": 0.34507600000210914,
+                  "thread_cpu_ms": 0.345866,
+                  "thread_id": 139681530377920,
+                  "start_relative_ms": 0.3993850000085786,
+                  "end_relative_ms": 0.7444610000106877
+                }
+              ],
+              "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+            },
+            "incomplete-worker-ce8932d2a90f423c9e10d1cede832d5d.json": {
+              "contract": "pa.test-deadline-evidence/v1",
+              "python": "3.14.10",
+              "platform": "Linux",
+              "source_sha": "d0027d0e587c048209d8e079389152205d2e6939",
+              "gc_thresholds": [
+                2000,
+                10,
+                10
+              ],
+              "loop_thread_id": 139681873663808,
+              "request_wall_ms": 0.1432490000041753,
+              "request_loop_thread_cpu_ms": 0.10400500000073976,
+              "gc_events_total": 0,
+              "gc_events_retained": 0,
+              "gc_events_dropped": 0,
+              "request_gc_overlaps": [],
+              "worker_calls_started": 1,
+              "worker_calls_total": 1,
+              "worker_calls_incomplete": 0,
+              "worker_events_dropped": 0,
+              "worker_intervals": [
+                {
+                  "wall_ms": 0.06659499999273066,
+                  "thread_cpu_ms": 0.018074000000000003,
+                  "thread_id": 139681626875584,
+                  "start_relative_ms": 0.12373900000284266,
+                  "end_relative_ms": 0.19033399999557332
+                }
+              ],
+              "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+            }
+          }
+        },
+        {
+          "id": 13064406673,
+          "name": "deadline-evidence-3-1",
+          "path": ".dev/pr631-main-first-deadline-evidence-13064406673-20261101.zip",
+          "bytes": 708,
+          "sha256": "f8d16cf450e051045022b257a8e70af335ff489638dd7c6fc81c160d787120f5",
+          "numeric": {
+            "restart-drain-start-89af449f44b1492d857c8d73634f007b.json": {
+              "contract": "pa.test-deadline-evidence/v1",
+              "python": "3.14.10",
+              "platform": "Linux",
+              "source_sha": "d0027d0e587c048209d8e079389152205d2e6939",
+              "gc_thresholds": [
+                2000,
+                10,
+                10
+              ],
+              "loop_thread_id": 140475576989504,
+              "request_wall_ms": 0.020119999987855408,
+              "request_loop_thread_cpu_ms": 0.017485999997290946,
+              "gc_events_total": 0,
+              "gc_events_retained": 0,
+              "gc_events_dropped": 0,
+              "request_gc_overlaps": [],
+              "worker_calls_started": 0,
+              "worker_calls_total": 0,
+              "worker_calls_incomplete": 0,
+              "worker_events_dropped": 0,
+              "worker_intervals": [],
+              "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+            }
+          }
+        },
+        {
+          "id": 13063189889,
+          "name": "deadline-evidence-0-1",
+          "path": ".dev/pr631-main-first-deadline-evidence-13063189889-20261101.zip",
+          "bytes": 1829,
+          "sha256": "8b82446b219f94ae57a3a43da04ef4ecb1258b9f1b50f470cc34aa5e9990eb4a",
+          "numeric": {
+            "mixed-hot-path-loop-lag-1ff2bd70e98247f0ab7fb19e91f90295.json": {
+              "contract": "pa.test-deadline-evidence/v1",
+              "python": "3.14.10",
+              "platform": "Linux",
+              "source_sha": "d0027d0e587c048209d8e079389152205d2e6939",
+              "gc_thresholds": [
+                2000,
+                10,
+                10
+              ],
+              "loop_thread_id": 140084915062592,
+              "request_wall_ms": 93.42495499998904,
+              "request_loop_thread_cpu_ms": 12.736311999999472,
+              "gc_events_total": 0,
+              "gc_events_retained": 0,
+              "gc_events_dropped": 0,
+              "request_gc_overlaps": [],
+              "worker_calls_started": 6,
+              "worker_calls_total": 6,
+              "worker_calls_incomplete": 0,
+              "worker_events_dropped": 0,
+              "worker_intervals": [
+                {
+                  "wall_ms": 40.07460199999002,
+                  "thread_cpu_ms": 0.028774000000000004,
+                  "thread_id": 140084630275776,
+                  "start_relative_ms": 0.8854350000007116,
+                  "end_relative_ms": 40.960036999990734
+                },
+                {
+                  "wall_ms": 40.06713299999376,
+                  "thread_cpu_ms": 0.014122000000000004,
+                  "thread_id": 140084661741248,
+                  "start_relative_ms": 1.5427700000003597,
+                  "end_relative_ms": 41.60990299999412
+                },
+                {
+                  "wall_ms": 40.06333599998868,
+                  "thread_cpu_ms": 0.010853000000000007,
+                  "thread_id": 140084384888512,
+                  "start_relative_ms": 2.1879789999985633,
+                  "end_relative_ms": 42.251314999987244
+                },
+                {
+                  "wall_ms": 40.07044300000473,
+                  "thread_cpu_ms": 0.02008299999999999,
+                  "thread_id": 140084368107200,
+                  "start_relative_ms": 5.321431999988135,
+                  "end_relative_ms": 45.391874999992865
+                },
+                {
+                  "wall_ms": 40.076642000002494,
+                  "thread_cpu_ms": 0.017688,
+                  "thread_id": 140084630275776,
+                  "start_relative_ms": 41.515601999989826,
+                  "end_relative_ms": 81.59224399999232
+                },
+                {
+                  "wall_ms": 40.13647099999673,
+                  "thread_cpu_ms": 0.017062999999999995,
+                  "thread_id": 140084661741248,
+                  "start_relative_ms": 42.046193999993875,
+                  "end_relative_ms": 82.1826649999906
+                }
+              ],
+              "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+            },
+            "sync-unrelated-surfaces-8bdf849404f34f6dbfa4b0a15ece97f7.json": {
+              "contract": "pa.test-deadline-evidence/v1",
+              "python": "3.14.10",
+              "platform": "Linux",
+              "source_sha": "d0027d0e587c048209d8e079389152205d2e6939",
+              "gc_thresholds": [
+                2000,
+                10,
+                10
+              ],
+              "loop_thread_id": 140084915062592,
+              "request_wall_ms": 6.831237000000101,
+              "request_loop_thread_cpu_ms": 6.830946999999199,
+              "gc_events_total": 0,
+              "gc_events_retained": 0,
+              "gc_events_dropped": 0,
+              "request_gc_overlaps": [],
+              "worker_calls_started": 1,
+              "worker_calls_total": 1,
+              "worker_calls_incomplete": 0,
+              "worker_events_dropped": 0,
+              "worker_intervals": [
+                {
+                  "wall_ms": 200.09589999999378,
+                  "thread_cpu_ms": 0.055525000000000005,
+                  "thread_id": 140084613494464,
+                  "start_relative_ms": -2.9432609999986425,
+                  "end_relative_ms": 197.15263899999513
+                }
+              ],
+              "scope": "Numeric test-only observations include observer cost. GC intervals can overlap worker/loop time. Wall minus CPU is unclassified; no physical-holder or disk attribution. No arguments, results, exception messages, frames, SQL or request data retained. No deadline or GC setting changed."
+            }
+          }
+        }
+      ]
+    }
+  },
+  "coverage": {
+    "rows": 716,
+    "concerns": 170,
+    "all_open": true,
+    "completion_requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57"
+  },
+  "limits": [
+    "Source-only shared-card full-watch read repair. Same session/lease358/macbook, base d0027d0e (PR631 verified equal trees); running installed630 remains0b3/package1984. No further install/restart/default/model/config/dependency/GC/power/clock changes.",
+    "Full list rows sharing a card use fresh queries of at most250 selected sessions/500 parameters. Retired/cross-realm session-or-card predicate/order/native validation/full proofs retained. Each response row gets its own complete nested model dump. Independent rows and custom readers retain per-session reads; no cross-request proof cache.",
+    "First six new contracts failed on missing batch method. Then94 tests,203 tests12subtests, strengthened203/12 and final shared-only204/12 PASS (overlapping, not additive). First raw logs/XML/bodies/hashes retained locally; numeric metadata and full helpers retained. Tests include malformed/unrelated evidence, ties/nonlexical insertion, OR dedup,501sessions/batches/rebind/freshness/concurrent ownership/custom instance+subclass fallback/full-response equality.",
+    "Final120alternating source pairs: shared ASCII910to100models, p95166.059to22.737ms; Unicode910to100models,p95888.298to104.140ms. Independent100to100,p9513.744to13.687ms; empty0to0,p954.003to3.734ms. Adverse p50 independent11.569to11.611/empty3.224to3.323 retained. Complete results/order unchanged. Watch-only response sizes60876082/180151602/6689413/151B; not full HTTP serialization or 2MiB passing payloads.",
+    "First unrestricted source120pair comparison remains UNADOPTED with independent p9513.126to21.806ms ADVERSE; full byte-identical original body is hash verified against first measurement. Separate v1/v2 private prototypes and final shared-only source population retained, never pooled/reassigned. Logical decoded-state UTF8 bytes are not physical IO/live proof sizes/native historical causes.",
+    "First final-source100mixed retains9600ordered events/zero workerwarnings/failures/timeouts/rejections, but maintenance876.602ms>500. All30loaded module hashes match frozen source, full timings/bytes/SQL/GC/CPU/disk-block metadata retained. Presence is not branch coverage; full-watch shared branch is proved separately. No idle-host/PAsoleCPU/nativebusy/disk/VACUUM/GC cause claim.",
+    "PR631 source/evidence integration DONE: stablegreen9, independently5SUCCESS/0reviews0threads/completepagination/attributedcommit/CLEAN/unchanged protections; merge d0027d0e equals e889fcd5 treeb6509572. Head41258417763/main41258775002 each5FIRSTsuccess/no retry. All original620/610 first failures remain unretried in complete parent chain.",
+    "Actual630 installed first public failures remain: all5full10 listsHTTP200 Content-Length2623563/read2097153/status_and_encoded_bound/no decode/schemaunverified. Original5s2MiB/page sizes unchanged, no discarded durable fields/data or claim that batching fixes payload limits.95ordinaryPASSmax173.668ms remains separate from source fixture.",
+    "Complete77920345B parent and every older source/activation/failure layer byte-identically embedded. Full earlier630 installation/handoff/positive activation/private/public/native inventories and every adverse/failure remain; raw private prompts/writers/answers/native/control/status/card/log/XML/ZIP/quarantined drafts LOCAL/hash-only, all ten attachments preserved.",
+    "All716rows170concerns remain OPEN under exact17d independent_agent_v1 scheduler-owned acceptance. Existing accepted backup/DB scopes stay closed; remaining maintenance/provider/session/workspace/queue/payload/peers/logloss/FD/retention/unknownreceipts/attachment413/missingobject/work/full realKernel/MCP/placement/admission/startup/drain/concurrency/pageAPI obligations remain. No selfverifier/fabricated milestones/Done/CASloops/worktree cleanup."
+  ],
+  "complete_lossless_bundle": {
+    "path": "docs/benchmarks/systemic-full-watch-batch632-20261101.raw.json.gz",
+    "bytes": 78963195,
+    "sha256": "0ac4aa8321169cfd5af6200b73abad92d44f3d623e3dd02c00fe5417e0cdb158"
+  },
+  "input_versions": 36
+}

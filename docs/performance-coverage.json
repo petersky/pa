@@ -358204,5 +358204,31 @@
       "completion_requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57"
     },
     "status": "Activated and subset retested; allperformanceacceptanceOPEN."
+  },
+  "full_watch_shared_batch632_20261101": {
+    "artifact": "docs/benchmarks/systemic-full-watch-batch632-20261101.json",
+    "bundle": {
+      "path": "docs/benchmarks/systemic-full-watch-batch632-20261101.raw.json.gz",
+      "bytes": 78963195,
+      "sha256": "0ac4aa8321169cfd5af6200b73abad92d44f3d623e3dd02c00fe5417e0cdb158"
+    },
+    "coverage": {
+      "rows": 716,
+      "concerns": 170,
+      "all_open": true,
+      "completion_requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57"
+    },
+    "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+    "existing_rows": [
+      "concern:full-session-watch-hydration",
+      "concern:payloads"
+    ],
+    "implemented": "Prospective source only",
+    "merged": false,
+    "deployed": false,
+    "retested": "Source subsets only; all limits retained",
+    "resolution": "open",
+    "next_actor": "this same card/session",
+    "next_action": "Integrate exact reviewed source; activation needs a new correlated authorization, then verify actual loaded build before retesting. Continue all remaining obligations."
   }
 }
