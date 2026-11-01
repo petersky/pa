@@ -70,15 +70,19 @@ def test_nested_repeated_scope_restores_exclusive_owner_even_on_exception():
 
 def test_copied_context_cannot_record_on_another_thread_or_after_scope_exit():
     bucket = {}
+    def read_in_copied_context():
+        with closing(connection()) as conn:
+            assert conn.execute('SELECT 1').fetchone() == (1,)
+        return sqlite_call_bucket()
     with capture_sqlite_calls(bucket):
         copied = copy_context()
         observed = []
-        thread = threading.Thread(target=lambda: copied.run(lambda: observed.append(sqlite_call_bucket())))
+        thread = threading.Thread(target=lambda: copied.run(lambda: observed.append(read_in_copied_context())))
         thread.start()
         thread.join(5)
         assert not thread.is_alive() and observed == [None]
         escaped = copy_context()
-    assert escaped.run(sqlite_call_bucket) is None
+    assert escaped.run(read_in_copied_context) is None
     assert bucket == {}
 
 

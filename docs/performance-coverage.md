@@ -7063,3 +7063,5 @@ All717rows171concerns remain OPEN, original110slow+181runtime115routes and later
 Complete86395926B parent is embedded byte-for-byte, preserving all79 older roots/fields/populations/firstfailures. Current integration, probes, unadopted variants, source bodies, helpers and actual reports are added. Raw private prompts/answers/writers/native/control/status/logXMLZIP stay LOCAL/hash-only; helper allowlist only. Current observations are not a deployed repair or whole-PA performance acceptance.
 
 [Complete source outcomes and prior byte custody](benchmarks/systemic-sqlite-attribution635-20261101.json).
+
+The copied-context contract was subsequently strengthened to execute real SQLite reads on the other thread and after scope exit; the same77targeted tests passed. Runtime source modules remain byte-identical to the first measured source stage, so the mixed and overhead populations remain applicable. [Complete follow-up test/helper/outcome custody](benchmarks/systemic-sqlite-attribution635-20261101-context-contract.json). Earlier contract versions remain in the complete bundle.
