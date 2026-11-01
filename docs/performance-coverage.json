@@ -358189,5 +358189,20 @@
       "next_actor": "Same systemic session/card for remainingrepairs and authorizedactivation/retest; independent scheduler owns exact17dacceptance.",
       "next_action": "Retain all716findings170concerns, failed/adversepopulations; finish fullrealKernel/provider/MCP/placement/admission/startup/drain/concurrency/pageAPI/peer/log/nativebusyIO acceptance without replay/defaultchanges."
     }
+  },
+  "installed630_outcomes_20261101": {
+    "artifact": "docs/benchmarks/systemic-installed630-outcomes-20261101.json",
+    "bundle": {
+      "path": "docs/benchmarks/systemic-installed630-outcomes-20261101.raw.json.gz",
+      "bytes": 77920345,
+      "sha256": "c13d45b8a43983eb8ce20a9a8f3f65926166e1cf484dd806b3948d7c8870b465"
+    },
+    "coverage": {
+      "rows": 716,
+      "concerns": 170,
+      "all_open": true,
+      "completion_requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57"
+    },
+    "status": "Activated and subset retested; allperformanceacceptanceOPEN."
   }
 }
