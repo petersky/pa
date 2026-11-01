@@ -6,7 +6,9 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from threading import get_ident
 
-from pa.core.performance import current_observation
+from pa.core.performance import (
+    current_observation, current_sqlite_call_scope, record_sqlite_call,
+)
 
 
 _connection_scope = ContextVar("pa_sqlite_connection_scope", default=None)
@@ -98,26 +100,37 @@ class ObservedCursor(sqlite3.Cursor):
 class ObservedConnection(sqlite3.Connection):
     def _observe(self, call, *args, commit=False):
         observation = current_observation.get()
-        if observation is None:
+        scope = current_sqlite_call_scope.get()
+        bucket = scope.bucket if scope is not None and scope.active and scope.thread_id == get_ident() else None
+        if observation is None and bucket is None:
             return call(*args)
         started = time.perf_counter()
         cpu_started = time.thread_time()
+        error = 0
         try:
             return call(*args)
-        except sqlite3.OperationalError as exc:
-            if (getattr(exc, "sqlite_errorcode", 0) & 0xFF) in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
+        except BaseException as exc:
+            error = int(not isinstance(exc, StopIteration))
+            if observation is not None and isinstance(exc, sqlite3.OperationalError) and (getattr(exc, "sqlite_errorcode", 0) & 0xFF) in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
                 observation.sqlite_busy_failures += 1
             raise
         finally:
             cpu_elapsed = (time.thread_time() - cpu_started) * 1000
-            elapsed = (time.perf_counter() - started) * 1000
-            if commit:
-                observation.sqlite_commit_ms += elapsed
-                observation.sqlite_commit_thread_cpu_ms += cpu_elapsed
-            else:
-                observation.sqlite_statement_ms += elapsed
-                observation.sqlite_statement_thread_cpu_ms += cpu_elapsed
-                observation.sqlite_calls += 1
+            finished = time.perf_counter()
+            elapsed = (finished - started) * 1000
+            if observation is not None:
+                if commit:
+                    observation.sqlite_commit_ms += elapsed
+                    observation.sqlite_commit_thread_cpu_ms += cpu_elapsed
+                else:
+                    observation.sqlite_statement_ms += elapsed
+                    observation.sqlite_statement_thread_cpu_ms += cpu_elapsed
+                    observation.sqlite_calls += 1
+            if bucket is not None:
+                record_sqlite_call(
+                    bucket, getattr(call, "__name__", None), elapsed,
+                    cpu_elapsed, started, finished, error,
+                )
 
     def execute(self, sql, parameters=(), /):
         return self.cursor().execute(sql, parameters)

@@ -7,7 +7,7 @@ from collections import deque
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from threading import Lock
+from threading import Lock, get_ident
 
 SAMPLE_LIMIT = 256
 FILESYSTEM_PHASES = (
@@ -75,6 +75,59 @@ class OperationObservation:
 
 current_observation: ContextVar[OperationObservation | None] = ContextVar("pa_performance", default=None)
 
+# Only explicitly instrumented maintenance spans retain these numeric records.
+# Nested spans own their calls exclusively; the existing scalar totals remain
+# inclusive. No SQL, bindings, row values, identifiers or caller names survive.
+SQLITE_CALL_KINDS = frozenset({
+    "execute", "executemany", "fetchone", "fetchmany", "fetchall", "__next__", "commit",
+})
+
+
+@dataclass
+class _SqliteCallScope:
+    bucket: dict
+    thread_id: int
+    active: bool = True
+
+
+current_sqlite_call_scope: ContextVar[_SqliteCallScope | None] = ContextVar("pa_sqlite_call_scope", default=None)
+
+
+def sqlite_call_bucket():
+    scope = current_sqlite_call_scope.get()
+    return scope.bucket if scope is not None and scope.active and scope.thread_id == get_ident() else None
+
+
+@contextmanager
+def capture_sqlite_calls(bucket: dict):
+    scope = _SqliteCallScope(bucket, get_ident())
+    token = current_sqlite_call_scope.set(scope)
+    try:
+        yield
+    finally:
+        scope.active = False
+        current_sqlite_call_scope.reset(token)
+
+
+def record_sqlite_call(bucket, kind, elapsed, cpu_elapsed, started, finished, error):
+    kind = kind if isinstance(kind, str) and kind in SQLITE_CALL_KINDS else "other"
+    item = bucket.get(kind)
+    if item is None:
+        item = bucket[kind] = {
+            "calls": 0, "errors": 0, "wall_ms": 0.0,
+            "thread_cpu_ms": 0.0, "max_wall_ms": -1.0,
+        }
+    item["calls"] += 1
+    item["errors"] += error
+    item["wall_ms"] += elapsed
+    item["thread_cpu_ms"] += cpu_elapsed
+    if elapsed > item["max_wall_ms"]:
+        item.update(
+            max_wall_ms=elapsed, max_call_thread_cpu_ms=cpu_elapsed,
+            max_started_at_monotonic=started, max_finished_at_monotonic=finished,
+        )
+
+
 # These are inclusive spans inside one maintenance sweep, never user labels.
 # Keep only aggregates: no per-session samples, identifiers, SQL or payloads.
 RETENTION_PHASES = frozenset({
@@ -111,14 +164,15 @@ def retention_phase(name: str):
     observation = current_observation.get()
     before = {key: getattr(observation, key) for key in _RETENTION_COUNTERS} if observation else {}
     wall, cpu = time.perf_counter_ns(), time.thread_time_ns()
+    result = phases.setdefault(name, {"calls": 0, "errors": 0, "wall_ms": 0.0, "thread_cpu_ms": 0.0})
     errors = 0
     try:
-        yield
+        with capture_sqlite_calls(result.setdefault("sqlite_call_kinds", {})):
+            yield
     except BaseException:
         errors = 1
         raise
     finally:
-        result = phases.setdefault(name, {"calls": 0, "errors": 0, "wall_ms": 0.0, "thread_cpu_ms": 0.0})
         result["calls"] += 1
         result["errors"] += errors
         result["wall_ms"] += (time.perf_counter_ns() - wall) / 1_000_000

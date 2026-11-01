@@ -7040,3 +7040,26 @@ Fresh exactowner runtime collection retains all101operations/20prefixfamilies/31
 Complete83609437B/faaab553 parent embeds COMPLETE80804555B and ALL older first failures/adverse/source/activation stages; every new actual outcome/helper/fullnumeric inventory added losslessly. Native/private prompts/writers/answers/control/logXMLZIP LOCAL/hash-only. All717rows171concerns remain OPEN,10attachments preserved,17d independent_agent_v1 scheduler acceptance unaccepted. Accepted original backup0331/DB89957 scopes stayCLOSED; no staleOct17retry/manualbackup/restore/forcedpeerrefresh/secretsfallback/cleanup/selfverifier/Done/policychanges.
 
 [Full installed outcomes and complete prior byte custody](benchmarks/systemic-installed633-20261101.json).
+
+
+Bounded maintenance SQLite call attribution (2026-11-01)
+
+PR634 is confirmed integrated exactly once as a88c07f32512c7db958316655d8b4d29ed14771c from watched801f41a8/watch356310fb; matching trees44cd403e. Head41357161914 and main41357753289 FIRSTattempt fiveSUCCESS each. Original connector UNKNOWN response preserved; later protected exact-head endpoint plus independent readback confirmed merge. Never replay merge/runtime effects.
+
+Source-only instrumentation: fixed eight call kinds, call/error counts, wall/thread CPU totals and a paired maximum-call interval inside explicit maintenance/retention scopes. Calls belong exclusively to the innermost span; prior scalar phase totals stay inclusive. No SQL, bindings, row values, private identifiers or arbitrary callable names retained. Copy-context thread/lifetime guards prevent stale bucket writes.
+
+77 targeted contracts passed after the final private busy-wait trace synchronization; broader first-outcome tests retained separately. Exception identity, rollback, original SQLITE_BUSY/LOCKED behavior, iterator exhaustion, results, nested scope and captured interval ownership verified. Earlier76/77pass stages retain their original source versions. No additive count or full-branch claim.
+
+Cost is not zero: refined100SELECT+100fetch comparison observeroff baseline/inactive/active p95 .097/.111/.232ms, observeron .199/.204/.289ms. Direct ContextVar refinement did not eliminate inactive cost.180ledger triplets/540receipt calls retain all inactive and active p95 regressions.60maintenance pairs/120calls preserve rows/integrity, but compact medians1.536->1.660ms observeroff and1.605->1.762ms observeron are ADVERSE. All raw results, first variants and outliers remain linked; no blind rerun/GC policy changes or native cause attribution.
+
+First source100mixed retains9600ordered events, zero worker warnings, but maintenance1004.088ms still exceeds500ms. In this single sweep, retentiontransaction31.726ms includes7execute calls8.335ms and commit6.943ms; objectcollection337.119ms includes98execute calls37.665ms; migration289.502ms/finalhealth228.094ms. Full source hashes, all numeric spans, counters and samples retained. Inclusive spans must not be summed; these source observations do not explain prior native13.780s or successfulbusy/physicalIO/GC ownership.
+
+Earlier private retention batching90pairs/3shapes preserved all table values/object bytes but one_hot p95 .475->.568ms,12hot median1.196->1.334ms and12cold p95 2.316->2.345ms were ADVERSE. Candidate remains UNSHIPPED/unadopted and lacks full rollback/publication-race/custom-connection/large-inventory acceptance; tiny warm results do not explain native3second transaction stalls.
+
+Running exact6337fe9/package8a6d/PID13900/startupe880b88c unchanged. Installed1420tests85subtests/70files,19private19additional PASS are separate populations; mixedmaintenance820.080ms and native13780.256ms remain open. Public95ordinaryGETs max158.2205ms passed, but all5full10sessionlists still failed2577875B/read2097153/status_and_encoded_bound, decode/schemaUNVERIFIED under unchanged5s2MiB. No reinstall/restart/current or old effect replay, payload deletion, shortened page, raised deadline/bound, policy/default/model/permission/GC/power/clock change.
+
+All717rows171concerns remain OPEN, original110slow+181runtime115routes and later101ops31routes/eightlongfamilies preserved. Lifetime maxima, bounded windows, log tails and source samples remain distinct. Peer/build/logloss/FDrotation/olderretention/attachment413/unknownreceipt/missingobject/work/screenshot gaps remain. All10attachments intact. Original accepted backup0331 and DB89957 scopes remain CLOSED; no stale retries/manualbackup/restore/forcedpeerrefresh/secretsfallback/cleanup/selfverifier/Done. Exact17d independent_agent_v1 acceptance remains scheduler-owned.
+
+Complete86395926B parent is embedded byte-for-byte, preserving all79 older roots/fields/populations/firstfailures. Current integration, probes, unadopted variants, source bodies, helpers and actual reports are added. Raw private prompts/answers/writers/native/control/status/logXMLZIP stay LOCAL/hash-only; helper allowlist only. Current observations are not a deployed repair or whole-PA performance acceptance.
+
+[Complete source outcomes and prior byte custody](benchmarks/systemic-sqlite-attribution635-20261101.json).

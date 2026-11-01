@@ -15,30 +15,31 @@ from pathlib import Path
 from typing import Any
 
 from pa.core.sqlite_metrics import ObservedConnection
-from pa.core.performance import capture_retention_phases
+from pa.core.performance import capture_retention_phases, capture_sqlite_calls
 from pa.execution.dispatch import DispatchStoreReadOnlyError
 
 logger = logging.getLogger(__name__)
 
 _MAINTENANCE_TIMEOUT_SECONDS = 120.0
 
-_PhaseTimes = dict[str, dict[str, float | int]]
+_PhaseTimes = dict[str, dict[str, Any]]
 
 
 @contextmanager
 def _maintenance_phase(phases: _PhaseTimes, name: str) -> Iterator[None]:
     """Fixed internal phase names; wall/CPU include nested work, not I/O bytes."""
     wall, cpu = time.perf_counter_ns(), time.thread_time_ns()
+    phase = phases.setdefault(name, {
+        "calls": 0, "errors": 0, "wall_ms": 0.0, "thread_cpu_ms": 0.0,
+    })
     errors = 0
     try:
-        yield
+        with capture_sqlite_calls(phase.setdefault("sqlite_call_kinds", {})):
+            yield
     except BaseException:
         errors = 1
         raise
     finally:
-        phase = phases.setdefault(name, {
-            "calls": 0, "errors": 0, "wall_ms": 0.0, "thread_cpu_ms": 0.0,
-        })
         phase["calls"] += 1
         phase["errors"] += errors
         finished = time.perf_counter_ns()
@@ -90,6 +91,14 @@ def _maintain_database_measured(
     # Keep the mapping by reference: close/total finish after a return, including
     # deferred copies of result. Readers see their completed timings, too.
     result: dict[str, Any] = {"compacted": False, "status": "ok", "phases": phases}
+    result["sqlite_call_kind_scope"] = (
+        "Exclusive innermost measured span; up to eight static call kinds, "
+        "attempt counts, wall/thread CPU totals and paired maximum-call interval. "
+        "No SQL/bindings/row values retained. Successful native busy wait and "
+        "physical I/O remain unseparated; existing phase totals are inclusive. "
+        "Connect/close, executescript and native context-manager implicit "
+        "commit/rollback remain outside these observed call records."
+    )
     if stop is not None and stop.is_set():
         return {**result, "status": "deferred", "reason": "stopping"}
     with _maintenance_connection(path, phases) as conn:
@@ -222,6 +231,11 @@ def _run_maintenance_measured(
         "sqlite": {},
         "transcript_storage": {},
         "phases": phases,
+        "sqlite_call_kind_scope": (
+            "Exclusive innermost measured span; up to eight static call kinds. "
+            "Existing phase totals are inclusive; call counts include iterator "
+            "exhaustion, which is not an error. No SQL/parameters/results retained."
+        ),
     }
     if hasattr(store, "migrate_legacy_transcripts"):
         # Migration includes its own fresh health snapshot. The final health

@@ -358645,5 +358645,23 @@
     "resolution": "open",
     "next_actor": "same systemic session/card",
     "next_action": "Diagnose remaining maintenance/retention/shared-lock stalls, adverse independent-session samples and oversized complete payloads with semantic parity; retain all inventories/peer/log gaps and full real-provider acceptance."
+  },
+  "source635_sqlite_attribution_20261101": {
+    "artifact": "docs/benchmarks/systemic-sqlite-attribution635-20261101.json",
+    "complete_bundle": {
+      "path": "docs/benchmarks/systemic-sqlite-attribution635-20261101.raw.json.gz",
+      "bytes": 87857121,
+      "sha256": "68c98f0188f10b3803fa0dda31cb2f203f3ea4a3b917e397b5bedff77becd95e"
+    },
+    "coverage": {
+      "rows": 717,
+      "concerns": 171,
+      "all_open": true,
+      "completion_requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57"
+    },
+    "resolution": "open",
+    "deployment": "Source only; current listener remains exact633",
+    "next_actor": "same systemic session/card",
+    "next_action": "Use bounded attribution to diagnose and implement confirmed maintenance/shared-lock/CPU/I/O causes. Resolve oversized payloads, remaining families and full real-provider/startup/drain/concurrency acceptance; retain adverse and first-failure evidence."
   }
 }
