@@ -1,0 +1,296 @@
+{
+  "contract": "pa.source635-real-copied-context-followup/v1",
+  "reason": "Strengthen thread/lifetime regression to execute actual SQLite calls in a copied context on another thread and after capture exit, in addition to checking bucket accessor. No runtime source change.",
+  "source_parent": "5fe45e3a9c0c813650e97c955e09e57ed1803030",
+  "runtime_sources_unchanged": {
+    "src/pa/core/performance.py": "d9cb628cdcc240c9c070ec9c1fbb9cf3a5722ad3637cce5247ef4f8343559432",
+    "src/pa/core/sqlite_metrics.py": "7fdf3ebbed72eb4605b2ba9b03527be0c784f477833f7f4c4274375cbab907b4",
+    "src/pa/instance/maintenance.py": "779ea2bcdb16a382f113526326c6bbf8bbc216fc323a08a7c4f3c1cd99ccf4a0"
+  },
+  "inputs": {
+    "tests/test_sqlite_call_kinds.py": "\"\"\"Bounded maintenance call timings preserve SQLite and scope ownership.\"\"\"\nimport json\nimport sqlite3\nimport threading\nimport time\nfrom contextlib import closing\nfrom contextvars import copy_context\n\nimport pytest\n\nfrom pa.core.performance import (\n    OperationObservation, capture_retention_phases, capture_sqlite_calls,\n    current_observation, retention_phase, sqlite_call_bucket,\n)\nfrom pa.core.sqlite_metrics import ObservedConnection\nfrom pa.instance.maintenance import _maintain_database\n\n\ndef connection():\n    return sqlite3.connect(':memory:', factory=ObservedConnection)\n\n\ndef test_static_kinds_preserve_rows_exceptions_and_iterator_exhaustion():\n    bucket = {}\n    observation = OperationObservation()\n    token = current_observation.set(observation)\n    try:\n        with closing(connection()) as conn, capture_sqlite_calls(bucket):\n            conn.execute('CREATE TABLE fixture(value)')\n            conn.executemany('INSERT INTO fixture VALUES(?)', [(1,), (2,), (3,)])\n            conn.commit()\n            assert conn.execute('SELECT value FROM fixture ORDER BY value').fetchone() == (1,)\n            assert conn.execute('SELECT value FROM fixture ORDER BY value').fetchmany(2) == [(1,), (2,)]\n            assert conn.execute('SELECT value FROM fixture ORDER BY value').fetchall() == [(1,), (2,), (3,)]\n            assert list(conn.execute('SELECT value FROM fixture ORDER BY value')) == [(1,), (2,), (3,)]\n            with pytest.raises(sqlite3.OperationalError):\n                conn.execute('SELECT private_sql_literal FROM absent_private_table')\n            def private_callable_label():\n                return 'private_result'\n            assert conn._observe(private_callable_label) == 'private_result'\n    finally:\n        current_observation.reset(token)\n    assert set(bucket) == {'execute', 'executemany', 'fetchone', 'fetchmany', 'fetchall', '__next__', 'commit', 'other'}\n    assert bucket['__next__']['calls'] == 4 and bucket['__next__']['errors'] == 0\n    assert bucket['execute']['errors'] == 1\n    assert observation.sqlite_rows == 9\n    serialized = json.dumps(bucket)\n    assert 'private' not in serialized and 'fixture' not in serialized\n    for item in bucket.values():\n        assert item['wall_ms'] >= item['max_wall_ms'] >= 0\n        assert item['thread_cpu_ms'] >= item['max_call_thread_cpu_ms'] >= 0\n        assert item['max_finished_at_monotonic'] >= item['max_started_at_monotonic']\n        assert item['max_wall_ms'] == pytest.approx(1000 * (item['max_finished_at_monotonic'] - item['max_started_at_monotonic']))\n\n\ndef test_nested_repeated_scope_restores_exclusive_owner_even_on_exception():\n    outer, inner = {}, {}\n    with closing(connection()) as conn, capture_sqlite_calls(outer):\n        conn.execute('SELECT 1').fetchone()\n        with pytest.raises(ValueError), capture_sqlite_calls(inner):\n            conn.execute('SELECT 2').fetchone()\n            raise ValueError('fixture')\n        conn.execute('SELECT 3').fetchone()\n    assert sqlite_call_bucket() is None\n    with closing(connection()) as conn, capture_sqlite_calls(inner):\n        conn.execute('SELECT 4').fetchone()\n    assert outer['execute']['calls'] == inner['execute']['calls'] == 2\n    assert outer['fetchone']['calls'] == inner['fetchone']['calls'] == 2\n\n\ndef test_copied_context_cannot_record_on_another_thread_or_after_scope_exit():\n    bucket = {}\n    def read_in_copied_context():\n        with closing(connection()) as conn:\n            assert conn.execute('SELECT 1').fetchone() == (1,)\n        return sqlite_call_bucket()\n    with capture_sqlite_calls(bucket):\n        copied = copy_context()\n        observed = []\n        thread = threading.Thread(target=lambda: copied.run(lambda: observed.append(read_in_copied_context())))\n        thread.start()\n        thread.join(5)\n        assert not thread.is_alive() and observed == [None]\n        escaped = copy_context()\n    assert escaped.run(read_in_copied_context) is None\n    assert bucket == {}\n\n\ndef test_failed_transaction_keeps_exception_identity_and_rolls_back():\n    bucket = {}\n    with closing(connection()) as conn:\n        conn.execute('CREATE TABLE fixture(value UNIQUE)')\n        failure = sqlite3.IntegrityError('private failure')\n        def raise_original():\n            raise failure\n        with pytest.raises(sqlite3.IntegrityError) as caught, capture_sqlite_calls(bucket), conn:\n            conn.execute('INSERT INTO fixture VALUES(1)')\n            conn._observe(raise_original)\n        assert caught.value is failure\n        assert conn.execute('SELECT COUNT(*) FROM fixture').fetchone() == (0,)\n    assert bucket['other']['errors'] == 1\n    assert 'private' not in json.dumps(bucket)\n\n\ndef test_maintenance_and_retention_spans_attribute_only_innermost_calls(tmp_path):\n    path = tmp_path / 'fixture.db'\n    with sqlite3.connect(path) as conn:\n        conn.execute('CREATE TABLE fixture(value)')\n        conn.execute('INSERT INTO fixture VALUES(1)')\n    result = _maintain_database(path)\n    assert result['phases']['size_initial']['sqlite_call_kinds']['execute']['calls'] == 3\n    assert result['phases']['size_initial']['sqlite_call_kinds']['fetchone']['calls'] == 3\n    assert result['phases']['total']['sqlite_call_kinds'] == {}\n    phases = {}\n    with closing(connection()) as conn, capture_retention_phases(phases):\n        with retention_phase('retention_canonical'):\n            conn.execute('SELECT 1').fetchall()\n            with retention_phase('retention_discovery'):\n                conn.execute('SELECT 2').fetchone()\n    assert phases['retention_canonical']['sqlite_call_kinds']['fetchall']['calls'] == 1\n    assert 'fetchone' not in phases['retention_canonical']['sqlite_call_kinds']\n    assert phases['retention_discovery']['sqlite_call_kinds']['fetchone']['calls'] == 1\n    assert sqlite_call_bucket() is None\n\n\ndef test_successful_private_busy_wait_keeps_the_native_result_and_call_interval(tmp_path):\n    path = tmp_path / 'busy.db'\n    with sqlite3.connect(path) as conn:\n        conn.execute('CREATE TABLE fixture(value)')\n    locked, release = threading.Event(), threading.Event()\n    anchors, errors = [], []\n    def writer():\n        try:\n            with closing(sqlite3.connect(path)) as conn:\n                conn.execute('BEGIN IMMEDIATE')\n                locked.set()\n                assert release.wait(5)\n                anchors.append(time.perf_counter())\n                conn.commit()\n        except BaseException as exc:\n            errors.append(exc)\n    thread = threading.Thread(target=writer)\n    thread.start()\n    bucket = {}\n    timer = None\n    try:\n        assert locked.wait(5)\n        with closing(sqlite3.connect(path, factory=ObservedConnection)) as conn:\n            # Private synchronization only: known successful native contention,\n            # without changing production busy/warning/deadline configuration.\n            def traced(sql):\n                nonlocal timer\n                if sql.startswith('INSERT') and timer is None:\n                    timer = threading.Timer(.02, release.set)\n                    timer.start()\n            conn.set_trace_callback(traced)\n            with capture_sqlite_calls(bucket):\n                conn.execute('INSERT INTO fixture VALUES(1)')\n                conn.commit()\n            assert conn.execute('SELECT value FROM fixture').fetchall() == [(1,)]\n    finally:\n        release.set()\n        if timer is not None:\n            timer.join(5)\n        thread.join(5)\n    assert not thread.is_alive() and not errors and anchors\n    call = bucket['execute']\n    assert call['calls'] == 1 and call['errors'] == 0\n    assert call['max_started_at_monotonic'] <= anchors[0] <= call['max_finished_at_monotonic']\n",
+    ".dev/run635_call_kind_contracts_real_context_20261101.py": "\"\"\"Private exact-Python source contracts with PA paths/hash custody.\"\"\"\nimport os,sys,tempfile,json,hashlib,contextlib\nfrom pathlib import Path\nfrom datetime import datetime,timezone\nassert sys.executable=='/Users/petersky/.local/share/uv/tools/pa/bin/python3'\nwith tempfile.TemporaryDirectory(prefix='pa635-contracts-private-')as tmp:\n os.environ.update(PA_DATA_DIR=str(Path(tmp)/'data'),PA_WORKSPACE_ROOT=str(Path(tmp)/'workspaces'),PA_AGENT_ENABLED='false')\n sys.path.insert(0,str(Path('src').resolve()));sys.path.append(str(Path('.venv/lib/python3.14/site-packages').resolve()))\n import pytest\n files=['tests/test_sqlite_call_kinds.py','tests/test_sqlite_cpu_observations.py','tests/test_maintenance_sql_observations.py','tests/test_instance_maintenance.py','tests/test_transcript_prune_batch.py','tests/test_transcript_gc_paths.py','tests/test_transcript_connection_scope.py','tests/test_collaboration_store_observations.py','tests/test_workspace_sql_observations.py']\n out=Path('.dev/call-kind635-source-contracts-real-context-20261101.json');log=out.with_suffix('.log');assert not out.exists()and not log.exists()\n started=datetime.now(timezone.utc).isoformat()\n with log.open('x')as f,contextlib.redirect_stdout(f),contextlib.redirect_stderr(f):code=pytest.main(['-q','-o','pythonpath=','-o','addopts=',*files])\n modules={}\n for name,m in list(sys.modules.items()):\n  if name.startswith('pa.')and getattr(m,'__file__',None)and Path(m.__file__).suffix=='.py':\n   p=Path(m.__file__).resolve();assert p.is_relative_to(Path('src').resolve());modules[name]=dict(path=str(p),sha256=hashlib.sha256(p.read_bytes()).hexdigest())\n value=dict(started_at=started,finished_at=datetime.now(timezone.utc).isoformat(),exit_code=int(code),files=files,modules=modules,private_roots_before_PAimports=True,log_sha256=hashlib.sha256(log.read_bytes()).hexdigest(),scope='Private source contracts, original deadlines/GC/assertions unchanged. Every imported PA path/hash verified; no installed rollout/native acceptance claim.')\n out.write_text(json.dumps(value,indent=2)+'\\n');print(json.dumps({k:v for k,v in value.items()if k!='modules'}));print(log.read_text()[-2500:]);raise SystemExit(code)\n",
+    ".dev/call-kind635-source-contracts-real-context-20261101.json": {
+      "started_at": "2026-11-01T22:51:38.162394+00:00",
+      "finished_at": "2026-11-01T22:51:40.043330+00:00",
+      "exit_code": 0,
+      "files": [
+        "tests/test_sqlite_call_kinds.py",
+        "tests/test_sqlite_cpu_observations.py",
+        "tests/test_maintenance_sql_observations.py",
+        "tests/test_instance_maintenance.py",
+        "tests/test_transcript_prune_batch.py",
+        "tests/test_transcript_gc_paths.py",
+        "tests/test_transcript_connection_scope.py",
+        "tests/test_collaboration_store_observations.py",
+        "tests/test_workspace_sql_observations.py"
+      ],
+      "modules": {
+        "pa.core": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/core/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "pa.core.performance": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/core/performance.py",
+          "sha256": "d9cb628cdcc240c9c070ec9c1fbb9cf3a5722ad3637cce5247ef4f8343559432"
+        },
+        "pa.core.sqlite_metrics": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/core/sqlite_metrics.py",
+          "sha256": "7fdf3ebbed72eb4605b2ba9b03527be0c784f477833f7f4c4274375cbab907b4"
+        },
+        "pa.instance": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/instance/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "pa.execution": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/execution/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "pa.core.operation_budget": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/core/operation_budget.py",
+          "sha256": "999886d7601472b87274f5503fab032f8bb59ec3cc50f662c4b197de1ac6fea4"
+        },
+        "pa.core.async_runtime": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/core/async_runtime.py",
+          "sha256": "a6c3124d7522e0198dedd2927e00715391e71b6ed4d2cc972fe5bbb5ffac7ca1"
+        },
+        "pa.core.background": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/core/background.py",
+          "sha256": "478d0d375038af65eb56fbea4447dd3c938f75ce73c90cdc0da3dc249e0bdb66"
+        },
+        "pa.core.io": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/core/io.py",
+          "sha256": "df89c8e5fd47c9cf9051fc016824c81ec278b31648ff67018bbe41a1141c1c34"
+        },
+        "pa.domain": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/domain/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "pa.domain.notifications": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/domain/notifications.py",
+          "sha256": "f0a195d34894a0b48a27e69c465f6abda1767f17a1d75b637b048d091980717b"
+        },
+        "pa.execution.post_turn": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/execution/post_turn.py",
+          "sha256": "2a07fb4bacccf4cf8aa596d2059944c3c5d532d7b291a5f6034162f9dd233b36"
+        },
+        "pa.execution.progress": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/execution/progress.py",
+          "sha256": "e9b7bcdd74320f1e2da5c8d09dc54255fe942e15f01825f66f58e899ff600434"
+        },
+        "pa.execution.selection": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/execution/selection.py",
+          "sha256": "e57894cbc164633ce8446934c8a512ce98ff19152e20306fa3cce1936582253a"
+        },
+        "pa.fleet": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/fleet/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "pa.fleet.capacity": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/fleet/capacity.py",
+          "sha256": "010f2b59ba4f0cbe6f0e4e0d5d210b350e22ea329a79e2b874cece651fba28ad"
+        },
+        "pa.domain.models": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/domain/models.py",
+          "sha256": "cd803abf222f617483856a987c977b6991841215c202b2931ca34814eeba2e29"
+        },
+        "pa.goals.materialization": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/goals/materialization.py",
+          "sha256": "e45c9e444d2b3a3066a74242bc64f31498e266bb6ca947ddaafc6222a2f9934f"
+        },
+        "pa.goals.models": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/goals/models.py",
+          "sha256": "695e62c40beb62f0901e6146b6425bf74260aa5a128006313008f7aeb8742ab6"
+        },
+        "pa.goals.advanced_models": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/goals/advanced_models.py",
+          "sha256": "516e303714e3cc64ecb6c8ee542b62bec99f9c52fe4de3be1f1375177589137f"
+        },
+        "pa.goals.idempotency": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/goals/idempotency.py",
+          "sha256": "16ee3d2be02072260181fb2340579e0f67617cb9e7bf35afe7c1156923f56723"
+        },
+        "pa.goals.projection": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/goals/projection.py",
+          "sha256": "accae6b8bb15af0d22d7fc4fab278f368b52227f61ce6adba815a4f798240ab4"
+        },
+        "pa.goals.providers": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/goals/providers.py",
+          "sha256": "972fc9cd73fcbb28c19ca222e5c39eed0e1627d12c13cb10514326341347014e"
+        },
+        "pa.goals.service": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/goals/service.py",
+          "sha256": "6fc4f0008bc49442727d70629a6d49411229500e5846a20210a23f54b3ed8130"
+        },
+        "pa.goals.governance": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/goals/governance.py",
+          "sha256": "aa2bd2cd4927bab4ef72d9fc4a16b83721d6795278dc2add0f36bb1f7503edfd"
+        },
+        "pa.goals": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/goals/__init__.py",
+          "sha256": "3cedb6cbcc402b96af4c755667ec5ddb056f65a0aa48a8e549884c642667053e"
+        },
+        "pa.execution.dispatch": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/execution/dispatch.py",
+          "sha256": "81988a943b9848246759cf1feb6867b0c251f98f4d0ed405794dc9b42f546649"
+        },
+        "pa.instance.maintenance": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/instance/maintenance.py",
+          "sha256": "779ea2bcdb16a382f113526326c6bbf8bbc216fc323a08a7c4f3c1cd99ccf4a0"
+        },
+        "pa.domain.instance_config": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/domain/instance_config.py",
+          "sha256": "9e978327ea4eb640ab7808564f80993c773187b21c2bd07627280c2711b7562d"
+        },
+        "pa.config": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/config.py",
+          "sha256": "43f4df8467ff12af4ba47eb36338382a2c75bff3d75dedc1b55fdbd076fe5de7"
+        },
+        "pa.domain.transcript_storage": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/domain/transcript_storage.py",
+          "sha256": "89ed4ade240cd884830aa0642e7515e5c4a8e51067adce4fda1e0eeab2ab237e"
+        },
+        "pa.workloads": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/workloads.py",
+          "sha256": "89199462d3037fbfc76306f5389d9e1dc083d6a4fd4fe1c500af37badbcb37fe"
+        },
+        "pa.fleet.policy": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/fleet/policy.py",
+          "sha256": "c8e524e9f3058fe3ceef7cafe932325f638829ff9a23ac626f1a4d4812fa18c7"
+        },
+        "pa.sync": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/sync/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "pa.sync.dag_index": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/sync/dag_index.py",
+          "sha256": "22455f5957c1bc21715b7e30ff8f3d476495382d6b4b7dc362b543cd6f070d8a"
+        },
+        "pa.sync.object_store": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/sync/object_store.py",
+          "sha256": "1b7660c2e28e881d207efa0f5f7fd0dcd3280889438c13d03a15f5af0ae1812b"
+        },
+        "pa.sync.event_log": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/sync/event_log.py",
+          "sha256": "0ac99f8e55e466d3d6621dbeb6bfa42b0ac56358bbb1a41c3d7828120604b19a"
+        },
+        "pa.domain.projection": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/domain/projection.py",
+          "sha256": "d8475728a8981ab2b87f4f5cec9dc5459e38e311b2e4b915d6ec89c89186306e"
+        },
+        "pa.collaboration.models": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/collaboration/models.py",
+          "sha256": "864919846356a32e84e9f5e83b9e4bc99a66db5d13da06720d17a1ab539d9b8d"
+        },
+        "pa.collaboration": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/collaboration/__init__.py",
+          "sha256": "3efd80f9622ebc130390b94342773bdc4213c7b676019af9a48e4d45779bb8bf"
+        },
+        "pa.collaboration.store": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/collaboration/store.py",
+          "sha256": "ed181db778fd9e687400393abca7f557e859506ede5d17d0c3334af3eb5ebad2"
+        },
+        "pa.core.subprocesses": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/core/subprocesses.py",
+          "sha256": "393fa373185ceb1b774c6f0db01de94db6ec86cfb4c3cfda02d65fa3bf1145ce"
+        },
+        "pa.repository.state": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/repository/state.py",
+          "sha256": "134bc98c01d469e3b4ead7a7a16d32598fe67b5c22fa1447fcfe757061fffafa"
+        },
+        "pa.repository": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/repository/__init__.py",
+          "sha256": "b913c516f697a1702218b8c5d7c6c2db9ab357b2c70d61677e206a630dcb538a"
+        },
+        "pa.repository.workspace": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/repository/workspace.py",
+          "sha256": "0e4b835a4a7533911c5f8e900bfc7b1d8176f6217b38a45b85369f1dec4de12f"
+        },
+        "pa.intake.models": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/intake/models.py",
+          "sha256": "c06577fbc0d928310d8e97b5e5e6d6950269a017a5cd4e9b8760d46b9de7e011"
+        },
+        "pa.attachments": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/attachments.py",
+          "sha256": "10afe0792b5c22a352466c5e31fca6137284686a567274bffec3b75307667822"
+        },
+        "pa.intake.projection": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/intake/projection.py",
+          "sha256": "8c814591ab0c5acd74e9870ad93a872f0fb83903117d82c25afd801a7b52e158"
+        },
+        "pa.intake.security": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/intake/security.py",
+          "sha256": "ddde31d3a48698e162d6f4d9e8565beec247e3e8fd753a02a491022e1bd04406"
+        },
+        "pa.intake.transports": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/intake/transports.py",
+          "sha256": "fe78fb01bc5a7392dd738b81b92f5df0629322363ffe140ecc829bf145f0f31c"
+        },
+        "pa.intake.service": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/intake/service.py",
+          "sha256": "3f95f90d5fcf884c02b8a686e804f26ffc3e5cd2d86fab9e9f921c79d44be54b"
+        },
+        "pa.intake": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/intake/__init__.py",
+          "sha256": "aa23fef3a14722d8139fe78ae5e43521b725f221f57f2cbf195c8c6e5eab8df7"
+        },
+        "pa.limbic.models": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/limbic/models.py",
+          "sha256": "c6820321c5d1e82146e0ec0a0b622d3a6d330d1c4624b49908b5096c6605d2a9"
+        },
+        "pa.limbic.projection": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/limbic/projection.py",
+          "sha256": "0b1aafcea951d2bd9ba47d8bd574a81c37f3d3cbe858779af5854cf7a7301a04"
+        },
+        "pa.limbic.appraisal": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/limbic/appraisal.py",
+          "sha256": "33df8d281459bb1e17a21390666928ee854e598253f42b733a004e8d0af80c84"
+        },
+        "pa.limbic.memory": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/limbic/memory.py",
+          "sha256": "dbd937012ef1678d740ac62c02cf44bae50bc78a04c5c19a665f051fc23a113b"
+        },
+        "pa.limbic": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/limbic/__init__.py",
+          "sha256": "072b28de05d53f7744c477248fa9f24de3a513fd9b93b6c86da1039085d52cbe"
+        },
+        "pa.domain.completion": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/domain/completion.py",
+          "sha256": "d90f3d62b5439c4df14881ae038a71b566ce03f8a0abf93592482f7e22d5428e"
+        },
+        "pa.configuration.registry": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/configuration/registry.py",
+          "sha256": "638e92b3a1d26c35f61350ffbd1a34268cea34e093148d3aacd493e64ec6cdfd"
+        },
+        "pa.configuration": {
+          "path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/configuration/__init__.py",
+          "sha256": "3eb0786ea8475e3047cdab4a59acf8dd19607ead6e02f06f78b33e76866b32a1"
+        }
+      },
+      "private_roots_before_PAimports": true,
+      "log_sha256": "2fbde9637befaf4893aa1c663c7e0846422f3e1d154b92a73416bc908099389f",
+      "scope": "Private source contracts, original deadlines/GC/assertions unchanged. Every imported PA path/hash verified; no installed rollout/native acceptance claim."
+    }
+  },
+  "input_manifest": {
+    "tests/test_sqlite_call_kinds.py": {
+      "bytes": 7698,
+      "sha256": "3d50d49ed3b7a418fae9292b97fb15cadacc9ff30a9fb0ab851fceb997d51649"
+    },
+    ".dev/run635_call_kind_contracts_real_context_20261101.py": {
+      "bytes": 2181,
+      "sha256": "2e1dcfb2da7b82aa05079dcb3ae3c50f58a8cd81b92b734e4eaa0f7162d0f3ac"
+    },
+    ".dev/call-kind635-source-contracts-real-context-20261101.json": {
+      "bytes": 18436,
+      "sha256": "1c6316825542d1c3ea7171cc19d96bc78a0a6934fa3080316331932163846bca"
+    }
+  },
+  "local_only_log": {
+    ".dev/call-kind635-source-contracts-real-context-20261101.log": {
+      "bytes": 179,
+      "sha256": "2fbde9637befaf4893aa1c663c7e0846422f3e1d154b92a73416bc908099389f"
+    }
+  },
+  "scope": "New contract revision77PASS; no blind workload rerun. All previous first-outcome contract versions remain in87857121B complete bundle, whose historical input manifest refers to its original test version. Existing mixed/overhead runtime module hashes still match unchanged source. Current helper and test body published completely here; no private prompts/native/control/log bytes."
+}
