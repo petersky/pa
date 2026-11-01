@@ -79,11 +79,11 @@ class GitInspector:
         self.timeout = timeout
 
     def _run(self, path: Path, *args: str, check: bool = True) -> str:
+        # Preserve machine Git authentication, proxy and certificate configuration.
         env = os.environ.copy()
         env.update(
             GIT_OPTIONAL_LOCKS="0",
             GIT_TERMINAL_PROMPT="0",
-            GIT_CONFIG_NOSYSTEM="1",
         )
         try:
             result = subprocess.run(
@@ -113,11 +113,11 @@ class GitInspector:
     async def _run_async(
         self, path: Path, *args: str, check: bool = True
     ) -> str:
+        # Preserve machine Git authentication, proxy and certificate configuration.
         env = os.environ.copy()
         env.update(
             GIT_OPTIONAL_LOCKS="0",
             GIT_TERMINAL_PROMPT="0",
-            GIT_CONFIG_NOSYSTEM="1",
         )
         try:
             result = await run_process(

@@ -460,10 +460,10 @@ class WorkspaceManager:
         timeout: int = 300,
         check: bool = True,
     ) -> subprocess.CompletedProcess[str]:
+        # Preserve machine Git authentication, proxy and certificate configuration.
         env = os.environ.copy()
         env.update(
             GIT_TERMINAL_PROMPT="0",
-            GIT_CONFIG_NOSYSTEM="1",
             GIT_LFS_SKIP_SMUDGE="1",
         )
         try:
