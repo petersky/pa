@@ -6948,3 +6948,28 @@ Exact17dindependent policy unpaused/unaccepted; cardWaiting, verification_pendin
 Complete74107650Bparent andallolderfullsource/activation/failure layers preserved unchanged. Newcapture/preparationmatching-order failure andmissingdriver beforeinventory retained; no capture rerun or retrospectiveattribution. Raw native/card/privateprompt/writer/log/XML/ZIP/quarantine bodies LOCAL/hash-onlypublic.
 
 [Every retained slow-operation/source quantile, page family, access count, numeric phase and coverage gap](benchmarks/systemic-current627-log-inventory-20261031.json). PR629 is integrated; the running service remains PR627. All 716 findings and 170 concerns remain open.
+
+
+Installed PR630 outcomes (2026-11-01)
+
+Exact630 activated ONCE via original213c6a2a complete/attempt1; native0b3/package1984/PID28674/startup5b31d7b3/config86968/lease358. No additional install/restart/default/model/config/GC/power/clock changes or oldeffect replay.
+
+First68files1332tests85subtests PASS;19private/18additional contracts PASS. Sequentialstagebrackets retained; publicrequests start after additionalfinishes. No idlehost/PAsoleCPU/physicalIO/fullrealprovider claim.
+
+Mixed1009600ordered retained events/zero workerwarnings; maintenance810.058ms>500 persists. Fullfirstphase/latency/bytes/order/modulehash populations retained; modulepresence not wholebranch coverage.
+
+95ordinaryGETs max173.668ms/zero500msviolations.5summaryfull250rows1170926B/8encoding8cachedFleetPASS. All5full10listsFAIL HTTP200 Content-Length2623563/read2097153/status_and_encoded_bound/nodecode/schemaunverified; firstcorrelationb79fae97-5e93-4425-8fa6-85cfd1e1a826. Original5s2MiB/pages unchanged, no rerun/thresholdincrease/durabledata deletion.
+
+Ownership100alternatingpairs/200batches exactdurablefences/metrics; opens300to100/live300to0. Baseline/candidatep50.510to.565ms ADVERSE; p95.704to.683/max.839to.800ms. Baselinecleanupaftertimers/candidateinside, notfull-lifecycle/physicalIO/speedup/nativeGCcause proof. Old629p95/maxADVERSE and allpriorpopulations preserved.
+
+Native109operations21families39routes148CSVrows/1slowtail64failedtail4failedHTTP; alloperations/routes/counts/bytes/percentiles/max retained. Lifetimecounters/maxima,last256windows,boundedtails/logranges distinct; no warningcountfrommaxima/pooledfamilyquantiles/exhaustivefleet claim.
+
+Native lifetimemax>=500: fleetagent695.470/Fleet4005.119/PRpeer5009.499/maintenance9808.788/syncpeer3039.501/workspaceGC1098.872/provision1256.002ms. Fleet75failed/timedout/PRpeer7/syncpeer6/provision2failed; categoriesnotrootcauses. Remote logs/builds unverified.
+
+Naturalcachedmaintenance2026-11-01T00:41:19.004695–28.813578Z retainsallinclusivephaseSQLCPUintervals, projectionVACUUM2081.872ms amongnestedphases. Do not suminclusive/repeatedspans orassignsoleVACUUM/successfulbusy/physicalIO/CPU/GC/Git/filelock/connectclose causality. Allprevious627/626/88/618/616/612/608profiles remain.
+
+Complete75893497Bparent and allolderfullsource/activation/failure layers byte-identically embedded, everyfield/adverse/firstfailure preserved. Rawprivateprompts/writers/native/control/answers/status/card/logXMLZIP/quarantineddrafts LOCAL/hashonly; tenattachments unchanged.
+
+All716rows170concerns remainOPEN under17d independent_agent_v1 scheduler-owned acceptance. Originalacceptedbackup/DB scopes remainclosed; allpeer/logloss/FDrotation/retention/unknownreceipts/attachment413/missingobject/work/notification/fullrealKernel/provider/MCP/placement/admission/startup/drain/concurrency/pageAPI concerns remain. No selfverifier/fabricatedmilestones/Done/CASloops/worktreecleanup.
+
+[Complete numeric outcomes, every operation/route row, comparison and prior evidence](benchmarks/systemic-installed630-outcomes-20261101.json).
