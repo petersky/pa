@@ -358621,5 +358621,29 @@
     ],
     "next_actor": "same systemic session/card",
     "next_action": "Integrate only after current corrected head independently green; preserve first failures/GC open; prepare exact package and request new correlated runtime authorization before any effect."
+  },
+  "installed633_outcomes_20261101": {
+    "artifact": "docs/benchmarks/systemic-installed633-20261101.json",
+    "bundle": {
+      "path": "docs/benchmarks/systemic-installed633-20261101.raw.json.gz",
+      "bytes": 86395926,
+      "sha256": "105389886f04a1b52e1d52369d205787640432bfaacfd6938a886fa147e51d00"
+    },
+    "coverage": {
+      "rows": 717,
+      "concerns": 171,
+      "all_open": true,
+      "completion_requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57"
+    },
+    "runtime_build": {
+      "loaded_module_version": "1.5.9",
+      "source_revision": "7fe9e94f024bac953464c80c7d79681f87dfa6aa",
+      "package_identity": "sha256:8a6d671b85137f2539eefae73951c4bde80794d8e11dc9699e53645b19f8d300",
+      "pid": 13900,
+      "startup_id": "e880b88c-1872-49b9-a49c-e9f2533ea216"
+    },
+    "resolution": "open",
+    "next_actor": "same systemic session/card",
+    "next_action": "Diagnose remaining maintenance/retention/shared-lock stalls, adverse independent-session samples and oversized complete payloads with semantic parity; retain all inventories/peer/log gaps and full real-provider acceptance."
   }
 }

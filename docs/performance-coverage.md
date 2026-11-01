@@ -7021,3 +7021,22 @@ Complete78963195B parent/allolder layers embedded byte-identically; full actual 
 Currentowner still source0b3/package1984/PID28674/startup5b31d7b3; no additional build/install/restart or oldeffect replay. Reviewed future target still needs fresh correlated authorization beyond630. Independent17d acceptance, maintenance/payload/peer/logloss/FD/retention/unknownreceipts/missingobject/work/fullKernel/provider/MCP/placement/startup/drain/concurrency/pageAPI gaps remain. Accepted original backup/DB scopes stayclosed; no cleanup/policy/CASloops/selfverifier.
 
 [Complete numeric first failure, fixture proof, every prior layer](benchmarks/systemic-pr633-first-ci-recovery-20261101.json).
+
+
+Exact633 activation and first installed outcomes (2026-11-01)
+
+Original633 installation and managed handoff executed once; effectcomplete/continuation_delivered/attempt1 independently verified. Exact7fe9/package8a6d loaded PID13900/startupe880b88c; configuration86968,solelease358,nice0,Interactive4,absolute installedinterpreter unchanged.439source440RECORD38templates52dependencyversions verified. No old or ambiguous effects replayed.
+
+First installed70file contracts:1420tests85subtestsPASS;19private19additional stagesPASS. These populations are separate and overlap existing suites; no additive test-count or full-path claim.100mixed retains9600ordered rows/zero workerwarnings but maintenance820.080ms exceeds500; cold10 uses fakeprovider only. Full realKernel/provider/MCP/placement/admission/startup/drain/peer acceptance remains open.
+
+New120alternatingpair shared-watch comparison:ASCII hydration910->100,p95166.128->26.333ms;Unicode hydration910->100,p95915.928->108.031ms. Full values/order/dump ownership retained. Independent p9512.067->20.396ms,max12.071->24.117ms ADVERSE (candidate high sampleswall24.117/CPU16.656 and20.396/15.974); allocation/GC/scheduling ownership unassigned. Empty p502.924->2.996msADVERSE, p954.139->3.869. All raw samples retained, no blindrerun or normalGC change. Watch-only bytes60876082/180151602/6689413/151 are not fullHTTP response acceptance.
+
+Public95ordinaryGETsPASS,max158.2205ms,zero500msviolations;5summary1175106B schemaPASS;8encoding8cachedFleetPASS. ALL5full10sessionlistsFAIL unchanged2MiB bound:HTTP200Content-Length2577875/read2097153/status_and_encoded_bound/nodecode/JSONschemaUNVERIFIED. Different rolling selected-session populations prevent attributing payload change from6302623563B to this repair. No raised deadline/bound, shortened page, data deletion, warning suppression or response-content capture.
+
+Cached naturalstartup maintenance22:16:40.170986–22:16:53.951363Z approximately13.780s remains slow. Full inclusive phase intervals and SQLite statement/CPU/lock observations retained; retentiontransaction3066.885ms,canonical3937.911ms include nested work. No summing inclusive spans or soleVACUUM/nativebusy/physicalIO/GCownership inference. Metadata byte-size differences are not physical writes.
+
+Fresh exactowner runtime collection retains all101operations/20prefixfamilies/31routes/132CSVrows,4slowworker-tail/64failedoperation-tail/3failedHTTP-tail. Lifetime counters/maxima, bounded phase/request windows and tails remain distinct; no warning-count inference from maxima or exhaustivefleet/log-retention claim. All prior local/peer/logloss/FD/rotation/unknownreceipt/attachment413/missingobject/work/screenshot gaps retained.
+
+Complete83609437B/faaab553 parent embeds COMPLETE80804555B and ALL older first failures/adverse/source/activation stages; every new actual outcome/helper/fullnumeric inventory added losslessly. Native/private prompts/writers/answers/control/logXMLZIP LOCAL/hash-only. All717rows171concerns remain OPEN,10attachments preserved,17d independent_agent_v1 scheduler acceptance unaccepted. Accepted original backup0331/DB89957 scopes stayCLOSED; no staleOct17retry/manualbackup/restore/forcedpeerrefresh/secretsfallback/cleanup/selfverifier/Done/policychanges.
+
+[Full installed outcomes and complete prior byte custody](benchmarks/systemic-installed633-20261101.json).
