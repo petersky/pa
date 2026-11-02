@@ -253436,6 +253436,29 @@
       "resolution": "open",
       "next_actor": "same systemic card/session",
       "next_action": "Retain original failure and verify corrected-headCI without changing loop bounds/GC. Continue native/provider acceptance separately."
+    },
+    {
+      "id": "concern:transcript-duplicate-session-sequence-index",
+      "kind": "concern",
+      "finding": "Canonical transcript maintains duplicate session/sequence indexes",
+      "family": "transcript",
+      "cause_classification": "confirmed_redundant_index_and_logical_write_amplification_native_latency_unassigned",
+      "cause": "The table UNIQUE(session_id,seq) creates a native ascending BINARY index and the original explicit index duplicates its key. Exact source comparisons remove24720 logical WAL file bytes for512append events and49440 for5000-event pruning. This is not physical I/O or proof of the native latency root cause.",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "implemented": "Guarded source migration and fresh-schema setup; verify native UNIQUE key order/collation/origin/partial metadata, revalidate under a writer claim, preserve custom/fallback indexes. Local candidate, not yet integrated/deployed.",
+      "measurement": {
+        "source_artifact": "docs/benchmarks/systemic-transcript-sequence-index637-20261101.json",
+        "source_comparison": "60alternatingpairs/4shapes; full table/object equality, integrity and foreign keys; archive59ec _init_db baseline; every other class method AST identical",
+        "large_private_migration": "809926rows unchanged,4.847ms migration,4277logical pages freed; logical WAL28872B, not physicalIO",
+        "tests": "103targeted +1455broader/85subtests in74files, overlapping; retained100pass1fail initial persistent-interrupt fixture and corrected direct/worker-owned disposal contracts",
+        "adverse": "Actual source hotappend max7.026->22.277ms and coldappend median55.140->55.317ms remain; no universal latency improvement claim"
+      },
+      "merged": [],
+      "deployed": "Not deployed; runtime remains6357dd/package768. Evidence-only PR636 is separately integrated59ec.",
+      "retested": "Private source/guard/index-scale tests only. Installed migration/current native/user payload/startup/provider paths remain unverified.",
+      "resolution": "open",
+      "next_actor": "same systemic session/card",
+      "next_action": "Complete protected review/integration; prepare immutable package and fresh scoped activation guards without reusing635consent; retest installed migration, cold start/drain, mixed load and full inventory/acceptance. All prior rows remain open."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -358678,5 +358701,24 @@
     "acceptance": "independent_agent_v1 scheduler-owned/unaccepted. Originalaccepted backup0331/DB89957 scopes remainclosed.",
     "unshipped_probes": "Audit top-k150pairs improves sparse/no-audit histories but regresses tiny/expired-size/dense; no source adoption or native cause claim. Older adverse prototypes preserved.",
     "custody": "Complete90988085B parent/all82olderlayers plus actual later integration/handoff/continuation/settlement/first retests/helpers retained; raw private prompts/answers/writers/native/control/status/logXMLZIP/wheel LOCAL/hashonly."
+  },
+  "source637_duplicate_index_stage_20261101": {
+    "artifact": "docs/benchmarks/systemic-transcript-sequence-index637-20261101.json",
+    "rows": 718,
+    "concerns": 172,
+    "all_open": true,
+    "prior_rows_unchanged": 717,
+    "prior_complete_bundle": "docs/benchmarks/systemic-installed635-20261101.raw.json.gz",
+    "scope": "Source repair of confirmed duplicate index/write amplification only; current runtime635 unchanged; every performance residual and exact17d scheduler acceptance remains open."
+  },
+  "current_status": {
+    "as_of": "2026-11-02T01:16:17.492793+00:00",
+    "rows": 718,
+    "concerns": 172,
+    "all_open": true,
+    "runtime_source": "7dd4493311a1726addf7c30e5a862b0ebe5a4faa",
+    "current_source_stage": "source637_duplicate_index_stage_20261101",
+    "current_artifact": "docs/benchmarks/systemic-transcript-sequence-index637-20261101.json",
+    "scope": "Current overlay; historical top-level as_of/completion and older stage labels retained unchanged. Evidence-only PR636 integrated59ec; new index source candidate unintegrated/undeployed; independent17d scheduler acceptance unaccepted."
   }
 }

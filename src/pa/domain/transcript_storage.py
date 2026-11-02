@@ -46,6 +46,55 @@ _AUDIT_TYPES = {
 }
 
 
+def _ensure_session_sequence_index(conn: sqlite3.Connection) -> bool:
+    """Keep one native B-tree for the canonical session/sequence key.
+
+    The UNIQUE constraint already supplies the ordinary ascending BINARY key.
+    Preserve custom/legacy indexes unless SQLite proves that exact redundancy;
+    tables without the constraint still receive the original fallback index.
+    """
+    name = "idx_transcript_events_session_seq"
+    expected = [("session_id", 0, "BINARY"), ("seq", 0, "BINARY")]
+
+    def matches(index_name: str) -> bool:
+        quoted = '"' + index_name.replace('"', '""') + '"'
+        return [(row[2], row[3], row[4]) for row in conn.execute(
+            "PRAGMA index_xinfo(" + quoted + ")"
+        ) if row[5]] == expected
+
+    def state() -> tuple[bool, bool]:
+        indexes = list(conn.execute("PRAGMA index_list(transcript_events)"))
+        covered = any(row[2] and row[3] == "u" and not row[4] and matches(row[1])
+                      for row in indexes)
+        duplicate = any(row[1] == name and not row[2] and row[3] == "c"
+                        and not row[4] and matches(row[1]) for row in indexes)
+        return covered, duplicate
+
+    covered, duplicate = state()
+    if not covered:
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_transcript_events_session_seq "
+                     "ON transcript_events(session_id, seq)")
+        return False
+    if not duplicate:
+        return False
+    # Only the one-time verified migration needs a write claim. Recheck under
+    # it so concurrent initializers cannot change the proof before the DDL.
+    owned_transaction = not conn.in_transaction
+    if owned_transaction:
+        conn.execute("BEGIN IMMEDIATE")
+    try:
+        covered, duplicate = state()
+        if covered and duplicate:
+            conn.execute("DROP INDEX IF EXISTS idx_transcript_events_session_seq")
+        if owned_transaction:
+            conn.commit()
+    except BaseException:
+        if owned_transaction:
+            conn.rollback()
+        raise
+    return covered and duplicate
+
+
 def _canonical_json(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode()
 
@@ -181,8 +230,6 @@ class TranscriptStorage:
                     schema_version INTEGER NOT NULL DEFAULT 1,
                     UNIQUE(session_id, seq)
                 );
-                CREATE INDEX IF NOT EXISTS idx_transcript_events_session_seq
-                    ON transcript_events(session_id, seq);
                 CREATE INDEX IF NOT EXISTS idx_transcript_events_session_type_seq
                     ON transcript_events(session_id, event_type, seq);
                 CREATE INDEX IF NOT EXISTS idx_transcript_events_cold_hash
@@ -214,6 +261,7 @@ class TranscriptStorage:
                 );
                 PRAGMA user_version=1;
             """)
+            _ensure_session_sequence_index(conn)
 
     def _object_path(self, digest: str) -> Path:
         return self.objects_dir / digest[:2] / f"{digest[2:]}.zlib"

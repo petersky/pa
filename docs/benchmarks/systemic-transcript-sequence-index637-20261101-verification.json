@@ -1,0 +1,575 @@
+{
+  "contract": "pa.source637-complete-source-custody-verification/v1",
+  "reader_body": "\"\"\"Fully decode every retained gzip/raw JSON layer and verify current byte custody.\"\"\"\nimport base64, gzip, hashlib, json, time\nfrom pathlib import Path\nout = Path('.dev/source637-complete-input-read-20261101.json'); assert not out.exists()\nsummary = json.loads(Path('docs/benchmarks/systemic-transcript-sequence-index637-20261101.json').read_bytes())\nmeta = summary['complete_lossless_bundle']; raw = Path(meta['path']).read_bytes()\nassert len(raw) == meta['bytes'] and hashlib.sha256(raw).hexdigest() == meta['sha256']\npending = [raw]; roots, embedded, layers, nodes = [], [], [], 0; seen = set(); start = time.perf_counter()\ndef chain(value):\n    while isinstance(value, dict):\n        layers.append(dict(contract=value.get('contract'), inputs=len(value.get('inputs', {}))))\n        value = value.get('previous_lossless_bundle')\ndef walk(value):\n    global nodes\n    nodes += 1\n    if isinstance(value, dict):\n        if isinstance(value.get('gzip_base64'), str):\n            packed = base64.b64decode(value['gzip_base64'], validate=True)\n            digest = hashlib.sha256(packed).hexdigest()\n            assert len(packed) == value['bytes'] and digest == value['sha256']\n            embedded.append(dict(path=value.get('path'), bytes=len(packed), sha256=digest))\n            if digest not in seen: pending.append(packed)\n        for child in value.values(): walk(child)\n    elif isinstance(value, list):\n        for child in value: walk(child)\nwhile pending:\n    packed = pending.pop(); digest = hashlib.sha256(packed).hexdigest()\n    if digest in seen: continue\n    seen.add(digest); value = json.loads(gzip.decompress(packed)); chain(value); walk(value)\n    roots.append(dict(bytes=len(packed), sha256=digest, contract=value.get('contract')))\n    if len(roots) == 1:\n        for name, expected in value['input_manifest'].items():\n            actual = Path(name).read_bytes(); assert len(actual) == expected['bytes'] and hashlib.sha256(actual).hexdigest() == expected['sha256'], name\n            assert '.LOCAL.' not in name and Path(name).suffix not in ('.log', '.xml', '.zip')\n        current_inputs = len(value['input_manifest']); private_count = len(value['local_only_custody'])\n        for name, expected in value['local_only_custody'].items():\n            actual = Path(name).read_bytes(); assert len(actual) == expected['bytes'] and hashlib.sha256(actual).hexdigest() == expected['sha256'], name\n    del value, packed\nassert len(layers) >= 84\nresult = dict(bundle=meta, fully_decoded_layers=layers, compressed_roots=roots, embedded_byte_custody=embedded, json_nodes_read=nodes, current_inputs_verified=current_inputs, local_hash_only_inputs_verified=private_count, elapsed_seconds=time.perf_counter()-start, scope='Every field in all retained gzip/base64/raw previous_lossless JSON layers decoded. Complete byte identity and every current public/private input hash checked. No private native/control/prompts/writers/log/XML/ZIP bytes published. No PA imports or effects; full history and unknown/first/adverse outcomes retained.')\nout.write_text(json.dumps(result, indent=2)+'\\n'); print(json.dumps(dict(layers=len(layers), compressed_roots=len(roots), current_inputs=current_inputs, local_custody=private_count, bundle=meta)))\n",
+  "reader_sha256": "7e65b6befda1f09fa188ba8c6e75c9c299d39e089c4e7c1c75f16b2b6cab82da",
+  "complete_read_proof": {
+    "bundle": {
+      "path": "docs/benchmarks/systemic-transcript-sequence-index637-20261101.raw.json.gz",
+      "bytes": 94991431,
+      "sha256": "75e7cdc2a4aa6c970f51549188449b46032eb5bbbb6546f00c279958d574e654"
+    },
+    "fully_decoded_layers": [
+      {
+        "contract": "pa.lossless-transcript-sequence-index-source/v1",
+        "inputs": 38
+      },
+      {
+        "contract": "pa.lossless-installed635-outcomes/v1",
+        "inputs": 231
+      },
+      {
+        "contract": "pa.lossless-exact635-installed-handoff-inputs/v1",
+        "inputs": 63
+      },
+      {
+        "contract": "pa.lossless-exact635-runtime-review-inputs/v1",
+        "inputs": 32
+      },
+      {
+        "contract": "pa.lossless-source635-sqlite-attribution/v1",
+        "inputs": 46
+      },
+      {
+        "contract": "pa.lossless-installed633-complete-extra-custody/v1",
+        "inputs": 26
+      },
+      {
+        "contract": "pa.lossless-installed633-outcomes/v1",
+        "inputs": 92
+      },
+      {
+        "contract": "pa.lossless-exact633-installed-inputs/v1",
+        "inputs": 115
+      },
+      {
+        "contract": "pa.lossless-runtime633-review-inputs/v1",
+        "inputs": 34
+      },
+      {
+        "contract": "pa.lossless-pr633-first-ci-recovery/v1",
+        "inputs": 38
+      },
+      {
+        "contract": "pa.lossless-full-watch-shared-batch632/v1",
+        "inputs": 36
+      },
+      {
+        "contract": "pa.lossless-installed630-outcomes/v1",
+        "inputs": 152
+      },
+      {
+        "contract": "pa.lossless-exact630-install-preactivation-inputs/v1",
+        "inputs": 68
+      },
+      {
+        "contract": "pa.lossless-current627-log-and-integrations/v1",
+        "inputs": 22
+      },
+      {
+        "contract": "pa.lossless-workspace-connection-ownership-source/v1",
+        "inputs": 47
+      },
+      {
+        "contract": "pa.lossless-installed627-outcomes/v1",
+        "inputs": 144
+      },
+      {
+        "contract": "pa.lossless-exact627-install-preactivation-inputs/v1",
+        "inputs": 87
+      },
+      {
+        "contract": "pa.lossless-workspace-own-sql-observations-stage/v1",
+        "inputs": 141
+      },
+      {
+        "contract": "pa.lossless-exact626-install-preactivation-inputs/v1",
+        "inputs": 99
+      },
+      {
+        "contract": "pa.lossless-workspace-recovery-read-stage/v1",
+        "inputs": 42
+      },
+      {
+        "contract": "pa.lossless-current88-installed-log-diagnostics/v1",
+        "inputs": 117
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 79
+      },
+      {
+        "contract": "pa.lossless-main620-first-failure-stage/v1",
+        "inputs": 57
+      },
+      {
+        "contract": "pa.lossless-workspace-gc-hydration-corrected-stage/v1",
+        "inputs": 2
+      },
+      {
+        "contract": "pa.lossless-workspace-gc-hydration-stage/v1",
+        "inputs": 46
+      },
+      {
+        "contract": "pa.lossless-installed618-activation-stage/v1",
+        "inputs": 202
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 122
+      },
+      {
+        "contract": "pa.lossless-retention-summary-detail-correction/v1",
+        "inputs": 4
+      },
+      {
+        "contract": "pa.lossless-maintenance-phase-alignment-stage/v1",
+        "inputs": 128
+      },
+      {
+        "contract": "pa.collaboration-store-lossless-source-stage/v1",
+        "inputs": 108
+      },
+      {
+        "contract": "pa.lossless617-successor-input-bundle/v1",
+        "inputs": 28
+      },
+      {
+        "contract": "pa.installed616-lossless-stage-inputs/v1",
+        "inputs": 248
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 159
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 97
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 83
+      },
+      {
+        "contract": "pa.installed614-lossless-stage-inputs/v1",
+        "inputs": 139
+      },
+      {
+        "contract": "pa.exact614-install-handoff-lossless-inputs/v1",
+        "inputs": 76
+      },
+      {
+        "contract": "pa.pr614-integrated-preparation-lossless-inputs/v1",
+        "inputs": 46
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 6
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 55
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 126
+      },
+      {
+        "contract": "pa.exact612-install-handoff-lossless-inputs/v1",
+        "inputs": 59
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 16
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 32
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 16
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 8
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 19
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 30
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 17
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 66
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 20
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 19
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 12
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 14
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 64
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 30
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 12
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 16
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 54
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 37
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 11
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 15
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 8
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 8
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 50
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 32
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 22
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 20
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 18
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 53
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 33
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 3
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 9
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 44
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 32
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 13
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 19
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 32
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 31
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 50
+      },
+      {
+        "contract": "pa.exact596-source-integration-install-inputs/v1",
+        "inputs": 22
+      },
+      {
+        "contract": "pa.lossless-performance-input-bundle/v1",
+        "inputs": 47
+      },
+      {
+        "contract": "pa.exact595-source-integration-install-inputs/v1",
+        "inputs": 16
+      },
+      {
+        "contract": "pa.pr595-source-integration-package-inputs/v1",
+        "inputs": 11
+      }
+    ],
+    "compressed_roots": [
+      {
+        "bytes": 94991431,
+        "sha256": "75e7cdc2a4aa6c970f51549188449b46032eb5bbbb6546f00c279958d574e654",
+        "contract": "pa.lossless-transcript-sequence-index-source/v1"
+      },
+      {
+        "bytes": 92862337,
+        "sha256": "ad0e0db4a05ff6eff19000eb6a8dcb5545fcf74c1227820350e0f55467bcbb2e",
+        "contract": "pa.lossless-installed635-outcomes/v1"
+      },
+      {
+        "bytes": 90988085,
+        "sha256": "94f2057a4c2199a6a9b01c7ba8ba854800341ce209ef471166d6ddb0fcd6b158",
+        "contract": "pa.lossless-exact635-installed-handoff-inputs/v1"
+      },
+      {
+        "bytes": 89802653,
+        "sha256": "4d28ec522a0eb972e8f00604deeadd9181103bbca58dfcbe4d3dc45ec977645d",
+        "contract": "pa.lossless-exact635-runtime-review-inputs/v1"
+      },
+      {
+        "bytes": 87857121,
+        "sha256": "68c98f0188f10b3803fa0dda31cb2f203f3ea4a3b917e397b5bedff77becd95e",
+        "contract": "pa.lossless-source635-sqlite-attribution/v1"
+      },
+      {
+        "bytes": 86395926,
+        "sha256": "105389886f04a1b52e1d52369d205787640432bfaacfd6938a886fa147e51d00",
+        "contract": "pa.lossless-installed633-complete-extra-custody/v1"
+      },
+      {
+        "bytes": 85450620,
+        "sha256": "6c374190698fa6e48cd84fd0e98a47d28a24273b38499f8e224430b532834cb5",
+        "contract": "pa.lossless-installed633-outcomes/v1"
+      },
+      {
+        "bytes": 83609437,
+        "sha256": "faaab5537ab5f8ab6228b54eadbfb9fab64777d5ae4571bc4573870f2f1f618b",
+        "contract": "pa.lossless-exact633-installed-inputs/v1"
+      },
+      {
+        "bytes": 80804555,
+        "sha256": "75ace8a452a74b239f67a869f397d30e77342ea6ea7e8285197295eaa0d087ef",
+        "contract": "pa.lossless-runtime633-review-inputs/v1"
+      },
+      {
+        "bytes": 79934323,
+        "sha256": "002bc9de2454099ffa8967aad8f7552b0e7e8db018f3a99fa42f06b8eed6a300",
+        "contract": "pa.lossless-pr633-first-ci-recovery/v1"
+      },
+      {
+        "bytes": 78963195,
+        "sha256": "0ac4aa8321169cfd5af6200b73abad92d44f3d623e3dd02c00fe5417e0cdb158",
+        "contract": "pa.lossless-full-watch-shared-batch632/v1"
+      },
+      {
+        "bytes": 77920345,
+        "sha256": "c13d45b8a43983eb8ce20a9a8f3f65926166e1cf484dd806b3948d7c8870b465",
+        "contract": "pa.lossless-installed630-outcomes/v1"
+      },
+      {
+        "bytes": 75893497,
+        "sha256": "ef2f272b964321e5f84216ed4294007834440b2d096971a2e4371fb3f0375c54",
+        "contract": "pa.lossless-exact630-install-preactivation-inputs/v1"
+      },
+      {
+        "bytes": 74901717,
+        "sha256": "93794c2bd2b2ba7f3a4e3a9364e84e0d2f969a448f81474781aab267b350d462",
+        "contract": "pa.lossless-current627-log-and-integrations/v1"
+      },
+      {
+        "bytes": 74107650,
+        "sha256": "d0bd189b7de2037cae643d2219c1a5e21519cacdb54f444e9512446a9848e640",
+        "contract": "pa.lossless-workspace-connection-ownership-source/v1"
+      },
+      {
+        "bytes": 73191978,
+        "sha256": "00d5d6a73bb52c39b6c88602c7ffb36de699b87bcf13768398b6b3d9c68516ad",
+        "contract": "pa.lossless-installed627-outcomes/v1"
+      },
+      {
+        "bytes": 70998181,
+        "sha256": "f758b894fc3d08bfde030fa7e7766f494882b7ed71d3433103b576b51d7ec1f0",
+        "contract": "pa.lossless-exact627-install-preactivation-inputs/v1"
+      },
+      {
+        "bytes": 70019082,
+        "sha256": "7201d3453904181207888443a15bf25b7bb1fdfb91cd7be53ea1152f2a6918be",
+        "contract": "pa.lossless-workspace-own-sql-observations-stage/v1"
+      },
+      {
+        "bytes": 67614947,
+        "sha256": "5d5998970ac00c554ff15debc6ec80b9bfa80bd936d4296b1ec10e6ed20bb44d",
+        "contract": "pa.lossless-exact626-install-preactivation-inputs/v1"
+      },
+      {
+        "bytes": 66640407,
+        "sha256": "80792e61b52c88a15e75b98650cf426249b46513dd7f3566597da3b463ea431d",
+        "contract": "pa.lossless-workspace-recovery-read-stage/v1"
+      },
+      {
+        "bytes": 65713179,
+        "sha256": "5e4130afa3e02fd3a24dde02c017e691a9d87a7c6cd2979864a1cfdb5e0b5d3d",
+        "contract": "pa.lossless-current88-installed-log-diagnostics/v1"
+      },
+      {
+        "bytes": 64295402,
+        "sha256": "2b654c4e6ddce03461216ef271e38c2f65fefe73c82deb658e246bf448b2394a",
+        "contract": "pa.lossless-performance-input-bundle/v1"
+      }
+    ],
+    "embedded_byte_custody": [
+      {
+        "path": "docs/benchmarks/systemic-installed635-20261101.raw.json.gz",
+        "bytes": 92862337,
+        "sha256": "ad0e0db4a05ff6eff19000eb6a8dcb5545fcf74c1227820350e0f55467bcbb2e"
+      },
+      {
+        "path": ".dev/exact635-installed-handoff-inputs-20261101.raw.json.gz",
+        "bytes": 90988085,
+        "sha256": "94f2057a4c2199a6a9b01c7ba8ba854800341ce209ef471166d6ddb0fcd6b158"
+      },
+      {
+        "path": ".dev/exact635-runtime-review-inputs-20261101.raw.json.gz",
+        "bytes": 89802653,
+        "sha256": "4d28ec522a0eb972e8f00604deeadd9181103bbca58dfcbe4d3dc45ec977645d"
+      },
+      {
+        "path": "docs/benchmarks/systemic-sqlite-attribution635-20261101.raw.json.gz",
+        "bytes": 87857121,
+        "sha256": "68c98f0188f10b3803fa0dda31cb2f203f3ea4a3b917e397b5bedff77becd95e"
+      },
+      {
+        "path": "docs/benchmarks/systemic-installed633-20261101.raw.json.gz",
+        "bytes": 86395926,
+        "sha256": "105389886f04a1b52e1d52369d205787640432bfaacfd6938a886fa147e51d00"
+      },
+      {
+        "path": ".dev/exact633-first-installed-publication-20261101.raw.json.gz",
+        "bytes": 85450620,
+        "sha256": "6c374190698fa6e48cd84fd0e98a47d28a24273b38499f8e224430b532834cb5"
+      },
+      {
+        "path": ".dev/exact633-installed-handoff-inputs-20261101.raw.json.gz",
+        "bytes": 83609437,
+        "sha256": "faaab5537ab5f8ab6228b54eadbfb9fab64777d5ae4571bc4573870f2f1f618b"
+      },
+      {
+        "path": ".dev/exact633-review-action-inputs-20261101.raw.json.gz",
+        "bytes": 80804555,
+        "sha256": "75ace8a452a74b239f67a869f397d30e77342ea6ea7e8285197295eaa0d087ef"
+      },
+      {
+        "path": "docs/benchmarks/systemic-pr633-first-ci-recovery-20261101.raw.json.gz",
+        "bytes": 79934323,
+        "sha256": "002bc9de2454099ffa8967aad8f7552b0e7e8db018f3a99fa42f06b8eed6a300"
+      },
+      {
+        "path": "docs/benchmarks/systemic-full-watch-batch632-20261101.raw.json.gz",
+        "bytes": 78963195,
+        "sha256": "0ac4aa8321169cfd5af6200b73abad92d44f3d623e3dd02c00fe5417e0cdb158"
+      },
+      {
+        "path": "docs/benchmarks/systemic-installed630-outcomes-20261101.raw.json.gz",
+        "bytes": 77920345,
+        "sha256": "c13d45b8a43983eb8ce20a9a8f3f65926166e1cf484dd806b3948d7c8870b465"
+      },
+      {
+        "path": ".dev/exact630-install-handoff-inputs-20261031.raw.json.gz",
+        "bytes": 75893497,
+        "sha256": "ef2f272b964321e5f84216ed4294007834440b2d096971a2e4371fb3f0375c54"
+      },
+      {
+        "path": "docs/benchmarks/systemic-current627-log-inventory-20261031.raw.json.gz",
+        "bytes": 74901717,
+        "sha256": "93794c2bd2b2ba7f3a4e3a9364e84e0d2f969a448f81474781aab267b350d462"
+      },
+      {
+        "path": "docs/benchmarks/systemic-workspace-connection-ownership-20261031.raw.json.gz",
+        "bytes": 74107650,
+        "sha256": "d0bd189b7de2037cae643d2219c1a5e21519cacdb54f444e9512446a9848e640"
+      },
+      {
+        "path": "docs/benchmarks/systemic-installed627-outcomes-20261031.raw.json.gz",
+        "bytes": 73191978,
+        "sha256": "00d5d6a73bb52c39b6c88602c7ffb36de699b87bcf13768398b6b3d9c68516ad"
+      },
+      {
+        "path": ".dev/exact627-install-handoff-inputs-20261031.raw.json.gz",
+        "bytes": 70998181,
+        "sha256": "f758b894fc3d08bfde030fa7e7766f494882b7ed71d3433103b576b51d7ec1f0"
+      },
+      {
+        "path": "docs/benchmarks/systemic-workspace-sql-observations-20261031.raw.json.gz",
+        "bytes": 70019082,
+        "sha256": "7201d3453904181207888443a15bf25b7bb1fdfb91cd7be53ea1152f2a6918be"
+      },
+      {
+        "path": ".dev/exact626-install-handoff-inputs-20261031.raw.json.gz",
+        "bytes": 67614947,
+        "sha256": "5d5998970ac00c554ff15debc6ec80b9bfa80bd936d4296b1ec10e6ed20bb44d"
+      },
+      {
+        "path": "docs/benchmarks/systemic-workspace-recovery-reads-20261031.raw.json.gz",
+        "bytes": 66640407,
+        "sha256": "80792e61b52c88a15e75b98650cf426249b46513dd7f3566597da3b463ea431d"
+      },
+      {
+        "path": "docs/benchmarks/systemic-current88-log-diagnostics-20261031.raw.json.gz",
+        "bytes": 65713179,
+        "sha256": "5e4130afa3e02fd3a24dde02c017e691a9d87a7c6cd2979864a1cfdb5e0b5d3d"
+      },
+      {
+        "path": ".dev/exact621-install-handoff-inputs-20261029.raw.json.gz",
+        "bytes": 64295402,
+        "sha256": "2b654c4e6ddce03461216ef271e38c2f65fefe73c82deb658e246bf448b2394a"
+      }
+    ],
+    "json_nodes_read": 27522747,
+    "current_inputs_verified": 38,
+    "local_hash_only_inputs_verified": 15,
+    "elapsed_seconds": 16.813821041956544,
+    "scope": "Every field in all retained gzip/base64/raw previous_lossless JSON layers decoded. Complete byte identity and every current public/private input hash checked. No private native/control/prompts/writers/log/XML/ZIP bytes published. No PA imports or effects; full history and unknown/first/adverse outcomes retained."
+  },
+  "scope": "All84lossless layers/22compressed roots and every actual38public15private input fully decoded/hash checked; private raw controls remain local/hash-only. Existing717rows preserved exactly, one confirmed concern appended;718rows172concerns allopen."
+}
