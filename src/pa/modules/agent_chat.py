@@ -1950,7 +1950,9 @@ async def list_agent_sessions_http(
             request, view, archived, activity_filter, limit, selected_session_id, detail
         )
         started = perf_counter()
-        body = json.dumps(items, default=str).encode()
+        # Escape lone surrogates without rendering again or repeating default=str.
+        body = json.dumps(items, default=str, ensure_ascii=False,
+                          separators=(",", ":")).encode("utf-8", "backslashreplace")
         runtime = getattr(manager, "async_runtime", None)
         if isinstance(runtime, AsyncRuntime):
             runtime.work_metrics.record("http.session_list.serialization_ms", (perf_counter() - started) * 1000)

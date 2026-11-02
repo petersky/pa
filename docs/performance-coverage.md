@@ -1,3 +1,17 @@
+## Current status — session wire source638, 2026-11-02
+
+**All718 findings /172 concerns remain open.** PR637 is integrated at2db5c50f with equal source/merge trees and first5success head+main checks; it is uninstalled. The running service remains exact635. [Complete current evidence and immutable history](benchmarks/systemic-session-wire638-20261101.json) retains all earlier fields, first failures and adverse populations. The JSON ledger's current overlay supersedes the historical status labels below.
+
+The session-list route now renders complete compact UTF-8 JSON, preserving lone surrogates as escapes without rendering twice. Selection/filter/limit/detail, decoded values, array/key order, default=str calls/errors, off-loop work, metrics and headers remain unchanged. In150 alternating source-route pairs across5private shapes, Unicode bytes3934760→1640711 and p952.674→2.192ms improve; ASCII p951.687→1.932ms and structured4.638→5.416ms are **adverse**. Surrogate/custom timing regressions and every raw sample/CPU/max remain retained. This reduces wire amplification; it is not a universal latency improvement.
+
+117 targeted tests pass. A separate75-file source run passes1471 tests/85 subtests, with overlap. The initial107-pass/10-fail result is retained: the new fixture incorrectly looked up a flat metrics snapshot after its response-value/order/header/selection checks passed. Only that fixture lookup was corrected to the existing nested metrics map; runtime and assertions were unchanged.
+
+The unchanged100-iteration source mixed scenario retains9600 ordered events; warnings and every threshold violation are recorded in the linked numeric artifact. Maintenance maximum is870.031ms; source638, source637870.717ms, installed635785.292ms and native11257.285ms are separate populations. **All five native635 full10-session responses still fail the unchanged2MiB bound** (2604696B; read2097153; no decoder/schema proof). The contribution of638 to that native payload is unverified until separate authorized activation/retest.
+
+All broader real Kernel/provider/MCP/placement/admission/startup/drain/concurrency/pageAPI, shared maintenance/lock/offCPU/physicalIO/GC, peer/logloss/retention/FD/missingobject/unknownreceipt/work/screenshot gaps remain. The original accepted backup0331/database89957 scopes remain closed; independent17d acceptance stays scheduler-owned/unaccepted. Latest-source integration, one immutable package, current guards and new scoped authorization are required before runtime changes;635 consent/effects are consumed. No new install/restart/default/policy/threshold change or whole-PA acceptance.
+
+The following historical records remain unchanged.
+
 ## Current status — 2026-11-02
 
 **718 findings /172 concerns remain open.** The running service is exact635; its settled activation and first retests are published through merged evidence-only PR636. The guarded duplicate transcript-index repair below is a new source candidate, with no deployment or whole-PA acceptance. [Current source evidence and complete history](benchmarks/systemic-transcript-sequence-index637-20261101.json) preserves all earlier populations and every first failure/adverse result. The current status overlay in the JSON ledger takes precedence over historical snapshot labels retained below.

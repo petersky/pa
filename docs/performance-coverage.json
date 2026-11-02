@@ -171829,7 +171829,61 @@
         },
         "scope": "Registered-route process totals and bounded windows; explicit request samples retained separately"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "source638_complete_wire_followup": {
+        "artifact": "docs/benchmarks/systemic-session-wire638-20261101.json",
+        "source_base": "2db5c50f2fa2e841dbeb3d5789abc6c7b5fb135e",
+        "runtime_source": "7dd4493311a1726addf7c30e5a862b0ebe5a4faa",
+        "repair": "Complete compact UTF-8 JSON; surrogate-safe single rendering, default=str once per occurrence. Selection/filter/limit/detail/array-key order/metrics/offload/errors/headers unchanged. No field/page reduction or bound increase.",
+        "source_tests": {
+          "targeted": 117,
+          "broader": 1471,
+          "subtests": 85,
+          "files": 75,
+          "overlapping": true
+        },
+        "first_fixture_failure": "107pass10fail; new fixture assumed flat metrics map. Nested metrics lookup corrected without changing runtime or removing assertions. Original outcome/body/log retained.",
+        "source_comparison": {
+          "pairs": 150,
+          "shapes": 5,
+          "full_values_order": true,
+          "unicode_bytes": [
+            3934760,
+            1640711
+          ],
+          "unicode_p95_ms": [
+            2.674,
+            2.192
+          ],
+          "ascii_p95_ms": [
+            1.687,
+            1.932
+          ],
+          "structured_p95_ms": [
+            4.638,
+            5.416
+          ],
+          "adverse": "ASCII/structured/surrogate/custom timings retained; not a universal speedup."
+        },
+        "mixed": {
+          "ordered_events": 9600,
+          "warnings": {},
+          "threshold_violations": {
+            "maintenance.run": 1
+          },
+          "maintenance": {
+            "samples": 1,
+            "max_ms": 870.031,
+            "p50_ms": 870.031,
+            "p95_ms": 870.031,
+            "p99_ms": 870.031
+          }
+        },
+        "integration": "source638 not integrated at measurement;637 protected integration2db/head6899/watchd0fec/head41371952641/main41372616970 first5success each.",
+        "deployed": "No638/637 installed; exact635 remains active. Original635 authority/effects consumed once, fresh package/guards/scoped authority required.",
+        "native_residual": "All5installed635 full10 responses2604696B/read2097153/status_and_encoded_bound/no decode/schemaunverified. Native payload composition and638 effect unverified.",
+        "acceptance": "All718rows172concerns OPEN; exact17d independent_agent_v1 scheduler-owned/unaccepted; original accepted backup0331/DB89957 scopes CLOSED. FullrealKernel/provider/MCP/admission/startup/drain/concurrency/pageAPI/peer/logloss/FD/retention/unknownreceipt/missingobject/screenshot and shared-maintenance/offCPU/IO/GC gaps retained."
+      }
     },
     {
       "id": "route:/api/status",
@@ -185131,6 +185185,60 @@
         "source_observer_deployment": "not yet",
         "scope": "Complete prior numeric populations retained separately; scoped activation/retests do not satisfy whole-PA acceptance. Every prior field remains historical and unchanged.",
         "next_action": "Protect and integrate bounded failure evidence through exact supervisor/head+main checks; continue maintenance/native wait and all peer/provider/full startup obligations. No subsequent install/restart before positive current-handoff settlement."
+      },
+      "source638_complete_wire_followup": {
+        "artifact": "docs/benchmarks/systemic-session-wire638-20261101.json",
+        "source_base": "2db5c50f2fa2e841dbeb3d5789abc6c7b5fb135e",
+        "runtime_source": "7dd4493311a1726addf7c30e5a862b0ebe5a4faa",
+        "repair": "Complete compact UTF-8 JSON; surrogate-safe single rendering, default=str once per occurrence. Selection/filter/limit/detail/array-key order/metrics/offload/errors/headers unchanged. No field/page reduction or bound increase.",
+        "source_tests": {
+          "targeted": 117,
+          "broader": 1471,
+          "subtests": 85,
+          "files": 75,
+          "overlapping": true
+        },
+        "first_fixture_failure": "107pass10fail; new fixture assumed flat metrics map. Nested metrics lookup corrected without changing runtime or removing assertions. Original outcome/body/log retained.",
+        "source_comparison": {
+          "pairs": 150,
+          "shapes": 5,
+          "full_values_order": true,
+          "unicode_bytes": [
+            3934760,
+            1640711
+          ],
+          "unicode_p95_ms": [
+            2.674,
+            2.192
+          ],
+          "ascii_p95_ms": [
+            1.687,
+            1.932
+          ],
+          "structured_p95_ms": [
+            4.638,
+            5.416
+          ],
+          "adverse": "ASCII/structured/surrogate/custom timings retained; not a universal speedup."
+        },
+        "mixed": {
+          "ordered_events": 9600,
+          "warnings": {},
+          "threshold_violations": {
+            "maintenance.run": 1
+          },
+          "maintenance": {
+            "samples": 1,
+            "max_ms": 870.031,
+            "p50_ms": 870.031,
+            "p95_ms": 870.031,
+            "p99_ms": 870.031
+          }
+        },
+        "integration": "source638 not integrated at measurement;637 protected integration2db/head6899/watchd0fec/head41371952641/main41372616970 first5success each.",
+        "deployed": "No638/637 installed; exact635 remains active. Original635 authority/effects consumed once, fresh package/guards/scoped authority required.",
+        "native_residual": "All5installed635 full10 responses2604696B/read2097153/status_and_encoded_bound/no decode/schemaunverified. Native payload composition and638 effect unverified.",
+        "acceptance": "All718rows172concerns OPEN; exact17d independent_agent_v1 scheduler-owned/unaccepted; original accepted backup0331/DB89957 scopes CLOSED. FullrealKernel/provider/MCP/admission/startup/drain/concurrency/pageAPI/peer/logloss/FD/retention/unknownreceipt/missingobject/screenshot and shared-maintenance/offCPU/IO/GC gaps retained."
       }
     },
     {
@@ -358712,6 +358820,70 @@
     "scope": "Source repair of confirmed duplicate index/write amplification only; current runtime635 unchanged; every performance residual and exact17d scheduler acceptance remains open."
   },
   "current_status": {
+    "as_of": "2026-11-02T01:38:35.085438+00:00",
+    "rows": 718,
+    "concerns": 172,
+    "all_open": true,
+    "runtime_source": "7dd4493311a1726addf7c30e5a862b0ebe5a4faa",
+    "current_source_stage": "source638_session_wire_stage_20261101",
+    "current_artifact": "docs/benchmarks/systemic-session-wire638-20261101.json",
+    "scope": "Current overlay; all historical top-level/stage labels preserved.637 integrated and uninstalled;638 source candidate unintegrated/undeployed at measurement; independent17d acceptance remains unaccepted."
+  },
+  "source638_session_wire_stage_20261101": {
+    "artifact": "docs/benchmarks/systemic-session-wire638-20261101.json",
+    "source_base": "2db5c50f2fa2e841dbeb3d5789abc6c7b5fb135e",
+    "runtime_source": "7dd4493311a1726addf7c30e5a862b0ebe5a4faa",
+    "repair": "Complete compact UTF-8 JSON; surrogate-safe single rendering, default=str once per occurrence. Selection/filter/limit/detail/array-key order/metrics/offload/errors/headers unchanged. No field/page reduction or bound increase.",
+    "source_tests": {
+      "targeted": 117,
+      "broader": 1471,
+      "subtests": 85,
+      "files": 75,
+      "overlapping": true
+    },
+    "first_fixture_failure": "107pass10fail; new fixture assumed flat metrics map. Nested metrics lookup corrected without changing runtime or removing assertions. Original outcome/body/log retained.",
+    "source_comparison": {
+      "pairs": 150,
+      "shapes": 5,
+      "full_values_order": true,
+      "unicode_bytes": [
+        3934760,
+        1640711
+      ],
+      "unicode_p95_ms": [
+        2.674,
+        2.192
+      ],
+      "ascii_p95_ms": [
+        1.687,
+        1.932
+      ],
+      "structured_p95_ms": [
+        4.638,
+        5.416
+      ],
+      "adverse": "ASCII/structured/surrogate/custom timings retained; not a universal speedup."
+    },
+    "mixed": {
+      "ordered_events": 9600,
+      "warnings": {},
+      "threshold_violations": {
+        "maintenance.run": 1
+      },
+      "maintenance": {
+        "samples": 1,
+        "max_ms": 870.031,
+        "p50_ms": 870.031,
+        "p95_ms": 870.031,
+        "p99_ms": 870.031
+      }
+    },
+    "integration": "source638 not integrated at measurement;637 protected integration2db/head6899/watchd0fec/head41371952641/main41372616970 first5success each.",
+    "deployed": "No638/637 installed; exact635 remains active. Original635 authority/effects consumed once, fresh package/guards/scoped authority required.",
+    "native_residual": "All5installed635 full10 responses2604696B/read2097153/status_and_encoded_bound/no decode/schemaunverified. Native payload composition and638 effect unverified.",
+    "acceptance": "All718rows172concerns OPEN; exact17d independent_agent_v1 scheduler-owned/unaccepted; original accepted backup0331/DB89957 scopes CLOSED. FullrealKernel/provider/MCP/admission/startup/drain/concurrency/pageAPI/peer/logloss/FD/retention/unknownreceipt/missingobject/screenshot and shared-maintenance/offCPU/IO/GC gaps retained."
+  },
+  "current_status_before_source638": {
     "as_of": "2026-11-02T01:16:17.492793+00:00",
     "rows": 718,
     "concerns": 172,
