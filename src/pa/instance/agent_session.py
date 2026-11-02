@@ -3732,7 +3732,7 @@ class AgentSessionManager:
                     "worktree_paths": [lease.worktree_path for lease in leases],
                     "lease_ids": [lease.id for lease in leases],
                     "branch": first.branch,
-                    "base_sha": first.base_sha,
+                    **({"base_sha": first.base_sha} if first.base_sha != "pending" else {}),
                     "cwd": first.worktree_path,
                     "origin_instance_id": session.origin_instance_id,
                     "legacy_mismatch": bool(
@@ -3956,6 +3956,33 @@ class AgentSessionManager:
                 key for key, value in materialized.items()
                 if key in binding and binding[key] != value
             ]
+            # Old legacy recovery copied the provisioning sentinel into the
+            # binding before Git had resolved any commit. Resolve only that
+            # sentinel, and only against the exact same verified lease set.
+            pending_base_resolved = (
+                mismatches == ["base_sha"]
+                and binding.get("base_sha") == "pending"
+                and not session.external_session_id
+                and bool(repos)
+                and binding.get("repository_ids") == materialized["repository_ids"]
+                and binding.get("lease_ids") == materialized["lease_ids"]
+                and binding.get("worktree_paths") == materialized["worktree_paths"]
+                and binding.get("branch") == materialized["branch"]
+                and all(r.get("base_sha") not in (None, "pending", "") for r in repos)
+            )
+            if pending_base_resolved:
+                resolved_binding = {**binding, "base_sha": materialized["base_sha"]}
+                await self._offload(
+                    "sqlite.execution_binding_pending_base_resolve",
+                    self.store.set_session_execution_binding,
+                    session.id, resolved_binding,
+                    reason="workspace_pending_base_resolved",
+                    expected_binding=persisted_binding,
+                )
+                binding = resolved_binding
+                persisted_binding = dict(binding)
+                session.execution_binding = dict(binding)
+                mismatches = []
             if mismatches:
                 raise WorkspaceBindingMismatch(
                     "Original execution binding differs in: " + ", ".join(mismatches)

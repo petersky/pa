@@ -5055,6 +5055,7 @@ class CardProjection:
             "workspace_binding_initialized",
             "workspace_materialized",
             "legacy_workspace_recovered",
+            "workspace_pending_base_resolved",
             "stale_data_dir_cwd_removed",
             "missing_cwd_removed",
         }
@@ -5079,6 +5080,20 @@ class CardProjection:
                 "legacy_workspace_recovered",
             }:
                 permitted = not prior
+            elif reason == "workspace_pending_base_resolved":
+                expected = {**prior, "base_sha": normalized.get("base_sha")}
+                base = normalized.get("base_sha")
+                permitted = (
+                    prior.get("base_sha") == "pending"
+                    and isinstance(base, str)
+                    and len(base) in {40, 64}
+                    and all(c in "0123456789abcdef" for c in base)
+                    and normalized == expected
+                    and bool(prior.get("lease_ids"))
+                    and bool(prior.get("repository_ids"))
+                    and bool(prior.get("worktree_paths"))
+                    and bool(prior.get("branch"))
+                )
             elif reason == "workspace_materialized":
                 permitted = bool(prior) and self._binding_materialization_is_compatible(
                     prior, normalized

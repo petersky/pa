@@ -532,6 +532,35 @@ def test_structured_validation_sensitive_redaction_cancel_and_expiry(
         InteractionResponse(idempotency_key="oversized", value="x" * 70_000)
 
 
+def test_workspace_blocker_retains_response_and_delivery_can_resume_once(tmp_path: Path) -> None:
+    from pa.instance.agent_session import WorkspaceBindingMismatch
+
+    service = _kernel(tmp_path).ctx.require_service("notifications")
+    notice = _create(service, interaction=_interaction())
+
+    def blocked(_response):
+        raise WorkspaceBindingMismatch("Original execution binding differs in: base_sha")
+
+    service.register_delivery_handler(notice.id, blocked)
+    with pytest.raises(NotificationConflict) as error:
+        asyncio.run(service.respond(notice, InteractionResponse(
+            idempotency_key="answer", value="recorded answer"), principal_id="user:local"))
+    failed = error.value.notification
+    assert failed.interaction.response == "recorded answer"
+    assert failed.interaction.delivery_retryable is False
+    assert failed.interaction.delivery_recovery_action
+    delivered = []
+    service.register_delivery_handler(notice.id, lambda response: delivered.append(response.value))
+    result = asyncio.run(service.respond(failed, InteractionResponse(
+        idempotency_key="retry", retry=True), principal_id="user:local"))
+    assert result.interaction.delivered_at
+    assert result.interaction.delivery_retryable
+    assert result.interaction.delivery_recovery_action is None
+    asyncio.run(service.respond(result, InteractionResponse(
+        idempotency_key="retry", retry=True), principal_id="user:local"))
+    assert delivered == ["recorded answer"]
+
+
 def test_failed_delivery_can_only_retry_the_same_response(tmp_path: Path) -> None:
     service = _kernel(tmp_path).ctx.require_service("notifications")
     notice = _create(

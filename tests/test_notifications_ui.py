@@ -74,6 +74,13 @@ global.document = {
 global.EventSource = function () {};
 require(path);
 const ui = window.PANotificationsTest;
+const blocker = ui.interactionControls({id: "blocked", interaction: {
+  state: "failed", delivery_retryable: false,
+  delivery_recovery_action: "Restore <original> workspace"
+}});
+assert.ok(blocker.includes("Response recorded"));
+assert.ok(blocker.includes("Restore &lt;original&gt; workspace"));
+assert.ok(!blocker.includes("data-notification-retry"));
 const tail = "END-OF-LONG-MARKDOWN";
 const body = "# Heading\n\n- one\n- two\n\n<script>alert(1)</script>" + "x".repeat(12000) + tail;
 const bodyHtml = ui.bodyMarkup({ id: "notice-1", summary: "Summary", body: body });

@@ -874,8 +874,13 @@ class WorkspaceManager:
             raise WorkspaceProvisioningError(
                 "Session is already fenced to a different card or project"
             )
+        # Collection removes a checkout, not its provenance. Reuse its original
+        # base and branch; resolving today's default branch would retarget a
+        # continuation after cleanup. Admission fencing still runs above.
         if existing and existing.state == "cleaned":
-            existing = None
+            existing.completed = False
+            existing.merged = False
+            existing.fencing_token = self._next_fence(repository.id)
         previous_state = existing.state if existing else None
         lease = existing or WorkspaceLease(
             id=hashlib.sha256(f"{repository.id}\0{session_id}".encode()).hexdigest(),

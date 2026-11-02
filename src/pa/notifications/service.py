@@ -7,6 +7,7 @@ import hashlib
 import inspect
 import json
 import threading
+from pathlib import Path
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -748,9 +749,25 @@ class NotificationService:
         old_runtime = manager.get(old.id)
         if old_runtime is not None and not old_runtime._closed:
             reject("Original session has a live runtime")
+        # A native provider ID can survive collection of its Git context. An
+        # explicit same-card transfer may preserve the answer when that closed
+        # source is blocked and its cleaned lease no longer proves its base.
+        original_binding = old.execution_binding or {}
+        leases = [lease for lease in manager.workspace_manager.list() if lease.session_id == old.id]
+        workspace_lost = (
+            old.status == "closed"
+            and old.config_json.get("provisioning", {}).get("error_code") == "workspace_binding_mismatch"
+            and bool(original_binding.get("base_sha"))
+            and original_binding.get("base_sha") != "pending"
+            and bool(leases)
+            and {lease.id for lease in leases} == set(original_binding.get("lease_ids") or [])
+            and all(lease.state == "cleaned" and not Path(lease.worktree_path).exists() for lease in leases)
+            and any(lease.base_sha != original_binding["base_sha"] for lease in leases)
+        )
         if old.status not in {"closed", "recovery_blocked"} or not (
             not old.external_session_id
             or (old.recovery_json.get("blocked") and old.recovery_json.get("context_lost"))
+            or workspace_lost
         ):
             reject("Original session is not demonstrably unrecoverable")
         successor_record = ledger.get(transfer.successor_dispatch_id)
@@ -830,6 +847,8 @@ class NotificationService:
                         **request.model_dump(), actor_principal=principal_id,
                         authority_instance_id=self.ctx.settings.instance_id, transferred_at=now,
                     )
+                    interaction.delivery_retryable = True
+                    interaction.delivery_recovery_action = None
                     current.version += 1
                     current.updated_at = now
                     await self._save_async(current, principal_id=principal_id)
@@ -957,6 +976,19 @@ class NotificationService:
                 await self._deliver(current, delivery_response)
             except Exception as exc:
                 interaction.delivery_attempts += 1
+                from pa.instance.agent_session import WorkspaceBindingMismatch
+
+                target = (
+                    current.continuation_transfer.successor_session_id
+                    if current.continuation_transfer else current.session_id
+                )
+                session = await asyncio.to_thread(self.store.get_session, target) if target else None
+                provisioning = (session.config_json or {}).get("provisioning", {}) if session else {}
+                blocked = isinstance(exc, WorkspaceBindingMismatch) or provisioning.get("retryable") is False
+                interaction.delivery_retryable = not blocked
+                interaction.delivery_recovery_action = (
+                    provisioning.get("action") or WorkspaceBindingMismatch.remedy
+                ) if blocked else None
                 interaction.delivery_error = (
                     "Delivery to the owning request failed"
                     if interaction.sensitive
@@ -974,6 +1006,8 @@ class NotificationService:
                 ) from exc
             interaction.delivery_attempts += 1
             interaction.delivery_error = None
+            interaction.delivery_retryable = True
+            interaction.delivery_recovery_action = None
             interaction.delivered_at = datetime.now(UTC)
             interaction.state = (
                 InteractionState.CANCELLED
