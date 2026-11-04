@@ -146,6 +146,9 @@
     var interaction = item.interaction;
     if (!interaction || item.resolved_at) return "";
     if (["failed", "answered", "delivery_pending"].indexOf(interaction.state) >= 0) {
+      if (interaction.delivery_retryable === false || (!item.continuation_transfer && /^Original execution binding differs in:/.test(interaction.delivery_error || ""))) {
+        return '<div class="notification-actions"><p>Response recorded. Workspace recovery requires action before delivery can continue.</p><p>' + esc(interaction.delivery_recovery_action || "Inspect the owning session and restore its original workspace through PA, or authorize a linked continuation.") + '</p></div>';
+      }
       return '<div class="notification-actions"><button type="button" class="primary small" data-notification-retry>Retry delivery</button></div>';
     }
     if (interaction.state !== "outstanding") return "";

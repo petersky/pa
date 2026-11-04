@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import os
 import sys
 import threading
@@ -88,6 +89,8 @@ class RequestPathResponsivenessTests(unittest.IsolatedAsyncioTestCase):
 
         @app.get("/health")
         async def health():
+            if os.environ.get("PA_TEST_SYNC_DEADLINE_STALL") == "1":
+                time.sleep(0.15)  # Negative control: the deadline must catch this.
             return {"status": "ok"}
 
         @app.get("/ui", response_class=HTMLResponse)
@@ -118,7 +121,19 @@ class RequestPathResponsivenessTests(unittest.IsolatedAsyncioTestCase):
         await self.runtime.close()
 
     async def test_slow_sync_disk_read_does_not_stall_unrelated_surfaces(self) -> None:
-        with DeadlineEvidence("sync-unrelated-surfaces") as evidence, patch.object(
+        # This fixture tests request offloading, using its own small ASGI app.
+        # Keep normal GC and the 100ms deadline, but do not inherit the heap of
+        # every test module collected by an xdist worker. Provider admission
+        # below uses the same process boundary for its startup deadline.
+        if os.environ.get("PA_TEST_SYNC_DEADLINE_CHILD") != "1":
+            code, output = await self._request_deadline_child()
+            self.assertEqual(code, 0, output)
+            return
+        self.assertTrue(gc.isenabled())
+        name = ("sync-unrelated-surfaces-negative"
+                if os.environ.get("PA_TEST_SYNC_DEADLINE_STALL") == "1"
+                else "sync-unrelated-surfaces")
+        with DeadlineEvidence(name) as evidence, patch.object(
             _Context, "_slow_status", staticmethod(evidence.wrap(_Context._slow_status))
         ):
             slow = asyncio.create_task(self.client.get("/api/sync/status"))
@@ -143,6 +158,37 @@ class RequestPathResponsivenessTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await slow).status_code, 200)
             metrics = self.runtime.snapshot()["operations"]["sync.status"]
             self.assertGreaterEqual(metrics["max_runtime_ms"], 190)
+
+    async def _request_deadline_child(self, *, stall: bool = False) -> tuple[int, str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                **os.environ,
+                "PA_TEST_SYNC_DEADLINE_CHILD": "1",
+                "PA_TEST_SYNC_DEADLINE_STALL": "1" if stall else "0",
+                "PA_DATA_DIR": str(Path(tmp) / "data"),
+                "PA_WORKSPACE_ROOT": str(Path(tmp) / "workspaces"),
+                "PA_AGENT_ENABLED": "false",
+                "TMPDIR": tmp,
+            }
+            process = await asyncio.create_subprocess_exec(
+                sys.executable, "-m", "unittest",
+                f"{__name__}.{type(self).__name__}.test_slow_sync_disk_read_does_not_stall_unrelated_surfaces",
+                env=env, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            try:
+                output, _ = await asyncio.wait_for(process.communicate(), timeout=15)
+            except BaseException:
+                if process.returncode is None:
+                    process.kill()
+                await process.wait()
+                raise
+            return process.returncode, output.decode(errors="replace")
+
+    async def test_request_deadline_still_rejects_an_on_loop_stall(self) -> None:
+        code, output = await self._request_deadline_child(stall=True)
+        self.assertNotEqual(code, 0, output)
+        self.assertIn("not less than 100", output)
 
     async def test_slow_blocking_classes_share_bounded_workers_without_loop_lag(self) -> None:
         release = threading.Event()

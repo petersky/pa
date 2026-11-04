@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+from datetime import UTC, datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -19,6 +20,7 @@ from pa.domain.notifications import (
 from pa.execution.dispatch import DispatchRecord
 from pa.instance.agent_session import AgentSessionManager, AgentSessionRuntime
 from pa.notifications import NotificationConflict
+from pa.repository.workspace import WorkspaceLease
 
 
 @pytest.fixture
@@ -96,6 +98,36 @@ async def respond(r, *, key="answer-1", retry=False):
         r.notice, InteractionResponse(idempotency_key=key, **({"retry": True} if retry else {"choice_id": "approve"})),
         principal_id="user:local",
     )
+
+
+@pytest.mark.parametrize("condition", ["lost", "path_exists", "same_base"])
+def test_explicit_transfer_from_cleaned_mismatched_source(recovery, condition):
+    r = recovery
+    path = r.manager.settings.workspace_root / "collected-source"
+    if condition == "path_exists":
+        path.mkdir(parents=True)
+    lease = WorkspaceLease(id="cleaned", repository_id="repo", repository_url="https://example.test/repo",
+        card_id=r.old.card_id, project_id=r.old.project_id, session_id=r.old.id,
+        worktree_path=str(path), cache_path=str(path.parent / "cache"), branch="source",
+        base_sha="a" * 40 if condition == "same_base" else "b" * 40,
+        fencing_token=10, state="cleaned", stage="cleaned", expires_at=datetime.now(UTC) - timedelta(days=1))
+    r.manager.workspace_manager._save(lease)
+    binding = {**r.old.execution_binding, "base_sha": "a" * 40, "lease_ids": [lease.id]}
+    r.store.set_session_execution_binding(r.old.id, binding,
+        reason="workspace_materialized", expected_binding=r.old.execution_binding)
+    r.old.recovery_json = {}
+    r.old.config_json["provisioning"] = {"error_code": "workspace_binding_mismatch"}
+    r.store.save_session(r.old)
+    if condition != "lost":
+        with pytest.raises(NotificationConflict, match="not demonstrably unrecoverable"):
+            asyncio.run(transfer(r))
+        assert not r.store.get_notification(r.notice.id).continuation_transfer
+        return
+    moved = asyncio.run(transfer(r))
+    assert moved.continuation_transfer.expected_session_id == r.old.id
+    assert not r.runtime._queue
+    assert r.store.get_session(r.old.id).execution_binding == binding
+    assert r.manager.workspace_manager.list()[0].state == "cleaned"
 
 
 def test_transfer_preserves_question_provenance_and_durably_enqueues_once(recovery):

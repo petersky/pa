@@ -180,6 +180,8 @@ class InteractionRequest(BaseModel):
     delivery_attempts: int = Field(default=0, ge=0)
     delivered_at: datetime | None = None
     delivery_error: str | None = Field(default=None, max_length=1000)
+    delivery_retryable: bool = True
+    delivery_recovery_action: str | None = Field(default=None, max_length=1000)
 
     @model_validator(mode="after")
     def validate_input_contract(self) -> InteractionRequest:
