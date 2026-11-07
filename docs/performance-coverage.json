@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-29T22:10:57.007482+00:00",
-  "completion": "OPEN:708findings164concerns. CollaborationSQL/namedlock + boundedmaintenancephaseinterval source instrumentation validated;111tests overlap87, newmixedmaintenance907.173ms stillviolates500ms. Exactexpandedhead integration/deployment/realpaths/nativebusyIO/payload/peerlogs/exact17dindependentacceptance remain.",
+  "as_of": "2026-11-07T23:33:45.963320+00:00",
+  "completion": "OPEN:740 findings/181 concerns. Exactly-once completed-worker accounting and post-commit delivery source validated by86 tests; PR649 integration pending. PR647 activation failed/effectunknown;14 cleanup targets protected; full independent17d acceptance open.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -201214,6 +201214,17 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
+      },
+      "followup_pr647_quiesce_20261107": {
+        "status": "open",
+        "handoff": "18f29862-01b2-5af0-9d6a-fb5170002daf",
+        "failure_stage": "quiescing",
+        "effect": "unknown",
+        "attempts": 0,
+        "delivered_at": null,
+        "runtime_unchanged": true,
+        "report": "1ee9e861-5124-418b-8418-71b87df6376b",
+        "next_action": "Coordinate live scheduling work without interrupt/replay; no new restart authorized. Activation-dependent read-only diagnosis remains blocked; preserve all14targets and original owner."
       }
     },
     {
@@ -255122,7 +255133,18 @@
       "resolution": "open",
       "next_actor": "Same systemic session; independent17d acceptance scheduler-owned.",
       "next_action": "Supervised integration then separately authorized activation/retest; keep failed effectunknown, no automatic restart/continuation replay. Full broader performance acceptance remains required.",
-      "artifact": "docs/benchmarks/systemic-restart-failure-visibility-20261107.json"
+      "artifact": "docs/benchmarks/systemic-restart-failure-visibility-20261107.json",
+      "followup_pr647_quiesce_20261107": {
+        "status": "open",
+        "handoff": "18f29862-01b2-5af0-9d6a-fb5170002daf",
+        "failure_stage": "quiescing",
+        "effect": "unknown",
+        "attempts": 0,
+        "delivered_at": null,
+        "runtime_unchanged": true,
+        "report": "1ee9e861-5124-418b-8418-71b87df6376b",
+        "next_action": "Coordinate live scheduling work without interrupt/replay; no new restart authorized. Activation-dependent read-only diagnosis remains blocked; preserve all14targets and original owner."
+      }
     },
     {
       "id": "concern:workspace-capacity-pr642",
@@ -256123,7 +256145,94 @@
         }
       },
       "durability": "Verified full worktree tar, exact index bytes/mode, unique-head bundle or no-unique-head declaration; separate exact-revision apply. Default retains untracked in place; explicit quarantine relocates intact entries. Every file and changed directory syncs before live-index commit. Failed staging/applying is observed, never automatically replayed.",
-      "residual": "One latest1425-file sample may exceed500ms; all earlier651/693ms violations retained. No change to warning thresholds/timeouts/GC/defaults/selection/permissions."
+      "residual": "One latest1425-file sample may exceed500ms; all earlier651/693ms violations retained. No change to warning thresholds/timeouts/GC/defaults/selection/permissions.",
+      "followup_pr647_quiesce_20261107": {
+        "status": "open",
+        "handoff": "18f29862-01b2-5af0-9d6a-fb5170002daf",
+        "failure_stage": "quiescing",
+        "effect": "unknown",
+        "attempts": 0,
+        "delivered_at": null,
+        "runtime_unchanged": true,
+        "report": "1ee9e861-5124-418b-8418-71b87df6376b",
+        "next_action": "Coordinate live scheduling work without interrupt/replay; no new restart authorized. Activation-dependent read-only diagnosis remains blocked; preserve all14targets and original owner."
+      }
+    },
+    {
+      "id": "concern:runtime-completion-publication",
+      "kind": "concern",
+      "finding": "Already-completed worker result can precede completion observations and slot accounting",
+      "family": "runtime",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_source_boundary_reproduction_ci_scheduling_inferred",
+      "cause": "A completed Future can be awaited without yielding to queued done callbacks. run_blocking returned before its completion accounting callback, leaving absent SQL samples and a stale occupied slot. Deterministic real-worker/already-complete-Future fixture reproduced all four success/failure and budgeted/unbudgeted cases on unchanged source.",
+      "fix_or_existing_owner": "Same systemic session; exactly-once caller/callback completion accounting source repair",
+      "implemented": "Source patch validated by4 red regressions,36 green targeted tests and84 broader overlapping lifetime/failure/ownership tests; no weakened assertions",
+      "merged": [],
+      "deployed": "Not deployed; PR647 activation separately failed and source patch not installed",
+      "retested": "Disposable correctness fixtures only; not representative latency acceptance",
+      "resolution": "open",
+      "next_actor": "This systemic session for supervised review/integration and later separately authorized activation/acceptance",
+      "next_action": "Integrate only after exact-head supervisor and independent green checks; retain real mixed-load/deployed validation and all first failures",
+      "report": "1c7764a3-1f6b-413a-a90b-15f0fc0dabc1",
+      "followup_commit_ownership_20261107": {
+        "observed_at": "2026-11-07T23:33:45.963320+00:00",
+        "pr": 649,
+        "watch": "360c50c9-9df0-4ab8-9b7d-71502127535f",
+        "initial_head": "2c78f85055031d7df9a6b1b2a4759fbd47925790",
+        "initial_ci": 42425566956,
+        "source_hashes": {
+          "src/pa/core/async_runtime.py": "034da68f576832715a343179fe2c538f2663c31ce9197e892ee03b505b9a100d",
+          "tests/test_runtime_completion_publication.py": "dbd2d944539e6f2f0601d0264aec0421e5de91288f185b9325b395dd32697ef9"
+        },
+        "tests_overlapping_not_summed": {
+          "runtime-completion-commit-red": {
+            "tests": 4,
+            "failures": 2,
+            "errors": 0,
+            "timing": {
+              "exit_code": 1,
+              "wall_ms": 544.803,
+              "log_bytes": 4724,
+              "log_sha256": "c4eead903376a6bff4e868ca7e9678fa1f83a9b036e00cdc5e91e717c58668e1",
+              "private_both_roots": true,
+              "exact_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3"
+            }
+          },
+          "runtime-completion-final": {
+            "tests": 84,
+            "failures": 0,
+            "errors": 0,
+            "timing": {
+              "exit_code": 0,
+              "wall_ms": 14135.787,
+              "log_bytes": 160,
+              "log_sha256": "20f5f27046a7bba4f1632529723920cb0714405e7c436f83ff72626e3a37131b",
+              "private_both_roots": true,
+              "exact_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3"
+            }
+          },
+          "runtime-completion-commit-owned-final": {
+            "tests": 86,
+            "failures": 0,
+            "errors": 0,
+            "timing": {
+              "exit_code": 0,
+              "wall_ms": 12169.425,
+              "log_bytes": 160,
+              "log_sha256": "b7dee23c5b0bdea31c1d8ae048f013874efa279f477dccaba3f25c872d457efb",
+              "private_both_roots": true,
+              "exact_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3"
+            }
+          }
+        },
+        "review_finding": "The initial accounting finalizer could remove a completed Future from pending before its independent on_commit callback ran. A caller immediately starting shutdown could therefore race post-commit scheduling. Two successful-case immediate-delivery assertions failed on the initial patch; failed-worker cases correctly did not call on_commit.",
+        "final_fix": "Give the independent post-commit callback its own exactly-once guard and call it from caller cleanup only when the worker Future is done, after completion accounting. The same callback remains registered independently to deliver a late successful commit after timeout/cancellation. Neither worker slot nor callbacks are released for unfinished work.",
+        "validation": "86 broader tests pass, including immediate success/failure publication, sequential admission, exactly-once callbacks and two new held-worker late-commit cases after timeout/cancellation. Previous36/84 suites overlap, not summed. All4 initial metric failures and2 review-stage callback failures retained.",
+        "deployment": "Final source not installed. PR647 wheel remains installed f8db; actual owner runtime still prior646 EA/PID35401/startup5b0 after handoff18f29862 failed quiescing/attempt0/effectunknown/no delivery. No reinstall, rearm or new restart.",
+        "cleanup": "Original0337/control9bb/lease379 repair statusnot_started/effectnone; tracked-byte mismatch and14targets protected. No activation-dependent diagnose, prepare, apply, direct target access, collection or reclaimed bytes.",
+        "acceptance": "All740 rows/181 concerns and independent17d OPEN.713.058ms prior fixture violation and all historical foreground/background/native/peer/log/retention gaps remain. This is correctness source validation, not representative performance acceptance."
+      }
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -361678,5 +361787,132 @@
     "deployment": "Thisprovenance action SOURCEONLY, notinstalled. Prior646installauthorizedonce/complete; nofurtherrestart/installauthorized.",
     "residuals": "Actualdifferingpaths/provenance/retentionreview required before repair; all739rows180concerns/independent17dOPEN,713.058msfixtureviolation andhistoricalpeer/native/log/coveragegaps retained.",
     "privacy": "Diagnosticreturn contains bounded path/hash metadata only, nofilebytes. Native/control/response/writer/status/log/wheelbytes LOCAL/hash-only."
+  },
+  "runtime_completion_recovery_20261107": {
+    "observed_at": "2026-11-07T23:29:02.141579+00:00",
+    "source_base": "0ca698e16047406e03e0c4b8cd3e60b01fa6d4f4",
+    "source_hashes": {
+      "src/pa/core/async_runtime.py": "72f858076ee43585218f999451ab8b3f04f555ed5e5d1d1b537f5499cb511f23",
+      "tests/test_runtime_completion_publication.py": "d5f71dc32dd30952cef96685813588bba8859ea76c5aedd86070b9e4d6c13569"
+    },
+    "tests_overlapping_not_summed": {
+      "runtime-completion-red": {
+        "tests": 4,
+        "failures": 4,
+        "errors": 0,
+        "timing": {
+          "exit_code": 1,
+          "wall_ms": 381.769,
+          "log_bytes": 9614,
+          "log_sha256": "1d1816f6d17869951be14ff1f0464831a39939c54065f69f3e40021c1eba9a6c",
+          "private_both_roots": true,
+          "exact_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3"
+        }
+      },
+      "runtime-completion-green": {
+        "tests": 36,
+        "failures": 0,
+        "errors": 0,
+        "timing": {
+          "exit_code": 0,
+          "wall_ms": 3909.776,
+          "log_bytes": 80,
+          "log_sha256": "12a9a4a8915fb8d2bb5b4227220247cde267c1a0620203589fe47280d5be4a7f",
+          "private_both_roots": true,
+          "exact_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3"
+        }
+      },
+      "runtime-completion-lifetime": {
+        "tests": 84,
+        "failures": 0,
+        "errors": 0,
+        "timing": {
+          "exit_code": 0,
+          "wall_ms": 9489.781,
+          "log_bytes": 160,
+          "log_sha256": "20f5f27046a7bba4f1632529723920cb0714405e7c436f83ff72626e3a37131b",
+          "private_both_roots": true,
+          "exact_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3"
+        }
+      }
+    },
+    "confirmed_source_cause": "A completed Future can be awaited without yielding to queued done callbacks. run_blocking returned before its completion accounting callback, leaving absent SQL samples and a stale occupied slot. Deterministic real-worker/already-complete-Future fixture reproduced all four success/failure and budgeted/unbudgeted cases on unchanged source.",
+    "fix": "Per-submission exactly-once completion closure is shared by the done callback and caller finally block. The caller only finalizes already-done Futures. Unfinished timed-out/cancelled workers remain charged until their completion callback; on_commit still has its own independent callback.",
+    "ci_attribution_limit": "PR647 main CI42422688639 attempt1 transcript SQL sample failure is consistent with missing callback publication, but its exact scheduling is unverified. One diagnosed failed-shard retry passed; first failure preserved. Source repair is not a claim of exhaustive CI causal attribution.",
+    "integration": "New completion repair source-only; review/CI/integration pending. PR647 separately merged0ca698e1 from711f1108/watch0b15bb88 and exact merge mainCI attempt2 five success.",
+    "deployment": "PR647 exact approved wheel installed once, independent disk f8db/source442/RECORD443/51pins verified again against reviewed Git head. Its managed handoff18f29862 failed at quiescing/attempt0/effectunknown, delivered_at null; current runtime still EA/PID35401/startup5b0. No reinstall/rearm/restart. Completion repair not installed.",
+    "quiesce_cause": "Receipt names live scheduling worker85cc, queued1 and in-progress exec tool. Current liveness confirms running/queue1. This identifies the observed blocker, not why the tool/turn outlasted the quiesce deadline. Existing managed-handoff/failed-recovery rows reused.",
+    "coordination": "Original scheduling-systemic-coordination-v1 remains durable delivery_ambiguous/effectunknown, promptbb32a5de/fingerprint29e65f04, inspected without resend. Separate changed-observation update to live scheduling dispatchdb6 accepted/queued as promptfd4f1a6a, not claimed consumed; no interrupt/new worker/lease sharing.",
+    "cleanup": "Same original cleanup lease379/owner0337/control9bb/HEAD076d and repair identity retained. Statusnot_started/effectnone, tracked-byte mismatch unresolved,14targets preserved. No prepare/apply/diagnose after failed activation, no direct target filesystem access, collection or reclaimed bytes.",
+    "additional_local_event": "An erroneous scratch placeholder path call used a mistyped non-owner directory and was immediately removed with an exact delete of that newly created placeholder. No cleanup-owner files were targeted; subsequent edits confined to verified systemic worktree. No service data mutation.",
+    "performance_acceptance": "No new representative mixed-load latency retest or fleet acceptance in this stage. Existing713.058ms fixture violation and all foreground/background/native/peer/log/retention/coverage gaps remain. No warning/deadline/default/policy/GC change.",
+    "reports": {
+      "metric": "1c7764a3-1f6b-413a-a90b-15f0fc0dabc1",
+      "quiesce": "1ee9e861-5124-418b-8418-71b87df6376b",
+      "cleanup": "a014ec8c-88a6-419f-b584-58092d2afd24",
+      "systemic": "861aef1f-3d04-461d-8594-fc5b4260ccf2"
+    }
+  },
+  "runtime_completion_recovery_previous_header": {
+    "as_of": "2026-10-29T22:10:57.007482+00:00",
+    "completion": "OPEN:708findings164concerns. CollaborationSQL/namedlock + boundedmaintenancephaseinterval source instrumentation validated;111tests overlap87, newmixedmaintenance907.173ms stillviolates500ms. Exactexpandedhead integration/deployment/realpaths/nativebusyIO/payload/peerlogs/exact17dindependentacceptance remain."
+  },
+  "runtime_commit_ownership_20261107": {
+    "observed_at": "2026-11-07T23:33:45.963320+00:00",
+    "pr": 649,
+    "watch": "360c50c9-9df0-4ab8-9b7d-71502127535f",
+    "initial_head": "2c78f85055031d7df9a6b1b2a4759fbd47925790",
+    "initial_ci": 42425566956,
+    "source_hashes": {
+      "src/pa/core/async_runtime.py": "034da68f576832715a343179fe2c538f2663c31ce9197e892ee03b505b9a100d",
+      "tests/test_runtime_completion_publication.py": "dbd2d944539e6f2f0601d0264aec0421e5de91288f185b9325b395dd32697ef9"
+    },
+    "tests_overlapping_not_summed": {
+      "runtime-completion-commit-red": {
+        "tests": 4,
+        "failures": 2,
+        "errors": 0,
+        "timing": {
+          "exit_code": 1,
+          "wall_ms": 544.803,
+          "log_bytes": 4724,
+          "log_sha256": "c4eead903376a6bff4e868ca7e9678fa1f83a9b036e00cdc5e91e717c58668e1",
+          "private_both_roots": true,
+          "exact_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3"
+        }
+      },
+      "runtime-completion-final": {
+        "tests": 84,
+        "failures": 0,
+        "errors": 0,
+        "timing": {
+          "exit_code": 0,
+          "wall_ms": 14135.787,
+          "log_bytes": 160,
+          "log_sha256": "20f5f27046a7bba4f1632529723920cb0714405e7c436f83ff72626e3a37131b",
+          "private_both_roots": true,
+          "exact_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3"
+        }
+      },
+      "runtime-completion-commit-owned-final": {
+        "tests": 86,
+        "failures": 0,
+        "errors": 0,
+        "timing": {
+          "exit_code": 0,
+          "wall_ms": 12169.425,
+          "log_bytes": 160,
+          "log_sha256": "b7dee23c5b0bdea31c1d8ae048f013874efa279f477dccaba3f25c872d457efb",
+          "private_both_roots": true,
+          "exact_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3"
+        }
+      }
+    },
+    "review_finding": "The initial accounting finalizer could remove a completed Future from pending before its independent on_commit callback ran. A caller immediately starting shutdown could therefore race post-commit scheduling. Two successful-case immediate-delivery assertions failed on the initial patch; failed-worker cases correctly did not call on_commit.",
+    "final_fix": "Give the independent post-commit callback its own exactly-once guard and call it from caller cleanup only when the worker Future is done, after completion accounting. The same callback remains registered independently to deliver a late successful commit after timeout/cancellation. Neither worker slot nor callbacks are released for unfinished work.",
+    "validation": "86 broader tests pass, including immediate success/failure publication, sequential admission, exactly-once callbacks and two new held-worker late-commit cases after timeout/cancellation. Previous36/84 suites overlap, not summed. All4 initial metric failures and2 review-stage callback failures retained.",
+    "deployment": "Final source not installed. PR647 wheel remains installed f8db; actual owner runtime still prior646 EA/PID35401/startup5b0 after handoff18f29862 failed quiescing/attempt0/effectunknown/no delivery. No reinstall, rearm or new restart.",
+    "cleanup": "Original0337/control9bb/lease379 repair statusnot_started/effectnone; tracked-byte mismatch and14targets protected. No activation-dependent diagnose, prepare, apply, direct target access, collection or reclaimed bytes.",
+    "acceptance": "All740 rows/181 concerns and independent17d OPEN.713.058ms prior fixture violation and all historical foreground/background/native/peer/log/retention gaps remain. This is correctness source validation, not representative performance acceptance."
   }
 }

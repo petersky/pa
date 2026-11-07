@@ -381,11 +381,21 @@ class AsyncRuntime:
         self._pending.add(future)
         if evidence:
             self._active_evidence[future] = (operation, evidence)
-        future.add_done_callback(
-            lambda done: self._finish_submission(operation, done, runtime_started_at, evidence, observation)
-        )
+        submission_finished = False
+        def finish_submission(done):
+            nonlocal submission_finished
+            if submission_finished:
+                return
+            submission_finished = True
+            self._finish_submission(operation, done, runtime_started_at, evidence, observation)
+        future.add_done_callback(finish_submission)
         if on_commit is not None:
+            commit_finished = False
             def committed(done):
+                nonlocal commit_finished
+                if commit_finished:
+                    return
+                commit_finished = True
                 # The executor owns this callback, independently of the HTTP or
                 # MCP waiter. A late successful write must still schedule work.
                 if not done.cancelled() and done.exception() is None:
@@ -422,6 +432,14 @@ class AsyncRuntime:
             metrics.cancelled += 1
             raise
         finally:
+            # Awaiting an already-complete Future need not yield to its queued
+            # callbacks. Publish its observations and release its slot before
+            # returning, while unfinished timed-out/cancelled work stays owned
+            # by the completion callback. Both paths account exactly once.
+            if future.done():
+                finish_submission(future)
+                if on_commit is not None:
+                    committed(future)
             waited_ms = (loop.time() - queued_at) * 1000
             metrics.total_wait_ms += waited_ms
             metrics.max_wait_ms = max(metrics.max_wait_ms, waited_ms)

@@ -1,0 +1,64 @@
+{
+  "contract": "pa.runtime-commit-ownership/v1",
+  "stage": {
+    "observed_at": "2026-11-07T23:33:45.963320+00:00",
+    "pr": 649,
+    "watch": "360c50c9-9df0-4ab8-9b7d-71502127535f",
+    "initial_head": "2c78f85055031d7df9a6b1b2a4759fbd47925790",
+    "initial_ci": 42425566956,
+    "source_hashes": {
+      "src/pa/core/async_runtime.py": "034da68f576832715a343179fe2c538f2663c31ce9197e892ee03b505b9a100d",
+      "tests/test_runtime_completion_publication.py": "dbd2d944539e6f2f0601d0264aec0421e5de91288f185b9325b395dd32697ef9"
+    },
+    "tests_overlapping_not_summed": {
+      "runtime-completion-commit-red": {
+        "tests": 4,
+        "failures": 2,
+        "errors": 0,
+        "timing": {
+          "exit_code": 1,
+          "wall_ms": 544.803,
+          "log_bytes": 4724,
+          "log_sha256": "c4eead903376a6bff4e868ca7e9678fa1f83a9b036e00cdc5e91e717c58668e1",
+          "private_both_roots": true,
+          "exact_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3"
+        }
+      },
+      "runtime-completion-final": {
+        "tests": 84,
+        "failures": 0,
+        "errors": 0,
+        "timing": {
+          "exit_code": 0,
+          "wall_ms": 14135.787,
+          "log_bytes": 160,
+          "log_sha256": "20f5f27046a7bba4f1632529723920cb0714405e7c436f83ff72626e3a37131b",
+          "private_both_roots": true,
+          "exact_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3"
+        }
+      },
+      "runtime-completion-commit-owned-final": {
+        "tests": 86,
+        "failures": 0,
+        "errors": 0,
+        "timing": {
+          "exit_code": 0,
+          "wall_ms": 12169.425,
+          "log_bytes": 160,
+          "log_sha256": "b7dee23c5b0bdea31c1d8ae048f013874efa279f477dccaba3f25c872d457efb",
+          "private_both_roots": true,
+          "exact_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3"
+        }
+      }
+    },
+    "review_finding": "The initial accounting finalizer could remove a completed Future from pending before its independent on_commit callback ran. A caller immediately starting shutdown could therefore race post-commit scheduling. Two successful-case immediate-delivery assertions failed on the initial patch; failed-worker cases correctly did not call on_commit.",
+    "final_fix": "Give the independent post-commit callback its own exactly-once guard and call it from caller cleanup only when the worker Future is done, after completion accounting. The same callback remains registered independently to deliver a late successful commit after timeout/cancellation. Neither worker slot nor callbacks are released for unfinished work.",
+    "validation": "86 broader tests pass, including immediate success/failure publication, sequential admission, exactly-once callbacks and two new held-worker late-commit cases after timeout/cancellation. Previous36/84 suites overlap, not summed. All4 initial metric failures and2 review-stage callback failures retained.",
+    "deployment": "Final source not installed. PR647 wheel remains installed f8db; actual owner runtime still prior646 EA/PID35401/startup5b0 after handoff18f29862 failed quiescing/attempt0/effectunknown/no delivery. No reinstall, rearm or new restart.",
+    "cleanup": "Original0337/control9bb/lease379 repair statusnot_started/effectnone; tracked-byte mismatch and14targets protected. No activation-dependent diagnose, prepare, apply, direct target access, collection or reclaimed bytes.",
+    "acceptance": "All740 rows/181 concerns and independent17d OPEN.713.058ms prior fixture violation and all historical foreground/background/native/peer/log/retention gaps remain. This is correctness source validation, not representative performance acceptance."
+  },
+  "rows": 740,
+  "concerns": 181,
+  "existing_row_fields_preserved": true
+}

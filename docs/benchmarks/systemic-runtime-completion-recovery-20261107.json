@@ -1,0 +1,120 @@
+{
+  "contract": "pa.runtime-completion-recovery/v1",
+  "observed_at": "2026-11-07T23:29:02.141579+00:00",
+  "stage": {
+    "observed_at": "2026-11-07T23:29:02.141579+00:00",
+    "source_base": "0ca698e16047406e03e0c4b8cd3e60b01fa6d4f4",
+    "source_hashes": {
+      "src/pa/core/async_runtime.py": "72f858076ee43585218f999451ab8b3f04f555ed5e5d1d1b537f5499cb511f23",
+      "tests/test_runtime_completion_publication.py": "d5f71dc32dd30952cef96685813588bba8859ea76c5aedd86070b9e4d6c13569"
+    },
+    "tests_overlapping_not_summed": {
+      "runtime-completion-red": {
+        "tests": 4,
+        "failures": 4,
+        "errors": 0,
+        "timing": {
+          "exit_code": 1,
+          "wall_ms": 381.769,
+          "log_bytes": 9614,
+          "log_sha256": "1d1816f6d17869951be14ff1f0464831a39939c54065f69f3e40021c1eba9a6c",
+          "private_both_roots": true,
+          "exact_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3"
+        }
+      },
+      "runtime-completion-green": {
+        "tests": 36,
+        "failures": 0,
+        "errors": 0,
+        "timing": {
+          "exit_code": 0,
+          "wall_ms": 3909.776,
+          "log_bytes": 80,
+          "log_sha256": "12a9a4a8915fb8d2bb5b4227220247cde267c1a0620203589fe47280d5be4a7f",
+          "private_both_roots": true,
+          "exact_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3"
+        }
+      },
+      "runtime-completion-lifetime": {
+        "tests": 84,
+        "failures": 0,
+        "errors": 0,
+        "timing": {
+          "exit_code": 0,
+          "wall_ms": 9489.781,
+          "log_bytes": 160,
+          "log_sha256": "20f5f27046a7bba4f1632529723920cb0714405e7c436f83ff72626e3a37131b",
+          "private_both_roots": true,
+          "exact_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3"
+        }
+      }
+    },
+    "confirmed_source_cause": "A completed Future can be awaited without yielding to queued done callbacks. run_blocking returned before its completion accounting callback, leaving absent SQL samples and a stale occupied slot. Deterministic real-worker/already-complete-Future fixture reproduced all four success/failure and budgeted/unbudgeted cases on unchanged source.",
+    "fix": "Per-submission exactly-once completion closure is shared by the done callback and caller finally block. The caller only finalizes already-done Futures. Unfinished timed-out/cancelled workers remain charged until their completion callback; on_commit still has its own independent callback.",
+    "ci_attribution_limit": "PR647 main CI42422688639 attempt1 transcript SQL sample failure is consistent with missing callback publication, but its exact scheduling is unverified. One diagnosed failed-shard retry passed; first failure preserved. Source repair is not a claim of exhaustive CI causal attribution.",
+    "integration": "New completion repair source-only; review/CI/integration pending. PR647 separately merged0ca698e1 from711f1108/watch0b15bb88 and exact merge mainCI attempt2 five success.",
+    "deployment": "PR647 exact approved wheel installed once, independent disk f8db/source442/RECORD443/51pins verified again against reviewed Git head. Its managed handoff18f29862 failed at quiescing/attempt0/effectunknown, delivered_at null; current runtime still EA/PID35401/startup5b0. No reinstall/rearm/restart. Completion repair not installed.",
+    "quiesce_cause": "Receipt names live scheduling worker85cc, queued1 and in-progress exec tool. Current liveness confirms running/queue1. This identifies the observed blocker, not why the tool/turn outlasted the quiesce deadline. Existing managed-handoff/failed-recovery rows reused.",
+    "coordination": "Original scheduling-systemic-coordination-v1 remains durable delivery_ambiguous/effectunknown, promptbb32a5de/fingerprint29e65f04, inspected without resend. Separate changed-observation update to live scheduling dispatchdb6 accepted/queued as promptfd4f1a6a, not claimed consumed; no interrupt/new worker/lease sharing.",
+    "cleanup": "Same original cleanup lease379/owner0337/control9bb/HEAD076d and repair identity retained. Statusnot_started/effectnone, tracked-byte mismatch unresolved,14targets preserved. No prepare/apply/diagnose after failed activation, no direct target filesystem access, collection or reclaimed bytes.",
+    "additional_local_event": "An erroneous scratch placeholder path call used a mistyped non-owner directory and was immediately removed with an exact delete of that newly created placeholder. No cleanup-owner files were targeted; subsequent edits confined to verified systemic worktree. No service data mutation.",
+    "performance_acceptance": "No new representative mixed-load latency retest or fleet acceptance in this stage. Existing713.058ms fixture violation and all foreground/background/native/peer/log/retention/coverage gaps remain. No warning/deadline/default/policy/GC change.",
+    "reports": {
+      "metric": "1c7764a3-1f6b-413a-a90b-15f0fc0dabc1",
+      "quiesce": "1ee9e861-5124-418b-8418-71b87df6376b",
+      "cleanup": "a014ec8c-88a6-419f-b584-58092d2afd24",
+      "systemic": "861aef1f-3d04-461d-8594-fc5b4260ccf2"
+    }
+  },
+  "pr647_integration": {
+    "contract": "pa.pr647-confirmed-integration/v1",
+    "observed_at": "2026-11-07T22:53:27.979Z",
+    "pr": 647,
+    "watch": "0b15bb88-6881-4db4-9697-97f38bab324e",
+    "head": "711f11089f2cab2c63ad1a3094bf97b662c38538",
+    "merge": "0ca698e16047406e03e0c4b8cd3e60b01fa6d4f4",
+    "tree": "ac8e12ac18f43620af7306352b53ba0bc2eeae4b",
+    "parents": [
+      "c6c57abec0cd7725c1c29f5f35f20107acf49908",
+      "711f11089f2cab2c63ad1a3094bf97b662c38538"
+    ],
+    "head_ci": 42422222306,
+    "head_checks": "5terminalsuccess",
+    "stable_gate": ".dev/pr647-second-supervisor-gate-20261107.LOCAL.json",
+    "independent": ".dev/materialization-pr647-signals-terminal-20261107.json",
+    "source_merge_trees_equal": true,
+    "main_ci": [
+      {
+        "conclusion": null,
+        "head_sha": "0ca698e16047406e03e0c4b8cd3e60b01fa6d4f4",
+        "id": 42422688639,
+        "run_attempt": 1,
+        "status": "in_progress"
+      }
+    ],
+    "installed": false,
+    "target_changed": false,
+    "acceptance": "All739rows180concerns/independent17dOPEN; readonlydiagnosisnotpermissiontodiscard/overwrite. Candidate16e4d6cb/packagef8dbde08 notdeployed."
+  },
+  "installed_not_activated_proof": {
+    "contract": "pa.pr647-installed-inactive-disk-proof/v1",
+    "observed_at": "2026-11-07T23:28:01.524681+00:00",
+    "installed_package_identity": "sha256:f8dbde082fad46786e4661bc8cf6044a5385747e9dfff6b251085219114db172",
+    "package_RECORD_entries": 443,
+    "source_files_verified_against_reviewed_git_head": 442,
+    "reviewed_source_head": "711f11089f2cab2c63ad1a3094bf97b662c38538",
+    "unchanged_dependency_versions": 51,
+    "current_uncommitted_runtime_patch": "Separate source-only completion-accounting repair; not installed or used as PR647 source attestation.",
+    "no_PA_import": true,
+    "private_both_roots": true,
+    "activation_proven": false
+  },
+  "coverage": {
+    "rows": 740,
+    "concerns": 181,
+    "all_open": true,
+    "existing_rows_preserved": 739,
+    "requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57"
+  },
+  "privacy": "Raw native/control/answers/status/logs/wheel/path diagnostics LOCAL/hash-only; public summaries exclude prompts, SQL and payloads."
+}
