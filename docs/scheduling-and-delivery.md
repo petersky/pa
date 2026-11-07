@@ -69,6 +69,7 @@ SQLite serializes occurrence creation. An exclusive process lock fences the runn
 across recovery, delivery and receipt persistence for the owning ledger. Records
 are local to their owning PA server; this does not provide automatic cross-machine
 ledger replication or failover. A machine outage catches up after that owner returns.
+Up to four deliveries run concurrently on PA's bounded executor infrastructure, so one unavailable channel does not serialize unrelated targets.
 Retry backoff doubles to a one-hour cap; eight failures expose exhaustion and manual
 retry. Missing targets remain visible. Coalescing replaces only undelivered,
 never-attempted occurrences, retaining missed/coalesced totals.

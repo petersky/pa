@@ -27,3 +27,13 @@ def test_durable_event_source_restart_and_duplicate(tmp_path):
     poll_events(ctx,Ledger(tmp_path/'schedule.db'))
     assert len(ledger.pending(datetime.now(UTC).timestamp()))==1
     assert log.get_commit.call_count==1
+
+
+def test_filters_use_actual_pa_card_lane_and_repository_payload_shapes():
+    from pa.scheduling.events import event_fields
+    card=CardEvent(type=EventType.CARD_UPDATED,realm_id='default',card_id='card',
+        author_principal='user:local',author_instance='fixture',payload={'lane':'done'})
+    assert event_fields(card)['state']=='done'
+    repository=CardEvent(type=EventType.REPOSITORY_UPDATED,realm_id='default',
+        author_principal='user:local',author_instance='fixture',payload={'id':'repo','status':'archived'})
+    assert event_fields(repository)=={'card':None,'session':None,'state':'archived','repo':'repo'}

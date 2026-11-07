@@ -213,7 +213,7 @@ class Ledger:
                     'event_at': event_time, 'created_at': now, 'payload': spec.payload,
                     'context_refs': spec.context_refs, 'missed_count': missed, 'coalesced_count': 0}
         if spec.coalesce:
-            pending = db.execute("SELECT * FROM occurrences WHERE schedule_id=? AND state='pending' AND attempts=0", (row['id'],)).fetchall()
+            pending = db.execute("SELECT * FROM occurrences WHERE schedule_id=? AND state='pending' AND attempts=0 AND json_extract(envelope,'$.delivery_started_at') IS NULL", (row['id'],)).fetchall()
             for item in pending:
                 previous = json.loads(item['envelope'])
                 envelope['coalesced_count'] += 1 + previous['coalesced_count']
@@ -294,11 +294,11 @@ class Ledger:
                     self._occurrence(db, fresh, 'time:' + str(t), t, now, missed)
                 db.execute('UPDATE schedules SET next_due=?,backlog=NULL WHERE id=?', (following, row['id']))
 
-    def pending(self, now):
+    def pending(self, now, limit=100):
         with self.connect() as db:
             return [dict(row) for row in db.execute('''SELECT o.* FROM occurrences o JOIN schedules s ON s.id=o.schedule_id
               WHERE o.state='pending' AND o.next_retry<=? AND s.deleted=0
-              AND json_extract(s.spec,'$.enabled')=1 ORDER BY next_retry LIMIT 100''', (now,))]
+              AND json_extract(s.spec,'$.enabled')=1 ORDER BY next_retry LIMIT ?''', (now, limit))]
 
     def finish(self, oid, now, *, accepted=False, error=None):
         with self.connect() as db:

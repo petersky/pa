@@ -52,25 +52,32 @@ class Scheduler:
                 except Exception as exc:
                     self.event_error = type(exc).__name__
             await self.offload(self.ledger.tick, now)
-            pending = await self.offload(self.ledger.pending, now)
-            for item in pending:
-                claimed = await self.offload(self.ledger.claim, item['id'], now)
-                if not claimed:
-                    continue
-                try:
-                    async with asyncio.timeout(30):
-                        receipt = await self.deliver(claimed)
-                    if not isinstance(receipt, dict) or receipt.get('accepted') is not True:
-                        raise DeliveryError('destination_did_not_acknowledge')
-                except Exception as exc:
-                    # Never retain exception text (it may contain tokens or payloads).
-                    error = str(exc) if isinstance(exc, DeliveryError) else f'destination_failure:{type(exc).__name__}'
-                    if isinstance(exc, HTTPException):
-                        error += f':http_{exc.status_code}'
-                    await self.offload(self.ledger.finish, item['id'], now, error=error)
-                else:
-                    await self.offload(self.ledger.finish, item['id'], time.time() if real_clock else now, accepted=True)
+            pending = await self.offload(self.ledger.pending, now, limit=4)
+            # One unavailable channel must not hold unrelated destinations behind
+            # a serial batch of network timeouts. Reuse bounded server workers.
+            results = await asyncio.gather(*(self.deliver_item(item, now, real_clock) for item in pending), return_exceptions=True)
+            for result in results:
+                if isinstance(result, BaseException):
+                    raise result
             self.last_tick, self.error = now, None
+
+    async def deliver_item(self, item, now, real_clock):
+        claimed = await self.offload(self.ledger.claim, item['id'], now)
+        if not claimed:
+            return
+        try:
+            async with asyncio.timeout(30):
+                receipt = await self.deliver(claimed)
+            if not isinstance(receipt, dict) or receipt.get('accepted') is not True:
+                raise DeliveryError('destination_did_not_acknowledge')
+        except Exception as exc:
+            # Never retain exception text (it may contain tokens or payloads).
+            error = str(exc) if isinstance(exc, DeliveryError) else f'destination_failure:{type(exc).__name__}'
+            if isinstance(exc, HTTPException):
+                error += f':http_{exc.status_code}'
+            await self.offload(self.ledger.finish, item['id'], now, error=error)
+        else:
+            await self.offload(self.ledger.finish, item['id'], time.time() if real_clock else now, accepted=True)
 
     async def run(self):
         while True:

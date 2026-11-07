@@ -31,9 +31,7 @@ def poll_events(ctx, ledger):
                 event=log.get_event(event_hash)
                 if event is None:
                     raise ValueError('scheduler_event_unavailable')
-                fields={'card':event.card_id, 'session':event.payload.get('session_id'),
-                        'state':event.payload.get('state',event.payload.get('status')),
-                        'repo':event.payload.get('repository_id')}
+                fields = event_fields(event)
                 # Match only schedules whose owners can currently read the realm.
                 owners={record['owner'] for record in _records(ledger)}
                 from pa.domain.models import RealmRole
@@ -55,3 +53,11 @@ def poll_events(ctx, ledger):
 def _records(ledger):
     with ledger.connect() as db:
         return [dict(row) for row in db.execute('SELECT owner FROM schedules WHERE deleted=0')]
+
+
+def event_fields(event):
+    payload = event.payload
+    repository_event = event.type.value.startswith('repository_')
+    return {'card':event.card_id, 'session':payload.get('session_id'),
+            'state':payload.get('state', payload.get('status', payload.get('lane'))),
+            'repo':payload.get('repository_id', payload.get('id') if repository_event else None)}

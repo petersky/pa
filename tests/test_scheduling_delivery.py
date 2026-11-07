@@ -210,3 +210,43 @@ def test_cron_extensions_are_rejected(expression):
 def test_unknown_timezone_is_validation_error():
     with pytest.raises(ValueError,match='unknown IANA timezone'):
         Trigger(kind='cron',cron='0 0 * * *',timezone='Not/AZone')
+
+
+def test_coalesce_preserves_unknown_delivery_after_crash(tmp_path):
+    ledger=Ledger(tmp_path/'s.db')
+    ledger.create('owner','create',spec(coalesce=True),0)
+    ledger.tick(600)
+    original=ledger.pending(600)[0]['id']
+    ledger.claim(original,600)  # Destination may have accepted before process death.
+    ledger.recover()
+    ledger.tick(1200)
+    pending=ledger.pending(1200)
+    assert len(pending)==2
+    assert original in {row['id'] for row in pending}
+
+
+@pytest.mark.asyncio
+async def test_slow_destination_does_not_block_other_acceptance(tmp_path):
+    import asyncio
+    from pa.scheduling.service import Scheduler
+    ledger=Ledger(tmp_path/'s.db')
+    first=ledger.create('owner','slow',spec(name='slow'),0)
+    second=ledger.create('owner','healthy',spec(name='healthy'),0)
+    ledger.fire('owner',first['id'],'fire-slow',1)
+    ledger.fire('owner',second['id'],'fire-healthy',1)
+    healthy=asyncio.Event()
+    release=asyncio.Event()
+    async def deliver(item):
+        if item['schedule_id']==first['id']:
+            await release.wait()
+        else:
+            healthy.set()
+        return {'accepted':True}
+    scheduler=Scheduler(None,None,ledger,deliver)
+    cycle=asyncio.create_task(scheduler.cycle(1))
+    try:
+        await asyncio.wait_for(healthy.wait(),2)
+    finally:
+        release.set()
+        await cycle
+    assert all(ledger.history('owner',r['id'])[0]['state']=='delivered' for r in [first,second])
