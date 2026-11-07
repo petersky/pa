@@ -1,0 +1,83 @@
+{
+  "contract": "pa.systemic-dispatch-resume-selection-source/v1",
+  "observed_at": "2026-11-07T18:47:36.713743+00:00",
+  "source_base": "076d2eb1f4c898e0a8e0ef5ca628d790d2c2b63e",
+  "scope": "Same systemic session/card/solelease376; user requested necessary cleanup-owner startup repair. No cleanup, actual owner recovery, install/restart, policy/default/permission/model/GC/threshold changes. Full performance acceptance remains OPEN.",
+  "cleanup_context": {
+    "card": "7938e21e-05fe-4dc9-b85e-98689957dd9d",
+    "session": "0337e686-6170-470c-89c7-5285925f43f0",
+    "control": "9bb01f22-f57f-4e51-9797-c2bb915e75f5",
+    "decision": "1e6ac60bb9bc85574aef87fddfdeea690e9f25f72c2e3add4c101c6ed4e9c545",
+    "failure": "failed/starting_session/selection_peer_contract_unavailable",
+    "source_owner": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+    "unknown_operations": [
+      "attachment:pa-cleanup-blocked-audit-20261107-v1",
+      "nativecollector:8211d514-e7b6-4efa-b4bb-50f26853095c"
+    ],
+    "unknown_operations_replayed": false,
+    "scope_limit": "Exact14blockedtrees; active/shared caches and useful evidence preserved; cleanup success unverified."
+  },
+  "source_cause": "Live dispatch binding discarded incoming authority receipt; restored existing session kept active settings receipt without retaining distinct resume admission. Corrected unchanged integrated source fails the matching-lineage contract in both paths. Exact production target config not independently read; supported live/control/authority decision facts retained locally.",
+  "repair": "Validate original receipt integrity/scope/routing/current constraints and normalized native confirmation, retain immutable admission reference without changing active settings/native binding, reject stale in-flight validation, save before returning session. Legacy adoption only for provable default routing and confirmed native values. Old-peer rejection unchanged.",
+  "validation": {
+    "baseline_final": "2 missing-lineage failures on unchanged076d2eb1; restoration receipt fixture stubs workspace preparation, not a claim of real workspace recovery.",
+    "broader": "128passed+7subtests; overlapping new15 included",
+    "final": "18final new contracts passed;128broader+7subtests overlap. Extra ACP-transport-ID guard first failed17pass1, then removed because transport identity is not a selection connection profile; corrected final18pass. All first stages retained.",
+    "first_results": "Initialbaseline: live missing-lineage + wrong fixtureclose method. Initialcandidate:10pass1wrongmethod. Correctedrestore: workspace-binding dispatch_id guard blocked before receipt assertion; guard/source not weakened, receipt fixture then isolated workspace preparation. Every original stage/log retained. Extra guard failure and correction retained explicitly; no original failure removed.",
+    "display_correction": "Initial test runner printed private fixture log tail once (no credentials/prompts/private answers); corrected runner prints only sanitized summary, every full log LOCAL/hashonly.",
+    "source_hashes": "Full imported-module hashes per stage. Exact installed interpreter-I-B; private PA_DATA_DIR and PA_WORKSPACE_ROOT before all PA imports/fixture children. Normal GC and original deadlines.",
+    "limitations": "Tool-free wire/provider/settings contracts and private bounded benchmark; production provider/MCP/workspace/lease/startup/drain/mixed/concurrency/peer/log/retention and independent17d acceptance remain OPEN.",
+    "source_hash_parity": {
+      "pa.execution.selection": "c3fe11c0a38eecaf4e3519551e7faf9b581245cba9a2909cc410dfc3fb69abbb",
+      "pa.execution.selection_service": "0046fb6e0fe9b92e030f987545009e2eb756518c84ec34cdd675475c65d4cdc8",
+      "pa.modules.agent_chat": "d8bd6197661f8f25ec09dd8a9e9a3c0c57da56210fe5d08cb2e790182929c407"
+    }
+  },
+  "benchmark": {
+    "new_receipt_retention": {
+      "samples": 32,
+      "p50_ms": 2.066416898742318,
+      "p95_ms": 2.2327499464154243,
+      "p99_ms": 2.346416935324669,
+      "max_ms": 2.346416935324669,
+      "threshold_violations_ge500ms": 0
+    },
+    "duplicate_resume_HTTP": {
+      "samples": 100,
+      "p50_ms": 7.524792104959488,
+      "p95_ms": 9.321749908849597,
+      "p99_ms": 18.253874965012074,
+      "max_ms": 35.10350012220442,
+      "threshold_violations_ge500ms": 0
+    }
+  },
+  "boot_setup_ms": 786.1551670357585,
+  "benchmark_warnings": 0,
+  "benchmark_runtime_scope": "Full runtime fields/windows/counters and raw per-stage timer arrays retained in lossless bundle. Fresh32/duplicate100, unchanged external nativeID/active settings,33retained admissions,0queued/deliveredprompts. Physical IO/log emission fleet acceptance not inferred.",
+  "reports": {
+    "cleanup": "a014ec8c-88a6-419f-b584-58092d2afd24 revision8",
+    "prior_capacity": "22f7ad5d-7a31-41b5-a546-1de6ed11562f",
+    "prior_main_ci": "aeea65d5-cef7-4a07-bbc3-df09bd9efc09",
+    "liveness500": "fbd4bd2c-d3b4-4754-ac72-6e292a90052a",
+    "verifier_assignment": "46e1e96e-c6a2-41db-b456-146cab4a20b7"
+  },
+  "capacity": "Fresh11GiB revalidated; fetch succeeded, FF sandbox metadata denial then provider-approved exactFF succeeded. Prior ENOSPC/unknowns retained, no cleanup workaround.",
+  "runtime": "Still released1.6.0/packagebc67/PID23224/startup3bf7070b/source_revisionnull. New source undeployed. Old638quiescingfailed/effectUNKNOWN/attempt0/deliverednull unchanged and never replayed.",
+  "prior_pr642": "Merged076d2eb1 exacthead67862411/equal tree97e5; firstmainCI42395840700attempt1 shard3logrotation failure retained, no rerun by this session.",
+  "publication": "Complete prior102497805B root embedded byte-exact plus allactual later custody. Native/control/status/prompt/answer/writer/logXMLZIP/wheel LOCAL/hashonly. Lossless chunking if measured root exceeds GitHub100MiB; no deletion/LFS/config/history changes.",
+  "integration": "Ready PR/supervisor/integration pending at source artifact freeze; activation needs separate native authorization if required.",
+  "acceptance": "All original724rows173concerns remainOPEN and exactvalue-preserved; append alllater findings. Independent17d scheduler gate not changed, no acceptance/self-verifier/Done. AcceptedBackup0331/DB89957/recovery5be6scopesCLOSED.",
+  "coverage": {
+    "rows": 731,
+    "concerns": 178,
+    "original724rows_exactly_preserved": true,
+    "all_open": true
+  },
+  "complete_lossless_bundle": {
+    "path": "docs/benchmarks/systemic-dispatch-resume-selection-20261107.raw.json.gz",
+    "bytes": 104775770,
+    "sha256": "c88409e9e613fa2f0762c5c7aa4313d04c1420c4310296967bf88ca6fd0b28db"
+  },
+  "public_inputs": 42,
+  "private_hash_only_inputs": 72
+}
