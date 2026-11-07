@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-11-07T23:29:02.141579+00:00",
-  "completion": "OPEN:740 findings/181 concerns. Runtime completion source repair validated; PR647 installed but activation failed at quiescing/effectunknown; original14cleanup targets preserved. All prior performance/coverage/independent17d acceptance obligations remain.",
+  "as_of": "2026-11-07T23:33:45.963320+00:00",
+  "completion": "OPEN:740 findings/181 concerns. Exactly-once completed-worker accounting and post-commit delivery source validated by86 tests; PR649 integration pending. PR647 activation failed/effectunknown;14 cleanup targets protected; full independent17d acceptance open.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -256174,7 +256174,65 @@
       "resolution": "open",
       "next_actor": "This systemic session for supervised review/integration and later separately authorized activation/acceptance",
       "next_action": "Integrate only after exact-head supervisor and independent green checks; retain real mixed-load/deployed validation and all first failures",
-      "report": "1c7764a3-1f6b-413a-a90b-15f0fc0dabc1"
+      "report": "1c7764a3-1f6b-413a-a90b-15f0fc0dabc1",
+      "followup_commit_ownership_20261107": {
+        "observed_at": "2026-11-07T23:33:45.963320+00:00",
+        "pr": 649,
+        "watch": "360c50c9-9df0-4ab8-9b7d-71502127535f",
+        "initial_head": "2c78f85055031d7df9a6b1b2a4759fbd47925790",
+        "initial_ci": 42425566956,
+        "source_hashes": {
+          "src/pa/core/async_runtime.py": "034da68f576832715a343179fe2c538f2663c31ce9197e892ee03b505b9a100d",
+          "tests/test_runtime_completion_publication.py": "dbd2d944539e6f2f0601d0264aec0421e5de91288f185b9325b395dd32697ef9"
+        },
+        "tests_overlapping_not_summed": {
+          "runtime-completion-commit-red": {
+            "tests": 4,
+            "failures": 2,
+            "errors": 0,
+            "timing": {
+              "exit_code": 1,
+              "wall_ms": 544.803,
+              "log_bytes": 4724,
+              "log_sha256": "c4eead903376a6bff4e868ca7e9678fa1f83a9b036e00cdc5e91e717c58668e1",
+              "private_both_roots": true,
+              "exact_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3"
+            }
+          },
+          "runtime-completion-final": {
+            "tests": 84,
+            "failures": 0,
+            "errors": 0,
+            "timing": {
+              "exit_code": 0,
+              "wall_ms": 14135.787,
+              "log_bytes": 160,
+              "log_sha256": "20f5f27046a7bba4f1632529723920cb0714405e7c436f83ff72626e3a37131b",
+              "private_both_roots": true,
+              "exact_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3"
+            }
+          },
+          "runtime-completion-commit-owned-final": {
+            "tests": 86,
+            "failures": 0,
+            "errors": 0,
+            "timing": {
+              "exit_code": 0,
+              "wall_ms": 12169.425,
+              "log_bytes": 160,
+              "log_sha256": "b7dee23c5b0bdea31c1d8ae048f013874efa279f477dccaba3f25c872d457efb",
+              "private_both_roots": true,
+              "exact_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3"
+            }
+          }
+        },
+        "review_finding": "The initial accounting finalizer could remove a completed Future from pending before its independent on_commit callback ran. A caller immediately starting shutdown could therefore race post-commit scheduling. Two successful-case immediate-delivery assertions failed on the initial patch; failed-worker cases correctly did not call on_commit.",
+        "final_fix": "Give the independent post-commit callback its own exactly-once guard and call it from caller cleanup only when the worker Future is done, after completion accounting. The same callback remains registered independently to deliver a late successful commit after timeout/cancellation. Neither worker slot nor callbacks are released for unfinished work.",
+        "validation": "86 broader tests pass, including immediate success/failure publication, sequential admission, exactly-once callbacks and two new held-worker late-commit cases after timeout/cancellation. Previous36/84 suites overlap, not summed. All4 initial metric failures and2 review-stage callback failures retained.",
+        "deployment": "Final source not installed. PR647 wheel remains installed f8db; actual owner runtime still prior646 EA/PID35401/startup5b0 after handoff18f29862 failed quiescing/attempt0/effectunknown/no delivery. No reinstall, rearm or new restart.",
+        "cleanup": "Original0337/control9bb/lease379 repair statusnot_started/effectnone; tracked-byte mismatch and14targets protected. No activation-dependent diagnose, prepare, apply, direct target access, collection or reclaimed bytes.",
+        "acceptance": "All740 rows/181 concerns and independent17d OPEN.713.058ms prior fixture violation and all historical foreground/background/native/peer/log/retention gaps remain. This is correctness source validation, not representative performance acceptance."
+      }
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -361798,5 +361856,63 @@
   "runtime_completion_recovery_previous_header": {
     "as_of": "2026-10-29T22:10:57.007482+00:00",
     "completion": "OPEN:708findings164concerns. CollaborationSQL/namedlock + boundedmaintenancephaseinterval source instrumentation validated;111tests overlap87, newmixedmaintenance907.173ms stillviolates500ms. Exactexpandedhead integration/deployment/realpaths/nativebusyIO/payload/peerlogs/exact17dindependentacceptance remain."
+  },
+  "runtime_commit_ownership_20261107": {
+    "observed_at": "2026-11-07T23:33:45.963320+00:00",
+    "pr": 649,
+    "watch": "360c50c9-9df0-4ab8-9b7d-71502127535f",
+    "initial_head": "2c78f85055031d7df9a6b1b2a4759fbd47925790",
+    "initial_ci": 42425566956,
+    "source_hashes": {
+      "src/pa/core/async_runtime.py": "034da68f576832715a343179fe2c538f2663c31ce9197e892ee03b505b9a100d",
+      "tests/test_runtime_completion_publication.py": "dbd2d944539e6f2f0601d0264aec0421e5de91288f185b9325b395dd32697ef9"
+    },
+    "tests_overlapping_not_summed": {
+      "runtime-completion-commit-red": {
+        "tests": 4,
+        "failures": 2,
+        "errors": 0,
+        "timing": {
+          "exit_code": 1,
+          "wall_ms": 544.803,
+          "log_bytes": 4724,
+          "log_sha256": "c4eead903376a6bff4e868ca7e9678fa1f83a9b036e00cdc5e91e717c58668e1",
+          "private_both_roots": true,
+          "exact_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3"
+        }
+      },
+      "runtime-completion-final": {
+        "tests": 84,
+        "failures": 0,
+        "errors": 0,
+        "timing": {
+          "exit_code": 0,
+          "wall_ms": 14135.787,
+          "log_bytes": 160,
+          "log_sha256": "20f5f27046a7bba4f1632529723920cb0714405e7c436f83ff72626e3a37131b",
+          "private_both_roots": true,
+          "exact_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3"
+        }
+      },
+      "runtime-completion-commit-owned-final": {
+        "tests": 86,
+        "failures": 0,
+        "errors": 0,
+        "timing": {
+          "exit_code": 0,
+          "wall_ms": 12169.425,
+          "log_bytes": 160,
+          "log_sha256": "b7dee23c5b0bdea31c1d8ae048f013874efa279f477dccaba3f25c872d457efb",
+          "private_both_roots": true,
+          "exact_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3"
+        }
+      }
+    },
+    "review_finding": "The initial accounting finalizer could remove a completed Future from pending before its independent on_commit callback ran. A caller immediately starting shutdown could therefore race post-commit scheduling. Two successful-case immediate-delivery assertions failed on the initial patch; failed-worker cases correctly did not call on_commit.",
+    "final_fix": "Give the independent post-commit callback its own exactly-once guard and call it from caller cleanup only when the worker Future is done, after completion accounting. The same callback remains registered independently to deliver a late successful commit after timeout/cancellation. Neither worker slot nor callbacks are released for unfinished work.",
+    "validation": "86 broader tests pass, including immediate success/failure publication, sequential admission, exactly-once callbacks and two new held-worker late-commit cases after timeout/cancellation. Previous36/84 suites overlap, not summed. All4 initial metric failures and2 review-stage callback failures retained.",
+    "deployment": "Final source not installed. PR647 wheel remains installed f8db; actual owner runtime still prior646 EA/PID35401/startup5b0 after handoff18f29862 failed quiescing/attempt0/effectunknown/no delivery. No reinstall, rearm or new restart.",
+    "cleanup": "Original0337/control9bb/lease379 repair statusnot_started/effectnone; tracked-byte mismatch and14targets protected. No activation-dependent diagnose, prepare, apply, direct target access, collection or reclaimed bytes.",
+    "acceptance": "All740 rows/181 concerns and independent17d OPEN.713.058ms prior fixture violation and all historical foreground/background/native/peer/log/retention gaps remain. This is correctness source validation, not representative performance acceptance."
   }
 }
