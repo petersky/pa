@@ -20,7 +20,7 @@ from pa.scheduling.store import Ledger, Schedule
 from tests.test_dispatch_followup_identity import env
 
 
-@pytest.mark.skipif(os.environ.get('PA_SCHEDULING_REAL_CLOCK') != '1',reason='opt-in two actual ten-minute intervals')
+@pytest.mark.skipif(os.environ.get('SCHEDULING_REAL_CLOCK') != '1',reason='opt-in two actual ten-minute intervals')
 @pytest.mark.asyncio
 async def test_two_actual_ten_minute_deliveries_to_durable_agent_queue(env,tmp_path,monkeypatch):
     root=Path(__file__).resolve().parents[1]
@@ -39,7 +39,7 @@ async def test_two_actual_ten_minute_deliveries_to_durable_agent_queue(env,tmp_p
         return await get_prompt_acceptance_status(env.request,env.record.session_id,path.rsplit('/',1)[1])
     monkeypatch.setattr('pa.modules.fleet._peer_agent_json',peer)
     scheduler=Scheduler(env.request.app.state.ctx,env.request.app,ledger)
-    output=Path(os.environ.get('PA_SCHEDULING_RUNTIME_EVIDENCE',str(tmp_path/'runtime-evidence.json')))
+    output=Path(os.environ.get('SCHEDULING_RUNTIME_EVIDENCE',str(tmp_path/'runtime-evidence.json')))
     evidence={'commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip(),
         'source_hashes':{str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'src/pa/scheduling').glob('*.py'))},
         'scope':'Actual clock and real PA durable agent queue; disposable authority/target transport and quiesced recipient. No live model, production data or deployed acceptance.',
