@@ -134,6 +134,40 @@ def test_explicit_quarantine_relocates_every_entry_intact_and_returns_clean_chec
     assert git(tree, 'status', '--porcelain').stdout == ''
 
 
+def test_empty_index_existing_head_files_are_verified_and_left_in_place(tmp_path):
+    manager, _, tree, index, args = empty_checkout(tmp_path)
+    (tree/'README.md').write_text('base\n')
+    inode=(tree/'README.md').stat().st_ino
+    before=index.read_bytes()
+    service=MaterializationRepair(manager)
+    prepared=service.operate(**args,action='prepare')
+    assert prepared['matching_existing_tracked_paths']==1 and prepared['missing_tracked_paths']==0
+    result=service.operate(**args,action='apply',expected_revision=prepared['revision'])
+    assert result['restored_paths']==0 and result['matching_existing_tracked_paths']==1
+    assert (tree/'README.md').stat().st_ino==inode and (tree/'README.md').read_text()=='base\n'
+    root=manager.root/'materialization-repairs'/prepared['operation_id']
+    assert (root/'index.before').read_bytes()==before
+
+
+def test_mixed_matching_missing_files_and_ignored_cache_are_preserved(tmp_path):
+    manager, lease, tree, index, args = empty_checkout(tmp_path)
+    git(tree,'read-tree','HEAD');git(tree,'checkout-index','--all')
+    (tree/'.gitignore').write_text('cache/\n');(tree/'second.txt').write_text('second\n')
+    git(tree,'add','.gitignore','second.txt');git(tree,'commit','-m','tracked ignore and second')
+    args['expected_head']=git(tree,'rev-parse','HEAD').stdout.strip()
+    git(tree,'read-tree','--empty');(tree/'second.txt').unlink()
+    (tree/'cache').mkdir();(tree/'cache'/'active').write_text('keep active cache in place')
+    before=(tree/'README.md').stat().st_ino
+    service=MaterializationRepair(manager);args['quarantine_untracked']=True
+    prepared=service.operate(**args,action='prepare')
+    assert prepared['matching_existing_tracked_paths']==2 and prepared['missing_tracked_paths']==1
+    result=service.operate(**args,action='apply',expected_revision=prepared['revision'])
+    assert result['restored_paths']==1 and not result['dirty']
+    assert (tree/'README.md').stat().st_ino==before
+    assert (tree/'cache'/'active').read_text()=='keep active cache in place'
+    assert (tree/'second.txt').read_text()=='second\n'
+
+
 def test_status_survives_runtime_and_lease_changes(tmp_path):
     manager, lease, _, _, args = empty_checkout(tmp_path)
     service = MaterializationRepair(manager);prepared = service.operate(**args, action='prepare')

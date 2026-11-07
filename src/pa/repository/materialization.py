@@ -17,7 +17,8 @@ from pathlib import Path
 from pa.core.io import atomic_write_json
 from pa.repository.workspace import WorkspaceProvisioningError
 
-MAX_SNAPSHOT_BYTES = 1024 * 1024 * 1024
+MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024 * 1024
+MAX_SNAPSHOT_ENTRIES = 100000
 
 
 def digest(path: Path) -> str:
@@ -36,7 +37,8 @@ def inventory(root: Path) -> list[dict]:
             path = Path(directory) / name
             info = path.lstat()
             row = {'path': path.relative_to(root).as_posix(),
-                   'mode': stat.S_IMODE(info.st_mode)}
+                   'mode': stat.S_IMODE(info.st_mode), 'uid': info.st_uid,
+                   'gid': info.st_gid, 'mtime_ns': info.st_mtime_ns}
             if stat.S_ISLNK(info.st_mode):
                 row.update(kind='symlink', target=os.readlink(path))
             elif stat.S_ISDIR(info.st_mode):
@@ -49,6 +51,8 @@ def inventory(root: Path) -> list[dict]:
             else:
                 raise WorkspaceProvisioningError('Special worktree files require manual preservation')
             rows.append(row)
+            if len(rows) > MAX_SNAPSHOT_ENTRIES:
+                raise WorkspaceProvisioningError('Worktree exceeds bounded preservation entry capacity')
     return sorted(rows, key=lambda row: row['path'])
 
 
@@ -100,13 +104,32 @@ class MaterializationRepair:
                     or not parts or Path(name).is_absolute() or '..' in parts
                     or any(p.casefold() == '.git' for p in parts)):
                 raise WorkspaceProvisioningError('Unsupported tracked path; manual preservation required')
-            for i in range(1, len(parts) + 1):
+            for i in range(1, len(parts)):
                 path = tree.joinpath(*parts[:i])
-                if path.is_symlink() or (i == len(parts) and path.exists()):
-                    raise WorkspaceProvisioningError('Tracked paths must all be absent; existing files are preserved')
+                if path.is_symlink():
+                    raise WorkspaceProvisioningError('Tracked path has a retained symlink parent')
                 if path.exists() and not path.is_dir():
                     raise WorkspaceProvisioningError('Tracked path collides with retained data')
-            entries.append({'path': name, 'mode': mode, 'oid': oid, 'bytes': int(size)})
+            path = tree / name
+            present = path.exists() or path.is_symlink()
+            if present:
+                info = path.lstat()
+                if mode == '120000' and stat.S_ISLNK(info.st_mode):
+                    blob = os.fsencode(os.readlink(path))
+                    checksum = hashlib.new('sha1' if len(oid) == 40 else 'sha256')
+                    checksum.update(b'blob ' + str(len(blob)).encode() + b'\0' + blob)
+                elif mode in {'100644', '100755'} and stat.S_ISREG(info.st_mode):
+                    if bool(info.st_mode & 0o111) != (mode == '100755'):
+                        raise WorkspaceProvisioningError('Existing tracked mode differs from HEAD; retained for manual review')
+                    checksum = hashlib.new('sha1' if len(oid) == 40 else 'sha256')
+                    checksum.update(b'blob ' + str(info.st_size).encode() + b'\0')
+                    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW), 'rb') as stream:
+                        for chunk in iter(lambda:stream.read(1024*1024), b''):checksum.update(chunk)
+                else:
+                    raise WorkspaceProvisioningError('Existing tracked path type differs from HEAD')
+                if checksum.hexdigest() != oid:
+                    raise WorkspaceProvisioningError('Existing tracked bytes differ from HEAD; retained for manual review')
+            entries.append({'path': name, 'mode': mode, 'oid': oid, 'bytes': int(size), 'present':present})
         if not entries:
             raise WorkspaceProvisioningError('HEAD has no files to materialize')
         files = inventory(tree)
@@ -161,8 +184,8 @@ class MaterializationRepair:
                     state, revision, index = self._inspect(lease, expected_head)
                     needed = sum(r.get('bytes', 0) for r in state['files'])
                     import shutil
-                    restore_bytes = sum(r['bytes'] for r in state['tracked'])
-                    if shutil.disk_usage(self.manager.root).free < needed * 3 + restore_bytes + 64 * 1024 * 1024:
+                    restore_bytes = sum(r['bytes'] for r in state['tracked'] if not r['present'])
+                    if shutil.disk_usage(self.manager.root).free < needed * 2 + restore_bytes + 64 * 1024 * 1024:
                         raise WorkspaceProvisioningError('Insufficient preservation capacity; no worktree changes made')
                     root.mkdir(parents=True, mode=0o700)
                     saved = {'phase': 'preserving', 'revision': revision, 'fingerprint': fingerprint,
@@ -177,6 +200,8 @@ class MaterializationRepair:
                         with tarfile.open(fileobj=output, mode='w') as tar:
                             for row in state['files']:
                                 member = tarfile.TarInfo(row['path']); member.mode = row['mode']
+                                member.uid = row['uid']; member.gid = row['gid']
+                                member.pax_headers['mtime'] = f"{row['mtime_ns']//1000000000}.{row['mtime_ns']%1000000000:09d}"
                                 if row['kind'] == 'file':
                                     member.size = row['bytes']
                                     with os.fdopen(os.open(Path(lease.worktree_path) / row['path'], os.O_RDONLY | os.O_NOFOLLOW), 'rb') as stream:
@@ -226,12 +251,14 @@ class MaterializationRepair:
                     saved['public'] = {'operation_id': key, 'phase': 'prepared', 'effect': 'none',
                         'revision': revision, 'head': expected_head, 'lease_id': lease_id,
                         'fencing_token': expected_fence, 'retained_entries': len(state['files']),
-                        'retained_file_bytes': needed, 'missing_tracked_paths': len(state['tracked']),
+                        'retained_file_bytes': needed,
+                        'missing_tracked_paths': sum(not r['present'] for r in state['tracked']),
+                        'matching_existing_tracked_paths': sum(r['present'] for r in state['tracked']),
                         'restore_file_bytes': restore_bytes,
                         'quarantine_untracked': quarantine_untracked,
                         'preservation': saved['preservation'],
                         'notice': ('Empty index is not proof of disposable changes. Explicit apply restores absent HEAD files and replaces the empty index; exact original state/history remains preserved. '
-                                   + ('All existing entries except the .git binding will additionally be relocated intact into retained-worktree custody outside the checkout.' if quarantine_untracked else 'Existing untracked/ignored entries remain in place.'))}
+                                   + ('Only Git-visible untracked files will additionally be relocated intact into retained-worktree custody; matching HEAD files and ignored caches stay in place.' if quarantine_untracked else 'Existing untracked/ignored entries remain in place.'))}
                     atomic_write_json(receipt, saved); _sync_dir(root)
                     return saved['public']
                 if action != 'apply' or expected_revision != saved['revision']:
@@ -249,9 +276,20 @@ class MaterializationRepair:
                 stage.mkdir()
                 alternate = root / 'new.index'
                 env = os.environ.copy(); env['GIT_INDEX_FILE'] = str(alternate); env['GIT_TERMINAL_PROMPT'] = '0'
-                for args in [('read-tree', expected_head), ('checkout-index', '--all', '--prefix=' + str(stage) + '/')]:
-                    subprocess.run(['git', '-C', lease.worktree_path, *args], env=env,
+                subprocess.run(['git', '-C', lease.worktree_path, 'read-tree', expected_head], env=env,
+                               check=True, capture_output=True, timeout=300)
+                missing = [r for r in state['tracked'] if not r['present']]
+                if missing:
+                    subprocess.run(['git','-C',lease.worktree_path,'checkout-index','-z','--stdin','--prefix='+str(stage)+'/'],
+                                   input=b''.join(os.fsencode(r['path'])+b'\0' for r in missing), env=env,
                                    check=True, capture_output=True, timeout=300)
+                quarantine = []
+                if quarantine_untracked:
+                    result = subprocess.run(['git','-C',lease.worktree_path,'ls-files','--others','--exclude-standard','-z'],
+                                            env=env,check=True,capture_output=True,timeout=300)
+                    quarantine = [os.fsdecode(p) for p in result.stdout.split(b'\0') if p]
+                    if quarantine and any(Path(r['path']).name == '.gitignore' for r in missing):
+                        raise WorkspaceProvisioningError('Missing ignore definitions require explicit quarantine review')
                 # Native index.lock excludes cooperating Git writers. The final
                 # full comparison also catches changes made while staging.
                 lock = index.with_name('index.lock')
@@ -276,16 +314,19 @@ class MaterializationRepair:
                         retained = root / 'retained-worktree'
                         retained.mkdir(mode=0o700)
                         tree = Path(lease.worktree_path)
-                        for entry in sorted(tree.iterdir()):
-                            if entry.name == '.git':
-                                continue
-                            destination = retained / entry.name
+                        retained_rows = {r['path'] for r in state['files'] if r['kind'] != 'directory'}
+                        for name in quarantine:
+                            if name not in retained_rows or name == '.git':
+                                raise WorkspaceProvisioningError('Quarantine plan changed from preserved files')
+                            entry = tree / name
+                            destination = retained / name
+                            destination.parent.mkdir(parents=True,exist_ok=True)
                             if destination.exists() or destination.is_symlink():
                                 raise WorkspaceProvisioningError('Retained custody path already exists')
                             os.rename(entry, destination)
-                            _sync_dir(tree); _sync_dir(retained)
+                            _sync_dir(entry.parent); _sync_dir(destination.parent)
                     sync_directories = {()}
-                    for row in state['tracked']:
+                    for row in missing:
                         source = stage / row['path']; target = Path(lease.worktree_path) / row['path']
                         parent_fd = os.open(lease.worktree_path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
                         try:
@@ -325,7 +366,8 @@ class MaterializationRepair:
                     lease.dirty, lease.untracked = self.manager._status(Path(lease.worktree_path))
                     self.manager._save(lease)
                     saved.update(phase='completed'); saved['public'].update(
-                        phase='completed', effect='complete', restored_paths=len(state['tracked']),
+                        phase='completed', effect='complete', restored_paths=len(missing),
+                        matching_existing_tracked_paths=sum(r['present'] for r in state['tracked']),
                         dirty=lease.dirty, untracked=lease.untracked,
                         retained_worktree_entries_relocated=quarantine_untracked,
                         notice='Original state/history retained; no target-tree cleanup, prompt retry or provider changes performed.')
