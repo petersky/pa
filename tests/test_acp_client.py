@@ -1616,7 +1616,7 @@ class AgentSessionRestoreTests(unittest.TestCase):
                     }
                 }
             )
-            acp.resume_session = AsyncMock(side_effect=RuntimeError("resume failed"))
+            acp.resume_session = AsyncMock(side_effect=TimeoutError("private resume failed"))
             acp.load_session = AsyncMock(side_effect=RuntimeError("load failed"))
             acp.new_session = AsyncMock()
             context = MagicMock()
@@ -1656,6 +1656,13 @@ class AgentSessionRestoreTests(unittest.TestCase):
             acp.new_session.assert_not_awaited()
             self.assertEqual(existing.id, "pa-session")
             self.assertEqual(existing.external_session_id, "provider-session")
+            self.assertEqual(
+                [(row['method'], row['outcome'], row['category'])
+                 for row in connection.restore_attempts],
+                [('session/resume', 'failed', 'timeout'),
+                 ('session/load', 'failed', 'exception')],
+            )
+            self.assertNotIn('private', json.dumps(connection.restore_attempts))
 
     def test_resolve_session_load_target_helpers(self) -> None:
         async def run() -> None:
