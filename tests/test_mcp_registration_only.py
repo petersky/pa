@@ -199,6 +199,7 @@ async def test_all_ordinary_tool_schemas_match_pre_repair_contract(tmp_path, mon
     baseline = json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_cb2588d3.json').read_text())
     baseline.update(json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_health_journal.json').read_text()))
     baseline.update(json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_conversations.json').read_text()))
+    baseline.update(json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_scheduling.json').read_text()))
     # Two explicit ordinary capabilities; every pre-existing schema remains frozen.
     baseline.update(json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_owner_diagnostics.json').read_text()))
     # One explicit ordinary materialization-repair capability; every existing

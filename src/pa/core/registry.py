@@ -19,7 +19,7 @@ BUILTIN_MODULE_NAMES = frozenset({
     "agent_chat", "agent_providers", "auth", "backups", "browser", "cloud",
     "collaboration", "debug", "files", "fleet", "goals", "instance", "intake",
     "integrations", "items", "limbic", "notifications", "orchestration",
-    "pr-supervisor", "health_journal", "projects", "sync", "telemetry", "theme", "trust", "ui_shell",
+    "scheduling", "pr-supervisor", "health_journal", "projects", "sync", "telemetry", "theme", "trust", "ui_shell",
 })
 
 
@@ -98,6 +98,7 @@ class ModuleRegistry:
         from pa.modules.projects import ProjectsModule
         from pa.modules.sync import SyncModule
         from pa.modules.telemetry import TelemetryModule
+        from pa.modules.scheduling import SchedulingModule
         from pa.modules.health_journal import HealthJournalModule
         from pa.modules.theme import ThemeModule
         from pa.modules.trust import TrustModule
@@ -124,6 +125,7 @@ class ModuleRegistry:
             AgentChatModule(),
             TelemetryModule(),
             HealthJournalModule(),
+            SchedulingModule(),
             BrowserModule(),
             AgentProvidersModule(),
             ThemeModule(),

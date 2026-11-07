@@ -18,6 +18,7 @@ dependencies = [
     "typer>=0.15.0",
     "uvicorn[standard]>=0.34.0",
     "websockets>=15.0",
+    "croniter>=6.2.4",
 ]
 
 [dependency-groups]
