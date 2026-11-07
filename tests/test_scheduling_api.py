@@ -74,3 +74,88 @@ def test_control_page_and_script(client):
     script=client.get('/schedules-controls.js',headers={'test-user':'owner'})
     assert script.status_code==200
     assert 'X-CSRF-Token' in script.text and 'idempotency_key' in script.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('payload',[{'command':'check','options':{'count':3,'enabled':True}},['check',{'items':[1,None]}]])
+async def test_structured_payload_roundtrip_through_mcp_and_api(client,monkeypatch,payload):
+    import json
+    from mcp.server.mcpserver import MCPServer
+    from pa.mcp.tools.scheduling import register_mcp
+    responses=[]
+    def proxy(settings,method,path,**kwargs):
+        response=client.request(method,path,headers={'test-user':'owner'},json=kwargs.get('json'),params=kwargs.get('params'))
+        response.raise_for_status()
+        responses.append(response.json())
+        return response.json()
+    monkeypatch.setattr('pa.mcp.local_api.request_local_pa',proxy)
+    mcp=MCPServer('scheduling-test')
+    register_mcp(mcp,SimpleNamespace(settings=None))
+    await mcp.call_tool('schedule_command',{'action':'create','idempotency_key':'structured-create','schedule':{
+        'name':'Structured','trigger':{'kind':'manual'},'destination':{'kind':'inbox','target':'owner'},'payload':payload}})
+    record=responses[-1]
+    assert record['payload']==payload and type(record['payload']) is type(payload)
+    await mcp.call_tool('schedule_command',{'action':'fire','idempotency_key':'structured-fire','schedule_id':record['id']})
+    envelope=json.loads(client.get(f"/api/schedules/{record['id']}/history",headers={'test-user':'owner'}).json()[0]['envelope'])
+    assert envelope['payload']==payload and type(envelope['payload']) is type(payload)
+    await mcp.call_tool('list_schedules',{'limit':1})
+    assert responses[-1]['schedules'][0]['payload']==payload
+
+
+def test_pagination_discovers_201st_schedule_and_uses_direct_summary(client,monkeypatch):
+    import json
+    from pa.scheduling.store import Schedule
+    ledger=client.app.state.ctx.services['scheduling'].ledger
+    for i in range(201):
+        ledger.create('owner',f'create-{i}',Schedule(name=f'Schedule {i}',trigger={'kind':'manual'},
+            destination={'kind':'inbox','target':'owner'},payload={'index':i}),0)
+    first=ledger.list_page('owner',limit=1)['schedules'][0]
+    ledger.fire('owner',first['id'],'fire',1)
+    def no_history(*args):
+        raise AssertionError('list must select a summary directly')
+    monkeypatch.setattr(ledger,'history',no_history)
+    ids=set();cursor=None;pages=0
+    while True:
+        params={'limit':50,**({'cursor':cursor} if cursor else {})}
+        page=client.get('/api/schedules',headers={'test-user':'owner'},params=params).json()
+        assert len(page['schedules'])<=50
+        ids.update(record['id'] for record in page['schedules'])
+        if pages==0:
+            summary=page['schedules'][0]['last_occurrence']
+            assert summary['state']=='pending' and 'envelope' not in summary
+        pages+=1
+        cursor=page['next_cursor']
+        if cursor is None:
+            break
+    assert len(ids)==201 and pages==5
+    # Follow the same opaque cursor through the actual MCP handler and API proxy.
+    import asyncio
+    from mcp.server.mcpserver import MCPServer
+    from pa.mcp.tools.scheduling import register_mcp
+    replies=[]
+    def proxy(settings,method,path,**kwargs):
+        response=client.request(method,path,headers={'test-user':'owner'},params=kwargs.get('params'))
+        response.raise_for_status()
+        replies.append(response.json())
+        return response.json()
+    monkeypatch.setattr('pa.mcp.local_api.request_local_pa',proxy)
+    async def mcp_pages():
+        mcp=MCPServer('scheduling-pagination')
+        register_mcp(mcp,SimpleNamespace(settings=None))
+        await mcp.call_tool('list_schedules',{'limit':200})
+        await mcp.call_tool('list_schedules',{'limit':200,'cursor':replies[-1]['next_cursor']})
+    asyncio.run(mcp_pages())
+    assert [len(page['schedules']) for page in replies]==[200,1]
+    assert replies[-1]['next_cursor'] is None
+    assert client.get('/api/schedules',headers={'test-user':'other'},params={'cursor':first['id']}).json()['schedules']==[]
+    assert client.get('/api/schedules',headers={'test-user':'owner'},params={'limit':201}).status_code==422
+
+
+def test_json_payload_bound_is_encoded_bytes_and_finite():
+    from pydantic import ValidationError
+    from pa.scheduling.store import Schedule
+    base={'name':'bounded','trigger':{'kind':'manual'},'destination':{'kind':'inbox','target':'owner'}}
+    for payload in [{'text':'x'*16000},{'number':float('inf')}]:
+        with pytest.raises(ValidationError):
+            Schedule(**base,payload=payload)
+    assert Schedule(**base,payload={'text':'é'*100}).payload=={'text':'é'*100}

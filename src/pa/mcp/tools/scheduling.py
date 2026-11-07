@@ -7,9 +7,9 @@ def register_mcp(mcp, ctx):
     from pa.mcp.local_api import request_local_pa
 
     @mcp.tool()
-    def list_schedules() -> dict[str, Any]:
-        """List schedules, delivery status and scheduler health."""
-        return request_local_pa(ctx.settings, 'GET', '/api/schedules')
+    def list_schedules(cursor: str | None = None, limit: int = 50) -> dict[str, Any]:
+        """List one bounded page of schedules/status; pass next_cursor to continue."""
+        return request_local_pa(ctx.settings, 'GET', '/api/schedules', params={'limit':limit, **({'cursor':cursor} if cursor else {})})
 
     @mcp.tool()
     def schedule_history(schedule_id: str) -> list[dict[str, Any]]:

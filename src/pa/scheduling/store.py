@@ -17,7 +17,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import croniter
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 
 class Trigger(BaseModel):
@@ -78,7 +78,7 @@ class Schedule(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     trigger: Trigger
     destination: Destination
-    payload: str = Field(min_length=1, max_length=16000)
+    payload: JsonValue
     context_refs: dict[str, str] = Field(default_factory=dict, max_length=30)
     enabled: bool = True
     expires_at: datetime | None = None
@@ -89,6 +89,10 @@ class Schedule(BaseModel):
 
     @model_validator(mode='after')
     def validate_expiry(self):
+        if isinstance(self.payload, str) and not self.payload:
+            raise ValueError('text payload cannot be empty')
+        if len(json.dumps(self.payload, ensure_ascii=False, allow_nan=False).encode()) > 16000:
+            raise ValueError('payload exceeds 16000 JSON bytes')
         if self.expires_at and self.expires_at.tzinfo is None:
             raise ValueError('expiry requires timezone')
         return self
@@ -173,9 +177,20 @@ class Ledger:
             return self._get(db, owner, sid, include_deleted)
 
     def list(self, owner):
+        return self.list_page(owner)['schedules']
+
+    def list_page(self, owner, cursor=None, limit=50):
+        if not 1 <= limit <= 200:
+            raise ValueError('page limit must be between 1 and 200')
         with self.connect() as db:
-            return [self._get(db, owner, r[0]) for r in db.execute(
-                'SELECT id FROM schedules WHERE owner=? AND deleted=0 ORDER BY id LIMIT 200', (owner,)).fetchall()]
+            rows = db.execute("SELECT id FROM schedules WHERE owner=? AND deleted=0 AND id>? ORDER BY id LIMIT ?",
+                              (owner, cursor or '', limit + 1)).fetchall()
+            records = []
+            for row in rows[:limit]:
+                record = self._get(db, owner, row['id'])
+                record.update(self._summary(db, row['id']))
+                records.append(record)
+            return {'schedules':records, 'next_cursor':rows[limit-1]['id'] if len(rows)>limit else None}
 
     def update(self, owner, sid, key, spec: Schedule, version: int, now: float, delete=False, command_args=None):
         data = spec.model_dump(mode='json')
@@ -349,12 +364,21 @@ class Ledger:
             db.execute("UPDATE occurrences SET state='delivering',envelope=? WHERE id=?", (encode(envelope), oid))
             return {**dict(row), 'envelope':encode(envelope), 'owner':schedule['owner']}
 
+    def _summary(self, db, sid):
+        row = db.execute("""SELECT
+          SUM(CASE WHEN state IN ('pending','delivering') THEN 1 ELSE 0 END) AS pending,
+          MAX(delivered_at) AS last_successful_delivery,
+          MIN(CASE WHEN state='pending' THEN next_retry END) AS next_retry
+          FROM occurrences WHERE schedule_id=?""", (sid,)).fetchone()
+        latest = db.execute("""SELECT id,state,attempts,delivered_at,error,next_retry,
+          json_extract(envelope,'$.due_at') AS due_at,
+          json_extract(envelope,'$.missed_count') AS missed_count,
+          json_extract(envelope,'$.coalesced_count') AS coalesced_count
+          FROM occurrences WHERE schedule_id=? ORDER BY rowid DESC LIMIT 1""", (sid,)).fetchone()
+        return {**dict(row), 'pending':row['pending'] or 0,
+                'last_occurrence':dict(latest) if latest else None}
+
     def status(self, owner, sid):
         with self.connect() as db:
             self._get(db, owner, sid)
-            row = db.execute("""SELECT
-              SUM(CASE WHEN state IN ('pending','delivering') THEN 1 ELSE 0 END) AS pending,
-              MAX(delivered_at) AS last_successful_delivery,
-              MIN(CASE WHEN state='pending' THEN next_retry END) AS next_retry
-              FROM occurrences WHERE schedule_id=?""", (sid,)).fetchone()
-            return {**dict(row), 'pending':row['pending'] or 0}
+            return self._summary(db, sid)

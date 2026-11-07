@@ -6,7 +6,7 @@ import html
 import json
 import time
 from typing import Literal
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -54,15 +54,12 @@ async def call(function, *args, **kwargs):
 
 
 @router.get('')
-async def list_schedules(request: Request):
+async def list_schedules(request: Request, cursor: str | None = Query(default=None, max_length=36),
+                         limit: int = Query(default=50, ge=1, le=200)):
     principal = owner(request)
     current = scheduler(request)
-    records = await call(current.ledger.list, principal)
-    for record in records:
-        history = await call(current.ledger.history, principal, record['id'])
-        record['last_occurrence'] = history[0] if history else None
-        record.update(await call(current.ledger.status, principal, record['id']))
-    return {'schedules':records, 'health':current.health()}
+    page = await call(current.ledger.list_page, principal, cursor=cursor, limit=limit)
+    return {**page, 'health':current.health()}
 
 
 @router.get('/{schedule_id}/history')
@@ -126,7 +123,8 @@ async def scheduling_page(request: Request):
     <p><label>Destination <select id="destination"><option value="inbox">PA inbox</option><option value="agent_session">Agent session</option><option value="messaging">Configured messaging conversation</option><option value="webhook">HTTPS webhook</option></select></label>
     <label>Recipient ID or URL <input id="target" required value="{html.escape(owner(request),quote=True)}"></label>
     <label><input id="interrupt" type="checkbox">Interrupt agent</label></p>
-    <p><label>Message<br><textarea id="payload" required rows="5" cols="70"></textarea></label></p>
+    <p><label>Payload format <select id="payload-format"><option value="text">Text</option><option value="json">JSON</option></select></label></p>
+    <p><label>Message or payload<br><textarea id="payload" required rows="5" cols="70"></textarea></label></p>
     <p><label>Missed deliveries <select id="missed"><option value="catch_up">One catch-up</option><option value="skip">Skip missed</option><option value="replay">Bounded replay</option></select></label>
     <label>Replay limit <input id="replay" type="number" min="1" max="100" value="10"></label>
     <label><input id="coalesce" type="checkbox">Coalesce undelivered notifications</label></p>

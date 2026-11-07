@@ -6,6 +6,10 @@ worker, `/schedules` controls and `/api/schedules` endpoints. Stdio MCP proxies 
 server through `list_schedules`, `schedule_history`, `preview_schedule` and
 `schedule_command`. Registration and CLI boot do not open the ledger.
 
+Payloads accept text or structured JSON and preserve their JSON type in the delivery envelope. UTF-8 JSON payloads are bounded to 16,000 bytes; non-finite numbers are rejected. The UI provides Text/JSON input formats.
+
+Schedule listing uses bounded keyset pages (default 50, maximum 200). API/MCP responses expose `next_cursor`; the MCP accepts that cursor and the UI provides Previous/Next page controls. List summaries select the latest occurrence/status directly without hydrating history envelopes.
+
 Schedules belong to the authenticated local principal. Writes require editor or
 administrator access. Mutations use stable command keys; changing a command under
 an existing key conflicts. Updates, pause/resume and deletion require the current
