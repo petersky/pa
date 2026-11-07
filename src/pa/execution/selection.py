@@ -820,7 +820,7 @@ def validate_reuse(
 
 
 def receipt_in_lineage(config: dict, decision_id: str) -> bool:
-    return any(
+    return decision_id in config.get("execution_selection_admissions", []) or any(
         r and r.get("decision_id") == decision_id
         for r in [
             config.get("execution_selection"),

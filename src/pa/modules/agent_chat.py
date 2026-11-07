@@ -721,6 +721,35 @@ def _live_session_cwd_error(session_id: str, current: str | None, required: str 
     )
 
 
+async def _retain_dispatch_resume_selection(mgr, runtime, dispatch_record) -> None:
+    receipt = dispatch_record.request_payload.get("execution_selection")
+    if not receipt:
+        return
+    from pa.execution.selection_service import SelectionService
+
+    service = getattr(mgr, "_selection_service", None)
+    if service is None:
+        service = mgr._selection_service = SelectionService(mgr.settings, mgr.store, mgr)
+    from copy import deepcopy
+
+    session = runtime.session
+    previous = deepcopy(session.config_json)
+    version = session.updated_at
+    config = await _offload(
+        mgr, "selection.resume_receipt", service.retain_resume_receipt,
+        session.model_copy(deep=True), receipt,
+        authority_instance_id=dispatch_record.authority_instance_id,
+    )
+    if (runtime.session is not session or session.updated_at != version
+            or session.config_json != previous):
+        raise SelectionError("stale_session_selection",
+                             "The session changed during receipt validation; retry the same resume.")
+    runtime.session.config_json = config
+    from pa.execution.selection_audit import bind_confirmed_defaults
+
+    bind_confirmed_defaults(runtime.session)
+
+
 async def _bind_live_dispatch_session(
     mgr,
     runtime,
@@ -730,6 +759,7 @@ async def _bind_live_dispatch_session(
 ) -> None:
     """Attach dispatch provenance and, when required, a worktree to a live session."""
     session = runtime.session
+    await _retain_dispatch_resume_selection(mgr, runtime, dispatch_record)
     session.purpose = "automated_run"
     session.control_mode = "automation"
     session.workflow_state = "active"
@@ -1077,6 +1107,15 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                     mgr.store.get_session,
                     linked_session_id,
                 )
+                receipt = dispatch_record.request_payload.get("execution_selection")
+                if stored and receipt:
+                    from pa.execution.selection_service import validate_resume_scope
+
+                    await _offload(
+                        mgr, "selection.resume_scope", validate_resume_scope,
+                        stored, receipt, instance_id=settings.instance_id,
+                        authority_instance_id=dispatch_record.authority_instance_id,
+                    )
                 if not stored and not body.resume:
                     runtime = await mgr.create_session(
                         context_source_session_id=dispatch_record.request_payload.get(
@@ -1164,6 +1203,8 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                         startup_trace=startup_trace,
                     )
                     created_runtime = True
+                    await _retain_dispatch_resume_selection(mgr, runtime, dispatch_record)
+                    await _offload(mgr, "sqlite.agent_session_save", mgr.store.save_session, runtime.session)
             elif body.resume:
                 raise HTTPException(
                     status_code=409,

@@ -29,6 +29,23 @@ from pa.execution.selection_store import SelectionStore
 logger = logging.getLogger(__name__)
 
 
+def validate_resume_scope(session, receipt, *, instance_id, authority_instance_id):
+    """Validate original ownership before dispatch provenance can be rebound."""
+    selected = validate_reuse(receipt)["selected"]
+    owner = receipt.get("context") or {}
+    if any((
+        owner.get("realm") != session.realm_id,
+        owner.get("principal") != (session.principal_id or "user:local"),
+        owner.get("card_id") != session.card_id,
+        owner.get("policy_instance_id") != authority_instance_id,
+        selected.get("instance_id") != instance_id,
+        selected.get("harness") != session.agent_name,
+    )):
+        raise SelectionError("selection_receipt_scope_mismatch",
+                             "The resume receipt does not own this session's execution scope.")
+    return selected
+
+
 def reconcile_candidates(candidates: list[ExecutionCandidate]) -> list[ExecutionCandidate]:
     """Choose whole scoped observations, never union incompatible capabilities.
 
@@ -523,6 +540,70 @@ class SelectionService:
                 )
             )
         revalidate_attempt_constraints(receipt, constraints)
+
+    def retain_resume_receipt(self, session, receipt, *, authority_instance_id):
+        """Retain an admission for an unchanged native session, never reselect it.
+
+        A resume gets its own authority decision even when its selected tuple is
+        already running. Keep that decision as an admission reference, separate
+        from the active settings receipt and its native-default binding.
+        """
+        from pa.execution.selection import receipt_in_lineage, selection_presentation
+
+        selected = validate_resume_scope(
+            session, receipt, instance_id=self.settings.instance_id,
+            authority_instance_id=authority_instance_id,
+        )
+        principal = session.principal_id or "user:local"
+        config = dict(session.config_json or {})
+        current = config.get("execution_selection")
+        if current:
+            active = validate_reuse(current)["selected"]
+            if any(selected.get(k) != active.get(k) for k in (
+                "instance_id", "harness", "connection", "connection_revision",
+                "model_provider", "native_model_provider",
+            )):
+                raise SelectionError("context_boundary_required",
+                                     "Resume cannot change the existing provider or connection.")
+            self.revalidate_attempt(current, realm=session.realm_id,
+                                    principal=principal, surface="execution")
+        elif (selected.get("connection") != "default"
+              or selected.get("connection_revision")
+              or selected.get("model_provider")
+              or selected.get("native_model_provider")):
+            raise SelectionError("context_boundary_required",
+                                 "The legacy session cannot prove this connection; use a linked attempt.")
+        if (config.get("execution_pending_settings") or {}).get("state") == "pending":
+            raise SelectionError("selection_resume_configuration_unconfirmed",
+                                 "Wait for the existing settings request to finish before resuming.")
+        # Check both the active attempt (including bound Automatic defaults) and
+        # the incoming decision against normalized native readback. A receipt's
+        # pending authority confirmation is not itself provider confirmation.
+        for decision in ([current, receipt] if current else [receipt]):
+            view = selection_presentation(
+                {**config, "execution_selection": decision},
+                model_id=session.model_id, mode_id=session.mode_id,
+            )["provider_confirmation"]
+            values = {
+                **(((config.get("configuration") or {}).get("effective") or {}).get("config") or {}),
+                **view["effective"].get("values", {}),
+            }
+            if (view["state"] != "ready" or view["mismatches"]
+                    or any(values.get(k) != v for k, v in decision["selected"].get("options", {}).items())):
+                raise SelectionError("selection_resume_configuration_unconfirmed",
+                                     "The existing provider has not confirmed the exact resume selection; no settings were changed.")
+        self.revalidate_attempt(receipt, realm=session.realm_id,
+                                principal=principal, surface="execution")
+        if receipt_in_lineage(config, receipt["decision_id"]):
+            return config
+        self.store.save_decision(receipt, session.realm_id, principal)
+        if current:
+            config["execution_selection_admissions"] = [
+                *config.get("execution_selection_admissions", []), receipt["decision_id"],
+            ]
+        else:
+            config["execution_selection"] = receipt
+        return config
 
     def linked_fallback(self, receipt, *, realm, key, prompt, candidate_key=None):
         validate_reuse(receipt)
