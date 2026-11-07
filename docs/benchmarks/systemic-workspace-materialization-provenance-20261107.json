@@ -1,0 +1,90 @@
+{
+  "contract": "pa.workspace-materialization-provenance/v1",
+  "observed_at": "2026-11-07T22:45:43.172511+00:00",
+  "stage": {
+    "base": "c6c57abec0cd7725c1c29f5f35f20107acf49908",
+    "tests_overlapping_not_added": {
+      "provenance": {
+        "tests": 162,
+        "failures": 0,
+        "errors": 0
+      },
+      "provenance-output-bound": {
+        "tests": 4,
+        "failures": 0,
+        "errors": 0
+      }
+    },
+    "source_hashes": {
+      "src/pa/repository/materialization.py": "3c7d1b258234f89372bbd86cf4f79cfd1c3a58cc68be70deb3e7d46b3ad23bd7",
+      "src/pa/repository/materialization_errors.py": "1446ccce5cf56369b8e570d66dc17f825a8ce0b7dcdb92ef481ff1bb1419a180",
+      "src/pa/modules/instance.py": "cb73181a791d92d7320d6899f0277bd6db86c4e7273c2219ca1a1d1a28c97450",
+      "src/pa/mcp/tools/instance.py": "6ace88ec1a8cdf8bd8ac154ad52811a9dff599f7405c3ad6dffb8511f437851b",
+      "tests/test_materialization_provenance.py": "8d2052460be69a98e94e094b6cc2ecc37d338d4770179f71766db460504c81cc",
+      "tests/test_mcp_registration_only.py": "a36d2c6ea3b746e203d17538885ac60bdbafa03d16620c4e8c7c3dfc385f0303",
+      "tests/fixtures/mcp_tool_schemas_materialization_diagnostics.json": "ea8020468c2cca00d0363f5c15c0993b765070514d948eb03d21516ab741cba7"
+    },
+    "implemented": "Idle-owner fenced read-only diagnose action reports up to64tracked difference path/OID/size records, total/truncation and indexhash; capped16MiBtrackedbytes/10000paths. No ignored/untracked hydration or preservation/operation receipt creation. Existing strictprepare/apply inspection unchanged; differingtrackedbytes stillrefusemutation.",
+    "confirmed_live_finding": "PR646exactea8486startup5b0f2db0/PID35401+independent442source443RECORD51pins verified. Sameoperationinitialstatusnone, boundedprepare409correlation5d6def35-42b6-4da8-ad73-befc89808fde codeworkspace_materialization_tracked_bytes_differ. Afterstatusnot_started/effectnone; at leastoneactualtrackedbyte mismatchconfirmed, identities/provenance remainUNKNOWN. Earlier53e9f74cguard notretroactivelyclassified.",
+    "target": "Original0337/control9bb/card7938/lease379/expectedHEAD076d/dirty12preserved. No directtargetFSinspection/edit, no archive/apply/14collection/reclaimedbytes.",
+    "deployment": "Thisprovenance action SOURCEONLY, notinstalled. Prior646installauthorizedonce/complete; nofurtherrestart/installauthorized.",
+    "residuals": "Actualdifferingpaths/provenance/retentionreview required before repair; all739rows180concerns/independent17dOPEN,713.058msfixtureviolation andhistoricalpeer/native/log/coveragegaps retained.",
+    "privacy": "Diagnosticreturn contains bounded path/hash metadata only, nofilebytes. Native/control/response/writer/status/log/wheelbytes LOCAL/hash-only."
+  },
+  "previous_manifest": {
+    "path": "docs/benchmarks/systemic-workspace-materialization-rejections-20261107.manifest.json",
+    "bytes": 1207,
+    "sha256": "b610c11c02a93b96380ca20dc526d99a60cdfa3ac36e8253909ccf419eb3314e"
+  },
+  "prior_source_integration": {
+    "contract": "pa.pr646-confirmed-integration/v1",
+    "observed_at": "2026-11-07T22:27:39.213Z",
+    "pr": 646,
+    "watch": "23f0ff4b-3ea2-43cc-8fb4-050f68c650c7",
+    "head": "a94305a2ca086fead702d13c8d76c597d37490fc",
+    "merge": "c6c57abec0cd7725c1c29f5f35f20107acf49908",
+    "source_tree": "fc6a1707c568562648463adb620fbd84c17b9bae",
+    "merge_tree": "fc6a1707c568562648463adb620fbd84c17b9bae",
+    "head_ci": 42420266163,
+    "head_checks": "5terminalsuccess",
+    "independent_signals": ".dev/materialization-pr646-signals-terminal-20261107.json",
+    "stable_gate": ".dev/pr646-post-refresh-gate-20261107.LOCAL.json",
+    "deployed": false,
+    "target_repaired": false,
+    "remaining": "Original14cleanup/guardunknown/739rows180concerns independent17dOPEN; mainCIpending, candidate80d5134d/packageea8486 notactivated. Whole117323561Bcustodyroot pluslateractualrecords retained nextpublication."
+  },
+  "prior_installed_attestation": {
+    "contract": "pa.pr646-authorized-installed-byte-attestation/v1",
+    "observed_at": "2026-11-07T22:42:12.406602+00:00",
+    "source_head": "a94305a2ca086fead702d13c8d76c597d37490fc",
+    "merge": "c6c57abec0cd7725c1c29f5f35f20107acf49908",
+    "tree": "fc6a1707c568562648463adb620fbd84c17b9bae",
+    "wheel_sha256": "80d5134d7ff8851ec9b71935ef364849e84fb08cd53753be944fde832c27fc3a",
+    "installed_package_identity": "sha256:ea8486e297b04025ae9391ca10b67114910e91c68c87fa19e6b65590640e94df",
+    "source_owned_files_verified": 442,
+    "package_RECORD_entries_verified": 443,
+    "generated_template_cache_verified": true,
+    "unchanged_dependency_versions": 51,
+    "private_both_roots_before_metadata": true,
+    "no_PA_import": true,
+    "scope": "Installed disk/source proof only; fresh captured runtime activation and native recovery remain unverified."
+  },
+  "prior_provenance_metadata_correction": {
+    "contract": "pa.pr646-preinstall-provenance-correction/v1",
+    "observed_at": "2026-11-07T22:39:04.252Z",
+    "original_gate": ".dev/pr646-authorized-preinstall-gate-20261107.json",
+    "original_gate_sha256": "897005fbbbe41175388901d89244defbc8e1befd0d0328ac334c82986c74acfe",
+    "field": "watch",
+    "incorrect_copied_value": "cffeea41-c1a7-4589-8c8a-fb346f0576c0",
+    "correct_pr646_watch": "23f0ff4b-3ea2-43cc-8fb4-050f68c650c7",
+    "reason": "Preinstall helper inherited PR645watch metadata; actual originating PR646 authorization, exact sourcehead/merge/tree, wheel bytes, mainCI and priorhandoff gates were separately validated correctly. Preserve originalgate and installerhash; this corrects provenance only, not authority or install outcome.",
+    "verified_sources": [
+      ".dev/materialization-rejections-ready-pr-20261107.LOCAL.json",
+      ".dev/materialization-pr646-signals-terminal-20261107.json",
+      ".dev/materialization-pr646-confirmed-integration-20261107.json"
+    ],
+    "mutation_replayed": false
+  },
+  "first_failures": "All historicalfailuresretained, includingfirst409/laterconfirmedtrackedbytes409, first646sandboxbuild101 thenapproved0, preinstallwatchcopyerror+immutablecorrection. No repeatedinstall/restart/globalcollect/unknowncollectororattachmentreplay.",
+  "acceptance": "739rows180concerns andindependent17dOPEN; acceptedBackup/DB/recoveryclosedboundedscopes preserved."
+}

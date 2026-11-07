@@ -246,7 +246,7 @@ def register_mcp(mcp, ctx: AppContext) -> None:
     async def workspace_materialization_repair(
         lease_id: str, session_id: str, card_id: str, expected_fence: int,
         expected_head: str, idempotency_key: str,
-        action: Literal['prepare', 'apply', 'status'],
+        action: Literal['prepare', 'apply', 'status', 'diagnose'],
         expected_revision: str | None = None,
         quarantine_untracked: bool = False,
     ) -> dict:
@@ -256,6 +256,8 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         apply requires its exact revision and only fills absent HEAD paths.
         Recover the same operation with status after an uncertain response.
         Does not collect, reset, launch/retry a prompt or change native settings.
+        Diagnose reads bounded tracked-path provenance without preserving or
+        changing the tree/index/receipt; it never permits an apply.
         """
         from urllib.parse import quote
         from pa.mcp.local_api import LocalPAUnknownOutcome

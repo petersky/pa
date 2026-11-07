@@ -1,6 +1,7 @@
 """Allowlisted repair rejection metadata; never expose arbitrary Git/path output."""
 
 _REASONS = {
+    'Tracked provenance exceeds bounded diagnostic capacity': 'diagnostic_capacity',
     'Exact owner is being admitted': 'owner_admitting',
     'Exact owner has an active or pending prompt': 'owner_busy',
     'Durable exact-owner idle evidence is unavailable': 'owner_idle_unverified',
