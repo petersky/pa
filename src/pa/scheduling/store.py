@@ -300,7 +300,7 @@ class Ledger:
                 total, times = backlog['total'], backlog['times']
                 if spec.missed_policy == 'replay':
                     selected = [(t, total - len(times) if i == len(times)-1 else 0) for i, t in enumerate(times)]
-                elif spec.missed_policy == 'skip' and total > 1:
+                elif spec.missed_policy == 'skip' and (total > 1 or (spec.trigger.kind == 'once' and due < now - 1)):
                     selected = []
                 else:
                     selected = [(backlog['due'], total - 1)]

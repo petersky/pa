@@ -20,7 +20,8 @@ Unix timestamp. The UI sends CSRF tokens through the existing middleware.
 
 Intervals anchor at creation and retain cadence across pause/resume. Default
 catch-up creates one occurrence with a missed count. Skip discards a backlog of
-multiple due times; bounded replay retains the earliest configured number and
+multiple due times; for a once trigger it discards a deadline more than one
+worker polling second late. Bounded replay retains the earliest configured number and
 records omitted occurrences in the final replay envelope. Cron catch-up processes
 at most 1,000 due times per schedule per cycle and persists its unfinished cursor.
 No delivery is created from an unfinished cron catch-up batch.

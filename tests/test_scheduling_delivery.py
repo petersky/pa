@@ -250,3 +250,11 @@ async def test_slow_destination_does_not_block_other_acceptance(tmp_path):
         release.set()
         await cycle
     assert all(ledger.history('owner',r['id'])[0]['state']=='delivered' for r in [first,second])
+
+
+@pytest.mark.parametrize('now,expected',[(600.5,1),(3600,0)])
+def test_skip_policy_for_once_has_one_polling_second_grace(tmp_path,now,expected):
+    ledger=Ledger(tmp_path/'s.db')
+    ledger.create('owner','create',spec(trigger={'kind':'once','at':datetime.fromtimestamp(600,UTC)},missed_policy='skip'),0)
+    ledger.tick(now)
+    assert len(ledger.pending(now))==expected
