@@ -361628,5 +361628,25 @@
     "tests_prove": "A deliberately paused preservation does not block another card provisioning in the same cache. Client cancellation and an expired ordinary worker wait do not release owner fences before physical completion.",
     "deployed": "Still PR644079d; no PR645 install/restart or target repair.",
     "acceptance": "All739rows180concerns and independent17dOPEN; acceptedBackup0331/DB89957/recovery5be6 scopesCLOSED."
+  },
+  "workspace_materialization_rejection_metadata_20261107": {
+    "source_base": "d77747742a7d8fa0e89d4756a719b32989a322ec",
+    "tests": {
+      "tests": 159,
+      "failures": 0,
+      "errors": 0
+    },
+    "change": "Existing repair guard rejections use allowlisted structured codes across HTTP/MCP; unknown exception bytes remain private. No admission/lease/receipt/native settings or repair semantics changed.",
+    "confirmed_cause": "The bridge human-readable error includes code/message only for dictionary details; the route returned plain strings. Regression proves guard category and original correlation survive structured response.",
+    "actual_rejecting_guard": "UNKNOWN for original prepare409 correlation53e9f74c-e07b-47d0-98bd-f19953d529c2; source instrumentation is not a cause claim or successful repair.",
+    "runtime_activation": "PR645 exact39b loaded PID26380/startup1df141dc; independent441source/442RECORD/51pins proof retained. This diagnostic source patch not deployed.",
+    "target": "Original0337/control9bb/lease379 dirty12 retained. Sameoperation990c4287statusnot_started/effectnone afterprepare409. No targetrepair or14treecleanup/reclaimedbytes.",
+    "acceptance": "739rows180concerns and independent17d OPEN; earlier713.058ms fixture violation and all historical native/peer/log/inventory gaps retained.",
+    "source_hashes": {
+      "src/pa/modules/instance.py": "ca901611398231e4fde0a86b7333534b1e610e1ecbf6cbea96caf2f6d74208b7",
+      "src/pa/repository/materialization_errors.py": "5ba1ac1fee28ca34fef6e9624663bd97737ace05bb7f0fa1c4f69527c166da2b",
+      "tests/test_workspace_materialization.py": "235c11851f3fab571e9e1152c1778e6edd7cf3c99a53a41e7d38fc1c88f09a7e",
+      "tests/test_materialization_rejection_metadata.py": "dccb83144765d8a59b06501fb0a1fa8c605167a694f767a2b557980d8ba19f04"
+    }
   }
 }

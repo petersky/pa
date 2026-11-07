@@ -1,0 +1,581 @@
+{
+  "contract": "pa.workspace-materialization-rejections/v1",
+  "observed_at": "2026-11-07T22:20:52.087334+00:00",
+  "stage": {
+    "source_base": "d77747742a7d8fa0e89d4756a719b32989a322ec",
+    "tests": {
+      "tests": 159,
+      "failures": 0,
+      "errors": 0
+    },
+    "change": "Existing repair guard rejections use allowlisted structured codes across HTTP/MCP; unknown exception bytes remain private. No admission/lease/receipt/native settings or repair semantics changed.",
+    "confirmed_cause": "The bridge human-readable error includes code/message only for dictionary details; the route returned plain strings. Regression proves guard category and original correlation survive structured response.",
+    "actual_rejecting_guard": "UNKNOWN for original prepare409 correlation53e9f74c-e07b-47d0-98bd-f19953d529c2; source instrumentation is not a cause claim or successful repair.",
+    "runtime_activation": "PR645 exact39b loaded PID26380/startup1df141dc; independent441source/442RECORD/51pins proof retained. This diagnostic source patch not deployed.",
+    "target": "Original0337/control9bb/lease379 dirty12 retained. Sameoperation990c4287statusnot_started/effectnone afterprepare409. No targetrepair or14treecleanup/reclaimedbytes.",
+    "acceptance": "739rows180concerns and independent17d OPEN; earlier713.058ms fixture violation and all historical native/peer/log/inventory gaps retained.",
+    "source_hashes": {
+      "src/pa/modules/instance.py": "ca901611398231e4fde0a86b7333534b1e610e1ecbf6cbea96caf2f6d74208b7",
+      "src/pa/repository/materialization_errors.py": "5ba1ac1fee28ca34fef6e9624663bd97737ace05bb7f0fa1c4f69527c166da2b",
+      "tests/test_workspace_materialization.py": "235c11851f3fab571e9e1152c1778e6edd7cf3c99a53a41e7d38fc1c88f09a7e",
+      "tests/test_materialization_rejection_metadata.py": "dccb83144765d8a59b06501fb0a1fa8c605167a694f767a2b557980d8ba19f04"
+    }
+  },
+  "test_result": {
+    "exit_code": 0,
+    "wall_ms": 106689.631,
+    "log_bytes": 240,
+    "log_sha256": "50d311a14aa9997f6554fa75c24d607047174ea3bcea99fe19aa538524a8c7f3",
+    "private_both_roots": true,
+    "exact_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3"
+  },
+  "previous_manifest": {
+    "path": "docs/benchmarks/systemic-workspace-materialization-isolation-20261107.manifest.json",
+    "bytes": 1258,
+    "sha256": "f24a9c2da18ed5c7238430c3e7e2fbc3577daaeff821c22d111d710f25c17ad2"
+  },
+  "postactivation_checkpoint": {
+    "contract": "pa.pr645-postactivation-prepare-blocker/v1",
+    "observed_at": "2026-11-07T22:16:51.549717+00:00",
+    "parent_checkpoint": ".dev/pr645-authorized-installed-before-restart-checkpoint-20261107.json",
+    "parent_sha256": "8ef52ad897c153eb7c65c4dffc19ff193a236107288a1a7704a4373eeac0bce5",
+    "context": {
+      "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+      "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+      "repository_id": "5ce49cd8-f632-5f6d-a0d5-0b9eaf61f9cd",
+      "repository_url": "https://github.com/petersky/pa",
+      "branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+      "original_base": "4697ed583f6a5eceead72217d07ba2ebaf4ccc83",
+      "worktree": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c",
+      "lease_id": "d24899f49011107365c237bbf09a300f63beb5a5c9658eac682770304ade52f2",
+      "lease_fence_observed": 376,
+      "source_head": "e1fc9019549014a8369bd6312f48c3c2222b50e6",
+      "source_tree": "740d01f70c5814bbc868dbe779dcbbcaaf34f931",
+      "merge": "d77747742a7d8fa0e89d4756a719b32989a322ec",
+      "watch": "cffeea41-c1a7-4589-8c8a-fb346f0576c0"
+    },
+    "git_clean": true,
+    "activated": {
+      "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+      "package_identity": "sha256:39bcec3418f4234ffcb38ed7e53e6b05b156353240cb5d56aa860449075f969f",
+      "pid": 26380,
+      "startup_id": "1df141dc-5f9b-4a8d-8edf-777fb81ff51a",
+      "sync_consistent": true,
+      "independent_disk_record_source": {
+        "contract": "pa.pr645-authorized-installed-byte-attestation/v1",
+        "observed_at": "2026-11-07T22:14:45.787240+00:00",
+        "source_head": "e1fc9019549014a8369bd6312f48c3c2222b50e6",
+        "merge": "d77747742a7d8fa0e89d4756a719b32989a322ec",
+        "tree": "740d01f70c5814bbc868dbe779dcbbcaaf34f931",
+        "wheel_sha256": "e5ebe506f502347bbfe34d04cf97a6cd857e8a158a557f07609c64c07f3df1e3",
+        "installed_package_identity": "sha256:39bcec3418f4234ffcb38ed7e53e6b05b156353240cb5d56aa860449075f969f",
+        "source_owned_files_verified": 441,
+        "package_RECORD_entries_verified": 442,
+        "generated_template_cache_verified": true,
+        "unchanged_dependency_versions": 51,
+        "private_both_roots_before_metadata": true,
+        "no_PA_import": true,
+        "scope": "Installed disk/source proof only; fresh captured runtime activation and native recovery remain unverified."
+      },
+      "same_authorization_consumed_once": true,
+      "reinstall_or_restart_replayed": false
+    },
+    "handoff": {
+      "id": "347800a3-a5f3-5a9b-ac00-45166b52da0d",
+      "key": "systemic-pr645-exactd7774774-managed-restart-20261107-v1",
+      "status": "continuation_queued",
+      "effect": "pending",
+      "attempt": 1,
+      "delivered_at": null,
+      "rule": "Freshstartup is verified but queuedcontinuation is not completedelivery. Preserve both; neverrearm/restart/replay. Letexisting same-session continuation run afterturn."
+    },
+    "target": {
+      "card": "7938e21e-05fe-4dc9-b85e-98689957dd9d",
+      "session": "0337e686-6170-470c-89c7-5285925f43f0",
+      "control": "9bb01f22-f57f-4e51-9797-c2bb915e75f5",
+      "lease": "d9ea842fb88042da897eb242548081c11e8e49d7e093f8da92deb6867e983346",
+      "fence_last_observed": 379,
+      "state": "ready/dirty12/controlcompleted/idlequeue0/disconnectedafterrestart",
+      "expected_head": "076d2eb1f4c898e0a8e0ef5ca628d790d2c2b63e",
+      "supported_repository_snapshot": "ExpectedHEAD/branch matched, dirty12; explicitly nonauthoritative, not a repairreceipt.",
+      "operation_key": "systemic-pr645-cleanup9bb-materialization-20261107-v1",
+      "operation_id": "990c428757f55ea293f4a7d7a8d3c56108e10a63dc22367b747c2e2a142fcfd7",
+      "quarantine_untracked": true,
+      "prepare": "RejectedHTTP409 correlation53e9f74c-e07b-47d0-98bd-f19953d529c2",
+      "after_prepare_status": "not_started/effectnone",
+      "preservation_or_apply_or_collection_performed": false,
+      "bytes_reclaimed_by_root": 0,
+      "rejecting_guard": "UNKNOWN; MCPbridge drops plainstringHTTPdetail. Runtime/disconnected/durable-idle/fileprovenance explanations are hypotheses, not confirmedcause."
+    },
+    "next_actions": [
+      "Continue existing queuedhandoff same session; no duplicatedcontinuation or consumedapprovalreplay.",
+      "Use supported bounded observability to identify guard; if unavailable implement narrow structured allowlisted rejectionreason sourcefix in own clean leasedcheckout, meaningful PA Core tests/readyPR/supervisor/exactheadgreen; no policy/fence relaxations.",
+      "Beforedependentmutation recover SAMEdedicatedstatus/currentlease/head/nativecontrol/queue/receipt/idle; neverblindprepare/apply retry, retarget, reset/clean/discard.",
+      "Only verifiedprepare/provenance/retention permits applyexactrevision; afterward single bounded originalownerfollowup and verify actualnative running/14tree outcomes/reclaimedbytes."
+    ],
+    "reports": [
+      "a014ec8c-88a6-419f-b584-58092d2afd24 canonical occurrence retained; new prepare409 observation recorded",
+      "861aef1f-3d04-461d-8594-fc5b4260ccf2 expanded acceptance remainsOPEN"
+    ],
+    "acceptance": {
+      "requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+      "rows": 739,
+      "concerns": 180,
+      "lane": "active",
+      "state": "OPEN; sourceintegration/install not runtime/deployed/representative/fleet/wholePA acceptance",
+      "residuals": "713.058ms missing-all fixture500msviolation; all historical/native/peer/log/foreground/background inventory gaps remain."
+    },
+    "protected_custody": {
+      "manifest": "docs/benchmarks/systemic-workspace-materialization-isolation-20261107.manifest.json",
+      "root_bytes": 114465920,
+      "root_sha256": "9f7ba6b2a1ddc21973a625d6f1e0ee0014e64207cef7e59f5adba81cfd1360b0",
+      "nextpublication": "ENTIRE114465920B parent byte-exact plus ALLactual latercustody including CI/merge/authorization/install/newhandoff/activation/repair/retest/eachfirstfailure. Private native/control/response/writer/status/log/wheelbytes LOCAL/hash-only. No deletion/LFS/config/historyhacks."
+    },
+    "actual_later_custody": [
+      {
+        "path": ".dev/pr645-activation-question-before-turn-end-20261107.LOCAL.json",
+        "bytes": 14817,
+        "sha256": "338aeef97a49c49cb80e7175dba5cef17e263135095d60228a7199b8f009a83e",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-activation-question-notification-20261107.LOCAL.json",
+        "bytes": 14817,
+        "sha256": "338aeef97a49c49cb80e7175dba5cef17e263135095d60228a7199b8f009a83e",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-activation-question-notification-list-20261107.LOCAL.json",
+        "bytes": 116080,
+        "sha256": "bf4c233286905a7794e5983aac30b376e41f2675c6dbe22329428680caae1235",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-activation-review-cleanup-control-20261107.LOCAL.json",
+        "bytes": 635525,
+        "sha256": "4538132a21ebc55d8a1edfcbc14113d8b0408d8080e19322bae2d5f308c3e98d",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-activation-review-cleanup-lease-20261107.LOCAL.json",
+        "bytes": 2003,
+        "sha256": "759c88e5bb09e5ba446beb1ab4e34fd44d6512c8c39e673554b07b51be5673d9",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-activation-review-cleanup-liveness-20261107.LOCAL.json",
+        "bytes": 10676,
+        "sha256": "60692c97022cb29ca7e679f25ab873403dc9a120f2e2ca4f34156494dc8f340c",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-activation-review-own-lease-20261107.LOCAL.json",
+        "bytes": 2001,
+        "sha256": "7070704c4cbe877a5383b522e4b6da7013008c541aea8193539aacef1ce0f2d0",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-activation-review-status-20261107.LOCAL.json",
+        "bytes": 3896,
+        "sha256": "3f3b9396a2a4468eac6e74016781594c1c4491d545c7ada1b60badec191df9f3",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-activation-review-watch-20261107.LOCAL.json",
+        "bytes": 222082,
+        "sha256": "d40c56a8e05298961878960a90b9bc3cab503adc8f2f8f8abb4263142c590ccf",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-after-activation-question-dispatch-20261107.LOCAL.json",
+        "bytes": 232884,
+        "sha256": "ce26c80dc4624ff78e5e8803c0f0e7808dff3cadb4acd00db2f41ce00a8479eb",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-authorized-afterinstall-before-restart-status-20261107.LOCAL.json",
+        "bytes": 3896,
+        "sha256": "ae4b38f72922e3a627cdf5f0fbd67177cb7a6a4c04ea6d98236c0ee9d3a750f2",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-authorized-continuation-prefix-20261107.LOCAL.txt",
+        "bytes": 1367,
+        "sha256": "8e904f6348423603eaebbd00b76b2462f969f47713c57c52da277fe35560749f",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-authorized-install-attempt-20261107.LOCAL.json",
+        "bytes": 789,
+        "sha256": "4a4d779a9592f6fd3599287d241ffbfba95314894c9de68f301747f1dbbcc7ff",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-authorized-install-result-20261107.LOCAL.json",
+        "bytes": 458,
+        "sha256": "d7b55553943d50393ae720de35d5dfb3f598e96bf6f54a5ae72c178886c62126",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-authorized-install-result-20261107.LOCAL.log",
+        "bytes": 438,
+        "sha256": "993b0756ed99762bfecab84643c42a6044732eaa9414f07f9773725f5c31c2d0",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-authorized-installed-attestation-20261107.json",
+        "bytes": 841,
+        "sha256": "5f2cd67aa93dcf8a0fbe4fc0a223c842892b553e19c80f0d8615cb8a70043033",
+        "custody": "public metadata"
+      },
+      {
+        "path": ".dev/pr645-authorized-installed-before-restart-checkpoint-20261107.json",
+        "bytes": 32708,
+        "sha256": "8ef52ad897c153eb7c65c4dffc19ff193a236107288a1a7704a4373eeac0bce5",
+        "custody": "public metadata"
+      },
+      {
+        "path": ".dev/pr645-authorized-installed-cleanup-report-20261107.LOCAL.json",
+        "bytes": 479,
+        "sha256": "dad4b7e0da996585b537a5d4a923f0489cc73748cac91f8f3119753e23c21ca5",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-authorized-installed-progress-20261107.LOCAL.json",
+        "bytes": 371,
+        "sha256": "776dd0ce86b3af2b44e480ddc2fa7c11f2bc974a50e52129cb30df866db3fb4b",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-authorized-installed-systemic-report-20261107.LOCAL.json",
+        "bytes": 480,
+        "sha256": "ffa2e683a3ce204a642b9f0d4aeada19a9cbdd6e0dc93c695eeac38d22dfc197",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-authorized-managed-restart-continuation-20261107.LOCAL.txt",
+        "bytes": 9938,
+        "sha256": "a50129c54a874a8188840df19afcdb1a42a54deea3b03fc4ebccfb738d6215ba",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-authorized-managed-restart-preview-20261107.LOCAL.json",
+        "bytes": 20952,
+        "sha256": "3d30b9114c786fd53f1715c3285ce15da2f337204d397e0d98614b13c291577f",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-authorized-notification-20261107.LOCAL.json",
+        "bytes": 17921,
+        "sha256": "8f9c4d429395e9a2e2a6bff983979d9b1fa5d39d11a0f91a84c1af5003ac82f5",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-authorized-preinstall-cleanup-control-20261107.LOCAL.json",
+        "bytes": 635525,
+        "sha256": "e71699ab9f01707788d5e9902acbd818fb02258fb304d77e82bf3eb6f32c332f",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-authorized-preinstall-cleanup-decision-20261107.LOCAL.json",
+        "bytes": 123134,
+        "sha256": "9d79ccf628a2780d190dfd9ee6271208b91a62c68ab956d9ec7c89e9b4fab51b",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-authorized-preinstall-cleanup-lease-20261107.LOCAL.json",
+        "bytes": 2003,
+        "sha256": "759c88e5bb09e5ba446beb1ab4e34fd44d6512c8c39e673554b07b51be5673d9",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-authorized-preinstall-cleanup-live-20261107.LOCAL.json",
+        "bytes": 10676,
+        "sha256": "1fe4c819a4dc318086d545773af4c8f163d47ab1afe9fdac6614c3dc921f9c7d",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-authorized-preinstall-gate-20261107.json",
+        "bytes": 2669,
+        "sha256": "e8c6b6d646e940727101a8878af279e8941005613381eec586342d609ebfca98",
+        "custody": "public metadata"
+      },
+      {
+        "path": ".dev/pr645-authorized-preinstall-own-lease-20261107.LOCAL.json",
+        "bytes": 2001,
+        "sha256": "f0e3ad76da645a900dd840c6e7293b08915c2abd357ee953144a41f6e5ab8c6a",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-authorized-preinstall-status-20261107.LOCAL.json",
+        "bytes": 3896,
+        "sha256": "ae4b38f72922e3a627cdf5f0fbd67177cb7a6a4c04ea6d98236c0ee9d3a750f2",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-before-activation-cleanup-control-20261107.LOCAL.json",
+        "bytes": 13194,
+        "sha256": "8b72e025281657ae51713b0b221b412ecab9e2239febef641b9e7f61bd1a7176",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-before-activation-cleanup-lease-20261107.LOCAL.json",
+        "bytes": 2003,
+        "sha256": "759c88e5bb09e5ba446beb1ab4e34fd44d6512c8c39e673554b07b51be5673d9",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-before-activation-cleanup-live-20261107.LOCAL.json",
+        "bytes": 10676,
+        "sha256": "98157134e47f6d2fd3935b20bdde5b45dc1e47586ecaaefecc5a7c36f0995d7a",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-before-activation-own-lease-20261107.LOCAL.json",
+        "bytes": 2001,
+        "sha256": "7070704c4cbe877a5383b522e4b6da7013008c541aea8193539aacef1ce0f2d0",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-before-activation-status-20261107.LOCAL.json",
+        "bytes": 3896,
+        "sha256": "3f3b9396a2a4468eac6e74016781594c1c4491d545c7ada1b60badec191df9f3",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-delayed-notice-activation-state-20261107.LOCAL.json",
+        "bytes": 17921,
+        "sha256": "8f9c4d429395e9a2e2a6bff983979d9b1fa5d39d11a0f91a84c1af5003ac82f5",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-delayed-oldhead-revalidation-20261107.json",
+        "bytes": 2332,
+        "sha256": "777fd419c1416702cf5abbc02183147d7cf742de54891953773eae843234aa23",
+        "custody": "public metadata"
+      },
+      {
+        "path": ".dev/pr645-delayed-oldhead-supervisor-notice-20261107.LOCAL.json",
+        "bytes": 8718,
+        "sha256": "62d8271b7b537204222d4765cf968e81ff229d3754e99a4e76a6f967546d2286",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-exact-activation-question-receipt-20261107.LOCAL.json",
+        "bytes": 354,
+        "sha256": "be90cea646d70905637e3607158168f9491f6e9b20cf2ef2853922599ceac6e5",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-exact-activation-request-record-20261107.json",
+        "bytes": 2317,
+        "sha256": "81ac785cfa31cc44c8b499a2f122f35d821a96fe4a6f02993c04815ed75ca385",
+        "custody": "public metadata"
+      },
+      {
+        "path": ".dev/pr645-first-ci-failure-20261107.json",
+        "bytes": 534,
+        "sha256": "4efc1d9147ac4c448f207eb5e7ab8b63699dd1c30f18bf2744a7ca98c90e3c7b",
+        "custody": "public metadata"
+      },
+      {
+        "path": ".dev/pr645-first-ci-failure-sandbox-retry-20261107.json",
+        "bytes": 641,
+        "sha256": "407eeca36e5e74bc910bf250ad5af3f3db6cd47bd1053abae4ff979ef9181b10",
+        "custody": "public metadata"
+      },
+      {
+        "path": ".dev/pr645-first-failed-shard-20261107.LOCAL.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-first-failed-shard-request-20261107.LOCAL.log",
+        "bytes": 94,
+        "sha256": "eed65211f0fcee1b82c2661764250c1adaebcb36f0cb78a702d59632f056c439",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-first-failed-shard-request-sandbox-retry-20261107.LOCAL.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-first-failed-shard-sandbox-retry-20261107.LOCAL.log",
+        "bytes": 161391,
+        "sha256": "f9c535376db0ead3375dbc4b9d160e9b51a4b30336c00add98521b69298c86a0",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-initial-ci-problem-current-20261107.LOCAL.json",
+        "bytes": 4697,
+        "sha256": "15821e275e680239d6ba761d4eb8e87cfa0f9ab4f2ef282b594e320dd47ff3d7",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-integrated-ci-corrected-occurrence-report-20261107.LOCAL.json",
+        "bytes": 478,
+        "sha256": "2dcd9bdc9e327dc39eca4e19b90ef5d7e227fd74fc64111d6c23039f82022ce3",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-integrated-ci-report-20261107.LOCAL.json",
+        "bytes": 318,
+        "sha256": "1efc1394c2f1017cb9a07e35a89c2458fc22cf24cd85f19b5e7b0e4ab90d0c9a",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-integrated-cleanup-report-20261107.LOCAL.json",
+        "bytes": 479,
+        "sha256": "a540beb352c565969f9c55214d03eb4b471cf43bfaf64940f16b405a93590ae4",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-integrated-systemic-report-20261107.LOCAL.json",
+        "bytes": 480,
+        "sha256": "3255e4d4d8e680a65f44b472025bf529a53902f65cd759ea7adac979c0e0e120",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-managed-restart-continuation-20261107.LOCAL.txt",
+        "bytes": 8277,
+        "sha256": "8f993d95ee4dbd0604520d98af1606ccfa3c146605816045d61a9fc92b1239c8",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-managed-restart-preview-20261107.LOCAL.json",
+        "bytes": 17615,
+        "sha256": "679709f216cab0fb21a93479e4367f37231367ccf6b2afc05351ad85a47c3603",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-managed-restart-receipt-20261107.LOCAL.json",
+        "bytes": 25790,
+        "sha256": "aedb44b31575d55764ae9133ac2a46f8c8ce0ab156f26e7434f666ebca0bdc33",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-materialization-after-prepare-status-20261107.LOCAL.json",
+        "bytes": 244,
+        "sha256": "041cd5ce63ef04c884f0d8bf6f3a88cd16dd993bc8063515217af2022edefd62",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-materialization-blocked-owner-diagnostics-20261107.LOCAL.json",
+        "bytes": 6352,
+        "sha256": "481ecefb5be8b4d475283c078cbebe613b4bec9296032ac9146dd7e80463bb44",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-materialization-initial-status-20261107.LOCAL.json",
+        "bytes": 244,
+        "sha256": "041cd5ce63ef04c884f0d8bf6f3a88cd16dd993bc8063515217af2022edefd62",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-materialization-prepared-20261107.LOCAL.json",
+        "bytes": 370,
+        "sha256": "16234df0591c61e4baa305c1729b74f08f4da667e078c639607401d2a7437093",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-materialization-supported-repository-inspection-20261107.LOCAL.json",
+        "bytes": 21345,
+        "sha256": "a3b351cb65bf8e893f6ee0c2d7a618dd311f1f4cfca0523ef6e97965988b506e",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-newrestart-pre-request-outcome-20261107.LOCAL.json",
+        "bytes": 789,
+        "sha256": "219fecabe15a9550676b59041828fb81691233941be29073366878be0f4abba8",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-newrestart-pre-request-reconciliation-20261107.LOCAL.json",
+        "bytes": 999,
+        "sha256": "0ddd1425c3860946ecca58c042650d5e0d1d6a2080037f9d3a396bc7de81f8a9",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-newrestart-reconciled-before-request-20261107.LOCAL.json",
+        "bytes": 1056,
+        "sha256": "a3cc62e0c88f7aff3475d2bd1ddfc7aae150bb7fa5a8109b0516849854922733",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-postactivation-handoff-current-20261107.LOCAL.json",
+        "bytes": 1914,
+        "sha256": "b1d1bdd255d348267f3cd716c75abee3bfcc94dc54df2ae815bbd338af3e88d5",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-postactivation-prepare409-cleanup-report-20261107.LOCAL.json",
+        "bytes": 479,
+        "sha256": "f42dad3685c5fc75747e45e0a69ac9d82d3b01b1e1435ac2aa54d4b4797c6b0b",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-postactivation-prepare409-progress-20261107.LOCAL.json",
+        "bytes": 360,
+        "sha256": "420bac241a44bcf0c00fe3c310929a730f49bf9362382477deccd1f3f28daccf",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-postrestart-cleanup-decision-20261107.LOCAL.json",
+        "bytes": 123134,
+        "sha256": "9d79ccf628a2780d190dfd9ee6271208b91a62c68ab956d9ec7c89e9b4fab51b",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-postrestart-installed-attestation-20261107.json",
+        "bytes": 841,
+        "sha256": "753fc406f76a16cdf7ec087b17648805c2fa3d3faf9a46cf5d5e8ec5e9ca0100",
+        "custody": "public metadata"
+      },
+      {
+        "path": ".dev/pr645-response-continuation-handoff-20261107.LOCAL.json",
+        "bytes": 1914,
+        "sha256": "b1d1bdd255d348267f3cd716c75abee3bfcc94dc54df2ae815bbd338af3e88d5",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-response-continuation-ownlease-20261107.LOCAL.json",
+        "bytes": 2001,
+        "sha256": "0038d255d8ebadcc5b24e086b0f2c3cdae1f8cd199473e45c94e3c746bd3ce29",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-response-continuation-status-20261107.LOCAL.json",
+        "bytes": 3896,
+        "sha256": "2cbffcde1cc192ffcd193daf844608b5989ced9004520714b63ccaf04c0f9297",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-response-continuation-targetcontrol-20261107.LOCAL.json",
+        "bytes": 635525,
+        "sha256": "84d9c282d608335f11e3f0cfc99665cd596d21d6cc5d0e664ff05355845b20fd",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-response-continuation-targetlease-20261107.LOCAL.json",
+        "bytes": 2003,
+        "sha256": "de5f032b33a6fe68c370cee2f00b5ba55ad70b29856ae0530cb86f2c710d15b0",
+        "custody": "LOCAL/hash-only"
+      },
+      {
+        "path": ".dev/pr645-response-continuation-targetlive-20261107.LOCAL.json",
+        "bytes": 10472,
+        "sha256": "ca9976dfbd98b83fb65aa127ec70c2e85c29b587ae05580f3141bed2f3208106",
+        "custody": "LOCAL/hash-only"
+      }
+    ],
+    "private_both_roots_before_imports": true,
+    "no_PA_import": true
+  },
+  "first_failures": "All originalPR645schemaCI/sourcehelper/sandbox/logwriter/rejectedoccurrenceupdate retained. Firstprepare409 retained; not retried.",
+  "authorization": "PR645 native response consumed once, no reinstall/furtherrestart authorized by this source repair. Private response bytes remain LOCAL/hash-only.",
+  "handoff": "347800a3 actualnewstartupverified while continuation previouslyqueued; read currentowner receipt independently. No rearm of prior638/643/644/645 identities."
+}

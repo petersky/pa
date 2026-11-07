@@ -436,6 +436,7 @@ async def repair_workspace_materialization(request: Request, lease_id: str,
     """
     user = require_user(request)
     from pa.repository.materialization import MaterializationRepair
+    from pa.repository.materialization_errors import rejection_detail
     from pa.repository.workspace import WorkspaceProvisioningError
     ctx = request.app.state.ctx
     agent = ctx.require_service('instance_agent')
@@ -451,9 +452,9 @@ async def repair_workspace_materialization(request: Request, lease_id: str,
             )
         runtime = agent.get(body.session_id)
         if body.session_id in agent._admitting_sessions:
-            raise HTTPException(409, 'Exact owner is being admitted')
+            raise HTTPException(409, rejection_detail('Exact owner is being admitted'))
         if runtime and (runtime.prompting or runtime._queue or runtime._prompt_lock.locked() or runtime._prompt_admission_lock.locked()):
-            raise HTTPException(409, 'Exact owner has an active or pending prompt')
+            raise HTTPException(409, rejection_detail('Exact owner has an active or pending prompt'))
         agent._admitting_sessions.add(body.session_id)
         try:
             from contextlib import AsyncExitStack
@@ -473,15 +474,15 @@ async def repair_workspace_materialization(request: Request, lease_id: str,
                     if (not session or session.status == 'closed' or not isinstance(durable, dict)
                             or 'in_flight' not in durable or durable['in_flight'] is not None
                             or durable.get('queued_prompts') != []):
-                        raise HTTPException(409, 'Durable exact-owner idle evidence is unavailable')
+                        raise HTTPException(409, rejection_detail('Durable exact-owner idle evidence is unavailable'))
                 if session.card_id != body.card_id:
-                    raise HTTPException(409, 'Owner card binding changed')
+                    raise HTTPException(409, rejection_detail('Owner card binding changed'))
                 if session.principal_id not in {None, principal} and getattr(user, 'role', None) != 'admin':
-                    raise HTTPException(403, 'Workspace belongs to another principal')
+                    raise HTTPException(403, rejection_detail('Workspace belongs to another principal'))
                 if lease_id not in (session.execution_binding or {}).get('lease_ids', []):
-                    raise HTTPException(409, 'Owner is not bound to this exact lease')
+                    raise HTTPException(409, rejection_detail('Owner is not bound to this exact lease'))
                 if agent.get(body.session_id) is not runtime or (runtime and (runtime.prompting or runtime._queue)):
-                    raise HTTPException(409, 'Exact owner state changed')
+                    raise HTTPException(409, rejection_detail('Exact owner state changed'))
                 try:
                     return await executor.run_blocking(
                         'workspace.materialization_repair',
@@ -490,7 +491,7 @@ async def repair_workspace_materialization(request: Request, lease_id: str,
                         **body.model_dump(), timeout=300.0, wait_for_completion=True,
                     )
                 except WorkspaceProvisioningError as exc:
-                    raise HTTPException(409, str(exc)) from None
+                    raise HTTPException(409, rejection_detail(str(exc))) from None
         finally:
             agent._admitting_sessions.discard(body.session_id)
 
