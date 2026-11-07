@@ -68,6 +68,17 @@ class WorkspaceReconcileRequest(BaseModel):
     collect: bool = True
 
 
+class WorkspaceMaterializationRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=200)
+    card_id: str = Field(min_length=1, max_length=200)
+    expected_fence: int = Field(gt=0)
+    expected_head: str = Field(pattern=r'^[0-9a-f]{40,64}$')
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    action: Literal['prepare', 'apply', 'status']
+    expected_revision: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$')
+    quarantine_untracked: bool = False
+
+
 class CapacityConfigUpdate(BaseModel):
     dispatch_capacity: int = Field(
         default=DEFAULT_DISPATCH_CAPACITY, ge=1, le=MAX_DISPATCH_CAPACITY
@@ -413,6 +424,80 @@ async def reconcile_workspace_leases(
         }
 
     return await runtime.run_blocking("workspace.reconcile", reconcile, timeout=300.0)
+
+
+@router.post('/workspaces/{lease_id}/materialization')
+async def repair_workspace_materialization(request: Request, lease_id: str,
+                                           body: WorkspaceMaterializationRequest) -> dict:
+    """Preserve/inspect or explicitly fill one exact idle owner's missing checkout.
+
+    No global collection, reset, new session, provider setting or prompt retry.
+    Status recovers the same durable operation; an unknown effect is not replayed.
+    """
+    user = require_user(request)
+    from pa.repository.materialization import MaterializationRepair
+    from pa.repository.workspace import WorkspaceProvisioningError
+    ctx = request.app.state.ctx
+    agent = ctx.require_service('instance_agent')
+    executor = ctx.require_service('async_runtime')
+    principal = get_principal_id(request)
+
+    async def owned():
+        if body.action == 'status':
+            return await executor.run_blocking(
+                'workspace.materialization_status',
+                MaterializationRepair(agent.workspace_manager).operate,
+                lease_id=lease_id, principal=principal, **body.model_dump(),
+            )
+        runtime = agent.get(body.session_id)
+        if body.session_id in agent._admitting_sessions:
+            raise HTTPException(409, 'Exact owner is being admitted')
+        if runtime and (runtime.prompting or runtime._queue or runtime._prompt_lock.locked() or runtime._prompt_admission_lock.locked()):
+            raise HTTPException(409, 'Exact owner has an active or pending prompt')
+        agent._admitting_sessions.add(body.session_id)
+        try:
+            from contextlib import AsyncExitStack
+            async with AsyncExitStack() as locks:
+                if runtime:
+                    await locks.enter_async_context(runtime._prompt_admission_lock)
+                    await locks.enter_async_context(runtime._prompt_lock)
+                    session = runtime.session
+                else:
+                    session = await executor.run_blocking(
+                        'workspace.materialization_owner_read', agent.store.get_session, body.session_id,
+                    )
+                    durable = (session.config_json or {}).get('durable_runtime') if session else None
+                    # Recovery must work before a failed native startup can be
+                    # retried, without starting/substituting that conversation.
+                    # Missing or queued persisted state is not idle evidence.
+                    if (not session or session.status == 'closed' or not isinstance(durable, dict)
+                            or 'in_flight' not in durable or durable['in_flight'] is not None
+                            or durable.get('queued_prompts') != []):
+                        raise HTTPException(409, 'Durable exact-owner idle evidence is unavailable')
+                if session.card_id != body.card_id:
+                    raise HTTPException(409, 'Owner card binding changed')
+                if session.principal_id not in {None, principal} and getattr(user, 'role', None) != 'admin':
+                    raise HTTPException(403, 'Workspace belongs to another principal')
+                if lease_id not in (session.execution_binding or {}).get('lease_ids', []):
+                    raise HTTPException(409, 'Owner is not bound to this exact lease')
+                if agent.get(body.session_id) is not runtime or (runtime and (runtime.prompting or runtime._queue)):
+                    raise HTTPException(409, 'Exact owner state changed')
+                try:
+                    return await executor.run_blocking(
+                        'workspace.materialization_repair',
+                        MaterializationRepair(agent.workspace_manager).operate,
+                        lease_id=lease_id, principal=principal,
+                        **body.model_dump(), timeout=300.0,
+                    )
+                except WorkspaceProvisioningError as exc:
+                    raise HTTPException(409, str(exc)) from None
+        finally:
+            agent._admitting_sessions.discard(body.session_id)
+
+    # Include the complete request in the join key; persistent fingerprint checks
+    # reject a reused key with changed arguments after a reconnect/restart.
+    key = hashlib.sha256(json.dumps([principal, lease_id, body.model_dump()], sort_keys=True).encode()).hexdigest()
+    return await executor.run_owned('workspace-materialization:' + key, owned)
 
 
 def _workspace_state_counts(leases) -> dict[str, int]:
