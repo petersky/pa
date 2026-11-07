@@ -3258,6 +3258,7 @@ class AgentSessionManager:
         self._startup_session_id: str | None = None
         self._startup_decisions: list[dict[str, str]] = []
         self._restart_handoff_tasks: dict[str, asyncio.Task[None]] = {}
+        self._restart_failure_notices: deque[tuple[str, int]] = deque(maxlen=128)
         self._default_label = "default"
         self._lock = asyncio.Lock()
         self._reconnect_lock = asyncio.Lock()
@@ -5027,6 +5028,85 @@ class AgentSessionManager:
                 handoff_id, status="failed", error=(str(exc) or type(exc).__name__)[:1000],
                 failure_stage=stage, reason_code=restart_reason_code(exc), expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id,
             )
+            await self._surface_restart_failure(handoff)
+
+    async def _surface_restart_failure(self, handoff: RestartHandoff) -> None:
+        """Surface an existing failure without changing its receipt or replaying it.
+
+        Recovery revisits failed receipts. Cache only confirmed notice custody;
+        a fresh process checks the durable dedup key before any create, so
+        acknowledged notices and recovery sweeps do not amplify durable writes.
+        """
+        service = getattr(self, "notification_service", None)
+        if (
+            not service or handoff.status != "failed"
+            or handoff.instance_id != self.settings.instance_id
+        ):
+            return
+        from pa.domain.notifications import (
+            RESTART_FAILURE_NOTICE_CAPABILITY,
+            NotificationCreate,
+        )
+        from urllib.parse import urlencode
+
+        key = f"restart-handoff-failure:{handoff.id}:{handoff.phase_version}"
+        marker = (handoff.id, handoff.phase_version)
+        try:
+            async with self.label_lock("restart-handoff-notice"):
+                if marker in self._restart_failure_notices:
+                    return
+                current = await self._offload(
+                    "sqlite.restart_handoff_notice_receipt",
+                    self.store.get_restart_handoff, handoff.id,
+                )
+                if (
+                    current is None or current.status != "failed"
+                    or current.phase_version != handoff.phase_version
+                ):
+                    return
+                session = await self._offload(
+                    "sqlite.restart_handoff_notice_context",
+                    self.store.get_session, handoff.session_id,
+                )
+                if session is None:
+                    return  # No guessed realm/principal for an orphaned receipt.
+                existing = await self._offload(
+                    "sqlite.restart_handoff_notice_read",
+                    service.store.find_notification_by_dedup, session.realm_id, key,
+                )
+                if existing is None:
+                    await self._offload(
+                        "sqlite.restart_handoff_notice_create",
+                        service.create,
+                        NotificationCreate(
+                            realm_id=session.realm_id,
+                            principal_id=session.principal_id,
+                            visibility="principal" if session.principal_id else "realm",
+                            type="service_health", severity="error", priority="high",
+                            capability=RESTART_FAILURE_NOTICE_CAPABILITY,
+                            title="Managed restart needs attention",
+                            summary="The restart or its continuation was not confirmed. Inspect the owning session.",
+                            body=(
+                                "PA saved a failed restart handoff. Its effect remains unconfirmed, "
+                                "and the saved continuation may not have run. The session owner must "
+                                "inspect the saved failure and current runtime, then coordinate safe "
+                                "continuation. Do not repeat an unconfirmed restart. "
+                                "Opening or dismissing this notice does not retry it or resume an agent."
+                            ),
+                            session_id=session.id,
+                            card_id=handoff.card_id,
+                            project_id=handoff.project_id,
+                            dispatch_id=session.dispatch_id,
+                            destination_url="/agent?" + urlencode({"session": session.id}),
+                            deduplication_key=key,
+                        ),
+                        principal_id=f"instance:{self.settings.instance_id}",
+                    )
+                self._restart_failure_notices.append(marker)
+        except Exception:
+            # The failed receipt stays authoritative. A later sweep retries
+            # notice custody, never the unknown restart effect.
+            logger.exception("Could not surface failed restart handoff %s", handoff.id)
 
     async def _offload_restart_recovery(self, operation, *args, **kwargs):
         return await self._offload(
@@ -5083,6 +5163,7 @@ class AgentSessionManager:
             from pa.instance.restart_lifecycle import retryable_owner_failure
             transient_failure = retryable_owner_failure(handoff)
             if handoff.status == "failed" and not transient_failure:
+                await self._surface_restart_failure(handoff)
                 continue
             if handoff.status in {"requested", "waiting_for_turn_end", "quiescing"}:
                 if not replay_only and not self._should_abort_admission() and handoff.id not in self._restart_handoff_tasks:

@@ -1,3 +1,17 @@
+## Current status — failed restart visibility source, 2026-11-07
+
+**All 724 findings / 173 concerns remain open.** Every prior718 row and field is preserved; five observed runtime names and the failed-handoff visibility concern are appended. [Current evidence and complete history](benchmarks/systemic-restart-failure-visibility-20261107.json) retains the complete99,654,177-byte input root plus actual later custody, first failures and adverse outcomes. Earlier headings below describe their original observation times.
+
+The same systemic session resumed on released v1.6.0. All439 release source files and440 RECORD entries match the running startup-captured packagebc67; PR639 is included. This does not turn the old638 operation into a success: handoff1b705ee2 remains failed/quiescing/effectUNKNOWN/attempt0 with no delivered continuation and must not be replayed. The original recovery, backup and database cards remain closed for their accepted scopes.
+
+New source persists an actionable notice for an owned failed handoff in the default outstanding inbox. It links to the owning session, omits raw errors/prompts, and requires no new permission response. Opening or dismissing it neither restarts PA nor sends a prompt. Existing receipt/replay/admission gates remain. Stable receipt/phase dedup and a bounded128-entry confirmed cache prevent repeated sweep writes; a fresh process checks durable notice custody before creation. No new wire enum, schema migration, default, timeout, warning threshold or production workload was introduced.
+
+The bounded32-receipt fixture writes32 first notices;100 warm sweeps and100 fresh-manager sweeps write0 notices, preserving every original receipt and noticeversion1/coalesced1. Full p50/p95/p99/max and all operation phases remain in the artifact. These are private source results, not native/fleet acceptance. The first benchmark failed before seeding because its private database parent was absent; only fixture directory creation was corrected. The first broader run retained314passes/1Agent-disabled harness failure; only the existing mocked fixture enabled flag was restored, with finally cleanup.
+
+The passive released snapshot preserves130 operations/22 prefixes/48 routes. Thirteen operation names have lifetime maxima>=500ms, including maintenance8887.322ms, provisioning16369.393ms and Fleetagent16916.662ms. Fleetoverview199failed/195timedout and syncpeer8failed remain. The8slow_calls counter is not a count of warning log emissions; route rolling windows and process lifetime maxima remain separate. One new legacy-binding observation is4.245ms, not broad recovery acceptance.
+
+This source is not deployed. Full realKernel/provider/MCP/admission/startup/drain/concurrency/page/API, native maintenance/offCPU/busy/physicalIO/GC, payload bounds, peer/logloss/retention/FD/missingobject/unknownreceipt/work/screenshot and independent17d acceptance remain required. No restart/install/configuration/cleanup or self-verification occurred. Historical records follow unchanged.
+
 ## Current status — session wire source638, 2026-11-02
 
 **All718 findings /172 concerns remain open.** PR637 is integrated at2db5c50f with equal source/merge trees and first5success head+main checks; it is uninstalled. The running service remains exact635. [Complete current evidence and immutable history](benchmarks/systemic-session-wire638-20261101.json) retains all earlier fields, first failures and adverse populations. The JSON ledger's current overlay supersedes the historical status labels below.

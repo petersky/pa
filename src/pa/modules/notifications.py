@@ -16,6 +16,7 @@ from pa.auth.middleware import get_principal_id, require_user
 from pa.core.context import AppContext
 from pa.core.contracts import Module
 from pa.domain.notifications import (
+    RESTART_FAILURE_NOTICE_CAPABILITY,
     ContinuationTransferRequest,
     InteractionResponse,
     InteractionState,
@@ -176,6 +177,21 @@ def _context_metadata(request: Request, item: Notification) -> dict[str, Any]:
 
 
 def _presentation_metadata(item: Notification) -> dict[str, Any]:
+    if (
+        item.interaction is None
+        and item.type == NotificationType.SERVICE_HEALTH
+        and item.capability == RESTART_FAILURE_NOTICE_CAPABILITY
+    ):
+        return {
+            "category": "blocker",
+            "status": "Restart needs inspection" if not item.resolved_at else "Dismissed",
+            "required_action": (
+                "Open the owning session, inspect the saved failure and current runtime, "
+                "then coordinate continuation without repeating an unconfirmed restart."
+                if not item.resolved_at else None
+            ),
+            "next_effect": "Opening or dismissing this notice does not restart PA or send an agent prompt.",
+        }
     interaction = item.interaction
     if interaction:
         state = interaction.state
