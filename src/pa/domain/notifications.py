@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 MAX_INTERACTION_BYTES = 128 * 1024
 MAX_NOTIFICATION_BYTES = 256 * 1024
 MAX_RESPONSE_BYTES = 64 * 1024
+RESTART_FAILURE_NOTICE_CAPABILITY = "restart-handoff-failure:v1"
 
 
 def concise_notification_summary(value: str, *, limit: int = 1000) -> str:
@@ -307,6 +308,15 @@ class Notification(BaseModel):
             return False
         if self.expires_at and self.expires_at <= datetime.now(UTC):
             return False
+        # A failed restart needs visible inspection, not another permission or
+        # a fabricated interaction response. Keep its notice in the default
+        # inbox until explicitly dismissed, using the existing wire schema.
+        if (
+            self.interaction is None
+            and self.type == NotificationType.SERVICE_HEALTH
+            and self.capability == RESTART_FAILURE_NOTICE_CAPABILITY
+        ):
+            return True
         return bool(
             self.interaction
             and self.interaction.state

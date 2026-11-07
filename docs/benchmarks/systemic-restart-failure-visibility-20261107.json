@@ -1,0 +1,107 @@
+{
+  "contract": "pa.systemic-restart-failure-visibility-source/v1",
+  "observed_at": "2026-11-07T17:13:13.898224+00:00",
+  "source_base": "972545d75a0935e16d12b4d62a844e8496af46b5",
+  "coverage": {
+    "rows": 724,
+    "concerns": 173,
+    "all_open": true,
+    "prior718rows_exact_values_preserved": true,
+    "requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57"
+  },
+  "repair": "Durable default-outstanding-inbox failed-handoff notice scoped to owner/realm/principal/session with safe inspection action. No raw prompts/errors, new interaction/newwireenum, receipt mutation or effect replay. Bounded128confirmed cache plus durable dedup before creates.",
+  "source_tests": {
+    "final": 315,
+    "targeted": 10,
+    "overlap": true,
+    "first_broader": "314pass1fixtureAgentdisabled failure retained; exact known mocked fixture flag restored only.",
+    "first_benchmark": "Failed before seeding/timed samples: private database parent absent; only private mkdir corrected."
+  },
+  "private_benchmark": {
+    "first_notice": {
+      "latency_ms": {
+        "samples": 32,
+        "p50": 0.5213748663663864,
+        "p95": 0.688167056068778,
+        "p99": 1.5433751977980137,
+        "max": 1.5433751977980137
+      },
+      "notice_writes": 32
+    },
+    "warm_recovery_sweep": {
+      "latency_ms": {
+        "samples": 100,
+        "p50": 0.3054169937968254,
+        "p95": 0.313374912366271,
+        "p99": 0.3197919577360153,
+        "max": 0.3494999837130308
+      },
+      "notice_writes": 0
+    },
+    "fresh_manager_recovery_sweep": {
+      "latency_ms": {
+        "samples": 100,
+        "p50": 7.619374897330999,
+        "p95": 8.435208816081285,
+        "p99": 9.53083299100399,
+        "max": 11.90508296713233
+      },
+      "notice_writes": 0
+    }
+  },
+  "benchmark_scope": "32/100/100 sample-count percentile distributions retained; individual raw stage timer arrays were NOT captured. Full runtime aggregate fields/bounded windows retained; no claim of raw per-call trace or physical IO. This clarifies earlier report wording complete samples.",
+  "benchmark_operation_counters": {
+    "submitted": 9928,
+    "slow_calls": 0,
+    "failed": 0,
+    "timed_out": 0,
+    "rejected": 0
+  },
+  "current_release": {
+    "version": "1.6.0",
+    "commit": "fdaf93edc839df25b48722819b0e9288c13058d9",
+    "package": "sha256:bc67e76532e52de5f46b59f4d251e1c43423465212ff82fa7ca2a9e072f8dadd",
+    "attested_files": 439,
+    "verified_RECORD_entries": 440,
+    "applicable637638639_source_included": true,
+    "exact638_old_operation_success": false
+  },
+  "current_passive_inventory": {
+    "operations": 130,
+    "families": 22,
+    "routes": 48,
+    "lifetime_ge500ms_names": 13,
+    "slow_call_counter": 8,
+    "counted_log_emissions": "unverified",
+    "artifact": ".dev/systemic-recovery-20261107-release-inventory.json"
+  },
+  "old638_effect": "failed/quiescing/UNKNOWN/attempt0/deliverednull; not replayed or replaced. Current release proof does not overwrite it.",
+  "reports": {
+    "main_source": {
+      "report_id": "861aef1f-3d04-461d-8594-fc5b4260ccf2",
+      "revision": 265,
+      "hash": "51a8160c4e8f2e30c8c79019b6512f3f00240365c1c56dfcd7b058b3088b5d13"
+    },
+    "visibility_source": {
+      "report_id": "49882396-278a-407d-a4d6-ec7cdfb76ea3",
+      "revision": 2,
+      "hash": "12f6f3f4e89f84c0442cd695b0062bdc2a5368fbb0bdaf719782f5ce0a10630f"
+    }
+  },
+  "integration": "Source candidate, supervised exact-head integration pending at this frozen stage.",
+  "deployment": "NOT deployed; no install/restart/config/default/GC/threshold/policy/cleanup or extra production workload authorized/performed.",
+  "acceptance": "All724rows173concerns OPEN; exact17d scheduler independent acceptance unaccepted. Full realKernel/provider/MCP/admission/startupdrain/concurrency/pageAPI/maintenance/busy/offCPU/physicalIO/GC/payload/peer/logloss/retention/FD/missingobject/unknownreceipt/work/screenshot gaps remain. Originalacceptedbackup0331/DB89957/recovery5be6scopesCLOSED.",
+  "complete_parent": {
+    "path": ".dev/exact638-runtime-review-inputs-20261101.raw.json.gz",
+    "bytes": 99654177,
+    "sha256": "5ee252a57851c12b225a8a43b1a51e1ec9229fc767fe939b6e824e4e697d7e27"
+  },
+  "private_custody_rule": "Raw prompts/answers/writers/native/control/status/logXMLZIP/wheel LOCAL/hashonly; full earlier parent/layers/firstfailures/adverse/unknowns preserved.",
+  "complete_lossless_bundle": {
+    "path": "docs/benchmarks/systemic-restart-failure-visibility-20261107.raw.json.gz",
+    "bytes": 102497805,
+    "sha256": "e23d533c037c4cfc11143ea81c6660b85eb42607daa65d9af0c2cbaaea2663d4"
+  },
+  "input_count": 77,
+  "private_hash_only_count": 67
+}
