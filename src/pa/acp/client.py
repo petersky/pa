@@ -5,6 +5,7 @@ import copy
 import inspect
 import json
 import logging
+import time
 from collections import deque
 from collections.abc import Awaitable, Callable
 from contextlib import nullcontext
@@ -61,6 +62,7 @@ from pa.acp.mcp_config import (
 from pa.acp.providers.base import AgentProviderSpec
 from pa.acp.providers.registry import DEFAULT_PROVIDER_ID, get_provider
 from pa.acp.providers.resolve import _spawn_overrides
+from pa.acp.restore_diagnostics import record_restore_attempt
 from pa.acp.sandbox_health import sandbox_health_registry
 from pa.acp.session_titles import apply_provider_title, clean_title
 from pa.acp.startup_trace import SessionStartupTrace
@@ -815,6 +817,7 @@ class AgentConnection:
         self._resume_supported: bool = False
         self._load_supported: bool = False
         self._list_supported: bool = False
+        self.restore_attempts: list[dict[str, Any]] = []
         self._disconnect_lock = asyncio.Lock()
         self._configuration_lock = asyncio.Lock()
         self._init_response: Any = None
@@ -1299,6 +1302,7 @@ class AgentConnection:
         session_cwd = cwd or str(self.settings.data_dir)
         self.session_cwd = session_cwd
         restored = False
+        self.restore_attempts = []
         session_meta: dict[str, Any] = {}
         restore_methods = []
         if self._resume_supported:
@@ -1319,6 +1323,7 @@ class AgentConnection:
                             self._conn,
                             session_id=resume_external_id,
                             cwd=session_cwd,
+                            diagnostics=self.restore_attempts,
                             on_info=lambda info: self._client.session_titles.setdefault(resume_external_id, {
                                 "title": info.get("title") if isinstance(info, dict) else getattr(info, "title", None),
                                 "updated_at": info.get("updatedAt", info.get("updated_at")) if isinstance(info, dict) else getattr(info, "updated_at", None),
@@ -1329,6 +1334,7 @@ class AgentConnection:
                         resume_external_id, load_cwd = resolved
                         self.session_cwd = load_cwd
                     await self._abort_connect_if_shutting_down(stage=restore_method)
+                    restore_started = time.perf_counter()
                     try:
                         restore = (
                             self._conn.resume_session
@@ -1356,9 +1362,11 @@ class AgentConnection:
                             )
                         restore_resp = await restore(**restore_kwargs)
                         session_meta = extract_models_modes_config(restore_resp)
+                        record_restore_attempt(self.restore_attempts, restore_method, restore_started, 'ok')
                         restored = True
                         break
                     except Exception as exc:
+                        record_restore_attempt(self.restore_attempts, restore_method, restore_started, 'failed', exc)
                         logger.warning(
                             "ACP %s failed (%s); trying the next restore method",
                             restore_method,
@@ -2390,6 +2398,7 @@ async def _resolve_session_load_target(
     session_id: str,
     cwd: str,
     on_info=None,
+    diagnostics: list[dict[str, Any]] | None = None,
 ) -> tuple[str, str] | None:
     """Resolve session/load params, or None when the session should not be loaded.
 
@@ -2400,9 +2409,12 @@ async def _resolve_session_load_target(
     list_sessions = getattr(conn, "list_sessions", None)
     if list_sessions is None:
         return session_id, cwd
+    started = time.perf_counter()
     try:
         listed = await list_sessions()
     except Exception as exc:
+        if diagnostics is not None:
+            record_restore_attempt(diagnostics, 'session/list', started, 'failed', exc)
         logger.debug(
             "ACP session/list failed (%s); attempting load with cwd=%s",
             _format_acp_error(exc),
@@ -2414,6 +2426,8 @@ async def _resolve_session_load_target(
     if sessions is None and isinstance(listed, dict):
         sessions = listed.get("sessions")
     if sessions is None:
+        if diagnostics is not None:
+            record_restore_attempt(diagnostics, 'session/list', started, 'ok')
         return session_id, cwd
 
     for info in sessions:
@@ -2421,8 +2435,12 @@ async def _resolve_session_load_target(
             continue
         if on_info:
             on_info(info)
+        if diagnostics is not None:
+            record_restore_attempt(diagnostics, 'session/list', started, 'ok')
         return session_id, _session_info_cwd(info) or cwd
 
+    if diagnostics is not None:
+        record_restore_attempt(diagnostics, 'session/list', started, 'not_listed')
     logger.info(
         "ACP session %s not present in session/list; creating new session",
         session_id,

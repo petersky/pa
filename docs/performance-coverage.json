@@ -255923,6 +255923,29 @@
       "next_actor": "Same systemic session; independent17d scheduler final acceptance.",
       "next_action": "Verify deployed exact-owner native receipt and single delivery after separately authorized activation.",
       "artifact": "docs/benchmarks/systemic-dispatch-resume-selection-20261107.json"
+    },
+    {
+      "id": "concern:native-restore-attempt-observability",
+      "kind": "concern",
+      "finding": "Exact cleanup owner native restoration failed before delivery; supported diagnostics omit per-method failure attribution",
+      "family": "startup",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "measurement": {
+        "source": "docs/benchmarks/systemic-native-restore-diagnostics-20261107.json",
+        "same_control_retries": 1,
+        "native_delivery_acknowledgments": 0,
+        "cleanup_success": false
+      },
+      "cause_classification": "confirmed_observability_gap_native_cause_unverified",
+      "fix_or_existing_owner": "Same systemic session; preserve original native identity and strict restoration/admission gates.",
+      "implemented": "Bounded source metadata only; original native restoration cause not fixed.",
+      "merged": [],
+      "deployed": "UNDEPLOYED for diagnostic patch; PR643 package9dcd activated independently",
+      "retested": "Tool-free restore contracts and diagnostic privacy/regression suites; actual native cause and cleanup acceptance remain OPEN.",
+      "resolution": "open",
+      "next_actor": "Same systemic source owner; existing cleanupowner only after safe recovery.",
+      "next_action": "Integrate diagnostic source, separate activation authorization if required, inspect actual native attempts before any further retry. No new worker/session/reselection or unknown replay.",
+      "artifact": "docs/benchmarks/systemic-native-restore-diagnostics-20261107.json"
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -361357,5 +361380,12 @@
       "original724rows_exactly_preserved": true,
       "all_open": true
     }
+  },
+  "native_restore_diagnostics_source_20261107": {
+    "artifact": "docs/benchmarks/systemic-native-restore-diagnostics-20261107.json",
+    "rows": 732,
+    "concerns": 179,
+    "all_open": true,
+    "original731rows_exactly_preserved": true
   }
 }

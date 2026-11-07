@@ -1311,6 +1311,8 @@ class AgentSessionRuntime:
                     await self.connection.configure(configuration, force=True)
                     self.session = self.connection.session or self.session
         except Exception as exc:
+            from pa.acp.restore_diagnostics import safe_restore_attempts
+
             failed_configuration = dict(
                 ((self.session.config_json or {}).get("configuration") or {})
             )
@@ -1322,6 +1324,9 @@ class AgentSessionRuntime:
                     else "provider_startup",
                     "error": str(exc)[:1000],
                     "configuration": failed_configuration,
+                    "restore_attempts": safe_restore_attempts(
+                        getattr(self.connection, "restore_attempts", [])
+                    ),
                 },
             )
             self._flush_transcript()

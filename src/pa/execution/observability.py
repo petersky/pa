@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pa.execution.progress import sanitize_text
+from pa.acp.restore_diagnostics import safe_restore_attempts
 from pa.execution.session_presentation import build_session_presentation
 
 SESSION_OBSERVABILITY_VERSION = 1
@@ -48,6 +49,10 @@ def _safe_event(event: Any) -> dict[str, Any]:
         for key, value in dict(event.payload or {}).items()
         if key in allowed
     }
+    if event_type == 'session_admission_failed':
+        attempts = safe_restore_attempts((event.payload or {}).get('restore_attempts'))
+        if attempts:
+            payload['restore_attempts'] = attempts
     return {
         "seq": event.seq,
         "type": event_type,
