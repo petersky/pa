@@ -101,3 +101,9 @@ monitoring agent. It is not evidence of production agent delivery, cross-machine
 failover or managed deployment. Source integration, CI/review, exact-head runtime
 acceptance and deployment coordination remain distinct requirements. Do not claim
 card completion from source tests or fixture delivery alone.
+
+The opt-in `tests/test_scheduling_real_clock.py` additionally waits for two actual
+ten-minute deliveries through PA's real authority/target input paths into a durable
+agent queue. Run with `PA_SCHEDULING_REAL_CLOCK=1`; ordinary CI skips it. The
+recipient is a disposable quiesced runtime and transport, so this verifies queue
+acceptance without starting a model or claiming deployed-recipient acceptance.
