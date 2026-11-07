@@ -7147,3 +7147,32 @@ The new `selection.resume_receipt` and `selection.resume_scope` operations valid
 PR643 merge `9a282853` is captured by startup `41491c6a`/PID58393/package9dcd; independent439source/440RECORD checks and51unchanged dependencies match. One supported retry of SAME cleanup control9bb/session0337 failed safely at provisioning because strict native conversation restoration exhausted resume/load. No prompt acknowledgment, queued turn, new session or cleanup success; individual native cause is unknown. Earlier scalar initial-prompt wording is corrected: current and retained preinstall full controls contain empty objects. All prior claims and failures remain retained.
 
 New bounded source instrumentation exposes at most3 allowlisted method/outcome/duration/category/JSON-RPC-code rows through the existing durable failure event and supported diagnostic projection. No raw provider messages/data/identity/cwd/configuration or prompts. This source does not repair the unknown native cause and is undeployed. No further installation/restart or production retry in this continuation. Full live inventory of104operations/29route groups and all current slow/failed observations is retained in [stage evidence](benchmarks/systemic-native-restore-diagnostics-20261107.json). Five slow worker observations and peer tails remain; no whole-PA acceptance. All731prior rows are exact-value preserved; new total732rows/179concerns remains OPEN with independent17d acceptance.
+
+
+## Targeted workspace materialization repair — 2026-11-07
+
+739 rows / 180 concerns remain open. The prior 732 published rows retain their exact values; the earlier decision-route overlay is now published alongside four named operation boundaries, one new route and one concern. No whole-PA acceptance is inferred.
+
+The original cleanup owner stopped on an empty index, 1,425 staged deletions and 12 untracked paths. Source inspection confirms that a failed-checkout retry could accept identity without completed materialization; it does not prove the historical cause. A normal disposable Git checkout populated its index, disproving the simplest hypothesis.
+
+The new supported operation prepares verified preservation of every existing entry, original index bytes/mode and unique HEAD commits. Apply requires the exact lease fence, HEAD and preserved-state revision. It fills only absent tracked paths. Untracked evidence stays in place unless the explicit preparation option relocates it intact to retained custody. No reset, clean, global collection, new provider identity, automatic prompt retry or setting change occurs. Interrupted effects remain inspectable and cannot be blindly replayed.
+
+Validation: 109 tests passed in the final overlapping regression run; full private Kernel/OpenAPI boot passed. A disposable 1,425-file fixture restored a clean checkout and retained 12 evidence files. Latest prepare/apply: 201.788/651.593 ms, one sample each. Thirty normal-resume samples retained p50/p95/p99/max and zero added Git processes. Earlier 651.448 and 693.523 ms apply violations and all initial failures are retained. These measurements are not representative/deployed acceptance.
+
+Source is not activated. Next: supervised exact-head green integration, concrete exact-wheel activation approval, then supported prepare of original lease379; verify provenance/preservation before apply and same original cleanup-owner recovery. No actual target cleanup or reclaimed bytes is claimed. Native/control/response/log/writer/wheel bytes remain LOCAL/hash-only. Full numeric and custody evidence: `docs/benchmarks/systemic-workspace-materialization-20261107.json` and the adjacent ordered-chunk manifest.
+
+
+### Empty-index ambiguity and CI correction — 2026-11-07
+
+An empty index can mark existing files as staged deletions. The current repair verifies their Git blob IDs, types and executable modes against HEAD, preserves matching files/inodes in place, and materializes only missing paths. Differing tracked bytes remain a hard stop. Explicit quarantine moves only Git-visible untracked files; ignored caches stay in place. Preparation preserves full original content, modes, owner metadata and nanosecond timestamps in the archive/manifest, with exact original index bytes/mode and unique commits retained.
+
+Corrected validation: 113 tests pass, including the complete frozen MCP schema contract and registration-only lifecycle guard; private Kernel/OpenAPI boot passes. Only the new ordinary-tool schema fixture was added. First CI42415826818attempt1 shard0 failure and the initial sandbox log-read/build failures remain retained. The initial3203 wheel is superseded and uninstalled.
+
+Two disposable1,425file samples: matching-existing prepare401.013/apply300.481ms with0filesreplaced; missing-all prepare196.321/apply657.796ms, one unchanged500msthreshold violation. Twelve evidence files survive each variant and both end clean. No representative or deployed acceptance. All739rows/180concerns stayopen; the prior739row values are preserved as historical evidence and this stage supplies current corrections. No live repair/cleanup or reclaimed bytes is claimed. Current full evidence: `docs/benchmarks/systemic-workspace-materialization-matching-20261107.json` and adjacent ordered chunks/manifest.
+
+
+### Lease isolation and physical completion — 2026-11-07
+
+Preservation now holds only its card-admission/exact-lease locks, not the shared repository-cache lock. Another card can provision in the same cache while preservation is deliberately paused. The original runtime/admission fences remain held until physical worker completion, including after client cancellation or an expired ordinary wait. Existing120s response waits, native Git300s bounds and500ms warnings are unchanged.
+
+115 local regressions pass plus private Kernel/OpenAPI boot. Prior corrected headec86 CI42416722386 is terminal5/5success, but it is superseded before merge by these isolation corrections. Latest1425file samples: matching397.521/297.599ms with existing inodes unchanged; missing-all200.616/713.058ms, one retained500msviolation. All739row values remain intact with this additional current overlay; 180concerns and independent17dremainOPEN. No original-tree repair, activation, cleanup or reclaimed bytes is claimed. Current full evidence: `docs/benchmarks/systemic-workspace-materialization-isolation-20261107.json` and adjacent ordered chunks/manifest.

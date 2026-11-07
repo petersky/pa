@@ -347,7 +347,7 @@ def test_missing_worktree_is_recovered_but_detached_worktree_fails_closed(
     assert Path(failed.worktree_path).is_dir()
 
 
-def test_restart_finishes_worktree_left_in_provisioning_state(tmp_path: Path) -> None:
+def test_restart_preserves_changes_in_worktree_left_in_provisioning_state(tmp_path: Path) -> None:
     manager, _, linked = manager_for(tmp_path)
     lease = manager.provision_repository(
         linked, project_id="project-1", session_id="session-1", card_id="card-1"
@@ -360,12 +360,11 @@ def test_restart_finishes_worktree_left_in_provisioning_state(tmp_path: Path) ->
             (lease.id,),
         )
 
-    recovered = manager.provision_repository(
-        linked, project_id="project-1", session_id="session-1", card_id="card-1"
-    )
-
-    assert recovered.state == "ready"
-    assert readme.read_text() == "base\n"
+    with pytest.raises(WorkspaceProvisioningError, match='retained changes'):
+        manager.provision_repository(
+            linked, project_id="project-1", session_id="session-1", card_id="card-1"
+        )
+    assert not readme.exists()
 
 
 def test_invalid_partial_cache_and_credential_url_are_retained_or_rejected(

@@ -1,0 +1,29 @@
+{
+  "contract": "pa.lossless-ordered-gzip-chunks/v1",
+  "bytes": 108903583,
+  "sha256": "fdfbfc76fe2bbe8636201923156b4bcc7ff40607a541698f2a930fc92aaeede1",
+  "ordered_chunks": [
+    {
+      "path": "docs/benchmarks/systemic-workspace-materialization-20261107.raw.json.gz.part001",
+      "bytes": 52428800,
+      "sha256": "e565d71d51809fea84274de412da7ca5c24bae33c80a11ebf8842335e34f096f"
+    },
+    {
+      "path": "docs/benchmarks/systemic-workspace-materialization-20261107.raw.json.gz.part002",
+      "bytes": 52428800,
+      "sha256": "9097b644f09eec930f636efe8fbc4572548687c231dc4390be85243966ff54ae"
+    },
+    {
+      "path": "docs/benchmarks/systemic-workspace-materialization-20261107.raw.json.gz.part003",
+      "bytes": 4045983,
+      "sha256": "e2a926794e83b2b328363e12d8f13b740575bc079a0babf92a7d54fc8be79d75"
+    }
+  ],
+  "parent": {
+    "bytes": 106118803,
+    "sha256": "1b1c186cdb4c34b819f9b81a69bf40b41845187a81354416e147c4b11c5fe5a6"
+  },
+  "public_inputs": 57,
+  "local_hash_only_inputs": 163,
+  "verification": "All chunks reassemble byte-exact; gzip/JSON decoded; embedded entire preceding106118803B parent byte-equal. All prior732rows exact-value retained;739rows180concerns allOPEN."
+}

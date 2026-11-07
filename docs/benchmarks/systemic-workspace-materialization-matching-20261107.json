@@ -1,0 +1,145 @@
+{
+  "contract": "pa.workspace-materialization-matching-source/v1",
+  "observed_at": "2026-11-07T21:35:09.645703+00:00",
+  "superseded_head": "3203d1104dcffa90008ffbe3f8dff543be2f250f",
+  "previous_artifact": {
+    "path": "docs/benchmarks/systemic-workspace-materialization-20261107.json",
+    "bytes": 1122295,
+    "sha256": "97392085b5432fe0f09981f6e6970a4740d702f20379ba0884e62d610455b86e"
+  },
+  "stage": {
+    "artifact": "docs/benchmarks/systemic-workspace-materialization-matching-20261107.json",
+    "rows": 739,
+    "concerns": 180,
+    "all_open": true,
+    "prior739rows_exact_values_retained": true,
+    "source_only": true,
+    "source_hashes": {
+      "src/pa/repository/materialization.py": "8e68f1bfd5b5f2a1d765e3419e4cfbfe1eae0bd9e2901dd90a52ed700244c04f",
+      "src/pa/repository/workspace.py": "05f52c7038356c3e1ba11131fe551e48f3959f394ff073b661a64d268f913067",
+      "src/pa/modules/instance.py": "ad4e7fc5a415a010e822ca355353ae06b8e09d33c73fcd83db5548496683e620",
+      "src/pa/mcp/tools/instance.py": "539c104caaae3871dc787ca119214836e1943764ea541f69eaddcaebfcb1e5c7",
+      "tests/test_workspace_materialization.py": "a0e5e165bc6f1ee7551ada123a59b918ab53807475dafc8ab4450df7ec1fe92b",
+      "tests/test_repository_workspaces.py": "b6040219629cb6d1799e4f4120fcab4de1b1afeab3d071a7009e3c928ce79c59",
+      "tests/test_mcp_registration_only.py": "e6ece20776223ba7aca8a3067c69507c4cf5813ad5a24eba7c7025eeed3d5c52",
+      "tests/fixtures/mcp_tool_schemas_materialization.json": "a5f1c8f7367891fbd0b763f84511aabec6acaa5269794838a6999953ceb2f5d3"
+    },
+    "tests": {
+      "tests": 113,
+      "failures": 0,
+      "errors": 0
+    },
+    "correction": "Empty index does not imply absent files. Match existing file bytes, Git blob IDs, types and executable modes against HEAD; preserve matching file inodes. Restore only missing paths. Refuse differing user data. Explicit quarantine moves only Git-visible untracked files; ignored caches remain.",
+    "resource_limits": "Streaming1MiB chunks, at most8GiB existing file bytes and100000entries, plus free capacity for twice retained bytes+missing bytes+64MiB. These are new preservation resource bounds, not changed PA warning/deadline/GC thresholds.",
+    "deployed": "Current079d is PR644; no PR645 install/restart/target repair or new prompt yet.",
+    "acceptance": "All739rows180concerns and independent17dOPEN; acceptedBackup0331/DB89957/recovery5be6 scopesclosed."
+  },
+  "measurement": {
+    "contract": "pa.materialization-matching-and-missing-fixtures/v1",
+    "scope": "Disposable private1425file Git fixtures, one sample per variant. No production workload or fault injection, no passing distribution or acceptance inferred.",
+    "variants": [
+      {
+        "variant": "matching_existing",
+        "samples": 1,
+        "tracked_paths": 1425,
+        "matching_inodes_unchanged": true,
+        "prepare_ms": 401.013,
+        "apply_ms": 300.481,
+        "restored_paths": 0,
+        "matching_existing_tracked_paths": 1425,
+        "untracked_evidence_preserved": 12,
+        "clean_checkout": true,
+        "threshold_ms": 500,
+        "sampled_threshold_violations": 0
+      },
+      {
+        "variant": "missing_all",
+        "samples": 1,
+        "tracked_paths": 1425,
+        "matching_inodes_unchanged": false,
+        "prepare_ms": 196.321,
+        "apply_ms": 657.796,
+        "restored_paths": 1425,
+        "matching_existing_tracked_paths": 0,
+        "untracked_evidence_preserved": 12,
+        "clean_checkout": true,
+        "threshold_ms": 500,
+        "sampled_threshold_violations": 1
+      }
+    ],
+    "gc_enabled": true,
+    "source_sha256": {
+      "src/pa/repository/materialization.py": "8e68f1bfd5b5f2a1d765e3419e4cfbfe1eae0bd9e2901dd90a52ed700244c04f",
+      "src/pa/repository/workspace.py": "05f52c7038356c3e1ba11131fe551e48f3959f394ff073b661a64d268f913067",
+      "src/pa/modules/instance.py": "ad4e7fc5a415a010e822ca355353ae06b8e09d33c73fcd83db5548496683e620",
+      "src/pa/mcp/tools/instance.py": "539c104caaae3871dc787ca119214836e1943764ea541f69eaddcaebfcb1e5c7",
+      "tests/test_workspace_materialization.py": "a0e5e165bc6f1ee7551ada123a59b918ab53807475dafc8ab4450df7ec1fe92b",
+      "tests/test_repository_workspaces.py": "b6040219629cb6d1799e4f4120fcab4de1b1afeab3d071a7009e3c928ce79c59"
+    }
+  },
+  "first_ci_failure": {
+    "contract": "pa.pr645-first-ci-failure/v1",
+    "run_id": 42415826818,
+    "attempt": 1,
+    "job_id": 128533578856,
+    "head": "3203d1104dcffa90008ffbe3f8dff543be2f250f",
+    "exit_code": 0,
+    "log": {
+      "bytes": 161391,
+      "sha256": "f9c535376db0ead3375dbc4b9d160e9b51a4b30336c00add98521b69298c86a0"
+    },
+    "error_bytes": 0,
+    "failed_tests": [
+      "tests/test_mcp_registration_only.py::test_all_ordinary_tool_schemas_match_pre_repair_contract"
+    ],
+    "categories": {
+      "AssertionError": 3,
+      "TimeoutError": 0,
+      "PermissionError": 0,
+      "ModuleNotFoundError": 0
+    },
+    "full_log_local_hash_only": true,
+    "rerun_requested": false
+  },
+  "ci_repair": "Add exactly one new ordinary-tool schema fixture. All old tool schemas and assigned-service allowlist remain unchanged; full schema contract now passes locally. No failed-head rerun requested.",
+  "first_ci_problem": "cb475350-c760-478b-8910-289e453ae2de revision1",
+  "first_build_results": [
+    {
+      "contract": "pa.materialization-reviewed-wheel-build/v1",
+      "stage": "first",
+      "exit_code": 101,
+      "wall_ms": 67.434,
+      "private_both_roots": true,
+      "interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3",
+      "source_head": "3203d1104dcffa90008ffbe3f8dff543be2f250f",
+      "source_tree": "42161de69b42d24f325dfdb8586283bd532dc1d2",
+      "log": {
+        "bytes": 421,
+        "sha256": "d2d40028a5ebabfd9e7cfbde040eab9811c66022283c98dfbcba707eabf18478"
+      },
+      "error_categories": [],
+      "installed": false,
+      "restarted": false
+    },
+    {
+      "contract": "pa.materialization-reviewed-wheel-build/v1",
+      "stage": "sandbox-retry",
+      "exit_code": 0,
+      "wall_ms": 1455.772,
+      "private_both_roots": true,
+      "interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3",
+      "source_head": "3203d1104dcffa90008ffbe3f8dff543be2f250f",
+      "source_tree": "42161de69b42d24f325dfdb8586283bd532dc1d2",
+      "log": {
+        "bytes": 103,
+        "sha256": "7449d237fe1c93cb316feabe89b177cf836aabcdccd204405636679c3765b2af"
+      },
+      "error_categories": [],
+      "installed": false,
+      "restarted": false
+    }
+  ],
+  "obsolete_wheel": "Old3203 review wheel is retained hash-only, never installed. New exact corrected-head artifact must be built/reviewed separately.",
+  "source_recovery_effect": "No live index/worktree/collector/attachment/restart/Store/EventLog or native setting mutation. The exact original cleanup owner is still waiting; historical index provenance remains unknown until supported preservation.",
+  "residuals": "Matching-existing1425file sample prepare401.013/apply300.481ms; missing-all prepare196.321/apply657.796ms retains one500msviolation. Prior651/693/651ms outliers retained. These are single-source samples, not distributions or acceptance. Parent full natural runtime/peer/startup/drain/loggap/receipt/native confirmation/independent acceptance obligations unchanged."
+}

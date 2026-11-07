@@ -241,3 +241,45 @@ def register_mcp(mcp, ctx: AppContext) -> None:
             timeout_seconds=120.0,
             timeout=300.0,
         )
+
+    @mcp.tool()
+    async def workspace_materialization_repair(
+        lease_id: str, session_id: str, card_id: str, expected_fence: int,
+        expected_head: str, idempotency_key: str,
+        action: Literal['prepare', 'apply', 'status'],
+        expected_revision: str | None = None,
+        quarantine_untracked: bool = False,
+    ) -> dict:
+        """Preserve or explicitly repair one exact idle owner's empty-index checkout.
+
+        Prepare retains original index, all worktree evidence and unique history;
+        apply requires its exact revision and only fills absent HEAD paths.
+        Recover the same operation with status after an uncertain response.
+        Does not collect, reset, launch/retry a prompt or change native settings.
+        """
+        from urllib.parse import quote
+        from pa.mcp.local_api import LocalPAUnknownOutcome
+        runtime = ctx.require_service('async_runtime')
+        try:
+            return await runtime.run_blocking(
+                'mcp.workspace_materialization_http', request_local_pa, settings,
+                'POST', '/api/workspaces/' + quote(lease_id, safe='') + '/materialization',
+                json=dict(session_id=session_id, card_id=card_id,
+                          expected_fence=expected_fence, expected_head=expected_head,
+                          idempotency_key=idempotency_key, action=action,
+                          expected_revision=expected_revision,
+                          quarantine_untracked=quarantine_untracked),
+                timeout_seconds=120.0, timeout=300.0,
+            )
+        except LocalPAUnknownOutcome as exc:
+            # This operation has a workspace-owned preservation receipt, not a
+            # canonical card mutation. Keep the exact identity/correlation and
+            # direct recovery to its own read, never to a misleading absence.
+            exc.recovery_action = 'workspace_materialization_repair(action=status)'
+            exc.args = (
+                'Workspace preservation/repair outcome is unknown. Call '
+                'workspace_materialization_repair with action=status and the '
+                'same exact arguments/key before any dependent mutation '
+                f'(operation_id={exc.operation_id}, correlation_id={exc.correlation_id}).',
+            )
+            raise

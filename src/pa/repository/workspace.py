@@ -1061,10 +1061,20 @@ class WorkspaceManager:
     ) -> None:
         if worktree_path.exists():
             self._verify_worktree(cache_path, worktree_path, lease)
+            if self._empty_worktree_index(worktree_path) and self._git(
+                '-C', str(worktree_path), 'ls-tree', '--name-only', 'HEAD'
+            ).stdout:
+                # A failed/crashed initial checkout can leave a valid branch
+                # and an empty index. Identity verification alone is insufficient.
+                # Empty is also a valid user edit: never reset/discard it merely
+                # because a previous ledger stage says provisioning.
+                raise WorkspaceProvisioningError(
+                    'Empty-index checkout retained; use targeted materialization preservation/repair before admission'
+                )
             if recover_incomplete:
-                # A provider cannot start before the lease reaches ready, so a
-                # provisioning-state checkout is safe to finish after a crash.
-                self._git("-C", str(worktree_path), "reset", "--hard", lease.branch)
+                dirty, _ = self._status(worktree_path)
+                if dirty:
+                    raise WorkspaceProvisioningError('Interrupted checkout has retained changes; explicit repair is required')
             return
         worktree_path.parent.mkdir(parents=True, exist_ok=True)
         branch_exists = (
@@ -1078,14 +1088,41 @@ class WorkspaceManager:
             ).returncode
             == 0
         )
-        args = ["-C", str(cache_path), "worktree", "add", "--no-checkout"]
+        args = ["-C", str(cache_path), "worktree", "add"]
         if branch_exists:
             args.extend([str(worktree_path), branch])
         else:
             args.extend(["-b", branch, str(worktree_path), base_sha])
         self._git(*args)
-        self._git("-C", str(worktree_path), "checkout", branch)
         self._verify_worktree(cache_path, worktree_path, lease)
+
+    def _empty_worktree_index(self, worktree_path: Path) -> bool:
+        """Read the bounded linked-index header; ask Git on unknown formats.
+
+        Normal resume must not enumerate every tracked path or spawn another
+        Git process merely to distinguish zero from nonzero entries.
+        """
+        pointer = worktree_path / '.git'
+        try:
+            if pointer.is_file() and not pointer.is_symlink():
+                with pointer.open('rb') as stream:
+                    value = stream.read(4097)
+                if len(value) <= 4096 and value.startswith(b'gitdir: '):
+                    gitdir = Path(os.fsdecode(value[8:].rstrip(b'\r\n')))
+                    if not gitdir.is_absolute():
+                        gitdir = worktree_path / gitdir
+                    index = self._assert_managed_path(gitdir / 'index')
+                    if not index.exists():
+                        return True
+                    if not index.is_symlink():
+                        with index.open('rb') as stream:
+                            header = stream.read(12)
+                        if (len(header) == 12 and header[:4] == b'DIRC'
+                                and int.from_bytes(header[4:8], 'big') in {2, 3, 4}):
+                            return int.from_bytes(header[8:12], 'big') == 0
+        except (OSError, ValueError):
+            pass
+        return not self._git('-C', str(worktree_path), 'ls-files', '-z').stdout
 
     def _verify_worktree(
         self, cache_path: Path, worktree_path: Path, lease: WorkspaceLease

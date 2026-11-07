@@ -255946,6 +255946,184 @@
       "next_actor": "Same systemic source owner; existing cleanupowner only after safe recovery.",
       "next_action": "Integrate diagnostic source, separate activation authorization if required, inspect actual native attempts before any further retry. No new worker/session/reselection or unknown replay.",
       "artifact": "docs/benchmarks/systemic-native-restore-diagnostics-20261107.json"
+    },
+    {
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "existing_durable_overlay_now_published",
+      "implemented": "Existing decision-read route, not new repair behavior.",
+      "merged": [],
+      "deployed": "NOT installed; current079d is PR644. No activation authority inferred.",
+      "retested": "Original bracketed n1/69321bytes/110.57ms sample retained; not a passing distribution.",
+      "resolution": "open",
+      "next_actor": "This same systemic source/session and original cleanup owner0337.",
+      "next_action": "Exact green supervised integration; review exact wheel activation separately; then prepare/inspect original lease379 through PA, verify preservation and provenance before exact-revision apply and original owner recovery.",
+      "artifact": "docs/benchmarks/systemic-workspace-materialization-20261107.json",
+      "id": "route-followup:/api/execution/decisions/{decision_id}",
+      "kind": "http_route_followup",
+      "finding": "/api/execution/decisions/{decision_id}",
+      "family": "http",
+      "measurement": {
+        "count": 1,
+        "response_bytes": 69321,
+        "latency_ms": {
+          "samples": 1,
+          "max": 110.57,
+          "p50": 110.57,
+          "p95": 110.57,
+          "p99": 110.57
+        },
+        "response_size_bytes": {
+          "samples": 1,
+          "max": 69321,
+          "p50": 69321,
+          "p95": 69321,
+          "p99": 69321
+        }
+      }
+    },
+    {
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "source_and_private_fixture_confirmed_live_provenance_unverified",
+      "implemented": "Narrow preserved empty-index materialization and guarded owner API/MCP; source only.",
+      "merged": [],
+      "deployed": "NOT installed; current079d is PR644. No activation authority inferred.",
+      "retested": "Private correctness/ownership/failure/cancellation contracts and 1425-file fixture only; live owner tree untouched.",
+      "resolution": "open",
+      "next_actor": "This same systemic source/session and original cleanup owner0337.",
+      "next_action": "Exact green supervised integration; review exact wheel activation separately; then prepare/inspect original lease379 through PA, verify preservation and provenance before exact-revision apply and original owner recovery.",
+      "artifact": "docs/benchmarks/systemic-workspace-materialization-20261107.json",
+      "id": "runtime-followup:workspace.materialization_repair",
+      "kind": "runtime_followup",
+      "finding": "workspace.materialization_repair",
+      "family": "workspace",
+      "measurement": "Named source boundary; no deployed submission or percentile invented. Private route tests exercised guarded repair/owner-read; MCP unknown-response test is mocked."
+    },
+    {
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "source_and_private_fixture_confirmed_live_provenance_unverified",
+      "implemented": "Narrow preserved empty-index materialization and guarded owner API/MCP; source only.",
+      "merged": [],
+      "deployed": "NOT installed; current079d is PR644. No activation authority inferred.",
+      "retested": "Private correctness/ownership/failure/cancellation contracts and 1425-file fixture only; live owner tree untouched.",
+      "resolution": "open",
+      "next_actor": "This same systemic source/session and original cleanup owner0337.",
+      "next_action": "Exact green supervised integration; review exact wheel activation separately; then prepare/inspect original lease379 through PA, verify preservation and provenance before exact-revision apply and original owner recovery.",
+      "artifact": "docs/benchmarks/systemic-workspace-materialization-20261107.json",
+      "id": "runtime-followup:workspace.materialization_status",
+      "kind": "runtime_followup",
+      "finding": "workspace.materialization_status",
+      "family": "workspace",
+      "measurement": "Named source boundary; no deployed submission or percentile invented. Private route tests exercised guarded repair/owner-read; MCP unknown-response test is mocked."
+    },
+    {
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "source_and_private_fixture_confirmed_live_provenance_unverified",
+      "implemented": "Narrow preserved empty-index materialization and guarded owner API/MCP; source only.",
+      "merged": [],
+      "deployed": "NOT installed; current079d is PR644. No activation authority inferred.",
+      "retested": "Private correctness/ownership/failure/cancellation contracts and 1425-file fixture only; live owner tree untouched.",
+      "resolution": "open",
+      "next_actor": "This same systemic source/session and original cleanup owner0337.",
+      "next_action": "Exact green supervised integration; review exact wheel activation separately; then prepare/inspect original lease379 through PA, verify preservation and provenance before exact-revision apply and original owner recovery.",
+      "artifact": "docs/benchmarks/systemic-workspace-materialization-20261107.json",
+      "id": "runtime-followup:workspace.materialization_owner_read",
+      "kind": "runtime_followup",
+      "finding": "workspace.materialization_owner_read",
+      "family": "workspace",
+      "measurement": "Named source boundary; no deployed submission or percentile invented. Private route tests exercised guarded repair/owner-read; MCP unknown-response test is mocked."
+    },
+    {
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "source_and_private_fixture_confirmed_live_provenance_unverified",
+      "implemented": "Narrow preserved empty-index materialization and guarded owner API/MCP; source only.",
+      "merged": [],
+      "deployed": "NOT installed; current079d is PR644. No activation authority inferred.",
+      "retested": "Private correctness/ownership/failure/cancellation contracts and 1425-file fixture only; live owner tree untouched.",
+      "resolution": "open",
+      "next_actor": "This same systemic source/session and original cleanup owner0337.",
+      "next_action": "Exact green supervised integration; review exact wheel activation separately; then prepare/inspect original lease379 through PA, verify preservation and provenance before exact-revision apply and original owner recovery.",
+      "artifact": "docs/benchmarks/systemic-workspace-materialization-20261107.json",
+      "id": "runtime-followup:mcp.workspace_materialization_http",
+      "kind": "runtime_followup",
+      "finding": "mcp.workspace_materialization_http",
+      "family": "workspace",
+      "measurement": "Named source boundary; no deployed submission or percentile invented. Private route tests exercised guarded repair/owner-read; MCP unknown-response test is mocked."
+    },
+    {
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "source_and_private_fixture_confirmed_live_provenance_unverified",
+      "implemented": "Narrow preserved empty-index materialization and guarded owner API/MCP; source only.",
+      "merged": [],
+      "deployed": "NOT installed; current079d is PR644. No activation authority inferred.",
+      "retested": "Private correctness/ownership/failure/cancellation contracts and 1425-file fixture only; live owner tree untouched.",
+      "resolution": "open",
+      "next_actor": "This same systemic source/session and original cleanup owner0337.",
+      "next_action": "Exact green supervised integration; review exact wheel activation separately; then prepare/inspect original lease379 through PA, verify preservation and provenance before exact-revision apply and original owner recovery.",
+      "artifact": "docs/benchmarks/systemic-workspace-materialization-20261107.json",
+      "id": "route-followup:/api/workspaces/{lease_id}/materialization",
+      "kind": "http_route_followup",
+      "finding": "/api/workspaces/{lease_id}/materialization",
+      "family": "http",
+      "measurement": "Registered OpenAPI/handler/guard contracts, not a measured deployed HTTP route."
+    },
+    {
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "source_and_private_fixture_confirmed_live_provenance_unverified",
+      "implemented": "Narrow preserved empty-index materialization and guarded owner API/MCP; source only.",
+      "merged": [],
+      "deployed": "NOT installed; current079d is PR644. No activation authority inferred.",
+      "retested": "Private correctness/ownership/failure/cancellation contracts and 1425-file fixture only; live owner tree untouched.",
+      "resolution": "open",
+      "next_actor": "This same systemic source/session and original cleanup owner0337.",
+      "next_action": "Exact green supervised integration; review exact wheel activation separately; then prepare/inspect original lease379 through PA, verify preservation and provenance before exact-revision apply and original owner recovery.",
+      "artifact": "docs/benchmarks/systemic-workspace-materialization-20261107.json",
+      "id": "concern:workspace-empty-index-materialization",
+      "kind": "concern",
+      "finding": "Failed checkout retry admits empty index; targeted preserved materialization recovery",
+      "family": "workspace",
+      "cause": "Source verifies identity but not materialization after failed checkout, and provisioning-stage recovery previously used reset--hard. Live emptyindex provenance could be interrupted ENOSPC materialization or intentional edits; not decided by1425deletions alone.",
+      "measurement": {
+        "contract": "pa.targeted-materialization-fixture/v1",
+        "scope": "Disposable private Git fixture only; no production workload or fault injection. Thirty alternating normal-resume observations; one 1425-file repair sample, not a distribution or performance acceptance.",
+        "normal_resume_baseline_identity_only_ms": {
+          "samples": 30,
+          "p50": 34.908,
+          "p95": 43.653,
+          "p99": 44.254,
+          "max": 44.254
+        },
+        "normal_resume_with_empty_index_guard_ms": {
+          "samples": 30,
+          "p50": 35.189,
+          "p95": 46.221,
+          "p99": 49.01,
+          "max": 49.01
+        },
+        "normal_resume_added_git_calls": 0,
+        "repair": {
+          "samples": 1,
+          "prepare_ms": 201.788,
+          "apply_ms": 651.593,
+          "restored_paths": 1425,
+          "untracked_evidence_preserved": 12,
+          "clean_checkout": true,
+          "index_before_preserved": true,
+          "state_retained_no_deletion": true,
+          "threshold_ms": 500,
+          "sampled_threshold_violations": 1
+        },
+        "gc_enabled": true,
+        "source_sha256": {
+          "src/pa/repository/materialization.py": "9ccdeec463dec7de7b18d9036f13a3b5e00f76fa540f8c093e2ae9dc722fa389",
+          "src/pa/repository/workspace.py": "05f52c7038356c3e1ba11131fe551e48f3959f394ff073b661a64d268f913067",
+          "src/pa/modules/instance.py": "ad4e7fc5a415a010e822ca355353ae06b8e09d33c73fcd83db5548496683e620",
+          "src/pa/mcp/tools/instance.py": "539c104caaae3871dc787ca119214836e1943764ea541f69eaddcaebfcb1e5c7",
+          "tests/test_workspace_materialization.py": "5606397cb3e9919a9d1771bcfc3f834e331e75b97bfc6db6a287d35fff170fd2",
+          "tests/test_repository_workspaces.py": "b6040219629cb6d1799e4f4120fcab4de1b1afeab3d071a7009e3c928ce79c59"
+        }
+      },
+      "durability": "Verified full worktree tar, exact index bytes/mode, unique-head bundle or no-unique-head declaration; separate exact-revision apply. Default retains untracked in place; explicit quarantine relocates intact entries. Every file and changed directory syncs before live-index commit. Failed staging/applying is observed, never automatically replayed.",
+      "residual": "One latest1425-file sample may exceed500ms; all earlier651/693ms violations retained. No change to warning thresholds/timeouts/GC/defaults/selection/permissions."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -361387,5 +361565,68 @@
     "concerns": 179,
     "all_open": true,
     "original731rows_exactly_preserved": true
+  },
+  "workspace_materialization_source_20261107": {
+    "artifact": "docs/benchmarks/systemic-workspace-materialization-20261107.json",
+    "rows": 739,
+    "concerns": 180,
+    "all_open": true,
+    "original_732_rows_exact_values_retained": true,
+    "source_only": true,
+    "whole_acceptance": "Independent17d remains OPEN; acceptedBackup0331/DB89957/recovery5be6 scopes CLOSED."
+  },
+  "workspace_materialization_matching_source_20261107": {
+    "artifact": "docs/benchmarks/systemic-workspace-materialization-matching-20261107.json",
+    "rows": 739,
+    "concerns": 180,
+    "all_open": true,
+    "prior739rows_exact_values_retained": true,
+    "source_only": true,
+    "source_hashes": {
+      "src/pa/repository/materialization.py": "8e68f1bfd5b5f2a1d765e3419e4cfbfe1eae0bd9e2901dd90a52ed700244c04f",
+      "src/pa/repository/workspace.py": "05f52c7038356c3e1ba11131fe551e48f3959f394ff073b661a64d268f913067",
+      "src/pa/modules/instance.py": "ad4e7fc5a415a010e822ca355353ae06b8e09d33c73fcd83db5548496683e620",
+      "src/pa/mcp/tools/instance.py": "539c104caaae3871dc787ca119214836e1943764ea541f69eaddcaebfcb1e5c7",
+      "tests/test_workspace_materialization.py": "a0e5e165bc6f1ee7551ada123a59b918ab53807475dafc8ab4450df7ec1fe92b",
+      "tests/test_repository_workspaces.py": "b6040219629cb6d1799e4f4120fcab4de1b1afeab3d071a7009e3c928ce79c59",
+      "tests/test_mcp_registration_only.py": "e6ece20776223ba7aca8a3067c69507c4cf5813ad5a24eba7c7025eeed3d5c52",
+      "tests/fixtures/mcp_tool_schemas_materialization.json": "a5f1c8f7367891fbd0b763f84511aabec6acaa5269794838a6999953ceb2f5d3"
+    },
+    "tests": {
+      "tests": 113,
+      "failures": 0,
+      "errors": 0
+    },
+    "correction": "Empty index does not imply absent files. Match existing file bytes, Git blob IDs, types and executable modes against HEAD; preserve matching file inodes. Restore only missing paths. Refuse differing user data. Explicit quarantine moves only Git-visible untracked files; ignored caches remain.",
+    "resource_limits": "Streaming1MiB chunks, at most8GiB existing file bytes and100000entries, plus free capacity for twice retained bytes+missing bytes+64MiB. These are new preservation resource bounds, not changed PA warning/deadline/GC thresholds.",
+    "deployed": "Current079d is PR644; no PR645 install/restart/target repair or new prompt yet.",
+    "acceptance": "All739rows180concerns and independent17dOPEN; acceptedBackup0331/DB89957/recovery5be6 scopesclosed."
+  },
+  "workspace_materialization_isolation_source_20261107": {
+    "artifact": "docs/benchmarks/systemic-workspace-materialization-isolation-20261107.json",
+    "rows": 739,
+    "concerns": 180,
+    "all_open": true,
+    "prior739rows_exact_values_retained": true,
+    "source_hashes": {
+      "src/pa/repository/materialization.py": "c6a7772fcdabf42f1d2f9a4b3da0c43ef81139f49b790938ce123e011a3fc091",
+      "src/pa/repository/workspace.py": "05f52c7038356c3e1ba11131fe551e48f3959f394ff073b661a64d268f913067",
+      "src/pa/modules/instance.py": "cb12a4b45462293e3b827989f2ab8f15acb4116a4c1ffe9b0d870673edaacf68",
+      "src/pa/mcp/tools/instance.py": "539c104caaae3871dc787ca119214836e1943764ea541f69eaddcaebfcb1e5c7",
+      "tests/test_workspace_materialization.py": "bcaeedab19e15e588c18e92bb2b966860ec7c4045f4e3469abebbc1170c71de3",
+      "tests/test_repository_workspaces.py": "b6040219629cb6d1799e4f4120fcab4de1b1afeab3d071a7009e3c928ce79c59",
+      "tests/test_mcp_registration_only.py": "e6ece20776223ba7aca8a3067c69507c4cf5813ad5a24eba7c7025eeed3d5c52",
+      "tests/fixtures/mcp_tool_schemas_materialization.json": "a5f1c8f7367891fbd0b763f84511aabec6acaa5269794838a6999953ceb2f5d3"
+    },
+    "tests": {
+      "tests": 115,
+      "failures": 0,
+      "errors": 0
+    },
+    "isolation": "Card-admission plus exact-lease repair lock; no shared repository-cache lock during streaming preservation. Git reads immutable objects with native Git concurrency. Native index.lock excludes cooperating Git writers during apply.",
+    "physical_completion": "Owned task and original runtime/admission fences stay held until the actual worker finishes. Existing HTTP/MCP120s response wait and native Git300s bounds stay unchanged; slow warnings remain unchanged. No timeout or performance success inferred from ownership waiting.",
+    "tests_prove": "A deliberately paused preservation does not block another card provisioning in the same cache. Client cancellation and an expired ordinary worker wait do not release owner fences before physical completion.",
+    "deployed": "Still PR644079d; no PR645 install/restart or target repair.",
+    "acceptance": "All739rows180concerns and independent17dOPEN; acceptedBackup0331/DB89957/recovery5be6 scopesCLOSED."
   }
 }
