@@ -158,12 +158,13 @@ class MaterializationRepair:
             if saved['fingerprint'] != fingerprint:
                 raise WorkspaceProvisioningError('Idempotency key belongs to a different exact repair')
             return saved['public']
-        # The admission lock prevents provisioning/renewal/GC from changing the
-        # lease. The route additionally fences the exact idle provider runtime.
+        # Fence this card/lease, not the shared repository cache: streaming a
+        # preservation archive must not delay another card's startup. Git reads
+        # immutable objects using its own object-store concurrency guarantees;
+        # the route fences the idle owner and apply owns its native index.lock.
         with self.manager.admission_guard(card_id=card_id, session_id=session_id):
             lease = self._lease(session_id, lease_id, card_id, expected_fence)
-            repo_key = Path(lease.cache_path).name
-            with self.manager._repository_lock(repo_key):
+            with self.manager._repository_lock('materialization-' + lease.id):
                 if receipt.exists():
                     saved = json.loads(receipt.read_text())
                     if saved['fingerprint'] != fingerprint:

@@ -361601,5 +361601,32 @@
     "resource_limits": "Streaming1MiB chunks, at most8GiB existing file bytes and100000entries, plus free capacity for twice retained bytes+missing bytes+64MiB. These are new preservation resource bounds, not changed PA warning/deadline/GC thresholds.",
     "deployed": "Current079d is PR644; no PR645 install/restart/target repair or new prompt yet.",
     "acceptance": "All739rows180concerns and independent17dOPEN; acceptedBackup0331/DB89957/recovery5be6 scopesclosed."
+  },
+  "workspace_materialization_isolation_source_20261107": {
+    "artifact": "docs/benchmarks/systemic-workspace-materialization-isolation-20261107.json",
+    "rows": 739,
+    "concerns": 180,
+    "all_open": true,
+    "prior739rows_exact_values_retained": true,
+    "source_hashes": {
+      "src/pa/repository/materialization.py": "c6a7772fcdabf42f1d2f9a4b3da0c43ef81139f49b790938ce123e011a3fc091",
+      "src/pa/repository/workspace.py": "05f52c7038356c3e1ba11131fe551e48f3959f394ff073b661a64d268f913067",
+      "src/pa/modules/instance.py": "cb12a4b45462293e3b827989f2ab8f15acb4116a4c1ffe9b0d870673edaacf68",
+      "src/pa/mcp/tools/instance.py": "539c104caaae3871dc787ca119214836e1943764ea541f69eaddcaebfcb1e5c7",
+      "tests/test_workspace_materialization.py": "bcaeedab19e15e588c18e92bb2b966860ec7c4045f4e3469abebbc1170c71de3",
+      "tests/test_repository_workspaces.py": "b6040219629cb6d1799e4f4120fcab4de1b1afeab3d071a7009e3c928ce79c59",
+      "tests/test_mcp_registration_only.py": "e6ece20776223ba7aca8a3067c69507c4cf5813ad5a24eba7c7025eeed3d5c52",
+      "tests/fixtures/mcp_tool_schemas_materialization.json": "a5f1c8f7367891fbd0b763f84511aabec6acaa5269794838a6999953ceb2f5d3"
+    },
+    "tests": {
+      "tests": 115,
+      "failures": 0,
+      "errors": 0
+    },
+    "isolation": "Card-admission plus exact-lease repair lock; no shared repository-cache lock during streaming preservation. Git reads immutable objects with native Git concurrency. Native index.lock excludes cooperating Git writers during apply.",
+    "physical_completion": "Owned task and original runtime/admission fences stay held until the actual worker finishes. Existing HTTP/MCP120s response wait and native Git300s bounds stay unchanged; slow warnings remain unchanged. No timeout or performance success inferred from ownership waiting.",
+    "tests_prove": "A deliberately paused preservation does not block another card provisioning in the same cache. Client cancellation and an expired ordinary worker wait do not release owner fences before physical completion.",
+    "deployed": "Still PR644079d; no PR645 install/restart or target repair.",
+    "acceptance": "All739rows180concerns and independent17dOPEN; acceptedBackup0331/DB89957/recovery5be6 scopesCLOSED."
   }
 }

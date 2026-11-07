@@ -487,7 +487,7 @@ async def repair_workspace_materialization(request: Request, lease_id: str,
                         'workspace.materialization_repair',
                         MaterializationRepair(agent.workspace_manager).operate,
                         lease_id=lease_id, principal=principal,
-                        **body.model_dump(), timeout=300.0,
+                        **body.model_dump(), timeout=300.0, wait_for_completion=True,
                     )
                 except WorkspaceProvisioningError as exc:
                     raise HTTPException(409, str(exc)) from None

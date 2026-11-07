@@ -175,6 +175,31 @@ def test_status_survives_runtime_and_lease_changes(tmp_path):
     assert service.operate(**args, action='status') == prepared
 
 
+def test_preservation_does_not_hold_shared_cache_lock_or_block_another_card(tmp_path, monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    manager, lease, tree, _, args = empty_checkout(tmp_path)
+    linked = manager.linked_repositories('project-1',realm_id='default')[0]
+    entered = threading.Event();release = threading.Event()
+    original = tarfile.TarFile.addfile
+    def paused(tar, *a, **k):
+        entered.set()
+        assert release.wait(10)
+        return original(tar,*a,**k)
+    monkeypatch.setattr(tarfile.TarFile,'addfile',paused)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        preparation=pool.submit(MaterializationRepair(manager).operate,**args,action='prepare')
+        assert entered.wait(5)
+        try:
+            other=pool.submit(manager.provision_repository,linked,project_id='project-1',session_id='other',card_id='other-card')
+            second=other.result(timeout=5)
+            assert second.cache_path==lease.cache_path and second.state=='ready'
+            assert not preparation.done()
+        finally:release.set()
+        assert preparation.result(timeout=10)['phase']=='prepared'
+    assert not (tree/'README.md').exists()
+
+
 @pytest.mark.parametrize('kind', ['tracked-file', 'symlink-parent', 'index-lock'])
 def test_existing_content_and_writers_refuse_prepare(tmp_path, kind):
     manager, _, tree, index, args = empty_checkout(tmp_path)
@@ -277,3 +302,36 @@ async def test_mcp_unknown_response_recovers_workspace_receipt_without_canonical
     assert caught.value.operation_id == 'same-key' and caught.value.correlation_id == 'same-correlation'
     assert 'action=status' in caught.value.recovery_action
     assert 'get_operation_outcome' not in str(caught.value) and 'private transport details' not in str(caught.value)
+
+
+@pytest.mark.asyncio
+async def test_owner_fences_remain_until_physical_worker_completion(tmp_path, monkeypatch):
+    import threading
+    from pa.modules.instance import repair_workspace_materialization, WorkspaceMaterializationRequest
+    manager, lease, _, _, args = empty_checkout(tmp_path)
+    runtime=SimpleNamespace(session=SimpleNamespace(card_id='card',principal_id='user:local',execution_binding={'lease_ids':[lease.id]}),prompting=False,_queue=[],_prompt_lock=asyncio.Lock(),_prompt_admission_lock=asyncio.Lock())
+    agent=SimpleNamespace(get=lambda _:runtime,_admitting_sessions=set(),workspace_manager=manager)
+    executor=AsyncRuntime(max_workers=1)
+    entered=threading.Event();release=threading.Event()
+    def work(*a,**k):entered.set();assert release.wait(5);return {'phase':'prepared'}
+    monkeypatch.setattr(MaterializationRepair,'operate',work)
+    original=executor.run_blocking
+    async def bounded(operation,call,*a,**k):
+        assert k['wait_for_completion'] is True
+        k['timeout']=0.01
+        return await original(operation,call,*a,**k)
+    monkeypatch.setattr(executor,'run_blocking',bounded)
+    services={'instance_agent':agent,'async_runtime':executor}
+    request=SimpleNamespace(state=SimpleNamespace(user=object(),principal_id='user:local'),app=SimpleNamespace(state=SimpleNamespace(ctx=SimpleNamespace(require_service=services.__getitem__))))
+    body=WorkspaceMaterializationRequest(**{k:v for k,v in args.items() if k not in {'lease_id','principal'}},action='prepare')
+    task=asyncio.create_task(repair_workspace_materialization(request,lease.id,body))
+    try:
+        for _ in range(100):
+            if entered.is_set():break
+            await asyncio.sleep(0.001)
+        assert entered.is_set()
+        await asyncio.sleep(0.03)
+        assert not task.done() and runtime._prompt_lock.locked() and lease.session_id in agent._admitting_sessions
+        release.set();assert (await task)['phase']=='prepared'
+        assert not runtime._prompt_lock.locked() and not agent._admitting_sessions
+    finally:release.set();await executor.close()

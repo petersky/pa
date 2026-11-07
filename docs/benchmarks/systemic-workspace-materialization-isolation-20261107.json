@@ -1,0 +1,126 @@
+{
+  "contract": "pa.workspace-materialization-isolation-source/v1",
+  "observed_at": "2026-11-07T21:46:32.712021+00:00",
+  "superseded_head": "ec86e2294ec52c0abfda1ca283efff6c38bd29b0",
+  "previous_artifact": {
+    "path": "docs/benchmarks/systemic-workspace-materialization-matching-20261107.json",
+    "bytes": 7346,
+    "sha256": "ed8e86a54bf7a3a3a3e7ca93e679cd39583d9fe17f3d7be636b01e83cbc69863"
+  },
+  "stage": {
+    "artifact": "docs/benchmarks/systemic-workspace-materialization-isolation-20261107.json",
+    "rows": 739,
+    "concerns": 180,
+    "all_open": true,
+    "prior739rows_exact_values_retained": true,
+    "source_hashes": {
+      "src/pa/repository/materialization.py": "c6a7772fcdabf42f1d2f9a4b3da0c43ef81139f49b790938ce123e011a3fc091",
+      "src/pa/repository/workspace.py": "05f52c7038356c3e1ba11131fe551e48f3959f394ff073b661a64d268f913067",
+      "src/pa/modules/instance.py": "cb12a4b45462293e3b827989f2ab8f15acb4116a4c1ffe9b0d870673edaacf68",
+      "src/pa/mcp/tools/instance.py": "539c104caaae3871dc787ca119214836e1943764ea541f69eaddcaebfcb1e5c7",
+      "tests/test_workspace_materialization.py": "bcaeedab19e15e588c18e92bb2b966860ec7c4045f4e3469abebbc1170c71de3",
+      "tests/test_repository_workspaces.py": "b6040219629cb6d1799e4f4120fcab4de1b1afeab3d071a7009e3c928ce79c59",
+      "tests/test_mcp_registration_only.py": "e6ece20776223ba7aca8a3067c69507c4cf5813ad5a24eba7c7025eeed3d5c52",
+      "tests/fixtures/mcp_tool_schemas_materialization.json": "a5f1c8f7367891fbd0b763f84511aabec6acaa5269794838a6999953ceb2f5d3"
+    },
+    "tests": {
+      "tests": 115,
+      "failures": 0,
+      "errors": 0
+    },
+    "isolation": "Card-admission plus exact-lease repair lock; no shared repository-cache lock during streaming preservation. Git reads immutable objects with native Git concurrency. Native index.lock excludes cooperating Git writers during apply.",
+    "physical_completion": "Owned task and original runtime/admission fences stay held until the actual worker finishes. Existing HTTP/MCP120s response wait and native Git300s bounds stay unchanged; slow warnings remain unchanged. No timeout or performance success inferred from ownership waiting.",
+    "tests_prove": "A deliberately paused preservation does not block another card provisioning in the same cache. Client cancellation and an expired ordinary worker wait do not release owner fences before physical completion.",
+    "deployed": "Still PR644079d; no PR645 install/restart or target repair.",
+    "acceptance": "All739rows180concerns and independent17dOPEN; acceptedBackup0331/DB89957/recovery5be6 scopesCLOSED."
+  },
+  "measurement": {
+    "contract": "pa.materialization-matching-and-missing-fixtures/v1",
+    "scope": "Disposable private1425file Git fixtures, one sample per variant. No production workload or fault injection, no passing distribution or acceptance inferred.",
+    "variants": [
+      {
+        "variant": "matching_existing",
+        "samples": 1,
+        "tracked_paths": 1425,
+        "matching_inodes_unchanged": true,
+        "prepare_ms": 397.521,
+        "apply_ms": 297.599,
+        "restored_paths": 0,
+        "matching_existing_tracked_paths": 1425,
+        "untracked_evidence_preserved": 12,
+        "clean_checkout": true,
+        "threshold_ms": 500,
+        "sampled_threshold_violations": 0
+      },
+      {
+        "variant": "missing_all",
+        "samples": 1,
+        "tracked_paths": 1425,
+        "matching_inodes_unchanged": false,
+        "prepare_ms": 200.616,
+        "apply_ms": 713.058,
+        "restored_paths": 1425,
+        "matching_existing_tracked_paths": 0,
+        "untracked_evidence_preserved": 12,
+        "clean_checkout": true,
+        "threshold_ms": 500,
+        "sampled_threshold_violations": 1
+      }
+    ],
+    "gc_enabled": true,
+    "source_sha256": {
+      "src/pa/repository/materialization.py": "c6a7772fcdabf42f1d2f9a4b3da0c43ef81139f49b790938ce123e011a3fc091",
+      "src/pa/repository/workspace.py": "05f52c7038356c3e1ba11131fe551e48f3959f394ff073b661a64d268f913067",
+      "src/pa/modules/instance.py": "cb12a4b45462293e3b827989f2ab8f15acb4116a4c1ffe9b0d870673edaacf68",
+      "src/pa/mcp/tools/instance.py": "539c104caaae3871dc787ca119214836e1943764ea541f69eaddcaebfcb1e5c7",
+      "tests/test_workspace_materialization.py": "bcaeedab19e15e588c18e92bb2b966860ec7c4045f4e3469abebbc1170c71de3",
+      "tests/test_repository_workspaces.py": "b6040219629cb6d1799e4f4120fcab4de1b1afeab3d071a7009e3c928ce79c59"
+    }
+  },
+  "prior_green_head": {
+    "contract": "pa.pr645-prior-corrected-ci/v1",
+    "observed_at": "2026-11-07T21:46:31.141Z",
+    "head": "ec86e2294ec52c0abfda1ca283efff6c38bd29b0",
+    "run_id": 42416722386,
+    "attempt": 1,
+    "source": "independent gh api metadata, full pagination n5/perpage100",
+    "jobs": [
+      {
+        "conclusion": "success",
+        "id": 128536304877,
+        "name": "smoke",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "id": 128536304949,
+        "name": "test (1)",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "id": 128536305013,
+        "name": "test (3)",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "id": 128536305025,
+        "name": "test (0)",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "id": 128536305074,
+        "name": "test (2)",
+        "status": "completed"
+      }
+    ],
+    "total_count": 5,
+    "notice": "Superseded by additional lease-isolation/physical-completion source correction; this green head is not merged or activated."
+  },
+  "first_failure": "Original3203CI42415826818attempt1 schema failure retained under cb475350; no CI rerun or second merge.",
+  "old_handoff": "PR644 bead331c owner now continuation_delivered/effectcomplete/attempt1 at20:47:39Z; all prior queued/unknown observations retained. Old638UNKNOWN unreplayed.",
+  "native_and_cleanup": "Originalcleanup9bb/session0337 still waiting on index preflight; no files in its tree touched by this source work. Unknown collector/attachment identities not replayed. One existing owner, no competing worker/native context or default changes.",
+  "residual": "Latest1425matching fixture397.521/297.599ms; missing-all200.616/713.058ms retains a500ms apply violation. All prior source failures and outliers remain. These are single private source samples, not representative acceptance."
+}
