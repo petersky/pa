@@ -361648,5 +361648,35 @@
       "tests/test_workspace_materialization.py": "235c11851f3fab571e9e1152c1778e6edd7cf3c99a53a41e7d38fc1c88f09a7e",
       "tests/test_materialization_rejection_metadata.py": "dccb83144765d8a59b06501fb0a1fa8c605167a694f767a2b557980d8ba19f04"
     }
+  },
+  "workspace_materialization_provenance_source_20261107": {
+    "base": "c6c57abec0cd7725c1c29f5f35f20107acf49908",
+    "tests_overlapping_not_added": {
+      "provenance": {
+        "tests": 162,
+        "failures": 0,
+        "errors": 0
+      },
+      "provenance-output-bound": {
+        "tests": 4,
+        "failures": 0,
+        "errors": 0
+      }
+    },
+    "source_hashes": {
+      "src/pa/repository/materialization.py": "3c7d1b258234f89372bbd86cf4f79cfd1c3a58cc68be70deb3e7d46b3ad23bd7",
+      "src/pa/repository/materialization_errors.py": "1446ccce5cf56369b8e570d66dc17f825a8ce0b7dcdb92ef481ff1bb1419a180",
+      "src/pa/modules/instance.py": "cb73181a791d92d7320d6899f0277bd6db86c4e7273c2219ca1a1d1a28c97450",
+      "src/pa/mcp/tools/instance.py": "6ace88ec1a8cdf8bd8ac154ad52811a9dff599f7405c3ad6dffb8511f437851b",
+      "tests/test_materialization_provenance.py": "8d2052460be69a98e94e094b6cc2ecc37d338d4770179f71766db460504c81cc",
+      "tests/test_mcp_registration_only.py": "a36d2c6ea3b746e203d17538885ac60bdbafa03d16620c4e8c7c3dfc385f0303",
+      "tests/fixtures/mcp_tool_schemas_materialization_diagnostics.json": "ea8020468c2cca00d0363f5c15c0993b765070514d948eb03d21516ab741cba7"
+    },
+    "implemented": "Idle-owner fenced read-only diagnose action reports up to64tracked difference path/OID/size records, total/truncation and indexhash; capped16MiBtrackedbytes/10000paths. No ignored/untracked hydration or preservation/operation receipt creation. Existing strictprepare/apply inspection unchanged; differingtrackedbytes stillrefusemutation.",
+    "confirmed_live_finding": "PR646exactea8486startup5b0f2db0/PID35401+independent442source443RECORD51pins verified. Sameoperationinitialstatusnone, boundedprepare409correlation5d6def35-42b6-4da8-ad73-befc89808fde codeworkspace_materialization_tracked_bytes_differ. Afterstatusnot_started/effectnone; at leastoneactualtrackedbyte mismatchconfirmed, identities/provenance remainUNKNOWN. Earlier53e9f74cguard notretroactivelyclassified.",
+    "target": "Original0337/control9bb/card7938/lease379/expectedHEAD076d/dirty12preserved. No directtargetFSinspection/edit, no archive/apply/14collection/reclaimedbytes.",
+    "deployment": "Thisprovenance action SOURCEONLY, notinstalled. Prior646installauthorizedonce/complete; nofurtherrestart/installauthorized.",
+    "residuals": "Actualdifferingpaths/provenance/retentionreview required before repair; all739rows180concerns/independent17dOPEN,713.058msfixtureviolation andhistoricalpeer/native/log/coveragegaps retained.",
+    "privacy": "Diagnosticreturn contains bounded path/hash metadata only, nofilebytes. Native/control/response/writer/status/log/wheelbytes LOCAL/hash-only."
   }
 }

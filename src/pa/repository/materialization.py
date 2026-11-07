@@ -19,6 +19,8 @@ from pa.repository.workspace import WorkspaceProvisioningError
 
 MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024 * 1024
 MAX_SNAPSHOT_ENTRIES = 100000
+MAX_DIAGNOSTIC_BYTES = 16 * 1024 * 1024
+MAX_DIAGNOSTIC_PATHS = 10000
 
 
 def digest(path: Path) -> str:
@@ -80,7 +82,7 @@ class MaterializationRepair:
         self.manager._assert_managed_path(Path(lease.worktree_path))
         return lease
 
-    def _inspect(self, lease, expected_head):
+    def _inspect(self, lease, expected_head, *, diagnose=False):
         tree = Path(lease.worktree_path)
         git = lambda *args: self.manager._git('-C', str(tree), *args).stdout.strip()
         head = git('rev-parse', 'HEAD')
@@ -93,10 +95,14 @@ class MaterializationRepair:
         if index.is_symlink() or index.with_name('index.lock').exists():
             raise WorkspaceProvisioningError('Index has an existing writer or unsafe path')
         entries = []
+        differences = []
+        diagnostic_bytes = 0
         raw = self.manager._git('-C', str(tree), 'ls-tree', '-rzl', '--full-tree', head).stdout
         for record in raw.split('\0'):
             if not record:
                 continue
+            if diagnose and len(entries) >= MAX_DIAGNOSTIC_PATHS:
+                raise WorkspaceProvisioningError('Tracked provenance exceeds bounded diagnostic capacity')
             metadata, name = record.split('\t', 1)
             mode, kind, oid, size = metadata.split()
             parts = Path(name).parts
@@ -114,6 +120,10 @@ class MaterializationRepair:
             present = path.exists() or path.is_symlink()
             if present:
                 info = path.lstat()
+                if diagnose:
+                    diagnostic_bytes += info.st_size
+                    if diagnostic_bytes > MAX_DIAGNOSTIC_BYTES:
+                        raise WorkspaceProvisioningError('Tracked provenance exceeds bounded diagnostic capacity')
                 if mode == '120000' and stat.S_ISLNK(info.st_mode):
                     blob = os.fsencode(os.readlink(path))
                     checksum = hashlib.new('sha1' if len(oid) == 40 else 'sha256')
@@ -128,10 +138,26 @@ class MaterializationRepair:
                 else:
                     raise WorkspaceProvisioningError('Existing tracked path type differs from HEAD')
                 if checksum.hexdigest() != oid:
-                    raise WorkspaceProvisioningError('Existing tracked bytes differ from HEAD; retained for manual review')
+                    if not diagnose:
+                        raise WorkspaceProvisioningError('Existing tracked bytes differ from HEAD; retained for manual review')
+                    differences.append({'path': name, 'expected_oid': oid,
+                                        'actual_oid': checksum.hexdigest(),
+                                        'actual_bytes': info.st_size})
             entries.append({'path': name, 'mode': mode, 'oid': oid, 'bytes': int(size), 'present':present})
         if not entries:
             raise WorkspaceProvisioningError('HEAD has no files to materialize')
+        if diagnose:
+            # No full ignored/untracked hydration or archive; diagnostics read
+            # tracked bytes only. All mutation paths keep strict inspection.
+            return {'head': head, 'tracked_paths': len(entries),
+                    'missing_tracked_paths': sum(not r['present'] for r in entries),
+                    'differing_tracked_paths': len(differences),
+                    'differences': differences[:64],
+                    'differences_truncated': len(differences)>64,
+                    'index_sha256': digest(index) if index.exists() else None,
+                    'tracked_bytes_read': diagnostic_bytes,
+                    'apply_eligible': False,
+                    'notice': 'Read-only provenance, not preservation or permission to discard changes.'}, None, index
         files = inventory(tree)
         index_hash = digest(index) if index.exists() else None
         state = {'head': head, 'index_sha256': index_hash,
@@ -165,6 +191,12 @@ class MaterializationRepair:
         with self.manager.admission_guard(card_id=card_id, session_id=session_id):
             lease = self._lease(session_id, lease_id, card_id, expected_fence)
             with self.manager._repository_lock('materialization-' + lease.id):
+                if action == 'diagnose':
+                    if receipt.exists() and json.loads(receipt.read_text())['fingerprint'] != fingerprint:
+                        raise WorkspaceProvisioningError('Idempotency key belongs to a different exact repair')
+                    diagnostic, _, _ = self._inspect(lease, expected_head, diagnose=True)
+                    return {'operation_id': key, 'phase': 'diagnostic',
+                            'effect': 'none', 'diagnostic': diagnostic}
                 if receipt.exists():
                     saved = json.loads(receipt.read_text())
                     if saved['fingerprint'] != fingerprint:
