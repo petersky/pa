@@ -236,7 +236,8 @@ async def test_http_owner_guard_and_cancellation_keep_fence_until_effect_finishe
                               app=SimpleNamespace(state=SimpleNamespace(ctx=SimpleNamespace(require_service=services.__getitem__))))
     body = WorkspaceMaterializationRequest(**{k:v for k,v in args.items() if k not in {'lease_id','principal'}}, action='prepare')
     runtime._queue.append(object())
-    with pytest.raises(HTTPException):await repair_workspace_materialization(request,lease.id,body)
+    with pytest.raises(HTTPException) as denied:await repair_workspace_materialization(request,lease.id,body)
+    assert denied.value.detail['code']=='workspace_materialization_owner_busy'
     runtime._queue.clear()
     entered=asyncio.Event();release=asyncio.Event()
     async def worker(*a,**k):
@@ -280,7 +281,11 @@ async def test_disconnected_owner_requires_positive_durable_idle_and_exact_bindi
             result = await repair_workspace_materialization(request,lease.id,body)
             assert result['phase'] == 'prepared'
         else:
-            with pytest.raises(HTTPException):await repair_workspace_materialization(request,lease.id,body)
+            with pytest.raises(HTTPException) as denied:await repair_workspace_materialization(request,lease.id,body)
+            expected = ('owner_principal_mismatch' if change=='other_principal' else
+                        'owner_lease_mismatch' if change=='other_lease' else 'owner_idle_unverified')
+            assert denied.value.detail['code']=='workspace_materialization_'+expected
+            assert MaterializationRepair(manager).operate(**args,action='status')['phase']=='not_started'
         assert not agent._admitting_sessions
     finally:await executor.close()
 

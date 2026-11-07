@@ -1,0 +1,29 @@
+{
+  "contract": "pa.lossless-ordered-gzip-chunks/v1",
+  "bytes": 117323561,
+  "sha256": "749a6e736d1ae351adc37c3acad18cc7611c6839a9633014767485ab5242dbfe",
+  "ordered_chunks": [
+    {
+      "path": "docs/benchmarks/systemic-workspace-materialization-rejections-20261107.raw.json.gz.part001",
+      "bytes": 52428800,
+      "sha256": "d149106fb31959dfcdef3651ef2c1aab02449c8eb4c5eca5a4edd50ab4507a92"
+    },
+    {
+      "path": "docs/benchmarks/systemic-workspace-materialization-rejections-20261107.raw.json.gz.part002",
+      "bytes": 52428800,
+      "sha256": "f14b50ce2e011fb7b330a6fff8ec2e28b8f43899ee3d4fa3fdaf1c9f7eed228a"
+    },
+    {
+      "path": "docs/benchmarks/systemic-workspace-materialization-rejections-20261107.raw.json.gz.part003",
+      "bytes": 12465961,
+      "sha256": "bbb3eeff81910cce2682ef23f28d53b1b5858f00ec0a6c6c3f4ff6a6f38d413c"
+    }
+  ],
+  "parent": {
+    "bytes": 114465920,
+    "sha256": "9f7ba6b2a1ddc21973a625d6f1e0ee0014e64207cef7e59f5adba81cfd1360b0"
+  },
+  "public_inputs": 90,
+  "local_hash_only_inputs": 293,
+  "verification": "Reassembly/gzipJSON verified, entire114465920B parent byte-equal and its111658383B parent hash verified;739rows/180concerns remainOPEN."
+}
