@@ -1,0 +1,29 @@
+{
+  "contract": "pa.lossless-ordered-gzip-chunks/v1",
+  "bytes": 123305343,
+  "sha256": "532e8651e84dacbe54ab3ea13e2dcec85923b5852ee73e0da3846a7cc2eff590",
+  "ordered_chunks": [
+    {
+      "path": "docs/benchmarks/systemic-runtime-completion-recovery-20261107.raw.json.gz.part001",
+      "bytes": 52428800,
+      "sha256": "0735043ad0d7ee939b749a078d329c8d7b924b23e7bcfd1ebca0a7469365c3a7"
+    },
+    {
+      "path": "docs/benchmarks/systemic-runtime-completion-recovery-20261107.raw.json.gz.part002",
+      "bytes": 52428800,
+      "sha256": "c036f4377a110a65810f9823d284c0b1209af8dda76fefb6558883738d96a2db"
+    },
+    {
+      "path": "docs/benchmarks/systemic-runtime-completion-recovery-20261107.raw.json.gz.part003",
+      "bytes": 18447743,
+      "sha256": "f9af980507553efda764d2e62d1129da2514dce16b63850236afe2ce758db872"
+    }
+  ],
+  "parent": {
+    "bytes": 120271822,
+    "sha256": "0c14b760f7c34f042a4fe688eeafb4180b12604872cdd9fe0a0c46e701f6035c"
+  },
+  "public_inputs": 128,
+  "local_hash_only_inputs": 460,
+  "verification": "Full reassembly/gzip JSON verified; entire120271822B parent byte-equal,117323561B grandparent hash verified; all740 rows/181 concerns OPEN."
+}

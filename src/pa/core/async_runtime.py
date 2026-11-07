@@ -381,9 +381,14 @@ class AsyncRuntime:
         self._pending.add(future)
         if evidence:
             self._active_evidence[future] = (operation, evidence)
-        future.add_done_callback(
-            lambda done: self._finish_submission(operation, done, runtime_started_at, evidence, observation)
-        )
+        submission_finished = False
+        def finish_submission(done):
+            nonlocal submission_finished
+            if submission_finished:
+                return
+            submission_finished = True
+            self._finish_submission(operation, done, runtime_started_at, evidence, observation)
+        future.add_done_callback(finish_submission)
         if on_commit is not None:
             def committed(done):
                 # The executor owns this callback, independently of the HTTP or
@@ -422,6 +427,12 @@ class AsyncRuntime:
             metrics.cancelled += 1
             raise
         finally:
+            # Awaiting an already-complete Future need not yield to its queued
+            # callbacks. Publish its observations and release its slot before
+            # returning, while unfinished timed-out/cancelled work stays owned
+            # by the completion callback. Both paths account exactly once.
+            if future.done():
+                finish_submission(future)
             waited_ms = (loop.time() - queued_at) * 1000
             metrics.total_wait_ms += waited_ms
             metrics.max_wait_ms = max(metrics.max_wait_ms, waited_ms)
