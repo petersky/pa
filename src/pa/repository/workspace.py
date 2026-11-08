@@ -477,6 +477,7 @@ class WorkspaceManager:
         cwd: Path | None = None,
         timeout: int = 300,
         check: bool = True,
+        env_extra: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         # Preserve machine Git authentication, proxy and certificate configuration.
         env = os.environ.copy()
@@ -484,6 +485,8 @@ class WorkspaceManager:
             GIT_TERMINAL_PROMPT="0",
             GIT_LFS_SKIP_SMUDGE="1",
         )
+        if env_extra:
+            env.update(env_extra)
         try:
             result = subprocess.run(
                 ["git", "-c", "credential.interactive=never", *args],
@@ -1584,6 +1587,7 @@ class WorkspaceManager:
             and parsed_repository.hostname.lower() == "github.com"
             else None
         )
+        qualifying: list[dict[str, Any]] = []
         for watch in sorted(watches, key=lambda item: item.updated_at, reverse=True):
             state = watch.state or {}
             head = str(state.get("head_sha") or watch.head_sha or "")
@@ -1602,7 +1606,7 @@ class WorkspaceManager:
                 and watch.authority_instance_id
                 and state.get("supervisor_state") == "retired_after_merge"
             ):
-                return {
+                qualifying.append({
                     "repository": watch.repository,
                     "pr_number": watch.pr_number,
                     "watch_id": watch.id,
@@ -1612,8 +1616,17 @@ class WorkspaceManager:
                     "terminal_state": "merged",
                     "authority_instance_id": watch.authority_instance_id,
                     "authority_acknowledged": True,
-                }
-        return None
+                })
+        if len(qualifying) > 1:
+            # A session can own several merged PRs (e.g. a follow-up after the
+            # first). The newest watch is not necessarily the one this branch
+            # tip belongs to, so prefer the watch whose head is the tip.
+            tip = self._git("-C", str(lease.cache_path), "rev-parse", "--verify",
+                            lease.branch, check=False).stdout.strip()
+            for candidate in qualifying:
+                if tip and candidate["watched_head_sha"] == tip:
+                    return candidate
+        return qualifying[0] if qualifying else None
 
     def _changed_paths(self, cache: Path, start: str, end: str) -> dict[str, str]:
         output = self._git(
@@ -1710,6 +1723,17 @@ class WorkspaceManager:
                     "target_base": target_base,
                     "changed_paths": sorted(source_changes),
                 }
+        reproduced = self._squash_reproduces_tree(cache, source_base, merge_parent, head, merge_sha)
+        if reproduced:
+            return True, {
+                **evidence,
+                "merge_method": "squash",
+                "proof": "three-way merge of the PR head into the pre-merge target reproduces the squash tree",
+                "source_base_sha": source_base,
+                "lease_base_sha": lease.base_sha,
+                "target_base": merge_parent,
+                "changed_paths": sorted(source_changes),
+            }
         return False, {
             **evidence,
             "merge_method": "squash_or_rebase",
@@ -1718,6 +1742,46 @@ class WorkspaceManager:
             "lease_base_sha": lease.base_sha,
             "changed_paths": sorted(source_changes),
         }
+
+    def _squash_reproduces_tree(
+        self, cache: Path, source_base: str, merge_parent: str, head: str, merge_sha: str
+    ) -> bool:
+        """True iff merging ``head`` into ``merge_parent`` yields exactly ``merge_sha``'s tree.
+
+        A squash merge is a three-way merge of the PR head into the target as it
+        was at merge time. Strict per-path blob equality fails whenever another
+        change touched the same file between the branch's last sync and the
+        squash, although the PR content is fully integrated. Full tree equality
+        with the reproduced merge is the exact criterion and is not weaker: any
+        missing, extra or altered content changes the tree.
+
+        Only for a single-parent merge commit. The merge runs against a throwaway
+        object directory layered on the cache's objects, so nothing is written to
+        the cache and a conflict simply means "not proven".
+        """
+        parents = self._git("-C", str(cache), "rev-list", "--parents", "-n", "1",
+                            merge_sha, check=False).stdout.split()
+        if len(parents) != 2:
+            return False
+        git_dir = self._git("-C", str(cache), "rev-parse", "--absolute-git-dir",
+                            check=False).stdout.strip()
+        if not git_dir:
+            return False
+        merge_tree = self._git("-C", str(cache), "rev-parse", f"{merge_sha}^{{tree}}",
+                               check=False).stdout.strip()
+        with tempfile.TemporaryDirectory(prefix="pa-squash-proof-") as scratch:
+            (Path(scratch) / "objects").mkdir()
+            result = self._git(
+                "-C", str(cache), "merge-tree", "--write-tree", "--no-messages",
+                f"--merge-base={source_base}", merge_parent, head,
+                check=False, timeout=120,
+                env_extra={
+                    "GIT_OBJECT_DIRECTORY": str(Path(scratch) / "objects"),
+                    "GIT_ALTERNATE_OBJECT_DIRECTORIES": str(Path(git_dir) / "objects"),
+                },
+            )
+        lines = result.stdout.strip().splitlines()
+        return result.returncode == 0 and bool(lines) and bool(merge_tree) and lines[0] == merge_tree
 
     def _cleanup_lease_locked(self, lease: WorkspaceLease, *, merged_proof: dict[str, Any] | None = None,
                               expected_target: WorkspaceCleanupTarget | None = None) -> bool:
@@ -1744,7 +1808,12 @@ class WorkspaceManager:
                 ).stdout.strip()
                 if unpushed:
                     evidence = self._terminal_pr_evidence(lease)
-                    if not evidence and merged_proof:
+                    if merged_proof and (
+                        not evidence
+                        or evidence.get("watched_head_sha") != merged_proof.get("watched_head_sha")
+                    ):
+                        # Stale watch evidence about another head must not mask an
+                        # explicit, freshly revalidated proof for this exact head.
                         # Cleanup-only primary GitHub proof. This does not create
                         # a watch, repair dispatch binding or infer historical green.
                         canonical, _ = canonical_repository_identity(lease.repository_url)
