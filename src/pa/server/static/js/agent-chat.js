@@ -19,6 +19,15 @@
   const MAX_RETAINED_EVENTS = 2000;
   const MAX_MESSAGE_ROWS = 600;
   const MAX_ACTIVITY_ROWS = 300;
+  // The tool-activity and terminal flyouts show only the most recent entries and
+  // grow on scroll-up. MAX_ACTIVITY_ROWS stays the total retention bound
+  // (visible plus archived); these are only how much is shown at once.
+  const ACTIVITY_WINDOW = 100;
+  const ACTIVITY_PAGE = 50;
+  const TERMINAL_WINDOW = 50;
+  const TERMINAL_PAGE = 50;
+  const FLYOUT_BOTTOM_SLACK = 72;
+  const FLYOUT_TOP_TRIGGER = 120;
   const MAX_PLANS = 50;
   const MAX_STREAM_CHARS = 250000;
   const SESSION_ROUTE_TIMEOUT_MS = 4000;
@@ -223,6 +232,24 @@
     return oldTop + Math.max(0, newHeight - oldHeight);
   }
 
+  // A hidden flyout has no scroll position, so it counts as pinned: it opens at
+  // the last entry and follows live output until the user scrolls up.
+  function captureFlyoutScroll(el) {
+    if (!el || el.hidden) return { pinned: true, top: 0, height: 0 };
+    return {
+      pinned: el.scrollHeight - el.scrollTop - el.clientHeight < FLYOUT_BOTTOM_SLACK,
+      top: el.scrollTop,
+      height: el.scrollHeight,
+    };
+  }
+
+  function restoreFlyoutScroll(el, state, prepended) {
+    if (!el || el.hidden || !state) return;
+    if (state.pinned) el.scrollTop = el.scrollHeight;
+    else if (prepended) el.scrollTop = anchoredScrollTop(state.top, state.height, el.scrollHeight);
+    else el.scrollTop = state.top;
+  }
+
   function apiErrorMessage(body, fallback) {
     const detail = body && body.detail;
     if (typeof detail === "string") return detail;
@@ -316,6 +343,7 @@
       toolFlyout: root.querySelector("[data-acw-tool-flyout]"),
       toolActivity: root.querySelector("[data-acw-tool-activity]"),
       toolEmpty: root.querySelector("[data-acw-tool-empty]"),
+      toolEarlier: root.querySelector("[data-acw-tool-earlier]"),
       planToggle: root.querySelector("[data-acw-plan-toggle]"),
       planFlyout: root.querySelector("[data-acw-plan-flyout]"),
       planList: root.querySelector("[data-acw-plan-list]"),
@@ -476,6 +504,7 @@
       self.els.messages.addEventListener(type, function () { self.historyUserIntent = true; }, {passive:true});
     });
     this._bindHistoryScrolling();
+    this._bindFlyoutScrolling();
     if (this.els.form) {
       this.els.form.addEventListener("submit", function (e) {
         e.preventDefault();
@@ -1819,10 +1848,128 @@
     this.browserRefreshId = null;
   };
 
-  AgentChatWidget.prototype.renderTerminal = function () {
-    if (!window.PAAgentTerminal || !this.els.terminalOutput || !this.els.terminalFlyout || this.els.terminalFlyout.hidden) return;
+  AgentChatWidget.prototype._syncFlyoutWindows = function () {
+    if (this._flyoutSession === this.sessionId) return;
+    this._flyoutSession = this.sessionId;
+    this.activityLimit = ACTIVITY_WINDOW;
+    this.terminalLimit = TERMINAL_WINDOW;
+  };
+
+  AgentChatWidget.prototype.renderTerminal = function (options) {
+    options = options || {};
+    const flyout = this.els.terminalFlyout;
+    if (!window.PAAgentTerminal || !this.els.terminalOutput || !flyout || flyout.hidden) return;
+    this._syncFlyoutWindows();
+    const state = options.state || (options.pin ? { pinned: true, top: 0, height: 0 } : captureFlyoutScroll(flyout));
+    // Following live output keeps the window small; reading older output keeps
+    // whatever the user has revealed so the rows they are reading do not vanish.
+    if (state.pinned && !options.keepWindow) this.terminalLimit = TERMINAL_WINDOW;
     const limit = Number(this.root.dataset.terminalOutputLimit) || 1000;
-    window.PAAgentTerminal.render(this.els.terminalOutput, this.transcriptEvents, this.sessionId, limit);
+    this._terminalInfo = window.PAAgentTerminal.render(
+      this.els.terminalOutput, this.transcriptEvents, this.sessionId, limit,
+      { max: this.terminalLimit || TERMINAL_WINDOW, hasOlder: !!this.hasOlder && !this.recentBootstrap }
+    );
+    restoreFlyoutScroll(flyout, state, !!options.prepended || !!this._olderFlyoutLoad);
+  };
+
+  AgentChatWidget.prototype._requestOlderForFlyouts = function () {
+    // The rebuild that follows a durable older page must keep the reader's place.
+    this._olderFlyoutLoad = true;
+    this.loadOlderTranscript();
+    if (!this.loadingOlder) this._olderFlyoutLoad = false;
+  };
+
+  AgentChatWidget.prototype.revealOlderTerminal = function () {
+    const flyout = this.els.terminalFlyout;
+    if (!flyout || flyout.hidden) return false;
+    const info = this._terminalInfo || {};
+    const keepPlace = Object.assign({}, captureFlyoutScroll(flyout), { pinned: false });
+    if (info.hidden > 0) {
+      this.terminalLimit = (this.terminalLimit || TERMINAL_WINDOW) + TERMINAL_PAGE;
+      this.renderTerminal({ state: keepPlace, prepended: true, keepWindow: true });
+      return true;
+    }
+    if (this.hasOlder && !this.loadingOlder && !this.olderError && !this.recentBootstrap) {
+      this.terminalLimit = (this.terminalLimit || TERMINAL_WINDOW) + TERMINAL_PAGE;
+      this._requestOlderForFlyouts();
+      return true;
+    }
+    return false;
+  };
+
+  AgentChatWidget.prototype.revealOlderTool = function () {
+    const flyout = this.els.toolFlyout, host = this.els.toolActivity;
+    if (!flyout || !host || flyout.hidden) return false;
+    const archive = this.activityArchive || [];
+    if (archive.length) {
+      const state = Object.assign({}, captureFlyoutScroll(flyout), { pinned: false });
+      const older = archive.splice(-ACTIVITY_PAGE);
+      const first = this._activityUnits()[0] || null;
+      older.forEach(function (node) { host.insertBefore(node, first); });
+      this.activityLimit = (this.activityLimit || ACTIVITY_WINDOW) + older.length;
+      this.activityCount = this._activityUnits().length;
+      this.updateActivityEarlierControl();
+      restoreFlyoutScroll(flyout, state, true);
+      return true;
+    }
+    if (this.hasOlder && !this.loadingOlder && !this.olderError && !this.recentBootstrap) {
+      this.activityLimit = (this.activityLimit || ACTIVITY_WINDOW) + ACTIVITY_PAGE;
+      this._requestOlderForFlyouts();
+      return true;
+    }
+    return false;
+  };
+
+  AgentChatWidget.prototype.updateActivityEarlierControl = function () {
+    const button = this.els && this.els.toolEarlier;
+    if (!button) return;
+    const archived = (this.activityArchive || []).length;
+    button.hidden = !(archived > 0 || (!!this.hasOlder && !this.recentBootstrap));
+    button.textContent = archived
+      ? "Show earlier activity (" + archived + " more loaded)"
+      : "Load earlier history";
+  };
+
+  // Scrolling toward the top of a flyout reveals the next page of older entries.
+  // Only a user gesture can trigger it, so restoring a scroll position after a
+  // rebuild can never cascade into loading the whole history.
+  AgentChatWidget.prototype._bindFlyoutScrolling = function () {
+    const self = this;
+    const bind = function (el, reveal) {
+      if (!el || !el.addEventListener) return;
+      let intentUntil = 0;
+      const arm = function () { intentUntil = performance.now() + 1000; };
+      ["touchmove", "pointerdown", "keydown"].forEach(function (type) {
+        el.addEventListener(type, arm, { passive: true });
+      });
+      el.addEventListener("wheel", function (event) {
+        arm();
+        // At the very top there is no scroll event to follow an upward wheel.
+        if (event.deltaY < 0 && !el.hidden && el.scrollTop <= FLYOUT_TOP_TRIGGER) {
+          intentUntil = 0;
+          reveal.call(self);
+        }
+      }, { passive: true });
+      el.addEventListener("scroll", function () {
+        if (el.hidden || performance.now() > intentUntil) return;
+        if (el.scrollTop <= FLYOUT_TOP_TRIGGER) {
+          intentUntil = 0;
+          reveal.call(self);
+        }
+      }, { passive: true });
+    };
+    bind(this.els.toolFlyout, this.revealOlderTool);
+    bind(this.els.terminalFlyout, this.revealOlderTerminal);
+    if (this.els.toolEarlier) {
+      this.els.toolEarlier.addEventListener("click", function () { self.revealOlderTool(); });
+    }
+    if (this.els.terminalOutput) {
+      this.els.terminalOutput.addEventListener("click", function (event) {
+        const target = event.target && event.target.closest
+          ? event.target.closest("[data-acw-terminal-earlier]") : null;
+        if (target) self.revealOlderTerminal();
+      });
+    }
   };
 
   AgentChatWidget.prototype.updateTitle = function (title, version) {
@@ -1850,7 +1997,9 @@
     if (target) target.hidden = !open;
     const toggle = this.els[kind + "Toggle"];
     if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false");
-    if (kind === "terminal" && open) this.renderTerminal();
+    if (kind === "terminal" && open) this.renderTerminal({ pin: true });
+    // A flyout that was hidden has no scroll position: open at the last entry.
+    if (kind === "tool" && open && target) target.scrollTop = target.scrollHeight;
   };
 
   AgentChatWidget.prototype.closeFlyouts = function () {
@@ -2248,6 +2397,8 @@
   };
 
   AgentChatWidget.prototype.updateOlderControl = function () {
+    // The tool-activity flyout offers earlier history whenever the chat does.
+    this.updateActivityEarlierControl();
     if (!this.els.loadOlder) return;
     const anchor = this._captureHistoryAnchor();
     this.els.loadOlder.hidden = !!this.recentBootstrap || (!this.hasOlder && !this.olderError);
@@ -2458,6 +2609,11 @@
       if (timer && timer.interval) clearInterval(timer.interval);
     });
     this.toolTimers = {};
+    // The rebuild empties both flyouts: remember where the reader was in each.
+    const flyoutScroll = {
+      tool: captureFlyoutScroll(this.els.toolFlyout),
+      terminal: captureFlyoutScroll(this.els.terminalFlyout),
+    };
     this.resetArtifacts();
     // Keep placeholder node; clear the rest
     Array.from(this.els.messages.children).forEach(function (child) {
@@ -2485,7 +2641,9 @@
       this._visualizationTranscriptSignature = this.sessionId + "::" + this.apiBase + "::" + JSON.stringify(retained);
     }
     this._rebuildSeenEvents();
-    this.renderTerminal();
+    this.renderTerminal({ state: flyoutScroll.terminal });
+    restoreFlyoutScroll(this.els.toolFlyout, flyoutScroll.tool, !!this._olderFlyoutLoad);
+    this.updateActivityEarlierControl();
     this._pruneMessageRows(!!options.keepOldest);
     if (options.scrollBottom) this.scrollToBottom();
   };
@@ -2567,6 +2725,7 @@
       ) return;
       self.olderError = "Could not load older messages: " + err.message;
     }).finally(function () {
+      self._olderFlyoutLoad = false;
       if (self.olderAbortController !== controller) return;
       self.olderAbortController = null;
       if (
@@ -3464,25 +3623,57 @@
     this.followToolActivity(shouldFollow);
   };
 
-  AgentChatWidget.prototype._pruneActivityRows = function () {
-    if (!this.els.toolActivity || this.activityCount == null || this.activityCount <= MAX_ACTIVITY_ROWS) return;
-    let rows = Array.from(this.els.toolActivity.querySelectorAll(
-      ".acw-tool,.acw-progress-update,.acw-explanation"
-    ));
-    while (rows.length > MAX_ACTIVITY_ROWS) {
-      const stale = rows.find(function (row) {
-        return !row.dataset.toolId || !this.activeToolIds[row.dataset.toolId];
-      }, this);
-      if (!stale) break;
-      const staleId = stale.dataset.toolId;
-      if (staleId && this.toolTimers[staleId]) {
-        if (this.toolTimers[staleId].interval) clearInterval(this.toolTimers[staleId].interval);
-        delete this.toolTimers[staleId];
-      }
-      stale.remove();
-      rows = rows.filter(function (candidate) { return candidate !== stale; });
+  // Top-level activity units only: a tool nested in an explanation belongs to it.
+  AgentChatWidget.prototype._activityUnits = function () {
+    const host = this.els && this.els.toolActivity;
+    if (!host) return [];
+    return Array.from(host.children || []).filter(function (child) {
+      return /(^|\s)(acw-tool|acw-progress-update|acw-explanation)(\s|$)/.test(child.className || "");
+    });
+  };
+
+  AgentChatWidget.prototype._unitToolIds = function (unit) {
+    const ids = [];
+    if (unit.dataset && unit.dataset.toolId) ids.push(unit.dataset.toolId);
+    if (unit.querySelectorAll) {
+      Array.from(unit.querySelectorAll("[data-tool-id]")).forEach(function (node) {
+        if (node.dataset && node.dataset.toolId) ids.push(node.dataset.toolId);
+      });
     }
-    this.activityCount = rows.length;
+    return ids;
+  };
+
+  // Keep only the most recent rows in the DOM. Older rows are detached, not
+  // destroyed, so scrolling up can bring them back without rebuilding anything.
+  // Visible plus archived rows stay within MAX_ACTIVITY_ROWS.
+  AgentChatWidget.prototype._pruneActivityRows = function () {
+    if (!this.els.toolActivity) return;
+    this._syncFlyoutWindows();
+    const limit = this.activityLimit || ACTIVITY_WINDOW;
+    if (this.activityCount == null || this.activityCount <= limit) return;
+    const units = this._activityUnits();
+    this.activityCount = units.length;
+    let excess = units.length - limit;
+    if (excess <= 0) return;
+    const archive = this.activityArchive || (this.activityArchive = []);
+    for (let i = 0; i < units.length && excess > 0; i += 1) {
+      const unit = units[i];
+      const ids = this._unitToolIds(unit);
+      if (ids.some(function (id) { return this.activeToolIds[id]; }, this)) continue;
+      ids.forEach(function (id) {
+        if (this.toolTimers[id]) {
+          if (this.toolTimers[id].interval) clearInterval(this.toolTimers[id].interval);
+          delete this.toolTimers[id];
+        }
+      }, this);
+      unit.remove();
+      archive.push(unit);
+      excess -= 1;
+      this.activityCount -= 1;
+    }
+    const room = Math.max(0, MAX_ACTIVITY_ROWS - this.activityCount);
+    if (archive.length > room) archive.splice(0, archive.length - room);
+    this.updateActivityEarlierControl();
   };
 
   AgentChatWidget.prototype.finalizeActivity = function () {
@@ -3559,6 +3750,7 @@
     this.activeExplanation = null;
     this.activityStreams = {};
     this.activityCount = 0;
+    this.activityArchive = [];
     this.activeToolIds = {};
     this.plans = [];
     if (this.els.toolActivity) {

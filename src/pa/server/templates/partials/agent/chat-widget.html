@@ -200,6 +200,7 @@
   <div class="acw-chat-stage">
     <aside class="acw-flyout" data-acw-tool-flyout hidden aria-label="Tool activity">
       <header><strong>Tool activity</strong><button type="button" class="ghost small" data-acw-flyout-close aria-label="Close tool activity">×</button></header>
+      <button type="button" class="ghost small acw-tool-earlier" data-acw-tool-earlier hidden>Show earlier activity</button>
       <div class="acw-flyout-body acw-tool-activity" data-acw-tool-activity>
         <p class="muted" data-acw-tool-empty>No tool activity yet.</p>
       </div>
@@ -207,7 +208,7 @@
 
     <aside class="acw-flyout acw-terminal" data-acw-terminal-flyout hidden aria-label="Terminal">
       <header><strong>Terminal</strong><button type="button" class="ghost small" data-acw-flyout-close aria-label="Close Terminal">×</button></header>
-      <p class="muted small">Tool calls from loaded history. Read-only. <a href="/settings?section=configuration">Output limit: {{ terminal_output_char_limit | default(1000) }} characters · Settings</a></p>
+      <p class="muted small">Most recent tool calls; scroll up for earlier ones. Read-only. <a href="/settings?section=configuration">Output limit: {{ terminal_output_char_limit | default(1000) }} characters · Settings</a></p>
       <div class="acw-flyout-body" data-acw-terminal-output></div>
     </aside>
 
