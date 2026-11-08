@@ -206443,7 +206443,7 @@
       "retested": "1000coldprobe too small foractualscale;cachedsupportedread only",
       "resolution": "open",
       "next_actor": "thiscard/session",
-      "next_action": "Boundeddisposableactualsizenativephase attribution;preserveintegrity/reclamation/WAL/foregrounddurability/solewritersemantics;no arbitrarythreshold/defaultchanges.",
+      "next_action": "Measure safe existing-database incremental migration and reclamation/fragmentation/lease/crash/concurrency semantics before product implementation; preserve full health and durable reclamation.",
       "bounded_phase_candidate": {
         "artifact": "docs/benchmarks/systemic-maintenance-phases-20261018.json",
         "stage": "candidate fixednative/sweepwallCPU phases;23then24contracts/111broadpasses16subtests+1correctedfixturefailure/6paritycases/4native-scale cases",
@@ -206478,6 +206478,20 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
+      },
+      "loaded671_followup": {
+        "artifact": "docs/benchmarks/systemic-loaded671-maintenance-20261108.json",
+        "baseline_write_max_ms": [
+          560.493,
+          476.65,
+          472.444
+        ],
+        "experimental_incremental_write_max_ms": [
+          1.364,
+          1.348,
+          1.348
+        ],
+        "scope": "Private prospective experiment; existing migration and native acceptance unverified."
       }
     },
     {
@@ -261692,14 +261706,25 @@
       "cause_classification": "confirmed_observability_gap_native_held_work_cause_unverified",
       "cause": "Current deployed repositorylock observer captures720mscollection/718msheld region, but Git subprocess time remains unseparated from otherwork. No claim that fetch explains historicaltails.",
       "implemented": "Three numeric existingobserver fields withboundedwindows/totals/slowrecords; invocation/freshness/error/deadline semantics unchanged.",
-      "merged": [],
-      "deployed": "NewGitfields notinstalled;1.6.4existinglock/labelrepairs independentlyactive.",
+      "merged": [
+        "https://github.com/petersky/pa/pull/671"
+      ],
+      "deployed": "Verified exact6dd525 loaded/newPID4234/startup24a13 after authorized managedhandoff;453RECORDentries matchwheel;54dependencies unchanged.",
       "retested": "175broader/12Gitcancellationtests pass(overlap),30alternatingprivatefileGitpairs,100mixediterations0observedviolations/9600ordered events. Earlier514.788msfailure retained separately. Final append-only field-layout compatibility stage:13Git/constructor/cancellationtests pass; original timing populations remain separately labeled.",
       "resolution": "open",
       "next_actor": "This systemic session;independent17d/userlocalacceptance.",
-      "next_action": "Protected integration andfreshreviewedactivation/nativeGitphase measurements; preserve all broaderacceptance requirements.",
+      "next_action": "Continue actual Git/network/local held-work attribution; do not weaken fresh-origin cleanup guards or claim whole acceptance.",
       "artifact": "docs/benchmarks/systemic-workspace-git-phases-20261108.json",
-      "report_id": "e0da2c32-9162-469a-b439-830707082e03"
+      "report_id": "e0da2c32-9162-469a-b439-830707082e03",
+      "activation_history_before_loaded671": {
+        "merged": [],
+        "deployed": "NewGitfields notinstalled;1.6.4existinglock/labelrepairs independentlyactive.",
+        "retested": "175broader/12Gitcancellationtests pass(overlap),30alternatingprivatefileGitpairs,100mixediterations0observedviolations/9600ordered events. Earlier514.788msfailure retained separately. Final append-only field-layout compatibility stage:13Git/constructor/cancellationtests pass; original timing populations remain separately labeled."
+      },
+      "followup_loaded671": {
+        "artifact": "docs/benchmarks/systemic-loaded671-maintenance-20261108.json",
+        "observations": "Natural collection one invocation579.512ms:3Gitcalls400.147ms/fetch364.023ms,lockhold405.535ms/wait.002875ms,SQL173.647ms. Inclusive intervals may overlap; not historical proof or a distribution."
+      }
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -366952,7 +366977,7 @@
     "prior_complete_bundle": "docs/benchmarks/systemic-installed635-20261101.raw.json.gz",
     "scope": "Source repair of confirmed duplicate index/write amplification only; current runtime635 unchanged; every performance residual and exact17d scheduler acceptance remains open."
   },
-  "current_status": "752findings/184concernsOPEN. Existinglock/notificationchanges verifiedactive in1.6.4; Gitphase source/privatevalidation only. Native tails/allacceptance remain.",
+  "current_status": "752findings/184concernsOPEN. PR671exactpackage verifiedloaded. PassiveGitphasesactive; native579.512mscollection/3768.730msmaintenance and peerfailures remain. PrivateVACUUM contention reproduced; incremental migration onlyexperiment.",
   "source638_session_wire_stage_20261101": {
     "artifact": "docs/benchmarks/systemic-session-wire638-20261101.json",
     "source_base": "2db5c50f2fa2e841dbeb3d5789abc6c7b5fb135e",
@@ -369982,5 +370007,11 @@
       ]
     }
   },
-  "current_status_before_git_phases": "751findings/183concerns OPEN; repositoryflock timing source,9new scheduling observations; protected integration/exact activation/fullacceptance remain."
+  "current_status_before_git_phases": "751findings/183concerns OPEN; repositoryflock timing source,9new scheduling observations; protected integration/exact activation/fullacceptance remain.",
+  "loaded671_overlay": {
+    "artifact": "docs/benchmarks/systemic-loaded671-maintenance-20261108.json",
+    "findings": 752,
+    "concerns": 184,
+    "acceptance": "open"
+  }
 }
