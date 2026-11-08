@@ -1,4 +1,32 @@
 {% from "macros/instance_identity.html" import instance_identity %}
+{% macro stage_strip(strip, compact=False) %}
+{# Work -> declared checkpoints -> Done. State is carried by shape + colour, never by prose. #}
+{% if strip and strip.stages %}
+<ol class="stage-strip{% if compact %} stage-strip-compact{% endif %}" data-stage-strip data-stage-current="{{ strip.current or '' }}">
+  {% for stage in strip.stages %}
+  <li class="stage stage-{{ stage.state }}{% if stage.waiting_on %} stage-waiting{% endif %}"
+      data-stage="{{ stage.id }}" data-stage-state="{{ stage.state }}"{% if stage.owner %} data-stage-owner="{{ stage.owner }}"{% endif %}
+      {% if stage.state == 'active' %}aria-current="step"{% endif %}>
+    <span class="stage-mark" aria-hidden="true"></span>
+    <span class="stage-label">{{ stage.label }}</span>
+    {% if stage.parallel %}
+    <span class="stage-parallel" title="{{ stage.parallel.done }} of {{ stage.parallel.total }} done{% if stage.parallel.running %}, {{ stage.parallel.running }} running{% endif %}{% if stage.parallel.stuck %}, {{ stage.parallel.stuck }} stuck{% endif %}">
+      {% for kind in ('done', 'running', 'stuck', 'todo') %}{% for _ in range(stage.parallel[kind]) %}<i class="pip pip-{{ kind }}" aria-hidden="true"></i>{% endfor %}{% endfor %}
+      <span class="stage-count">{{ stage.parallel.done }}/{{ stage.parallel.total }}</span>
+    </span>
+    {% endif %}
+    {% if stage.pulse %}
+    <span class="stage-pulse pulse-{{ stage.pulse.level }}" title="Last agent activity">
+      <i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i>
+      {% if stage.pulse.at %}<time datetime="{{ stage.pulse.at }}">{{ relative_time(stage.pulse.at) }}</time>{% else %}<span>no signal</span>{% endif %}
+    </span>
+    {% endif %}
+    {% if stage.owner and stage.state in ('active', 'stuck') and not (stage.id == 'work' and stage.owner == 'agent') %}<span class="stage-owner owner-{{ stage.owner }}">{{ {'agent': 'Agent', 'pa': 'PA', 'you': 'You'}[stage.owner] }}</span>{% endif %}
+  </li>
+  {% endfor %}
+</ol>
+{% endif %}
+{% endmacro %}
 {% macro presentation_action(action, title, card_id, realm_id, classes="ghost small compact-card-dispatch") %}
   {% if action.kind == 'dispatch' %}
   <button type="button" class="{{ classes }}" data-card-dispatch-open
@@ -70,7 +98,8 @@
   <div class="compact-card-progress progress-{{ presentation.freshness }}"
        data-card-progress
        data-progress-state="{{ presentation.freshness }}">
-    {% if presentation.outcome %}<p class="work-outcome">{{ presentation.outcome }}</p>{% endif %}
+    {{ stage_strip(presentation.stage_strip, compact=True) }}
+    {% if presentation.outcome and presentation.stage_strip.stages | length <= 2 %}<p class="work-outcome">{{ presentation.outcome }}</p>{% endif %}
     {% if presentation.next_actor.id in ('operator', 'reviewer') %}<span class="muted small">{{ presentation.next_actor.label }}</span>{% endif %}
   </div>
   {% else %}

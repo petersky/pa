@@ -2975,6 +2975,25 @@ class CardProjection:
             rows = conn.execute(query, params).fetchall()
         return {row["id"]: row["lane"] for row in rows}
 
+    def child_lanes_by_parent(
+        self, parent_ids: set[str], *, realm_id: str | None = None
+    ) -> dict[str, list[tuple[str, str]]]:
+        """Return parent id -> [(child id, lane)] in one query, without card bodies."""
+        if not parent_ids:
+            return {}
+        ids = sorted(parent_ids)
+        query = "SELECT id, lane, parent_id FROM cards WHERE parent_id IN (%s)" % ",".join("?" * len(ids))
+        params: list[str] = list(ids)
+        if realm_id:
+            query += " AND realm_id = ?"
+            params.append(realm_id)
+        with self._conn() as conn:
+            rows = conn.execute(query, params).fetchall()
+        result: dict[str, list[tuple[str, str]]] = {}
+        for row in rows:
+            result.setdefault(row["parent_id"], []).append((row["id"], row["lane"]))
+        return result
+
     def list_card_options(
         self, *, realm_id: str, recent_first: bool = False
     ) -> list[Card]:

@@ -1,3 +1,4 @@
+{% from "macros/cards.html" import stage_strip %}
 {% set presentation = work_presentation %}
 {% set action = presentation.action %}
 <div class="card-live-progress progress-{{ presentation.freshness }}"
@@ -15,8 +16,9 @@
       {{ presentation.relative_time }}
     </time>{% else %}<span class="muted">{{ presentation.freshness_label }} · Time unavailable</span>{% endif %}
   </div>
-  {% if presentation.outcome %}<p class="work-outcome">{{ presentation.outcome }}</p>{% endif %}
-  {% if presentation.next_actor.id in ('operator', 'reviewer') %}<p class="muted small">{{ presentation.next_actor.label }}</p>{% endif %}
+  {{ stage_strip(presentation.stage_strip) }}
+  {# Declared checkpoints are drawn by the strip; prose stays only for outcomes the agent wrote. #}
+  {% if presentation.outcome and presentation.stage_strip.stages | length <= 2 %}<p class="work-outcome">{{ presentation.outcome }}</p>{% endif %}
   <details class="work-evidence">
     <summary>Details and diagnostics</summary>
     <p>{{ presentation.summary }}</p>
