@@ -34,6 +34,37 @@ _REASONS = {
     'Missing ignore definitions require explicit quarantine review': 'ignore_review_required',
 }
 
+# Static diagnostic-only reasons; never expose paths, Git output or file data.
+_REASONS.update({
+    'Paged provenance: ' + reason: code
+    for reason, code in {
+        'tracked metadata record exceeds capacity': 'paged_metadata_capacity',
+        'tracked metadata exceeds 10000-path capacity': 'paged_metadata_capacity',
+        'tracked metadata exceeds byte capacity': 'paged_metadata_capacity',
+        'tracked metadata fence exceeds byte capacity': 'paged_metadata_capacity',
+        'index exceeds metadata capacity': 'paged_metadata_capacity',
+        'symlink exceeds content capacity': 'paged_metadata_capacity',
+        'observation cache capacity reached; wait for expiry': 'paged_cache_capacity',
+        'invalid cursor': 'paged_cursor_invalid',
+        'cursor expired, stale or belongs to different inputs': 'paged_cursor_stale',
+        'initial page already advanced; use its continuation cursor': 'paged_cursor_stale',
+        'tracked inputs or index changed; start a new observation': 'paged_inputs_changed',
+        'tracked inputs or index changed during page': 'paged_inputs_changed',
+        'tracked file changed before read': 'paged_inputs_changed',
+        'tracked file changed during read': 'paged_inputs_changed',
+        'tracked symlink changed during observation': 'paged_inputs_changed',
+        'HEAD changed': 'head_changed',
+        'index has a writer or unsafe path': 'index_writer_or_unsafe',
+        'index is no longer empty': 'index_not_empty',
+        'tracked metadata stream failed': 'paged_metadata_failed',
+        'unsupported tracked metadata': 'tracked_path_unsupported',
+        'tracked parent is not a retained directory': 'tracked_symlink_parent',
+        'tracked type changed': 'tracked_type_differs',
+        'tracked type or executable mode changed': 'tracked_mode_differs',
+        'HEAD has no tracked paths': 'tracked_path_unsupported',
+    }.items()
+})
+
 
 def rejection_detail(reason: str) -> dict[str, str]:
     """Identify known guards while keeping unknown exception contents private.

@@ -246,9 +246,10 @@ def register_mcp(mcp, ctx: AppContext) -> None:
     async def workspace_materialization_repair(
         lease_id: str, session_id: str, card_id: str, expected_fence: int,
         expected_head: str, idempotency_key: str,
-        action: Literal['prepare', 'apply', 'status', 'diagnose'],
+        action: Literal['prepare', 'apply', 'status', 'diagnose', 'diagnose_page'],
         expected_revision: str | None = None,
         quarantine_untracked: bool = False,
+        diagnostic_cursor: str | None = None,
     ) -> dict:
         """Preserve or explicitly repair one exact idle owner's empty-index checkout.
 
@@ -258,6 +259,8 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         Does not collect, reset, launch/retry a prompt or change native settings.
         Diagnose reads bounded tracked-path provenance without preserving or
         changing the tree/index/receipt; it never permits an apply.
+        diagnose_page streams bounded content across expiring process-local
+        cursors; tracked metadata remains capped and changed inputs are rejected.
         """
         from urllib.parse import quote
         from pa.mcp.local_api import LocalPAUnknownOutcome
@@ -270,7 +273,8 @@ def register_mcp(mcp, ctx: AppContext) -> None:
                           expected_fence=expected_fence, expected_head=expected_head,
                           idempotency_key=idempotency_key, action=action,
                           expected_revision=expected_revision,
-                          quarantine_untracked=quarantine_untracked),
+                          quarantine_untracked=quarantine_untracked,
+                          diagnostic_cursor=diagnostic_cursor),
                 timeout_seconds=120.0, timeout=300.0,
             )
         except LocalPAUnknownOutcome as exc:

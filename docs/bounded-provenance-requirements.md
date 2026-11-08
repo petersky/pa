@@ -22,3 +22,21 @@ scope and stale cursors, file/index/HEAD/fence changes and in-read races, output
 and memory bounds, and exact retained bytes. Production observation requires
 reviewed integration and separately coordinated eligible activation. The original
 0337 owner alone retains collection responsibility. Scheduling source is separate.
+
+The opt-in action is `diagnose_page`, with optional `diagnostic_cursor` copied
+exactly from `diagnostic.next_cursor`. Keep the original owner, key, fence and
+HEAD arguments identical. Each page returns at most 64 completed-path rows; a
+large file can span pages with no completed row until its hash finishes. Combine
+rows in response order and trust totals only when `complete` is true. Replaying
+the immediately previous cursor returns its same page after checking inputs;
+older cursors fail explicitly. Do not submit the initial cursor again after
+advancing. Lost/expired cursors require a new observation, never an apply.
+
+The metadata fence remains capped at 10,000 distinct tracked paths, 4 MiB of
+bounded record/fence encoding, and a 1 MiB empty index. These are explicit
+residual limits, not a claim to support arbitrarily large path inventories.
+The content budget remains 16 MiB per page, read in unbuffered chunks of at most
+64 KiB. Up to four scoped continuations per workspace manager expire after five
+minutes. A complete result is still only observation: no receipt, preservation
+revision or apply eligibility is created. Existing mutation guards remain the
+sole authority for preservation and repair.

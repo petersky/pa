@@ -168,7 +168,9 @@ class MaterializationRepair:
 
     def operate(self, *, session_id, lease_id, card_id, expected_fence,
                 expected_head, idempotency_key, principal, action, expected_revision=None,
-                quarantine_untracked=False):
+                quarantine_untracked=False, diagnostic_cursor=None):
+        if diagnostic_cursor is not None and action != 'diagnose_page':
+            raise WorkspaceProvisioningError('Cursor is only valid for paged observation')
         fingerprint = dict(session_id=session_id, lease_id=lease_id, card_id=card_id,
                            expected_fence=expected_fence, expected_head=expected_head,
                            principal=principal, idempotency_key=idempotency_key,
@@ -191,6 +193,16 @@ class MaterializationRepair:
         with self.manager.admission_guard(card_id=card_id, session_id=session_id):
             lease = self._lease(session_id, lease_id, card_id, expected_fence)
             with self.manager._repository_lock('materialization-' + lease.id):
+                if action == 'diagnose_page':
+                    if receipt.exists() and json.loads(receipt.read_text())['fingerprint'] != fingerprint:
+                        raise WorkspaceProvisioningError('Idempotency key belongs to a different exact repair')
+                    from pa.repository.provenance_pages import observe
+                    result = observe(self.manager, lease, fingerprint, diagnostic_cursor,
+                                     byte_limit=MAX_DIAGNOSTIC_BYTES,
+                                     path_limit=MAX_DIAGNOSTIC_PATHS)
+                    # Recheck the durable fence before publishing an observation.
+                    self._lease(session_id, lease_id, card_id, expected_fence)
+                    return {'operation_id': key, **result}
                 if action == 'diagnose':
                     if receipt.exists() and json.loads(receipt.read_text())['fingerprint'] != fingerprint:
                         raise WorkspaceProvisioningError('Idempotency key belongs to a different exact repair')
