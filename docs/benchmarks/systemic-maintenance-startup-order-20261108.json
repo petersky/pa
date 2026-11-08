@@ -1,0 +1,245 @@
+{
+  "contract": "pa.maintenance-startup-order-source/v1",
+  "assembled_at": "2026-11-08T21:00:32.613646+00:00",
+  "context": {
+    "instance": "macbook0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "session": "d7689970-034c-4580-940c-a7667f49766d",
+    "dispatch": "64df3396-da53-4ab4-aa85-f62fb02d50ba",
+    "card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+    "repository": "https://github.com/petersky/pa",
+    "branch": "pa/7894e44b-eef9-4d-45ae26f1-d7689970-034c-45-241f75f7-266ade2c",
+    "original_base": "ab46641f26218dfaf80936a11bb6542973a394f8",
+    "source_parent": "f0a78a55263ac2ede8f1676b905c80361805fc1e",
+    "lease": "8c60de31eba0e4a503dd6539af0e04e45fc068e1505eeedaea790cb3cff3cea5",
+    "fence": 395
+  },
+  "contract_scope": "Only automatic full instance maintenance waits for complete OpenAPI plus settled agent recovery/restart-handoff startup. Manual run_once and daily interval/single-worker/cancellation/durable retirement/admission/warning/deadline/default policies unchanged. Pending agent recovery postpones automatic maintenance visibly; manual sweep remains available. Kernel shutdown cancels the gate before startup cancellation. No full sweep or validation omitted.",
+  "full_function_ast_unchanged": [
+    "_maintain_database",
+    "_maintain_database_measured",
+    "run_maintenance",
+    "_run_maintenance_measured"
+  ],
+  "paired_timing_stage": "Before final callback registration/removal ownership refinement; same full-sweep/order behavior. Final84tests cover callback release/restart ownership. No relabeling as exact final binary timing.",
+  "mixed_failed_frozen": {
+    "outcome": "FAILED/no final numeric artifact; originalHTTP504 then cleanupOSError66",
+    "observed_route": "/api/sync/status",
+    "observed_warnings_ms": {
+      "sync.reconcile_head": 717.1,
+      "sync.status": 565.6,
+      "scheduling.poll_events": 2176.1
+    },
+    "shutdown_errors": [
+      "fleet shutdown timed out",
+      "async runtime close timed out"
+    ],
+    "cause": "Plain fixture gather propagated first failure without cancelling/draining sibling loops; timeout cause remains unverified. Native workers may outlive callers.",
+    "log": {
+      "bytes": 21145,
+      "sha256": "cf725fbcb1464c1dfd6f173f0f91fbd306cb7351d42b43efc710664196aa957d"
+    },
+    "report": "3ecda958-d5a7-4087-aec0-7e638c9de86d revision2 hashc9cb53a30e0272e85a17b0521c3cc3befdf9f5c2dd4232e2b0287ccb8c407eee"
+  },
+  "replay_limits": "Same workload with explicit fixture-owned sibling cancellation/drain and partial numeric failure capture; no HTTP/warning/operation budget changed. Clean replay does NOT prove original504cause fixed. Automatic maintenance requires writer claim absent in this mixed fixture, so no startup-order speed claim from it.",
+  "tests": {
+    "maintenance-startup-first.xml": {
+      "tests": "50",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "time": "3.273"
+    },
+    "maintenance-startup-final.xml": {
+      "tests": "54",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "time": "6.545"
+    },
+    "maintenance-startup-broader.xml": {
+      "tests": "79",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "time": "18.138"
+    },
+    "maintenance-startup-ownership-final.xml": {
+      "tests": "80",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "time": "17.381"
+    },
+    "maintenance-startup-with-harness.xml": {
+      "tests": "83",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "time": "5.852"
+    },
+    "maintenance-startup-validation-final.xml": {
+      "tests": "84",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "time": "6.217"
+    }
+  },
+  "tests_overlap_not_summed": true,
+  "source_hashes": {
+    "src/pa/core/kernel.py": "bde5e26f0daeee76ca0e27c65ef5514cb0f90eef33fc84b57d4e34b161b676cc",
+    "src/pa/modules/instance.py": "0a212fa5430c57e344b29e0f47eae10c52a03141e9d103f20f6acfdaa46d5bd3",
+    "src/pa/instance/maintenance.py": "455cc32b25d9ad5d83a60a98c14b1dd7b03eb4264dcb6823770d2d35e738b264",
+    "tests/test_maintenance_startup_order.py": "482021dadf329d1bbccc4d798388195b5ee9cd36e397b8f3146ffffa104d057b",
+    "scripts/benchmark_maintenance_startup_order.py": "b859ff89c45c26558d907c1439e82f48244f6a73da415f18695244f79b9dff9f",
+    "scripts/benchmark_systemic_latency.py": "39f2a7f6c71237dea1107f8aec3937dc8d51f5c3a89499c2a85e297bba5c483a",
+    "tests/test_benchmark_workload_ownership.py": "b0d4c2006bd01dc17f94479f4ea6069eaca462f4b48874c7e1df89d906ee5658"
+  },
+  "failure_history": [
+    {
+      "stage": "first paired startup fixture",
+      "outcome": "failed before seeding: private database parent directory absent; only mkdir fixture setup fixed",
+      "log": {
+        "bytes": 2057,
+        "sha256": "0703de74f6735136fcb36c8bda1490541cdf8a8e30dd39d66353a818cedb18f7"
+      }
+    },
+    {
+      "stage": "system Python syntax compile",
+      "outcome": "Python3.9 cache write sandbox-denied; projectPython3.14 compile and tests subsequently pass; no production issue attributed"
+    }
+  ],
+  "host_scope": "Private comparison/mixed fixtures and correctness suites may overlap on same host. Not controlled quiet-host/native430MB/provider/fleet/installed acceptance. No production fault/cleanup/restart/installation/otherworker or execution/default/policy change.",
+  "sources": [
+    "https://www.sqlite.org/lang_vacuum.html",
+    "https://www.sqlite.org/pragma.html#pragma_auto_vacuum"
+  ],
+  "semantic_decision": "Incremental auto-vacuum does not repack partly filled pages like full VACUUM; no substitution/migration/productSQLite policy change. Existing full compaction and all integrity checks retained.",
+  "loaded_runtime": {
+    "package": "sha256:6dd525876777ff732d353afc778f6e06bf9935bc8f26bc364ec572b413327f99",
+    "pid": 4234,
+    "startup": "24a13e1d-72d2-4d8d-9527-385ae741be4b",
+    "sync_consistent": true,
+    "new_startup_barrier": "uninstalled;futureexactreview/lifecycleauthorization required"
+  },
+  "disposition": {
+    "findings": 753,
+    "concerns": 185,
+    "resolution": "OPEN",
+    "independent_requirement": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+    "acceptance": false,
+    "residuals": [
+      "Background fullsweep still1.25\u20134.99s in paired fixture and native3.77s; no whole-maintenance speedup.",
+      "Automatic sweep waits while agentstartup remainsunsettled; manual available.",
+      "OriginalHTTP504/reconcile/teardown tails remain; clean replay not repairproof.",
+      "RealKernel/provider/native430MB/coldstart/drain/concurrency/foreground-background/peer/logloss/retention/physicalIO/busy/GC/schedulingrecipient andalloriginalusercriteria remain.",
+      "PrioracceptedboundedBackup/DB/recovery/scheduling scopesremainclosed;no newworkers/selfacceptance/Done."
+    ]
+  },
+  "full_archive": {
+    "path": "systemic-maintenance-startup-order-20261108.raw.json.gz",
+    "bytes": 295931,
+    "sha256": "2b8a0b670d06d46960092f073b25cba741883c590572c8b76314fc0e376f7618",
+    "decoded_bytes": 4085112,
+    "decoded_sha256": "15e217253484cf5614e81031330080c4b32b5f03cb76d37d4f8ec10fbac09b7b"
+  },
+  "paired_summary": [
+    {
+      "iteration": 0,
+      "ordered": false,
+      "startup_ms": 1528.4963340964168,
+      "pipeline_ms": 1771.7325419653207,
+      "write_latency": {
+        "samples": 100,
+        "max": 1415.14,
+        "p50": 0.073,
+        "p95": 0.331,
+        "p99": 0.92
+      },
+      "startup_write_500ms_violations": 1
+    },
+    {
+      "iteration": 0,
+      "ordered": true,
+      "startup_ms": 13.109083054587245,
+      "pipeline_ms": 4991.518415976316,
+      "write_latency": {
+        "samples": 100,
+        "max": 0.765,
+        "p50": 0.053,
+        "p95": 0.265,
+        "p99": 0.436
+      },
+      "startup_write_500ms_violations": 0
+    },
+    {
+      "iteration": 1,
+      "ordered": true,
+      "startup_ms": 7.132750004529953,
+      "pipeline_ms": 1906.4679162111133,
+      "write_latency": {
+        "samples": 100,
+        "max": 0.123,
+        "p50": 0.05,
+        "p95": 0.079,
+        "p99": 0.105
+      },
+      "startup_write_500ms_violations": 0
+    },
+    {
+      "iteration": 1,
+      "ordered": false,
+      "startup_ms": 1380.9478338807821,
+      "pipeline_ms": 1444.6429170202464,
+      "write_latency": {
+        "samples": 100,
+        "max": 1277.298,
+        "p50": 0.056,
+        "p95": 0.137,
+        "p99": 0.412
+      },
+      "startup_write_500ms_violations": 1
+    },
+    {
+      "iteration": 2,
+      "ordered": false,
+      "startup_ms": 1627.0837921183556,
+      "pipeline_ms": 1824.9180831480771,
+      "write_latency": {
+        "samples": 100,
+        "max": 1520.712,
+        "p50": 0.067,
+        "p95": 0.155,
+        "p99": 0.188
+      },
+      "startup_write_500ms_violations": 1
+    },
+    {
+      "iteration": 2,
+      "ordered": true,
+      "startup_ms": 8.068666094914079,
+      "pipeline_ms": 1254.0693329647183,
+      "write_latency": {
+        "samples": 100,
+        "max": 0.3,
+        "p50": 0.044,
+        "p95": 0.086,
+        "p99": 0.223
+      },
+      "startup_write_500ms_violations": 0
+    }
+  ],
+  "mixed_latest_summary": {
+    "warnings": {},
+    "threshold_violations": {},
+    "transcript_retained_rows": 9600,
+    "maintenance": {
+      "samples": 1,
+      "max_ms": 385.084,
+      "p50_ms": 385.084,
+      "p95_ms": 385.084,
+      "p99_ms": 385.084
+    },
+    "attested_module_count": 30
+  }
+}

@@ -69,8 +69,27 @@ class Counts:
         return conn
 
 
+async def _run_workload(*awaitables, outcomes=None):
+    """Drain this fixture's sibling tasks before teardown after any failure."""
+    tasks = [asyncio.create_task(call) for call in awaitables]
+    try:
+        return await asyncio.gather(*tasks)
+    except BaseException:
+        for task in tasks:
+            if not task.done() and not task.cancelling():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        if outcomes is not None:
+            for index, task in enumerate(tasks):
+                error = None if task.cancelled() else task.exception()
+                outcomes[str(index)] = (
+                    "cancelled" if task.cancelled() else type(error).__name__ if error else "completed"
+                )
+        raise
+
+
 async def run(root, *, history=1000, iterations=30, inventory_reads=False, retention_events=0,
-              retained_cold_objects=0, sample_observer=None):
+              retained_cold_objects=0, sample_observer=None, failure_observer=None):
     assert 0 <= retained_cold_objects <= 15000
     assert not retained_cold_objects or retention_events
     root = Path(root).resolve()
@@ -92,13 +111,14 @@ async def run(root, *, history=1000, iterations=30, inventory_reads=False, reten
         async with app.router.lifespan_context(app):
             result = await run_app(app, root, history=history, iterations=iterations,
                                    inventory_reads=inventory_reads, retention_events=retention_events,
-                                   retained_cold_objects=retained_cold_objects, sample_observer=sample_observer)
+                                   retained_cold_objects=retained_cold_objects, sample_observer=sample_observer,
+                                   failure_observer=failure_observer)
     result["workspace_root_audit"] = roots
     return result
 
 
 async def run_app(app, root, *, history, iterations, inventory_reads=False, retention_events=0,
-                  retained_cold_objects=0, sample_observer=None):
+                  retained_cold_objects=0, sample_observer=None, failure_observer=None):
     from pa.server.template_cache import _compatible
     template_cache = app.state.templates.env.bytecode_cache
     template_artifact = {
@@ -411,12 +431,14 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False, rete
     diagnostics_before = diagnostics.snapshot() if diagnostics else {}
     before_io = resource.getrusage(resource.RUSAGE_SELF)
     started = time.perf_counter()
+    workload_outcomes = {}
     gc.callbacks.append(observe_gc)
     try:
         with patch("sqlite3.connect", counts.connection), patch.object(log.store, "get", side_effect=read_object):
-            await asyncio.gather(sync_work(), startup_work(), progress_work(), cache_and_wire(), foreground(),
+            await _run_workload(sync_work(), startup_work(), progress_work(), cache_and_wire(), foreground(),
                                  retention_work(),
-                                 *(transcript_work(worker) for worker in transcript_runtimes))
+                                 *(transcript_work(worker) for worker in transcript_runtimes),
+                                 outcomes=workload_outcomes)
         finished = time.perf_counter()
         elapsed = finished - started
         after_io = resource.getrusage(resource.RUSAGE_SELF)
@@ -539,6 +561,22 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False, rete
             "runtime": snapshot, "runtime_window_note": "Counters/windows include boot and fixture seeding; counter deltas and explicit latency samples cover only the declared measurement scenario.",
             "transcript_performance": transcript_snapshot,
             "dispatch_performance": dispatch_snapshot}
+    except BaseException as exc:
+        if failure_observer is not None:
+            failure = {
+                "contract": "pa.private-mixed-failure/v1", "error_type": type(exc).__name__,
+                "http_status": exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None,
+                "route": exc.request.url.path if isinstance(exc, httpx.HTTPStatusError) else None,
+                "measurement_start_monotonic": started, "captured_monotonic": time.perf_counter(),
+                "source_module_sha256": source_hashes, "workload_outcomes": workload_outcomes,
+                "warnings": dict(warnings), "runtime": runtime.snapshot(),
+                "completed_latency": {name: distribution(values) for name, values in samples.items()},
+                "scope": "Partial failed fixture after sibling task drain, before Kernel teardown. No final order/data validation or performance acceptance; running native workers may remain. No exception messages, SQL or response bodies.",
+            }
+            pending = failure_observer(failure)
+            if inspect.isawaitable(pending):
+                await pending
+        raise
     finally:
         if observe_gc in gc.callbacks:
             gc.callbacks.remove(observe_gc)
@@ -565,8 +603,13 @@ if __name__ == "__main__":
     if not 0 <= args.retained_cold_objects <= 15000 or (args.retained_cold_objects and not args.retention_events):
         parser.error("retained-cold-objects must be0..15000 and requires retention-events")
     with tempfile.TemporaryDirectory(prefix="pa-systemic-benchmark-") as tmp:
+        failure_path = args.output.with_suffix('.failure.json')
+        assert not args.output.exists() and not failure_path.exists(), 'Preserve previous evidence'
+        def record_failure(failure):
+            failure_path.write_text(json.dumps(failure, indent=2) + '\n')
         result = asyncio.run(run(Path(tmp), history=args.history, iterations=args.iterations,
                                  inventory_reads=args.inventory_reads, retention_events=args.retention_events,
-                                 retained_cold_objects=args.retained_cold_objects))
+                                 retained_cold_objects=args.retained_cold_objects,
+                                 failure_observer=record_failure))
     args.output.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps({"output": str(args.output), "warnings": result["warnings"], "latency": result["latency"]}, indent=2))

@@ -270,11 +270,13 @@ class InstanceMaintenanceService:
         services: dict[str, Any],
         *,
         async_runtime: Any | None = None,
+        startup_ready: asyncio.Future[None] | None = None,
     ) -> None:
         self.settings = settings
         self.store = store
         self.services = services
         self.async_runtime = async_runtime
+        self._startup_ready = startup_ready
         self.last_started_at: datetime | None = None
         self.last_finished_at: datetime | None = None
         self.last_error: str | None = None
@@ -285,10 +287,15 @@ class InstanceMaintenanceService:
         self._active_run: asyncio.Task[dict[str, Any]] | None = None
         self._stop = threading.Event()
 
+    def _startup_settled(self, _task: asyncio.Future[None]) -> None:
+        self._wake.set()
+
     def start(self) -> None:
         if not self._task or self._task.done():
             self._closing = False
             self._stop.clear()
+            if self._startup_ready is not None:
+                self._startup_ready.add_done_callback(self._startup_settled)
             self._task = asyncio.create_task(self._run(), name="pa-instance-maintenance")
             self._wake.set()
 
@@ -297,6 +304,8 @@ class InstanceMaintenanceService:
 
     async def close(self) -> None:
         self._closing = True
+        if self._startup_ready is not None:
+            self._startup_ready.remove_done_callback(self._startup_settled)
         self._stop.set()
         self._wake.set()
         # Shield the actual worker even if the server's shutdown budget expires.
@@ -309,6 +318,10 @@ class InstanceMaintenanceService:
     def snapshot(self) -> dict[str, Any]:
         return {
             "running": bool(self._task and not self._task.done()),
+            "waiting_for_startup": bool(
+                self._startup_ready is not None and not self._startup_ready.done()
+                and not self._closing
+            ),
             "interval_seconds": int(self.settings.maintenance_interval_seconds),
             "transcript_retention_days": int(self.settings.transcript_retention_days),
             "mutation_operation_retention_days": int(
@@ -332,6 +345,15 @@ class InstanceMaintenanceService:
     async def _run(self) -> None:
         while not self._closing:
             self._wake.clear()
+            # Automatic full compaction must not contend with the durable
+            # startup/recovery work that establishes admission. A wake is not
+            # permission to cross this barrier. Explicit run_once stays usable.
+            if self._startup_ready is not None:
+                if not self._startup_ready.done():
+                    await self._wake.wait()
+                    continue
+                if self._startup_ready.cancelled():
+                    break
             try:
                 await self.run_once()
             except Exception:

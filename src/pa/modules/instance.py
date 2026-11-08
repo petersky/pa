@@ -1382,6 +1382,7 @@ class InstanceModule(Module):
             ctx.store,
             ctx.services,
             async_runtime=ctx.services.get("async_runtime"),
+            startup_ready=ctx.services.get("maintenance_startup_ready"),
         )
         ctx.register_service("instance_maintenance", service)
         service.start()

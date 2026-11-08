@@ -206437,13 +206437,13 @@
       "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
       "cause_classification": "confirmed_fullrewrite_scale_share_unpartitioned",
       "cause": "Sourcecompactswheneverfreebytesnonzero;cached300MBmainrewrittenalthoughretentionsweepdeleted0rows;24.8swholemaintenance/SQLbusyresult. Individualnativephase costunmeasured.",
-      "implemented": false,
+      "implemented": "Partial shared-cause startup scheduling repair only;fullVACUUM/health/retention unchanged. Full background compaction/health cost remains open.",
       "merged": [],
       "deployed": "Observed806b baseline;no candidatefix",
       "retested": "1000coldprobe too small foractualscale;cachedsupportedread only",
       "resolution": "open",
       "next_actor": "thiscard/session",
-      "next_action": "Measure safe existing-database incremental migration and reclamation/fragmentation/lease/crash/concurrency semantics before product implementation; preserve full health and durable reclamation.",
+      "next_action": "Protected sourceintegration, separatelyreviewedexactactivation and actualstartup/recovery/native/admission verification; continue full maintenance/foreground/peer/all inventory residuals.",
       "bounded_phase_candidate": {
         "artifact": "docs/benchmarks/systemic-maintenance-phases-20261018.json",
         "stage": "candidate fixednative/sweepwallCPU phases;23then24contracts/111broadpasses16subtests+1correctedfixturefailure/6paritycases/4native-scale cases",
@@ -206492,6 +206492,18 @@
           1.348
         ],
         "scope": "Private prospective experiment; existing migration and native acceptance unverified."
+      },
+      "before_startup_order_repair": {
+        "implemented": false,
+        "next_action": "Measure safe existing-database incremental migration and reclamation/fragmentation/lease/crash/concurrency semantics before product implementation; preserve full health and durable reclamation.",
+        "retested": "1000coldprobe too small foractualscale;cachedsupportedread only"
+      },
+      "startup_order_repair": {
+        "artifact": "docs/benchmarks/systemic-maintenance-startup-order-20261108.json",
+        "scope": "Only automatic full instance maintenance waits for complete OpenAPI plus settled agent recovery/restart-handoff startup. Manual run_once and daily interval/single-worker/cancellation/durable retirement/admission/warning/deadline/default policies unchanged. Pending agent recovery postpones automatic maintenance visibly; manual sweep remains available. Kernel shutdown cancels the gate before startup cancellation. No full sweep or validation omitted.",
+        "source": "implemented,84contracts pass;unmerged/uninstalled",
+        "full_vacuum": "retained unchanged;not replaced byincremental vacuum",
+        "acceptance": "open"
       }
     },
     {
@@ -261725,6 +261737,24 @@
         "artifact": "docs/benchmarks/systemic-loaded671-maintenance-20261108.json",
         "observations": "Natural collection one invocation579.512ms:3Gitcalls400.147ms/fetch364.023ms,lockhold405.535ms/wait.002875ms,SQL173.647ms. Inclusive intervals may overlap; not historical proof or a distribution."
       }
+    },
+    {
+      "id": "concern:mixed-fixture-sibling-task-ownership",
+      "kind": "concern",
+      "finding": "Mixed fixture first-failure propagation leaves sibling workloads running through teardown",
+      "family": "verification",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "fixture_ownership_confirmed_http_timeout_cause_unverified",
+      "cause": "Plain asyncio.gather does not cancel remaining workload coroutines when one fails. This can race private root deletion; originalsync/status504 cause not established.",
+      "implemented": "Fixture owns/cancels/drains siblings preserving original failure/cancellation, resultorder and finalizers; partial sanitized numericfailure artifact. No productiondeadline/threshold changes.",
+      "merged": [],
+      "deployed": "Fixture-only source;originalHTTPtimeout/fullPAacceptance unverified",
+      "retested": "84combinedcontracts pass(overlap), including controlledprivateHTTP504capture withoutpayload/SQL export and cancellation/finalizer ownership; separate clean100iteration diagnostic replay does not erase failure.",
+      "artifact": "docs/benchmarks/systemic-maintenance-startup-order-20261108.json",
+      "resolution": "open",
+      "next_actor": "this systemic session/independent17d",
+      "next_action": "Integrate verified source, retain alloriginal504/worker/teardown evidence and attribute actualtimeout cause before claiming acceptance.",
+      "report": "3ecda958-d5a7-4087-aec0-7e638c9de86d revision2"
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -366977,7 +367007,7 @@
     "prior_complete_bundle": "docs/benchmarks/systemic-installed635-20261101.raw.json.gz",
     "scope": "Source repair of confirmed duplicate index/write amplification only; current runtime635 unchanged; every performance residual and exact17d scheduler acceptance remains open."
   },
-  "current_status": "752findings/184concernsOPEN. PR671exactpackage verifiedloaded. PassiveGitphasesactive; native579.512mscollection/3768.730msmaintenance and peerfailures remain. PrivateVACUUM contention reproduced; incremental migration onlyexperiment.",
+  "current_status": "753findings/185concernsOPEN. Automaticfullmaintenance startup-order repair source/privatevalidation only,uninstalled. Pairedstartupwrites improve conditionally;fullsweep4991.518msadverse andfrozenmixedHTTP504failure remain. Latestdiagnostic replay9600ordered/0warnings/violations isseparate,notwholeacceptance.",
   "source638_session_wire_stage_20261101": {
     "artifact": "docs/benchmarks/systemic-session-wire638-20261101.json",
     "source_base": "2db5c50f2fa2e841dbeb3d5789abc6c7b5fb135e",
@@ -370013,5 +370043,23 @@
     "findings": 752,
     "concerns": 184,
     "acceptance": "open"
+  },
+  "status_before_maintenance_startup_order": "752findings/184concernsOPEN. PR671exactpackage verifiedloaded. PassiveGitphasesactive; native579.512mscollection/3768.730msmaintenance and peerfailures remain. PrivateVACUUM contention reproduced; incremental migration onlyexperiment.",
+  "maintenance_startup_order_20261108": {
+    "artifact": "docs/benchmarks/systemic-maintenance-startup-order-20261108.json",
+    "disposition": {
+      "findings": 753,
+      "concerns": 185,
+      "resolution": "OPEN",
+      "independent_requirement": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+      "acceptance": false,
+      "residuals": [
+        "Background fullsweep still1.25\u20134.99s in paired fixture and native3.77s; no whole-maintenance speedup.",
+        "Automatic sweep waits while agentstartup remainsunsettled; manual available.",
+        "OriginalHTTP504/reconcile/teardown tails remain; clean replay not repairproof.",
+        "RealKernel/provider/native430MB/coldstart/drain/concurrency/foreground-background/peer/logloss/retention/physicalIO/busy/GC/schedulingrecipient andalloriginalusercriteria remain.",
+        "PrioracceptedboundedBackup/DB/recovery/scheduling scopesremainclosed;no newworkers/selfacceptance/Done."
+      ]
+    }
   }
 }
