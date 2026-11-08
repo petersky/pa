@@ -58,10 +58,31 @@
     const chars = Array.from(text || "");
     return chars.length > limit ? chars.slice(0, limit).join("") + "\n… [truncated: " + chars.length + " characters; showing " + limit + "]" : text;
   }
-  function render(container, events, sessionId, limit) {
+  // Render only the most recent `options.max` calls (all when omitted). The
+  // caller owns the window so it can grow on scroll-up and shrink when the user
+  // is following live output. Returns how many calls exist, are shown and hidden.
+  function render(container, events, sessionId, limit, options) {
+    options = options || {};
     container.replaceChildren();
-    const calls = project(events, sessionId);
-    if (!calls.length) container.textContent = "No tool calls in loaded history. Load older messages to view earlier calls.";
+    const all = project(events, sessionId);
+    const max = Number.isFinite(options.max) && options.max > 0 ? Math.floor(options.max) : all.length;
+    const hidden = Math.max(0, all.length - max);
+    const calls = hidden ? all.slice(hidden) : all;
+    if (!all.length) {
+      container.textContent = options.hasOlder
+        ? "No tool calls in the loaded history yet. Scroll up to load earlier messages."
+        : "No tool calls in loaded history.";
+    } else if (hidden || options.hasOlder) {
+      // A real button, so it also works when the list is too short to scroll.
+      const earlier = document.createElement("button");
+      earlier.type = "button";
+      earlier.className = "ghost small acw-terminal-earlier";
+      earlier.setAttribute("data-acw-terminal-earlier", "");
+      earlier.textContent = hidden
+        ? "Show earlier tool calls (" + hidden + " more loaded" + (options.hasOlder ? ", more on the server" : "") + ")"
+        : "Load earlier history";
+      container.appendChild(earlier);
+    }
     calls.forEach(function (call) {
       const row = document.createElement("section"), heading = document.createElement("strong");
       row.className = "acw-terminal-call";
@@ -80,6 +101,7 @@
       row.appendChild(output);
       container.appendChild(row);
     });
+    return { total: all.length, shown: calls.length, hidden: hidden };
   }
   root.PAAgentTerminal = { project: project, truncate: truncate, render: render };
 })(typeof window !== "undefined" ? window : globalThis);

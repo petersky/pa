@@ -5487,6 +5487,8 @@ a.ghost:hover {
 .acw-terminal-toggle { font-family: ui-monospace, monospace; font-size: .9rem; white-space: nowrap; }
 .acw-terminal { font-family: ui-monospace, monospace; }
 .acw-terminal > p { padding: 0.6rem; }
+.acw-tool-earlier,
+.acw-terminal-earlier { display: block; width: calc(100% - 1.2rem); margin: 0.4rem 0.6rem 0; }
 .acw-terminal-call { padding: 0.65rem 0; border-bottom: 1px solid var(--pa-border); }
 .acw-terminal-call small { display: block; overflow-wrap: anywhere; }
 .acw-terminal-call pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.8rem; }
