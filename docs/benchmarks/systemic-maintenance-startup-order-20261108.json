@@ -138,10 +138,10 @@
   },
   "full_archive": {
     "path": "systemic-maintenance-startup-order-20261108.raw.json.gz",
-    "bytes": 295931,
-    "sha256": "2b8a0b670d06d46960092f073b25cba741883c590572c8b76314fc0e376f7618",
-    "decoded_bytes": 4085112,
-    "decoded_sha256": "15e217253484cf5614e81031330080c4b32b5f03cb76d37d4f8ec10fbac09b7b"
+    "bytes": 296636,
+    "sha256": "dbb490652c0bc0773ba6a15e5bee0c6a27b3d73fcf869ff205669d005ff9304d",
+    "decoded_bytes": 4086484,
+    "decoded_sha256": "90387f01c230b4db6d08102e4aa3aefc567afe154536e35f85ae1a203a6cc16c"
   },
   "paired_summary": [
     {
@@ -241,5 +241,28 @@
       "p99_ms": 385.084
     },
     "attested_module_count": 30
+  },
+  "ci_fixture_correction": {
+    "first_head": "28fee3de88ff1b9e6d9efc8360c864564d788d3d",
+    "ci": 42523093696,
+    "job": 128860674029,
+    "result": "test2failed newHTTPfailure-capturefixture;other4checkssuccess",
+    "symptom": "Earlier agent/session-list503 preempted intendedmock504; reusedagent/workspace/storepointedtoexpiredtestroot. Newtestresetwasfinally-only.",
+    "source_confirmation": "get_instance_agent reusesglobal_instance_agent untilreset; capturedCIstartupsqliteunabletoopenexpiredDB matchesbehavior.",
+    "fix": "Onlynewtest nowresetsagent/store/settings/kernelBEFOREbootandfinally; addsfresh/expired-agentrootvariants. Expected504/privacy/phase assertions unchanged. Productsource/budgets/benchmarkmeasurements unchanged.",
+    "tests": {
+      "tests": "85",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "time": "6.839"
+    },
+    "test_source_sha256": "2781fe4ced668ee07959ad0e4c6fa8ecaec691c590b935917fa103d79c20cba0",
+    "ci_log": {
+      "bytes": 61508,
+      "sha256": "1edeb023041a7a3f1e25c71eacf32640abd3e7ea82306c3a9bba0b5517b7f808"
+    },
+    "report": "76f5946b-e0db-4291-8130-7232dd9b2b68 revision1 hash5fa3d0812ea7656232de8a431b5443a86c89d7653bef3dcebe2086278bb16d97",
+    "remaining": "Correctedhead fullnewCI/stablehead/mainCI and activation remainpending;originalmixed504cause remainsunverified."
   }
 }

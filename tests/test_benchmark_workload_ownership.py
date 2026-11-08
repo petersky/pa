@@ -1,6 +1,8 @@
 """A failed private workload must settle its own sibling tasks before teardown."""
 import asyncio
 import json
+from pathlib import Path
+import tempfile
 from unittest.mock import patch
 
 import httpx
@@ -63,11 +65,30 @@ async def test_success_preserves_result_order():
 
 
 @pytest.mark.asyncio
-async def test_private_http_failure_retains_partial_phases_without_response_payload(tmp_path):
-    from pa.config import reset_settings
+@pytest.mark.parametrize('expired_agent', [False, True])
+async def test_private_http_failure_retains_partial_phases_without_response_payload(tmp_path, expired_agent):
+    from pa.config import Settings, reset_settings
     from pa.core.kernel import reset_kernel
+    from pa.domain.projection import CardProjection
     from pa.domain.store import reset_store
-    from pa.instance.agent_session import reset_instance_agent
+    from pa.instance.agent_session import get_instance_agent, reset_instance_agent
+
+    def reset():
+        reset_instance_agent()
+        reset_store()
+        reset_settings()
+        reset_kernel()
+
+    if expired_agent:
+        reset()
+        with tempfile.TemporaryDirectory(dir=tmp_path) as directory:
+            settings = Settings(data_dir=Path(directory)/'data',
+                                workspace_root=Path(directory)/'workspaces', agent_enabled=False)
+            settings.data_dir.mkdir()
+            old_store = CardProjection(settings.db_path)
+            get_instance_agent(settings, old_store)
+            old_store.close_thread_connection()
+        assert not settings.db_path.exists()
 
     captured = []
     original = httpx.AsyncClient.get
@@ -79,6 +100,9 @@ async def test_private_http_failure_retains_partial_phases_without_response_payl
         return await original(client, path, *args, **kwargs)
 
     try:
+        # CLI runs in a fresh process. This in-process fixture must not inherit
+        # a different test's agent/workspace/store singletons or expired roots.
+        reset()
         with patch.object(httpx.AsyncClient, 'get', get):
             with pytest.raises(httpx.HTTPStatusError) as caught:
                 await run(tmp_path/'fixture', history=1, iterations=1, inventory_reads=True,
@@ -92,7 +116,4 @@ async def test_private_http_failure_retains_partial_phases_without_response_payl
         assert snapshot['runtime']['operations']
         assert 'private-response-marker' not in json.dumps(snapshot)
     finally:
-        reset_instance_agent()
-        reset_store()
-        reset_settings()
-        reset_kernel()
+        reset()

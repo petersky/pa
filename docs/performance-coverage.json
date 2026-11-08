@@ -210462,7 +210462,12 @@
       "report": "17c18750-4f0b-4d0d-a075-0d32eda6a7c9 revision3",
       "fix_or_existing_owner": "This systemic session owns integration-test isolation; original live/database/backup and other browser findings retain their distinct owners and evidence.",
       "next_actor": "this same systemic session",
-      "next_action": "Ready supervised PR and allhead/currentreview/stablesupervisor/merge/newmain gates; then corrected scalar-default source and every remaining acceptance finding. No blanket runtime closure."
+      "next_action": "Ready supervised PR and allhead/currentreview/stablesupervisor/merge/newmain gates; then corrected scalar-default source and every remaining acceptance finding. No blanket runtime closure.",
+      "ci675_stale_agent_fixture": {
+        "artifact": "docs/benchmarks/systemic-maintenance-startup-order-20261108.json",
+        "report": "76f5946b-e0db-4291-8130-7232dd9b2b68 revision1 hash5fa3d0812ea7656232de8a431b5443a86c89d7653bef3dcebe2086278bb16d97",
+        "scope": "Same confirmed process-singleton/expired-fixture-root mechanism in new private failure-capture contract;85combinedtests after setup-onlycorrection;currentCIpending."
+      }
     },
     {
       "id": "concern:snapshot-responsiveness-mock-setup-budget",
@@ -261754,7 +261759,19 @@
       "resolution": "open",
       "next_actor": "this systemic session/independent17d",
       "next_action": "Integrate verified source, retain alloriginal504/worker/teardown evidence and attribute actualtimeout cause before claiming acceptance.",
-      "report": "3ecda958-d5a7-4087-aec0-7e638c9de86d revision2"
+      "report": "3ecda958-d5a7-4087-aec0-7e638c9de86d revision2",
+      "ci_fixture_correction": {
+        "artifact": "docs/benchmarks/systemic-maintenance-startup-order-20261108.json",
+        "tests": {
+          "tests": "85",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "time": "6.839"
+        },
+        "prior_tests": 84,
+        "scope": "Productsource unchanged;firstCI and all earlierfailedruns retained."
+      }
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -370060,6 +370077,29 @@
         "RealKernel/provider/native430MB/coldstart/drain/concurrency/foreground-background/peer/logloss/retention/physicalIO/busy/GC/schedulingrecipient andalloriginalusercriteria remain.",
         "PrioracceptedboundedBackup/DB/recovery/scheduling scopesremainclosed;no newworkers/selfacceptance/Done."
       ]
+    },
+    "ci_fixture_correction": {
+      "first_head": "28fee3de88ff1b9e6d9efc8360c864564d788d3d",
+      "ci": 42523093696,
+      "job": 128860674029,
+      "result": "test2failed newHTTPfailure-capturefixture;other4checkssuccess",
+      "symptom": "Earlier agent/session-list503 preempted intendedmock504; reusedagent/workspace/storepointedtoexpiredtestroot. Newtestresetwasfinally-only.",
+      "source_confirmation": "get_instance_agent reusesglobal_instance_agent untilreset; capturedCIstartupsqliteunabletoopenexpiredDB matchesbehavior.",
+      "fix": "Onlynewtest nowresetsagent/store/settings/kernelBEFOREbootandfinally; addsfresh/expired-agentrootvariants. Expected504/privacy/phase assertions unchanged. Productsource/budgets/benchmarkmeasurements unchanged.",
+      "tests": {
+        "tests": "85",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "time": "6.839"
+      },
+      "test_source_sha256": "2781fe4ced668ee07959ad0e4c6fa8ecaec691c590b935917fa103d79c20cba0",
+      "ci_log": {
+        "bytes": 61508,
+        "sha256": "1edeb023041a7a3f1e25c71eacf32640abd3e7ea82306c3a9bba0b5517b7f808"
+      },
+      "report": "76f5946b-e0db-4291-8130-7232dd9b2b68 revision1 hash5fa3d0812ea7656232de8a431b5443a86c89d7653bef3dcebe2086278bb16d97",
+      "remaining": "Correctedhead fullnewCI/stablehead/mainCI and activation remainpending;originalmixed504cause remainsunverified."
     }
   }
 }
