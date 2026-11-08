@@ -351,6 +351,22 @@ def _public_notice(request: Request, item: Notification, labels: dict | None = N
         )
     interaction = item.interaction
     if interaction:
+        # Only a delivery this process is running right now is "in flight"; any other
+        # unconfirmed one is stranded and is the only case that offers Retry.
+        presentation["delivery_active"] = bool(
+            interaction.state in {InteractionState.ANSWERED, InteractionState.DELIVERY_PENDING}
+            and not item.resolved_at
+            and _service(request).delivery_active(item.id)
+        )
+        if (
+            interaction.state in {InteractionState.ANSWERED, InteractionState.DELIVERY_PENDING}
+            and not item.resolved_at
+            and not presentation["delivery_active"]
+        ):
+            # Persisted as pending, but nothing is delivering it (e.g. a restart
+            # interrupted it). Say so instead of claiming progress that isn't happening.
+            presentation["status"] = "Response recorded · delivery not confirmed"
+            presentation["required_action"] = "Retry delivery of the recorded response"
         continuation = "Not requested"
         prompt_id = interaction.continuation_prompt_id
         if interaction.responded_at and interaction.continuation_mode != "none":
@@ -377,7 +393,8 @@ def _public_notice(request: Request, item: Notification, labels: dict | None = N
                          "Historical delivery failure" if item.resolved_at and interaction.state == InteractionState.FAILED else
                          "Delivery failed" if interaction.state == InteractionState.FAILED else
                          "Closed without confirmed delivery" if item.resolved_at else
-                         "Delivery pending" if interaction.responded_at else "Not submitted"),
+                         "Delivering now" if presentation["delivery_active"] else
+                         "Delivery not confirmed" if interaction.responded_at else "Not submitted"),
             "continuation": continuation,
         }
     return {

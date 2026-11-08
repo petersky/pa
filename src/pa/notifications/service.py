@@ -7,6 +7,7 @@ import hashlib
 import inspect
 import json
 import threading
+import time
 from pathlib import Path
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
@@ -76,6 +77,22 @@ class NotificationService:
         self._mutation_locks: dict[str, threading.RLock] = {}
         self._create_lock = threading.RLock()
         self._expire_mono: dict[str, float] = {}
+        # Notification id -> monotonic start of a response delivery running in THIS
+        # process. Persisted state alone cannot tell "being delivered right now" from
+        # "stranded by a restart", and only the latter deserves a Retry button.
+        self._deliveries_active: dict[str, float] = {}
+
+    # Longer than any healthy delivery; bounds a marker left by an early failure.
+    DELIVERY_ACTIVE_TTL_SECONDS = 120.0
+
+    def delivery_active(self, notification_id: str) -> bool:
+        started = self._deliveries_active.get(notification_id)
+        if started is None:
+            return False
+        if time.monotonic() - started > self.DELIVERY_ACTIVE_TTL_SECONDS:
+            self._deliveries_active.pop(notification_id, None)
+            return False
+        return True
 
     def register_delivery_handler(
         self, notification_id: str, handler: DeliveryHandler
@@ -986,6 +1003,10 @@ class NotificationService:
                     if interaction.sensitive
                     else sanitize_text(value, limit=500)
                 )
+            if not delivery_response.cancel:
+                # Before the first publish, so no refresh can observe a pending
+                # delivery that is not yet known to be running.
+                self._deliveries_active[current.id] = time.monotonic()
             interaction.state = (
                 InteractionState.CANCELLED
                 if delivery_response.cancel
@@ -1010,7 +1031,10 @@ class NotificationService:
                 self._publish(current)
             previous = current.model_copy(deep=True)
             try:
-                await self._deliver(current, delivery_response)
+                try:
+                    await self._deliver(current, delivery_response)
+                finally:
+                    self._deliveries_active.pop(current.id, None)
             except asyncio.CancelledError:
                 # A client disconnect or shutdown mid-delivery must not leave the
                 # request in "delivery pending", which offers no way forward. The

@@ -130,6 +130,14 @@ ui.interactionControls({
 });
 assert.strictEqual(storageReads, 0, "sensitive drafts must not be loaded from browser storage");
 assert.ok(ui.interactionControls({ id: "failed", interaction: { state: "failed" } }).includes("Retry delivery"));
+// A delivery running right now shows progress, never a Retry that would race it.
+for (const state of ["answered", "delivery_pending"]) {
+  const active = ui.interactionControls({ id: "active", interaction: { state }, presentation: { delivery_active: true } });
+  assert.ok(active.includes("data-notification-delivering") && active.includes("Delivering your response"));
+  assert.ok(!active.includes("data-notification-retry") && !active.includes("Retry delivery"));
+  // Persisted as pending with nothing delivering (e.g. interrupted by a restart): Retry is the way forward.
+  assert.ok(ui.interactionControls({ id: "stranded", interaction: { state }, presentation: { delivery_active: false } }).includes("data-notification-retry"));
+}
 for (const state of ["outstanding", "failed", "answered", "delivery_pending"]) {
   assert.strictEqual(ui.interactionControls({ id: "retired", resolved_at: "2026-09-12T00:00:00Z", interaction: { state } }), "");
 }
