@@ -1,3 +1,11 @@
+## Second verified selected removal — 2026-11-08
+
+**2 original targets removed;12 retained or unresolved.** The [complete updated ledger](benchmarks/systemic-cleanup-second-removal-20261108.json) retains every earlier outcome. Second lease aaa44e3c passed existing selected guards after9 empty lock files were preserved intact by PA, backed by retrieved attachment `a5fee891d9c44709990d610000ce1483` (2,077B / SHA256 `45469ecc4620c3e00f22faaf92b86262599148b4acda84e9b17b6915f99efdaf`). All1,267,079,698B of valuable ignored evidence /5,887entries remain in verified LOCAL opaque custody (30,856,052B compressed / SHA256 `d35a332058f58607b4451a8b5df1a5d4cd5778ec051694025a10f0de4f53c4ac`). No private payloads were exported; the static database was byte-retained without opening SQLite or touching active PA data.
+
+Second removed-tree du allocation was304,435,200B; concurrent free-space delta256,942,080B. Across the two actual removals, allocation totals318,234,624B; the two separately sampled concurrent deltas remain separate and prove no exclusive APFS reclamation. Native leases independently confirm both cleaned; preservation receipts remain complete.
+
+Two other paths return owning API404 while their leases stay blocked; actor/cause/data custody remain unknown and no removal credit is assigned. Three present data cases (WAL/SHM, standalone log, nested evidence), three unique-history cases, one queued-prompt owner, one missing-branch case and two legacy proof rejections remain guarded. Original card7938 is at its10attachment cap; the failed hash-proof upload was reconciled without replay, deleting attachments or increasing limits. Durable report44 retains custody hashes; all later failure stages are preserved. **All740 findings /181 concerns and independent17d acceptance remain OPEN.** PR653 integrated only the preceding evidence stage; no extra install/restart occurred.
+
 ## Actual selected cleanup — 2026-11-08
 
 **1 of the original14 worktrees removed;13 remain guarded.** PR652 is integrated and exact9e10 is activated (PID46326 / startup e30d773a), independently matched to452 source files,453 package RECORD entries and54 unchanged pins. The earlier source/install stages below remain historical.
