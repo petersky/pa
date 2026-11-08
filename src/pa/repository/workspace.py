@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from pa.config import Settings
 from pa.core.operation_budget import measured_lock
+from pa.core.performance import observe_git_subprocess
 from pa.core.sqlite_metrics import ObservedConnection, derived_connection
 from pa.domain.models import Repository
 
@@ -505,15 +506,20 @@ class WorkspaceManager:
         if env_extra:
             env.update(env_extra)
         try:
-            result = subprocess.run(
-                ["git", "-c", "credential.interactive=never", *args],
-                cwd=cwd,
-                env=env,
-                text=True,
-                capture_output=True,
-                timeout=timeout,
-                check=False,
-            )
+            # Recognize only the two forms used here. Remaining invocations
+            # stay in total Git wall time; no argv/path/URL enters diagnostics.
+            fetch = bool(args and (args[0] == "fetch" or
+                         (len(args) >= 3 and args[0] == "-C" and args[2] == "fetch")))
+            with observe_git_subprocess(fetch=fetch):
+                result = subprocess.run(
+                    ["git", "-c", "credential.interactive=never", *args],
+                    cwd=cwd,
+                    env=env,
+                    text=True,
+                    capture_output=True,
+                    timeout=timeout,
+                    check=False,
+                )
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise WorkspaceProvisioningError(f"Git invocation failed: {exc}") from exc
         if check and result.returncode:

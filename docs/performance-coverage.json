@@ -261280,7 +261280,7 @@
       "merged": [
         "https://github.com/petersky/pa/pull/662"
       ],
-      "deployed": "uninstalled source",
+      "deployed": "Verified present in newer1.6.4/51b15; no older candidate install or restart performed by this session.",
       "retested": "152tests;30alternating response-equal pairs;600SELECTs to3; mixed100iterations zero observed violations/9600ordered events.",
       "resolution": "open",
       "next_actor": "this fresh session; independent scheduler/user:local acceptance",
@@ -261295,6 +261295,14 @@
         "head_ci": 42511124073,
         "main_ci": 42511639175,
         "head_and_main": "5terminalsuccess each"
+      },
+      "active_164_evidence": {
+        "artifact": "docs/benchmarks/systemic-workspace-git-phases-20261108.json",
+        "package": "sha256:51b15bc0f1738cef8b28477b7fdf46b24829dea2c9ab59d7f4f6b6b53fb06cfb",
+        "release": "1339ab052a1a18f5cc0c392ec74a5c07c38ed9cb",
+        "source_files_matched": 452,
+        "record_entries": 453,
+        "scope": "Selected repair code verified active, limited passive samples; resolution remains open."
       }
     },
     {
@@ -261648,14 +261656,50 @@
       "cause_classification": "confirmed_observability_gap_contention_cause_unverified",
       "cause": "Raw repositoryflock was absent from existing numeric observer; native collection3759.58ms/491.787CPU/176.523SQLwall cannot be assigned to lockwait from0unobserved counters.",
       "implemented": "Same native flock via existing bounded observer/staticworkspace.repository_file label,track_deadlineFalse; existing acquire/release/error semantics retained.",
-      "merged": [],
-      "deployed": "New source uninstalled; runtimea56de unchanged.",
+      "merged": [
+        "https://github.com/petersky/pa/pull/664"
+      ],
+      "deployed": "Verified present in newer1.6.4/51b15; no older candidate install or restart performed by this session.",
       "retested": "Native mutual exclusion/body-exception unlock/lock errors close handle/exact wait-hold-release/deadline passivity tests; numeric50pair overhead evidence.",
       "resolution": "open",
       "next_actor": "This systemic session; independent17d scheduler/user:local acceptance.",
       "next_action": "Protected source integration, separate exact activation/scoped native retests; attribute actual wait versus subprocess/IO/CPU without changing deadlines or claiming historical cause.",
       "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json",
-      "report_id": "efb676bb-cac5-49ae-ba7e-0a3d1cb171c5"
+      "report_id": "efb676bb-cac5-49ae-ba7e-0a3d1cb171c5",
+      "active_164_evidence": {
+        "artifact": "docs/benchmarks/systemic-workspace-git-phases-20261108.json",
+        "package": "sha256:51b15bc0f1738cef8b28477b7fdf46b24829dea2c9ab59d7f4f6b6b53fb06cfb",
+        "release": "1339ab052a1a18f5cc0c392ec74a5c07c38ed9cb",
+        "source_files_matched": 452,
+        "record_entries": 453,
+        "scope": "Selected repair code verified active, limited passive samples; resolution remains open."
+      },
+      "integration_evidence": {
+        "head": "49519acc82b82777a909c8ea589b3f363aeb1985",
+        "merge": "2802b0a828b133592462e22216e836cff116e610",
+        "watch": "7df31bcf-42c6-4197-99a1-deed38e69a34",
+        "head_ci": 42512568297,
+        "main_ci": 42513115473,
+        "note": "Main advanced viaPR663;actualcombinedtree7b5a2f separately rebuilt/byteverified andmainCI5success;oldheadwheelnotactivated."
+      }
+    },
+    {
+      "id": "concern:workspace-git-subprocess-attribution",
+      "kind": "concern",
+      "finding": "Git wall-time/fetch subset absent inside observed repository lock hold",
+      "family": "workspace",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_observability_gap_native_held_work_cause_unverified",
+      "cause": "Current deployed repositorylock observer captures720mscollection/718msheld region, but Git subprocess time remains unseparated from otherwork. No claim that fetch explains historicaltails.",
+      "implemented": "Three numeric existingobserver fields withboundedwindows/totals/slowrecords; invocation/freshness/error/deadline semantics unchanged.",
+      "merged": [],
+      "deployed": "NewGitfields notinstalled;1.6.4existinglock/labelrepairs independentlyactive.",
+      "retested": "175broader/12Gitcancellationtests pass(overlap),30alternatingprivatefileGitpairs,100mixediterations0observedviolations/9600ordered events. Earlier514.788msfailure retained separately. Final append-only field-layout compatibility stage:13Git/constructor/cancellationtests pass; original timing populations remain separately labeled.",
+      "resolution": "open",
+      "next_actor": "This systemic session;independent17d/userlocalacceptance.",
+      "next_action": "Protected integration andfreshreviewedactivation/nativeGitphase measurements; preserve all broaderacceptance requirements.",
+      "artifact": "docs/benchmarks/systemic-workspace-git-phases-20261108.json",
+      "report_id": "e0da2c32-9162-469a-b439-830707082e03"
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -366908,7 +366952,7 @@
     "prior_complete_bundle": "docs/benchmarks/systemic-installed635-20261101.raw.json.gz",
     "scope": "Source repair of confirmed duplicate index/write amplification only; current runtime635 unchanged; every performance residual and exact17d scheduler acceptance remains open."
   },
-  "current_status": "751findings/183concerns OPEN; repositoryflock timing source,9new scheduling observations; protected integration/exact activation/fullacceptance remain.",
+  "current_status": "752findings/184concernsOPEN. Existinglock/notificationchanges verifiedactive in1.6.4; Gitphase source/privatevalidation only. Native tails/allacceptance remain.",
   "source638_session_wire_stage_20261101": {
     "artifact": "docs/benchmarks/systemic-session-wire638-20261101.json",
     "source_base": "2db5c50f2fa2e841dbeb3d5789abc6c7b5fb135e",
@@ -369919,5 +369963,24 @@
       ]
     }
   },
-  "current_status_before_workspace_lock": "741findings/182concerns OPEN; fresh sessiond768 source label repair/private verification. Native/fleet acceptance remains open."
+  "current_status_before_workspace_lock": "741findings/182concerns OPEN; fresh sessiond768 source label repair/private verification. Native/fleet acceptance remains open.",
+  "git_subprocess_source_20261108": {
+    "artifact": "docs/benchmarks/systemic-workspace-git-phases-20261108.json",
+    "disposition": {
+      "rows": 752,
+      "concerns": 184,
+      "resolution": "OPEN",
+      "source": "implemented/privateverification; protectedCI/supervision/integration pending",
+      "new_git_fields_deployed": false,
+      "existing_lock_and_notification_changes": "Verified active in newer1.6.4,limitednativeobservations only; no whole-card acceptance.",
+      "residuals": [
+        "Collection720.214ms has718.214msinclusive lockhold but0.002mswait; sourceGitphase stilluninstalled so heldwork cause unverified.",
+        "Provision7calls max1403.649ms/maxfilelockwait617.645ms/maxinclusivehold2797.872ms are separate maxima/overlapping sums.",
+        "Native sessionSave1334.668ms,maintenance3253.761ms,Fleet4011.674ms,PRpeer5005.016ms,syncpeer3004.08ms and failures remain.",
+        "All originalcoldstart/drain/provider/peer/logloss/retention/foreground-background/physicalIO/GC/SQLitebusy/schedulingrecipient/usercriteria remain.",
+        "No install/restart/cleanup/otherworktree/defaults/acceptance effects. Independent17d/userlocalacceptance unchanged; accepted boundedBackup/DB/recovery/scheduling scopes stay closed."
+      ]
+    }
+  },
+  "current_status_before_git_phases": "751findings/183concerns OPEN; repositoryflock timing source,9new scheduling observations; protected integration/exact activation/fullacceptance remain."
 }
