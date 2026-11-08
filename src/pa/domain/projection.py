@@ -3475,6 +3475,45 @@ class CardProjection:
             rows = conn.execute(query, params).fetchall()
         return [self._row_to_card(row) for row in rows]
 
+    def notification_context_labels(self, records: list[Notification]) -> dict:
+        """Read only linked display labels, bounded by the selected notice page.
+
+        Card/project keys retain their notice realm. Session lookup deliberately
+        matches get_session's global identity semantics. No bodies, proofs,
+        configuration, metrics or transcript state are hydrated.
+        """
+        result = {"card": {}, "project": {}, "session": {}}
+        with self._conn() as conn:
+            for kind, table, attribute in (
+                ("card", "cards", "card_id"),
+                ("project", "projects", "project_id"),
+            ):
+                realms: dict[str, set[str]] = {}
+                for item in records:
+                    if identity := getattr(item, attribute):
+                        realms.setdefault(item.realm_id, set()).add(identity)
+                for realm, identities in realms.items():
+                    ids = sorted(identities)
+                    for offset in range(0, len(ids), 500):
+                        batch = ids[offset:offset + 500]
+                        rows = conn.execute(
+                            f"SELECT id, title FROM {table} WHERE realm_id=? AND id IN ("
+                            + ",".join("?" for _ in batch) + ")",
+                            [realm, *batch],
+                        ).fetchall()
+                        result[kind].update({(realm, row["id"]): row["title"] for row in rows})
+            ids = sorted({item.session_id for item in records if item.session_id})
+            for offset in range(0, len(ids), 500):
+                batch = ids[offset:offset + 500]
+                rows = conn.execute(
+                    "SELECT id, title, label, agent_name FROM agent_sessions WHERE id IN ("
+                    + ",".join("?" for _ in batch) + ")", batch,
+                ).fetchall()
+                result["session"].update({row["id"]: (
+                    row["title"] or row["label"] or f"{row['agent_name']} session"
+                ) for row in rows})
+        return result
+
     def get_notification(
         self, notification_id: str, *, realm_id: str | None = None
     ) -> Notification | None:

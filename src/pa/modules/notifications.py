@@ -118,18 +118,10 @@ def _route_metadata(request: Request, item: Notification) -> dict[str, Any]:
     }
 
 
-def _context_metadata(request: Request, item: Notification) -> dict[str, Any]:
+def _context_metadata(request: Request, item: Notification, labels: dict | None = None) -> dict[str, Any]:
     """Resolve friendly labels while retaining exact correlated identifiers."""
-    store = request.app.state.ctx.store
-    card = (
-        store.get_card(item.card_id, realm_id=item.realm_id) if item.card_id else None
-    )
-    project = (
-        store.get_project(item.project_id, realm_id=item.realm_id)
-        if item.project_id
-        else None
-    )
-    session = store.get_session(item.session_id) if item.session_id else None
+    if labels is None:
+        labels = request.app.state.ctx.store.notification_context_labels([item])
     owner_label = item.source_instance_name
     if item.owner_instance_id:
         fleet = request.app.state.ctx.services.get("fleet_registry")
@@ -137,14 +129,14 @@ def _context_metadata(request: Request, item: Notification) -> dict[str, Any]:
         owner_label = getattr(owner, "name", None) or owner_label
     return {
         "card": (
-            {"id": item.card_id, "label": card.title if card else "Linked card"}
+            {"id": item.card_id, "label": labels["card"].get((item.realm_id, item.card_id), "Linked card")}
             if item.card_id
             else None
         ),
         "project": (
             {
                 "id": item.project_id,
-                "label": project.title if project else "Linked project",
+                "label": labels["project"].get((item.realm_id, item.project_id), "Linked project"),
             }
             if item.project_id
             else None
@@ -153,11 +145,7 @@ def _context_metadata(request: Request, item: Notification) -> dict[str, Any]:
             {
                 "id": item.session_id,
                 "label": (
-                    session.title
-                    or session.label
-                    or f"{session.agent_name} session"
-                    if session
-                    else "Agent session"
+                    labels["session"].get(item.session_id, "Agent session")
                 ),
             }
             if item.session_id
@@ -278,7 +266,7 @@ def _presentation_metadata(item: Notification) -> dict[str, Any]:
     }
 
 
-def _public_notice(request: Request, item: Notification) -> dict[str, Any]:
+def _public_notice(request: Request, item: Notification, labels: dict | None = None) -> dict[str, Any]:
     presentation = _presentation_metadata(item)
     interaction = item.interaction
     if interaction:
@@ -314,9 +302,14 @@ def _public_notice(request: Request, item: Notification) -> dict[str, Any]:
     return {
         **item.public_dict(),
         "routing": _route_metadata(request, item),
-        "context": _context_metadata(request, item),
+        "context": _context_metadata(request, item, labels),
         "presentation": presentation,
     }
+
+
+def _present_page(request: Request, records: list[Notification]) -> list[dict[str, Any]]:
+    labels = request.app.state.ctx.store.notification_context_labels(records)
+    return [_public_notice(request, item, labels) for item in records]
 
 
 @router.get("/notifications")
@@ -364,11 +357,11 @@ async def list_notifications(
     if runtime:
         items = await runtime.run_blocking(
             "notifications.present_page",
-            lambda: [_public_notice(request, item) for item in records],
+            _present_page, request, records,
         )
     else:
         items = await asyncio.to_thread(
-            lambda: [_public_notice(request, item) for item in records]
+            _present_page, request, records
         )
     return {
         "items": items,

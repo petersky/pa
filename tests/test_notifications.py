@@ -1426,3 +1426,43 @@ def test_completion_retirement_preserves_unrelated_or_unsettled_requests(cancell
         asyncio.run(service.expire_due(realm_id="default"))
         delivery.assert_not_awaited()
     assert service.store.get_notification(notice.id).model_dump(mode="json") == snapshot
+
+
+def test_notice_page_reads_only_bounded_labels_and_preserves_context(tmp_path):
+    from pa.modules.notifications import _present_page, _public_notice
+    from starlette.requests import Request
+
+    kernel = _kernel(tmp_path)
+    store = kernel.ctx.store
+    project = store.create_project(ProjectCreate(title="Project"), via_log=False)
+    card = store.create_card(CardCreate(title="Card", body="x" * 65536), via_log=False)
+    sessions = [AgentSession(id=f"labels-{i}", agent_name="codex", title=title,
+                             label=label, metrics={"large": "x" * 65536})
+                for i, (title, label) in enumerate([(None, None), (None, "Label"), ("Title", "Label")])]
+    for session in sessions:
+        store.save_session(session)
+    records = [Notification(id=f"notice-{i}", realm_id="default", title="Notice",
+                            card_id=card.id, project_id=project.id, session_id=sessions[i % 3].id)
+               for i in range(200)]
+    request = Request({"type": "http", "app": SimpleNamespace(state=SimpleNamespace(ctx=kernel.ctx))})
+    expected = [_public_notice(request, item) for item in records]
+    with patch.object(store, "_row_to_card", side_effect=AssertionError("card hydration")), \
+         patch.object(store, "_row_to_project", side_effect=AssertionError("project hydration")), \
+         patch.object(store, "_row_to_session", side_effect=AssertionError("session hydration")):
+        statements = []
+        with store._conn() as conn:
+            conn.set_trace_callback(statements.append)
+            try:
+                actual = _present_page(request, records)
+            finally:
+                conn.set_trace_callback(None)
+        assert actual == expected
+        assert len([s for s in statements if s.startswith("SELECT")]) == 3
+    assert [item["context"]["session"]["label"] for item in actual[:3]] == ["codex session", "Label", "Title"]
+    other = records[0].model_copy(update={"realm_id": "engineering"})
+    missing = records[0].model_copy(update={"card_id": "absent", "project_id": "absent", "session_id": "absent"})
+    assert _public_notice(request, other)["context"]["card"]["label"] == "Linked card"
+    assert _public_notice(request, other)["context"]["project"]["label"] == "Linked project"
+    assert _public_notice(request, other)["context"]["session"]["label"] == "codex session"
+    assert _public_notice(request, missing)["context"]["session"]["label"] == "Agent session"
+    assert store.notification_context_labels([]) == {"card": {}, "project": {}, "session": {}}
