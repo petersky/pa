@@ -72,6 +72,14 @@ assigned dispatch/session, and complete excluded repair lineage. Its receipt mus
 reference the current `verification-intent:<id>` and required scenario/instance
 scope. A changed declaration, build or membership invalidates a pending assignment.
 Explicit external/user authority stays declared and is never replaced by an agent.
+One narrow case is adopted automatically: an explicit `declared` card whose only
+acceptance principal is the local operator (`user:local`), whose `integrated`
+checkpoint is recorded, and whose dispatches have all been finished for
+`completion_auto_verify_stalled_seconds` (default 24h, `0` disables) is switched to
+`independent_agent_v1` with that principal, once per requirement revision. Nothing
+else can record its remaining checkpoints, because the worker that did the job may
+not accept its own work. Criteria, milestones and principals are unchanged, and the
+operator's manual completion override still works.
 Repair lineage comes from exact declarations, journal actions and source PR
 provenance. An unrelated conversation issue's generic parent relationship cannot
 block verification or disqualify its agent. Source readiness uses the owning

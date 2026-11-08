@@ -579,6 +579,20 @@ class VerificationService:
                 return  # Unproven/explicit declarations retain their authority.
             else:
                 card = await self.call(self.ctx.store.get_card, card.id, realm_id=card.realm_id, diagnostic_phase='verification_card_read')
+        if (req and req.verification_policy == 'declared' and req.provenance == 'explicit' and card.lane != CardLane.DONE
+                and not card.completion_status['accepted'] and self.ctx.settings.completion_auto_verify_stalled_seconds):
+            # Once per requirement revision: a refusal is remembered rather than re-planned every cycle.
+            onboarding = 'stalled:' + card.id + ':' + card.realm_id
+            if await self.call(self.store.recovery, onboarding, req.revision, diagnostic_phase='verification_recovery_read') is None:
+                try:
+                    await self.migrate(card.id, card.realm_id, 'stalled_declared', req.revision, card.updated_at.isoformat(),
+                        key='verification-stalled:' + card.id + ':' + req.revision, apply=True)
+                except CompletionConflict as exc:
+                    # Not-yet-stalled and in-progress cards are re-evaluated later; the rest are final for this revision.
+                    if exc.code not in {'completion_not_stalled', 'completion_work_in_progress'}:
+                        await self.call(self.store.recovery, onboarding, req.revision, exc.code, diagnostic_phase='verification_recovery_write')
+                    return
+                card = await self.call(self.ctx.store.get_card, card.id, realm_id=card.realm_id, diagnostic_phase='verification_card_read')
         job = await self.ensure(card)
         if not job:
             return

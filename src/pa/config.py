@@ -255,6 +255,9 @@ class Settings(BaseSettings):
         default=60 * 60, ge=0, le=31 * 24 * 60 * 60
     )
     backup_verification_level: Literal["quick", "full"] = "full"
+    # Stalled, merged cards whose acceptance principal is the local operator are handed to the
+    # independent verifier instead of waiting on a worker that has already ended. 0 disables it.
+    completion_auto_verify_stalled_seconds: int = Field(default=24 * 60 * 60, ge=0, le=365 * 24 * 60 * 60)
     backup_compression: bool = True
     backup_io_limit_mib_per_second: float | None = Field(default=None, gt=0, le=10_000)
     backup_concurrency: Literal[1] = 1

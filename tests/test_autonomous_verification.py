@@ -1,4 +1,5 @@
 """Real canonical/dispatch/journal stores with bounded provider admission doubles."""
+import asyncio
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import uuid4
@@ -974,3 +975,93 @@ async def test_peer_readiness_uses_target_lifecycle_without_exposing_or_resolvin
     finally:
         ledger.close()
         await lifecycle.close()
+
+
+def stalled_clock(monkeypatch, age=timedelta(days=2)):
+    """Make the migration see every dispatch as having finished ``age`` ago."""
+    from pa.execution import verification_migration
+
+    class Later(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.now(tz) + age
+
+    monkeypatch.setattr(verification_migration, 'datetime', Later)
+
+
+def stalled(system, monkeypatch, *, age=timedelta(days=2), **changes):
+    """A merged ``declared`` card whose only worker finished ``age`` ago."""
+    stalled_clock(monkeypatch, age)
+    return ordinary(system, verification_policy='declared', verification_principal=None,
+                    verification_authority_instance_id=None, **changes)
+
+
+@pytest.mark.asyncio
+async def test_stalled_declared_card_is_handed_to_the_independent_verifier(system, monkeypatch):
+    card, record = stalled(system, monkeypatch)
+    await system.service.process(card)
+    adopted = system.ctx.store.get_card(card.id).completion_requirement
+    assert adopted.verification_policy == 'independent_agent_v1'
+    assert adopted.verification_principal == 'user:local'
+    assert adopted.verification_authority_instance_id == 'instance-a'
+    assert record.dispatch_id in adopted.originating_dispatch_ids
+    # Criteria, milestones and the human acceptance principal are untouched.
+    original = card.completion_requirement
+    assert (adopted.criteria, adopted.milestones, adopted.acceptance_principals) == (
+        original.criteria, original.milestones, original.acceptance_principals)
+    dispatches = [call for call in system.calls if call[1] == '/api/fleet/dispatch']
+    assert len(dispatches) == 1 and dispatches[0][2]['card_id'] == card.id
+    # A second cycle never starts a rival verifier.
+    await system.service.process(system.ctx.store.get_card(card.id))
+    assert len([call for call in system.calls if call[1] == '/api/fleet/dispatch']) == 1
+
+
+@pytest.mark.asyncio
+async def test_recently_finished_work_is_not_taken_over_and_is_retried_later(system, monkeypatch):
+    card, _ = stalled(system, monkeypatch, age=timedelta(minutes=5))
+    await system.service.process(card)
+    assert system.ctx.store.get_card(card.id).completion_requirement.verification_policy == 'declared'
+    assert not system.calls
+    stalled_clock(monkeypatch)  # a day passes; the earlier "not yet" was not remembered as a refusal
+    await system.service.process(system.ctx.store.get_card(card.id))
+    assert system.ctx.store.get_card(card.id).completion_requirement.verification_policy == 'independent_agent_v1'
+
+
+@pytest.mark.asyncio
+async def test_live_worker_blocks_takeover(system, monkeypatch):
+    card, record = stalled(system, monkeypatch)
+    system.ctx.services['dispatch_store'].put(record.model_copy(update={
+        'mutation_id': str(uuid4()), 'dispatch_id': str(uuid4()), 'idempotency_key': None, 'state': 'running'}))
+    await system.service.process(card)
+    assert system.ctx.store.get_card(card.id).completion_requirement.verification_policy == 'declared'
+    assert not system.calls
+
+
+@pytest.mark.asyncio
+async def test_takeover_never_delegates_someone_elses_acceptance(system, monkeypatch):
+    card, _ = stalled(system, monkeypatch, acceptance_principals=['user:external'])
+    await system.service.process(card)
+    assert system.ctx.store.get_card(card.id).completion_requirement.verification_policy == 'declared'
+    assert not system.calls
+    # The refusal is final for this revision, so it is not re-planned every cycle.
+    assert system.service.store.recovery('stalled:' + card.id + ':default', card.completion_requirement.revision) == 'explicit_requirement_preserved'
+
+
+@pytest.mark.asyncio
+async def test_takeover_waits_for_the_merge(system, monkeypatch):
+    stalled_clock(monkeypatch)
+    card = system.ctx.store.create_card(CardCreate(title='Unmerged', lane='waiting', completion_requirement={
+        'mode': 'explicit_acceptance', 'milestones': ['integrated', 'verified'], 'acceptance_principals': ['user:local']}))
+    origin(system, card.id)
+    await system.service.process(card)
+    assert system.ctx.store.get_card(card.id).completion_requirement.verification_policy == 'declared'
+    assert not system.calls
+
+
+@pytest.mark.asyncio
+async def test_takeover_can_be_disabled(system, monkeypatch):
+    card, _ = stalled(system, monkeypatch)
+    system.ctx.settings.completion_auto_verify_stalled_seconds = 0
+    await system.service.process(card)
+    assert system.ctx.store.get_card(card.id).completion_requirement.verification_policy == 'declared'
+    assert not system.calls
