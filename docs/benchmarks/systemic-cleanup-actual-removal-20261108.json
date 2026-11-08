@@ -1,0 +1,443 @@
+{
+  "contract": "pa.cleanup14-actual-removal-stage/v1",
+  "observed_at": "2026-11-08T04:52:54.932732+00:00",
+  "context": {
+    "card": "7938e21e-05fe-4dc9-b85e-98689957dd9d",
+    "original_session": "0337e686-6170-470c-89c7-5285925f43f0",
+    "control": "9bb01f22-f57f-4e51-9797-c2bb915e75f5",
+    "recovery_executor": "1eb4393e-26a0-471b-9b01-0b96763d2c01"
+  },
+  "integration": {
+    "pr": 652,
+    "url": "https://github.com/petersky/pa/pull/652",
+    "head": "e14d3d5ad1612a9dd007ee20c5887436ef458425",
+    "merge": "f8a5abb5f4e235aecda1781d991409fea4f8cdd8",
+    "watch": "064b618a-993a-4f99-87b2-cdff495479fd",
+    "tree": "6ede96e15af002648a55f31be0b83403ccc3cb2a",
+    "head_ci": 42446411931,
+    "main_ci": 42446902806,
+    "checks": "5terminalsuccess each; historical independently revalidated integration retained"
+  },
+  "activation": {
+    "verified": true,
+    "pid": 46326,
+    "startup_id": "e30d773a-78ec-4078-be6f-e5e65e5088ba",
+    "package_identity": "sha256:9e10d0ace9e9dc844086206fea2e2205702ff177ef002413949ecf5bdb114260",
+    "source_files": 452,
+    "package_RECORD_entries": 453,
+    "exact_runtime_pins": 54,
+    "independent_disk_proof": {
+      "contract": "pa.pr652-independent-installed-byte-proof/v1",
+      "observed_at": "2026-11-08T04:47:01.354754+00:00",
+      "installed_package_identity": "sha256:9e10d0ace9e9dc844086206fea2e2205702ff177ef002413949ecf5bdb114260",
+      "package_RECORD_entries": 453,
+      "source_owned_files_verified_against_git": 452,
+      "source_head": "e14d3d5ad1612a9dd007ee20c5887436ef458425",
+      "merge": "f8a5abb5f4e235aecda1781d991409fea4f8cdd8",
+      "all_runtime_pins_verified": 54,
+      "base_pins_preserved": 54,
+      "new_locked_dependencies": {},
+      "no_PA_import": true,
+      "private_both_roots": true,
+      "activation_proven": false,
+      "restarted": false
+    },
+    "install_restart_replayed": false,
+    "managed_receipt_delivery": "Last passive observation continuation_queued/effectpending; physical activation proven independently, delivery not inferred."
+  },
+  "counts": {
+    "selected_scope": 14,
+    "cleaned": 1,
+    "retained_or_blocked_or_rejected": 13,
+    "removed_du_allocation_bytes": 13799424,
+    "concurrent_filesystem_free_delta_bytes": 14110720,
+    "uncommitted_data": 6,
+    "queued_prompt_owner": 1,
+    "branch_identity": 1,
+    "unique_history_integration": 3,
+    "legacy_primary_identity_guard": 2
+  },
+  "preservation": {
+    "operation_id": "c71e1b70cf63fd187deab460792fccc4c8614c6d0b65eb2b59e62aa7e8f4c3e5",
+    "phase": "preserved",
+    "effect": "complete",
+    "files": 5,
+    "source_bytes": 106771,
+    "attachment_card_id": "7938e21e-05fe-4dc9-b85e-98689957dd9d",
+    "attachment_id": "091b6c0324d84c4ba40017df72228044",
+    "zip_bytes": 32974,
+    "zip_sha256": "29e172a14801ef134f5eb201ec3db096cc52425bbb6138b1f44c88b9486e5bb7",
+    "original_checksums_verified": 4,
+    "custody": "Intact directory relocated through PA; postcleanup supported status confirms preserved/complete. Durable ZIP independently retrieved and checksummed before relocation."
+  },
+  "rows": [
+    {
+      "card_id": "d0a71e20-b646-45aa-ada3-d2a103a0e0e4",
+      "lease_id": "99634a50d77766bfbbb27dbfeb257ff2734cc60317ca2f0b254c92e8d42ce529",
+      "session_id": "fdcc3ccf-6259-4121-b408-4ea8dd4d29f4",
+      "state": "rejected",
+      "reason": "HTTP409 merged cleanup PR identity is unconfirmed; no target mutation admitted.",
+      "reclaimed_bytes": 0,
+      "worktree_removed_by_this_session": false,
+      "before_after_bytes": "No removal; blocked/rejected tree sizes are not reported as zero.",
+      "next_action": "Owning PA GitHub integration: expose bounded failing identity predicates, compare fresh primary fields and confirmed head, then repair only the confirmed mismatch without weakening guards.",
+      "fresh_lease_observation": {
+        "fencing_token": 120,
+        "state": "cleanup_blocked",
+        "updated_at": "2026-11-08T04:48:29.694345Z",
+        "completed": true,
+        "merged": true
+      },
+      "prior_selected_outcome_retained": true,
+      "next_actor": "This systemic session via supported owning authority; original owner decision only where required",
+      "not_retried_this_stage": true,
+      "fresh_lease_guard_result": "missing_evidence",
+      "fresh_counter_warning": "Lease dirty/untracked counters are not a fresh clean Git proof; explicit rejection and failed inspection take precedence."
+    },
+    {
+      "card_id": "2e21ffd0-dbf6-4d50-a7e4-dc5ea64937e9",
+      "lease_id": "752fc6b9097bd6f838cf6b38ec69e47d873134822b9101e89952f1309557a75c",
+      "session_id": "5338a1ce-9127-4238-afa3-73f09cc99adb",
+      "state": "rejected",
+      "reason": "Leased worktree is detached or on the wrong branch",
+      "reclaimed_bytes": 0,
+      "worktree_removed_by_this_session": false,
+      "before_after_bytes": "No removal; blocked/rejected tree sizes are not reported as zero.",
+      "next_action": "Owning PA workspace recovery: preserve tree/index/history and restore trustworthy branch identity before cleanup.",
+      "fresh_lease_observation": {
+        "fencing_token": 129,
+        "state": "cleanup_blocked",
+        "updated_at": "2026-11-08T04:48:29.759831Z",
+        "completed": true,
+        "merged": true
+      },
+      "prior_selected_outcome_retained": true,
+      "next_actor": "This systemic session via supported owning authority; original owner decision only where required",
+      "not_retried_this_stage": true,
+      "fresh_lease_guard_result": "safety_block",
+      "fresh_counter_warning": "Lease dirty/untracked counters are not a fresh clean Git proof; explicit rejection and failed inspection take precedence."
+    },
+    {
+      "card_id": "abffa04b-9f60-48b4-93db-b94800749a32",
+      "lease_id": "b7f26c49ce57c0ca5b5fd2f8343e76703519267168ecadceeb74945865b9153d",
+      "session_id": "e92f6145-4743-481a-a590-c84b11ce75fe",
+      "state": "blocked",
+      "reason": "worktree has uncommitted changes",
+      "reclaimed_bytes": 0,
+      "worktree_removed_by_this_session": false,
+      "before_after_bytes": "No removal; blocked/rejected tree sizes are not reported as zero.",
+      "next_action": "Original owner: preserve and review tracked/untracked data through supported PA preservation before any cleanup.",
+      "fresh_lease_observation": {
+        "fencing_token": 133,
+        "state": "cleanup_blocked",
+        "updated_at": "2026-11-08T04:48:29.796183Z",
+        "completed": true,
+        "merged": true
+      },
+      "prior_selected_outcome_retained": true,
+      "next_actor": "This systemic session via supported owning authority; original owner decision only where required",
+      "not_retried_this_stage": true,
+      "fresh_lease_guard_result": "safety_block",
+      "fresh_counter_warning": "Lease dirty/untracked counters are not a fresh clean Git proof; explicit rejection and failed inspection take precedence."
+    },
+    {
+      "card_id": "e7c4065d-ab24-4ac9-8ac8-3cebcd42b7b1",
+      "lease_id": "39bb434e463582945cc378b3535eaf47a68a57647cefe90842e174fe56f29826",
+      "session_id": "8fdc3ac5-825e-4b39-ad35-8a97b7d8105a",
+      "state": "rejected",
+      "reason": "HTTP409 merged cleanup PR identity is unconfirmed; no target mutation admitted.",
+      "reclaimed_bytes": 0,
+      "worktree_removed_by_this_session": false,
+      "before_after_bytes": "No removal; blocked/rejected tree sizes are not reported as zero.",
+      "next_action": "Owning PA GitHub integration: expose bounded failing identity predicates, compare fresh primary fields and confirmed head, then repair only the confirmed mismatch without weakening guards.",
+      "fresh_lease_observation": {
+        "fencing_token": 163,
+        "state": "cleanup_blocked",
+        "updated_at": "2026-10-30T02:18:00.981939Z",
+        "completed": true,
+        "merged": true
+      },
+      "prior_selected_outcome_retained": true,
+      "next_actor": "This systemic session via supported owning authority; original owner decision only where required",
+      "not_retried_this_stage": true,
+      "fresh_lease_guard_result": "missing_evidence",
+      "fresh_counter_warning": "Lease dirty/untracked counters are not a fresh clean Git proof; explicit rejection and failed inspection take precedence."
+    },
+    {
+      "card_id": "5e09c172-43f4-4c3d-b71a-cf9edec7d596",
+      "lease_id": "513e422a5486282cbc5adcff0391385979df09d8470c4d6fb41c139d984cf94d",
+      "session_id": "6780fb41-9d99-4212-97e5-e6ebea5b73fd",
+      "state": "blocked",
+      "reason": "worktree has uncommitted changes",
+      "reclaimed_bytes": 0,
+      "worktree_removed_by_this_session": false,
+      "before_after_bytes": "No removal; blocked/rejected tree sizes are not reported as zero.",
+      "next_action": "Original owner: preserve and review tracked/untracked data through supported PA preservation before any cleanup.",
+      "fresh_lease_observation": {
+        "fencing_token": 177,
+        "state": "cleanup_blocked",
+        "updated_at": "2026-11-08T04:48:29.828659Z",
+        "completed": true,
+        "merged": true
+      },
+      "prior_selected_outcome_retained": true,
+      "next_actor": "This systemic session via supported owning authority; original owner decision only where required",
+      "not_retried_this_stage": true,
+      "fresh_lease_guard_result": "safety_block",
+      "fresh_counter_warning": "Lease dirty/untracked counters are not a fresh clean Git proof; explicit rejection and failed inspection take precedence."
+    },
+    {
+      "card_id": "6cdad949-26e0-4eaf-9408-a50dcd00878c",
+      "lease_id": "e24b866459b9b858177b5a071dc366fd5b4e8186698277f576d3b6f2967ae0c7",
+      "session_id": "ffc6e1f5-f5ed-427e-bdfe-91ebf6f272a5",
+      "state": "retained",
+      "reason": "Closed session has five durable queued prompts; excluded from collection.",
+      "reclaimed_bytes": 0,
+      "worktree_removed_by_this_session": false,
+      "before_after_bytes": "No removal; blocked/rejected tree sizes are not reported as zero.",
+      "next_action": "Owning PA lifecycle: reconcile the five queued prompts without dropping or forcing idle.",
+      "fresh_lease_observation": {
+        "fencing_token": 207,
+        "state": "cleanup_blocked",
+        "updated_at": "2026-11-08T04:48:29.860649Z",
+        "completed": true,
+        "merged": true
+      },
+      "prior_selected_outcome_retained": true,
+      "next_actor": "This systemic session via supported owning authority; original owner decision only where required",
+      "not_retried_this_stage": true,
+      "fresh_lease_guard_result": "safety_block",
+      "fresh_counter_warning": "Lease dirty/untracked counters are not a fresh clean Git proof; explicit rejection and failed inspection take precedence."
+    },
+    {
+      "card_id": "3d68ced2-f7f8-4435-9d42-d34a855b6dd7",
+      "lease_id": "a93e87ea42895ed4453716bb50241e5d224bd52c7a408c1315982111127926ac",
+      "session_id": "b775b196-22d8-4b3d-a279-13e98adb196f",
+      "state": "cleaned",
+      "reason": "Exact attachment-backed preservation completed; fresh clean Git state and all existing selected-cleanup guards passed.",
+      "reclaimed_bytes": 13799424,
+      "worktree_removed_by_this_session": true,
+      "before_after_bytes": "PA removed-tree du allocation 13799424B; concurrent free-space delta14110720B. No exclusive physical APFS reclamation proof.",
+      "next_action": "Retain and verify preservation receipt and durable attachment; no repeat removal or preservation.",
+      "fresh_lease_observation": {
+        "fencing_token": 230,
+        "state": "cleaned",
+        "updated_at": "2026-11-08T04:48:06.158825Z",
+        "completed": true,
+        "merged": true
+      },
+      "prior_selected_outcome_retained": true,
+      "filesystem_free_bytes_delta": 14110720,
+      "observed_head": "3475f6daa620a45fb74698e2f1bae7aca5de3607",
+      "cleanup_decision": "safe_remote_ancestry",
+      "next_actor": "This systemic session / original cleanup card7938"
+    },
+    {
+      "card_id": "0fb6c904-1660-4c82-a83a-e6a3e0a98c8e",
+      "lease_id": "637a76f7c08e42b0e0512958b25e0328eed445aea553b52cd035d370dbc19700",
+      "session_id": "0b9d6f33-ed36-45f4-b9d8-e1059e918c05",
+      "state": "blocked",
+      "reason": "worktree has uncommitted changes",
+      "reclaimed_bytes": 0,
+      "worktree_removed_by_this_session": false,
+      "before_after_bytes": "No removal; blocked/rejected tree sizes are not reported as zero.",
+      "next_action": "Original owner: preserve and review tracked/untracked data through supported PA preservation before any cleanup.",
+      "fresh_lease_observation": {
+        "fencing_token": 231,
+        "state": "cleanup_blocked",
+        "updated_at": "2026-11-08T04:48:29.890704Z",
+        "completed": true,
+        "merged": true
+      },
+      "prior_selected_outcome_retained": true,
+      "next_actor": "This systemic session via supported owning authority; original owner decision only where required",
+      "not_retried_this_stage": true,
+      "fresh_lease_guard_result": "safety_block",
+      "fresh_counter_warning": "Lease dirty/untracked counters are not a fresh clean Git proof; explicit rejection and failed inspection take precedence."
+    },
+    {
+      "card_id": "304dba58-5bc8-47b9-bb41-8460eee12a92",
+      "lease_id": "aaa44e3c61a74732ebbef9046a2a7c6f9e2442b4a5077a67ab4934b1d45e8998",
+      "session_id": "cad12aae-b926-46e8-83aa-607824666a79",
+      "state": "blocked",
+      "reason": "worktree has uncommitted changes",
+      "reclaimed_bytes": 0,
+      "worktree_removed_by_this_session": false,
+      "before_after_bytes": "No removal; blocked/rejected tree sizes are not reported as zero.",
+      "next_action": "Original owner: preserve and review tracked/untracked data through supported PA preservation before any cleanup.",
+      "fresh_lease_observation": {
+        "fencing_token": 234,
+        "state": "cleanup_blocked",
+        "updated_at": "2026-11-08T04:48:29.920778Z",
+        "completed": true,
+        "merged": true
+      },
+      "prior_selected_outcome_retained": true,
+      "next_actor": "This systemic session via supported owning authority; original owner decision only where required",
+      "not_retried_this_stage": true,
+      "fresh_lease_guard_result": "safety_block",
+      "fresh_counter_warning": "Lease dirty/untracked counters are not a fresh clean Git proof; explicit rejection and failed inspection take precedence."
+    },
+    {
+      "card_id": "a45a7794-0cb3-40cd-a088-576d6b005de7",
+      "lease_id": "954a83bb06d0339ac06731e4accd4b3b62902093da95fb7c0b059ae8ee730236",
+      "session_id": "0b7cfc7f-80f8-4e61-b25d-cbc340c7a152",
+      "state": "blocked",
+      "reason": "worktree has uncommitted changes",
+      "reclaimed_bytes": 0,
+      "worktree_removed_by_this_session": false,
+      "before_after_bytes": "No removal; blocked/rejected tree sizes are not reported as zero.",
+      "next_action": "Original owner: preserve and review tracked/untracked data through supported PA preservation before any cleanup.",
+      "fresh_lease_observation": {
+        "fencing_token": 236,
+        "state": "cleanup_blocked",
+        "updated_at": "2026-11-08T04:48:29.952161Z",
+        "completed": true,
+        "merged": true
+      },
+      "prior_selected_outcome_retained": true,
+      "next_actor": "This systemic session via supported owning authority; original owner decision only where required",
+      "not_retried_this_stage": true,
+      "fresh_lease_guard_result": "safety_block",
+      "fresh_counter_warning": "Lease dirty/untracked counters are not a fresh clean Git proof; explicit rejection and failed inspection take precedence."
+    },
+    {
+      "card_id": "42ed4384-5fe2-41d0-ab61-ec5264a45a56",
+      "lease_id": "5eee483a74c44387e6aa8fb3b70827ffb2004089eeb1c11c72ce523a802d3bc5",
+      "session_id": "236b3631-fd15-434b-bb67-ca25153be513",
+      "state": "blocked",
+      "reason": "unique commits are not proven integrated: c814b9580a83f568612f51876a24e7dcb987645e, c019d2bea627da0b2fb861985006ec7a777e2c73, e0b6d742ddf60be814bc0f2ed6661ec28500290b, d66b86767d0044a8cac0aaf2de41a88f8d527ff3, 4393bef766a868f0a736b7753a950b3f3cad6c6f, 681b8fe226515d2b9414fe048298ec7cde6cb5b2, 33803e2dc615ba431ff810dc372ee5f2d6b5383e, 6b4ad525a381e4b0c6981bdb457ccdd00a0e7087, 211cf624927a8ab46390f6ca2cf781ce01acda2b, 2f0727260e8285e2873d9823d6fe0b98c988ae16, c2a15d0857c6b1fe8d5c8e9e08e1561277c12902, 7fa60abec2405a7aab0a64dbcee31109d92df6fc",
+      "reclaimed_bytes": 0,
+      "worktree_removed_by_this_session": false,
+      "before_after_bytes": "No removal; blocked/rejected tree sizes are not reported as zero.",
+      "next_action": "Original owner/integration authority: account for all unique commits and prove exact integration/content equivalence; retain history meanwhile.",
+      "fresh_lease_observation": {
+        "fencing_token": 278,
+        "state": "cleanup_blocked",
+        "updated_at": "2026-11-08T04:48:30.042190Z",
+        "completed": true,
+        "merged": true
+      },
+      "prior_selected_outcome_retained": true,
+      "next_actor": "This systemic session via supported owning authority; original owner decision only where required",
+      "not_retried_this_stage": true,
+      "fresh_lease_guard_result": "safety_block",
+      "fresh_counter_warning": "Lease dirty/untracked counters are not a fresh clean Git proof; explicit rejection and failed inspection take precedence."
+    },
+    {
+      "card_id": "b55bcf40-676d-4fe5-a813-5e02829e7e45",
+      "lease_id": "ad75c9561aaf4278f7d00d1b1b862be8c064457c693ce54dc3132d8c3dd7f6a7",
+      "session_id": "f891f149-9191-45ec-8914-c0b7f583cf8b",
+      "state": "blocked",
+      "reason": "unique commits are not proven integrated: 13603cc851355aaf9dae5d91c274fe65de1ceb3a, 7bdadbc7ed3e54a4b248617668dc933b0c78af68",
+      "reclaimed_bytes": 0,
+      "worktree_removed_by_this_session": false,
+      "before_after_bytes": "No removal; blocked/rejected tree sizes are not reported as zero.",
+      "next_action": "Original owner/integration authority: account for all unique commits and prove exact integration/content equivalence; retain history meanwhile.",
+      "fresh_lease_observation": {
+        "fencing_token": 284,
+        "state": "cleanup_blocked",
+        "updated_at": "2026-11-08T04:48:30.436111Z",
+        "completed": true,
+        "merged": true
+      },
+      "prior_selected_outcome_retained": true,
+      "next_actor": "This systemic session via supported owning authority; original owner decision only where required",
+      "not_retried_this_stage": true,
+      "fresh_lease_guard_result": "safety_block",
+      "fresh_counter_warning": "Lease dirty/untracked counters are not a fresh clean Git proof; explicit rejection and failed inspection take precedence."
+    },
+    {
+      "card_id": "d2e34b5b-b208-4009-b30e-9c44e589d52e",
+      "lease_id": "09e25a1b2ec30d455e16faeec930cc5c560643f3e6470a26c94e2ae36bf7e64b",
+      "session_id": "aadb6bf9-96a6-4084-8b96-b4749fbbd978",
+      "state": "blocked",
+      "reason": "unique commits are not proven integrated: da23a446b07a29687f43d9b9d248616ec8d2d0b7, 54eb9f0a40c8d15865ff2eb829542d86b09af09a, 6f8d0acefcd75fcb7fb75f03f3fa8af358038a93",
+      "reclaimed_bytes": 0,
+      "worktree_removed_by_this_session": false,
+      "before_after_bytes": "No removal; blocked/rejected tree sizes are not reported as zero.",
+      "next_action": "Original owner/integration authority: account for all unique commits and prove exact integration/content equivalence; retain history meanwhile.",
+      "fresh_lease_observation": {
+        "fencing_token": 286,
+        "state": "cleanup_blocked",
+        "updated_at": "2026-11-08T04:48:31.001170Z",
+        "completed": true,
+        "merged": true
+      },
+      "prior_selected_outcome_retained": true,
+      "next_actor": "This systemic session via supported owning authority; original owner decision only where required",
+      "not_retried_this_stage": true,
+      "fresh_lease_guard_result": "safety_block",
+      "fresh_counter_warning": "Lease dirty/untracked counters are not a fresh clean Git proof; explicit rejection and failed inspection take precedence."
+    },
+    {
+      "card_id": "93fa8580-d467-4612-ada7-fbf9a9aa5dc6",
+      "lease_id": "15cf4f4e9a148fb970e56cea277e592f4b9e8dbf97c2cf13bcea36a624e5952a",
+      "session_id": "849d0b30-814e-427d-95d2-96d6ee7cf7f3",
+      "state": "blocked",
+      "reason": "worktree has uncommitted changes",
+      "reclaimed_bytes": 0,
+      "worktree_removed_by_this_session": false,
+      "before_after_bytes": "No removal; blocked/rejected tree sizes are not reported as zero.",
+      "next_action": "Original owner: preserve and review tracked/untracked data through supported PA preservation before any cleanup.",
+      "fresh_lease_observation": {
+        "fencing_token": 336,
+        "state": "cleanup_blocked",
+        "updated_at": "2026-11-08T04:48:31.030767Z",
+        "completed": true,
+        "merged": true
+      },
+      "prior_selected_outcome_retained": true,
+      "next_actor": "This systemic session via supported owning authority; original owner decision only where required",
+      "not_retried_this_stage": true,
+      "fresh_lease_guard_result": "safety_block",
+      "fresh_counter_warning": "Lease dirty/untracked counters are not a fresh clean Git proof; explicit rejection and failed inspection take precedence."
+    }
+  ],
+  "prior_actual_outcomes": {
+    "attachment_id": "2a15d81098fe40ef949b7c8e73a80cc3",
+    "sha256": "3404478775355f3aa987d42a6f0cdd6ed30dd9c77c7ddbd6f4289a118845fba2",
+    "counts": {
+      "selected_scope": 14,
+      "cleaned": 0,
+      "reclaimed_bytes": 0,
+      "uncommitted_data": 7,
+      "queued_prompts": 1,
+      "branch_identity": 1,
+      "unique_history_integration": 3,
+      "legacy_primary_identity_guard": 2
+    },
+    "all_rows_retained_in_prior_immutable_artifact": true
+  },
+  "canonical_cleanup_report": {
+    "id": "a014ec8c-88a6-419f-b584-58092d2afd24",
+    "occurrence": "macbook-workspace-cleanup-disk-audit-20261030",
+    "revision": 43,
+    "hash": "ee08d04aac8a237e3622647bbcea554cb9d5e78171f4f369269254aae86ded7c"
+  },
+  "limitations": [
+    "Removed allocation and concurrent volume delta do not establish exclusive physical APFS reclamation.",
+    "No global collection, manual target edit, reset/clean/stash/discard/ref mutation or queued-prompt deletion.",
+    "No additional install/restart/rearm or ambiguous operation replay.",
+    "Other13 prior actual per-target guard outcomes remain open; native lease safety blocks refreshed independently, not new selected mutations.",
+    "Native tools returned during continuation; supported HTTP effects preceded restoration and were not duplicated.",
+    "Original0337 checkout damage and legacy359/388 proof repair did not block independent preservation/removal."
+  ],
+  "acceptance": {
+    "findings_open": 740,
+    "concerns_open": 181,
+    "requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+    "accepted": false,
+    "closed_bounded_scopes": [
+      "Backup0331",
+      "DB89957",
+      "recovery5be6"
+    ],
+    "residuals": [
+      "713.058ms fixture residual",
+      "first failure1c7764a3",
+      "native/peer/log/foreground/background inventory gaps",
+      "production scheduling recipient acceptance"
+    ]
+  }
+}
