@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from threading import Lock, get_ident
 
 SAMPLE_LIMIT = 256
+GIT_PHASES = ('git_subprocess_calls', 'git_subprocess_ms', 'git_fetch_ms')
 FILESYSTEM_PHASES = (
     'file_lock_wait_ms',
     'file_lock_hold_ms',
@@ -69,11 +70,36 @@ class OperationObservation:
     object_get_ms: float = 0.0
     object_put_files: int = 0
     object_put_bytes: int = 0
+    git_subprocess_calls: int = 0
+    git_subprocess_ms: float = 0.0
+    git_fetch_ms: float = 0.0
 
 
 
 
 current_observation: ContextVar[OperationObservation | None] = ContextVar("pa_performance", default=None)
+
+
+@contextmanager
+def observe_git_subprocess(*, fetch: bool = False):
+    """Attempt count/wall time only, including failures; never retain arguments.
+
+    Fetch is a recognized subset. Other Git calls can also involve network or
+    child CPU. These overlapping wall totals prove neither native I/O nor CPU.
+    """
+    observation = current_observation.get()
+    if observation is None:
+        yield
+        return
+    started = time.perf_counter()
+    try:
+        yield
+    finally:
+        elapsed = (time.perf_counter() - started) * 1000
+        observation.git_subprocess_calls += 1
+        observation.git_subprocess_ms += elapsed
+        if fetch:
+            observation.git_fetch_ms += elapsed
 
 # Only explicitly instrumented maintenance spans retain these numeric records.
 # Nested spans own their calls exclusively; the existing scalar totals remain

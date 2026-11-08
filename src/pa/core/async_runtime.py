@@ -25,7 +25,7 @@ from starlette.exceptions import HTTPException
 from pa.core.operation_budget import OperationBudget, OperationDeadline, current_operation
 from pa.core.sqlite_metrics import sqlite_connection_scope
 from pa.core.performance import (
-    FILESYSTEM_PHASES, SAMPLE_LIMIT, OperationObservation, PerformanceMetrics, current_observation, distribution,
+    FILESYSTEM_PHASES, GIT_PHASES, SAMPLE_LIMIT, OperationObservation, PerformanceMetrics, current_observation, distribution,
 )
 
 logger = logging.getLogger(__name__)
@@ -128,6 +128,10 @@ class OperationMetrics:
     sqlite_aggregate_bytes: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     sqlite_busy_failures: int = 0
     filesystem_totals: dict = field(default_factory=lambda: {name: 0 for name in FILESYSTEM_PHASES})
+    git_totals: dict = field(default_factory=lambda: {name: 0 for name in GIT_PHASES})
+    git_subprocess_calls: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    git_subprocess_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    git_fetch_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     file_lock_wait_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     file_lock_hold_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     file_lock_release_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
@@ -569,6 +573,10 @@ class AsyncRuntime:
             metrics.sqlite_aggregate_items.append(observation.sqlite_aggregate_items)
             metrics.sqlite_aggregate_bytes.append(observation.sqlite_aggregate_bytes)
             metrics.sqlite_busy_failures += observation.sqlite_busy_failures
+            for name in GIT_PHASES:
+                value = getattr(observation, name)
+                getattr(metrics, name).append(value)
+                metrics.git_totals[name] += value
             for name in FILESYSTEM_PHASES:
                 value = getattr(observation, name)
                 getattr(metrics, name).append(value)
@@ -621,7 +629,7 @@ class AsyncRuntime:
                              "sqlite_statement_ms", "sqlite_commit_ms", "sqlite_statement_thread_cpu_ms", "sqlite_commit_thread_cpu_ms", "sqlite_calls", "sqlite_rows",
                              "sqlite_aggregate_items", "sqlite_aggregate_bytes", "sqlite_busy_failures"):
                     phases[name] = round(getattr(observation, name), 3)
-                for name in FILESYSTEM_PHASES:
+                for name in (*FILESYSTEM_PHASES, *GIT_PHASES):
                     phases[name] = round(getattr(observation, name), 3)
                 phases["lock_events_total"] = observation.lock_events_total
                 if observation.lock_events:
@@ -715,6 +723,7 @@ class AsyncRuntime:
             data = {item.name: getattr(metrics, item.name) for item in fields(metrics)
                     if not isinstance(getattr(metrics, item.name), deque)}
             data["filesystem_totals"] = dict(metrics.filesystem_totals)
+            data["git_totals"] = dict(metrics.git_totals)
             data["runtime_ms"] = distribution(list(metrics.runtime_samples_ms))
             if metrics.failed_runtime_ms:
                 data["failed_runtime_ms"] = distribution(list(metrics.failed_runtime_ms))
@@ -725,7 +734,7 @@ class AsyncRuntime:
                           "sqlite_statement_ms", "sqlite_commit_ms", "sqlite_statement_thread_cpu_ms", "sqlite_commit_thread_cpu_ms", "sqlite_calls", "sqlite_rows",
                           "sqlite_aggregate_items", "sqlite_aggregate_bytes"):
                 data[phase] = distribution(list(getattr(metrics, phase)))
-            for phase in FILESYSTEM_PHASES:
+            for phase in (*FILESYSTEM_PHASES, *GIT_PHASES):
                 data[phase] = distribution(list(getattr(metrics, phase)))
             data["total_queue_ms"] = round(data["total_queue_ms"], 3)
             data["total_runtime_ms"] = round(data["total_runtime_ms"], 3)
