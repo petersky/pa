@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-11-08T01:40:14.616257+00:00",
-  "completion": "OPEN:740 findings/181 concerns. Paged provenance source validated by116 local tests; full CI/integration/eligible activation/real original-owner metadata and14-tree cleanup pending. All historical failures retained.",
+  "as_of": "2026-11-08T02:12:05.201464+00:00",
+  "completion": "OPEN:740 findings/181 concerns. Selected cleanup source validated; full CI/integration/one coordinated exact activation/actual14 outcomes remain. Paged product code is deferred, not deployed. All prior stages/failures retained.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -4027,6 +4027,12 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "selected_cleanup_20261108": {
+        "artifact": "docs/benchmarks/systemic-selected-cleanup-20261108.json",
+        "stage": "source validated; pending integration/activation and actual selected outcomes",
+        "resolution": "open",
+        "paging_status": "deferred product code; historical source/evidence retained"
       }
     },
     {
@@ -77621,6 +77627,12 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "selected_cleanup_20261108": {
+        "artifact": "docs/benchmarks/systemic-selected-cleanup-20261108.json",
+        "stage": "source validated; pending integration/activation and actual selected outcomes",
+        "resolution": "open",
+        "paging_status": "deferred product code; historical source/evidence retained"
       }
     },
     {
@@ -261172,6 +261184,12 @@
         },
         "coordination": "Scheduling successor0e6be21f/a954544f on separate tree; overdue-health repair is separate. No automatic package substitution or competing deployment.",
         "acceptance": "All740 findings/181 concerns and independent17d OPEN. Source samples, merged code, installed code and deployed retest are distinct. No whole-PA acceptance."
+      },
+      "selected_cleanup_20261108": {
+        "artifact": "docs/benchmarks/systemic-selected-cleanup-20261108.json",
+        "stage": "source validated; pending integration/activation and actual selected outcomes",
+        "resolution": "open",
+        "paging_status": "deferred product code; historical source/evidence retained"
       }
     },
     {
@@ -367766,5 +367784,119 @@
     },
     "coordination": "Scheduling successor0e6be21f/a954544f on separate tree; overdue-health repair is separate. No automatic package substitution or competing deployment.",
     "acceptance": "All740 findings/181 concerns and independent17d OPEN. Source samples, merged code, installed code and deployed retest are distinct. No whole-PA acceptance."
+  },
+  "selected_cleanup_20261108": {
+    "observed_at": "2026-11-08T02:12:05.201464+00:00",
+    "source_commit": "a70bb7aba50a7ede64e3bd6711a78df6924a6a97",
+    "scope": "Minimal explicit selected cleanup API/tool reusing existing workspace collection guards. Paged product source deferred and reversed; preserved pushed history and evidence remain reachable.",
+    "parked_source_head": "11a5c7d802e7aa920e45f75a44b8cc71e052828a",
+    "park_commit": "4226df2cfb336904febca0c7540b7fa116d14e22",
+    "source_base_includes": {
+      "PR648": "2773194b53c5ab9d1f97d2e5db5b4016d64e6d0b",
+      "PR650": "5e2f01f2850b9a8587155ac888c65a2e71c79711"
+    },
+    "contract": {
+      "endpoint": "POST /api/workspaces/collect-selected",
+      "tool": "workspace_collect_selected",
+      "max_targets": 32,
+      "required_comparisons": [
+        "lease_id",
+        "expected_fence",
+        "expected_head",
+        "expected_updated_at"
+      ],
+      "guards": "Selected mode never globally reconciles. Fresh ownership/HEAD compared under repository lock after fetch and before deletion. Existing expiry/completion/active-owner/acceptance/restart/dirty/untracked/unique-history guards remain. Owner admission held through actual completion after caller cancellation. Atomic expected-head ref deletion retains intervening unique commits; branch tracking configuration is retained.",
+      "legacy": "Optional exact merged PR number triggers authenticated in-scope primary GitHub identity revalidation. Cleanup-only metadata still requires refreshed origin merge ancestry and existing changed-path/blob equivalence. No watch/dispatch repair, historical green, permission or acceptance inference.",
+      "measurement": "Per-target removed du allocation and concurrent filesystem free-space delta are separate; neither establishes exclusive physical APFS block reclamation."
+    },
+    "validation_overlapping_not_summed": {
+      "stage1": {
+        "stage": 1,
+        "exit_code": 0,
+        "duration_seconds": 167.888,
+        "tests": 100,
+        "failures": 0,
+        "errors": 0,
+        "source_hashes": {
+          "src/pa/repository/workspace.py": "e4d9ff5f0673bf734963fc89d4e282cf15a1654e2a7698de7a4d61d50ea1268b",
+          "src/pa/pr_supervisor/github.py": "ebe741283abd909084a87968c697f4dfb2c8d995f78a3ed629ca75b16ebd6923",
+          "src/pa/modules/instance.py": "8af23a1dd199cd14aa0837246cb1a1421c358962d6006e8cfd777358b39f07e7",
+          "src/pa/mcp/tools/instance.py": "4fc79c3138fdd391e120397e42d62fad99502896a9af451721ee3c6fe6087c98",
+          "tests/test_selected_workspace_cleanup.py": "95b714c034c53eac2299fddb935aeb63e934042ee2b1f7cc3dd4ed79c9602bef",
+          "tests/test_instance_mcp.py": "f6618357d9affd89908000a69d06fc59c9674c7bed749ad6454afd980a5b6944"
+        },
+        "both_private_roots_before_import": true,
+        "production_target_operations": false
+      },
+      "stage2": {
+        "stage": 2,
+        "exit_code": 1,
+        "duration_seconds": 245.973,
+        "tests": 198,
+        "failures": 1,
+        "errors": 0,
+        "source_hashes": {
+          "src/pa/repository/workspace.py": "47c6f9c981353c6251c596d4c29ec272c994089a479ae1f26279c0f63bab2aed",
+          "src/pa/pr_supervisor/github.py": "07d1a96bb542a02f0f888b0a0f992ae98829d8ed07e590ec829809f87630cbdb",
+          "src/pa/modules/instance.py": "c418221c067da14b40de1973298ddfe5a21b168419fa1b2c08492067f768b6d0",
+          "src/pa/mcp/tools/instance.py": "2efa158cb12f6e4a7ba33d44b07e9100cc1b4d406b7120a16c446b0bee206aa4",
+          "tests/test_selected_workspace_cleanup.py": "85b4cfe827cdff4c46700b0e9972c88a1d4d45217e0c69a9702fb5a72b604018",
+          "tests/test_instance_mcp.py": "c16dca82eca20cdbfc889de93fcdfb5b19855648760d1dc29e548e2eddc52d37",
+          "tests/test_mcp_registration_only.py": "2fe6e38f5258a17a6b32bca37e8448602536acc1106bb9403e65494ab5b5c2c4"
+        },
+        "both_private_roots_before_import": true,
+        "production_target_operations": false,
+        "local_exclusions": "Four unchanged actual-stdio cases require croniter in frozen service interpreter; remain mandatory full CI with locked project dependencies.",
+        "source_base_includes_pr650": true
+      },
+      "stage3": {
+        "stage": 3,
+        "exit_code": 0,
+        "duration_seconds": 7.905,
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "source_hashes": {
+          "src/pa/repository/workspace.py": "47c6f9c981353c6251c596d4c29ec272c994089a479ae1f26279c0f63bab2aed",
+          "src/pa/pr_supervisor/github.py": "07d1a96bb542a02f0f888b0a0f992ae98829d8ed07e590ec829809f87630cbdb",
+          "src/pa/modules/instance.py": "c418221c067da14b40de1973298ddfe5a21b168419fa1b2c08492067f768b6d0",
+          "src/pa/mcp/tools/instance.py": "2efa158cb12f6e4a7ba33d44b07e9100cc1b4d406b7120a16c446b0bee206aa4",
+          "tests/test_selected_workspace_cleanup.py": "85b4cfe827cdff4c46700b0e9972c88a1d4d45217e0c69a9702fb5a72b604018",
+          "tests/test_instance_mcp.py": "64d1d66bf84d32ed557496f8465535b106f024b02ed69d6a10a80d4e85c057e6",
+          "tests/test_mcp_registration_only.py": "2fe6e38f5258a17a6b32bca37e8448602536acc1106bb9403e65494ab5b5c2c4"
+        },
+        "both_private_roots_before_import": true,
+        "production_target_operations": false,
+        "prior_broader_result": "197/198 pass, one new MCP assertion selected verb positional slot rather than route. Corrected only assertion to validate both POST and exact route. Every product source byte matches stage2. Source scenarios and suites overlap, not summed.",
+        "full_ci_still_required": true
+      }
+    },
+    "integration": "Ready PR651 is being rewritten around final selected cleanup head; full CI, stable-green supervisor and independent exact-head signals remain required.",
+    "runtime": "647 f8db/PID64276/startup1748860e remains active. Handoff18f is delivered/effectcomplete and is not replayed. No selected endpoint is deployed yet.",
+    "original_cleanup_context": {
+      "card_id": "7938e21e-05fe-4dc9-b85e-98689957dd9d",
+      "session_id": "0337e686-6170-470c-89c7-5285925f43f0",
+      "control_id": "9bb01f22-f57f-4e51-9797-c2bb915e75f5",
+      "lease_fence": 379
+    },
+    "inventory": {
+      "targets": 14,
+      "recorded_blockers": {
+        "uncommitted_data": 8,
+        "integration_evidence": 5,
+        "missing_branch": 1
+      },
+      "attachment_id": "4bf8c11da93f4050aa9080d9150d573e",
+      "sha256": "02b37cac4a1eab66f4376f802675f7521bb6ff119cb685c001b58cfc54ab97aa",
+      "two_target_followup_attachment_id": "06e7ba603ecc4101aefb6a4a73227c07",
+      "two_target_sha256": "bbf5cc07ed499a1aacc73b0b85fdf8e57d5490c10d128844f9456a39008fa00d",
+      "notice": "Recorded inventory and error snapshots are not current deletion eligibility. PR359/388 merged exact-head primary proof is independent of incomplete legacy PA linkage."
+    },
+    "production_outcomes": {
+      "targets_removed_by_this_session": 0,
+      "reclaimed_bytes_by_this_session": 0,
+      "stage": "not yet activated or invoked"
+    },
+    "acceptance": "All740 prior findings/181 concerns and independent17d acceptance remain OPEN. Source tests and merged/installed/deployed retest are separate stages."
   }
 }
