@@ -55,7 +55,7 @@ from pa.core.ui.instance_identity import (
     resolve_instance_identity,
 )
 from pa.core.ui.pages import PageDefinition, PageRegistry
-from pa.core.ui.work_presentation import present_work_item
+from pa.core.ui.work_presentation import child_work_status, present_work_item
 from pa.domain.card_enrichment import explicit_enrichment_fields
 from pa.domain.models import (
     CardAttachment,
@@ -666,6 +666,10 @@ def _presentation_context_for_cards(
         session_ids={record.session_id for record in dispatches.values() if record.session_id}
     )}
     watches = _watches_for_cards(request, card_ids)
+    # Parallel work: a parent's children collapse into one tally on its Work node.
+    child_lanes = store.child_lanes_by_parent(card_ids, realm_id=_active_realm(request))
+    child_ids = {child_id for rows in child_lanes.values() for child_id, _lane in rows}
+    child_dispatches = dispatch_store.latest_by_card(child_ids) if dispatch_store and child_ids else {}
     progress: dict[str, dict] = {}
     presentations: dict[str, dict] = {}
     ctx = request.app.state.ctx
@@ -686,6 +690,14 @@ def _presentation_context_for_cards(
             dispatch=public,
             session=_session_presentation_signal(ctx, execution_session, dispatch=public),
             watches=watches.get(card.id, ()),
+            children=[
+                child_work_status(
+                    {"lane": lane},
+                    str(getattr(child_dispatches[child_id].state, "value", child_dispatches[child_id].state))
+                    if child_id in child_dispatches else None,
+                )
+                for child_id, lane in child_lanes.get(card.id, ())
+            ],
             target_instance_name=(
                 public.get("target_instance_name") if public else None
             ),

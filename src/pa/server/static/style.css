@@ -5597,3 +5597,41 @@ a.ghost:hover {
   .page-agent-main .agent-chat-widget { overflow-y: auto; }
   .page-agent-main .acw-chat-stage { flex-shrink: 0; min-height: 8rem; }
 }
+
+/* ---- Stage strip: Work -> declared checkpoints -> Done ---------------------- */
+.stage-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0; margin: 0.15rem 0 0; padding: 0; list-style: none; }
+.stage { --stage-color: var(--pa-muted); display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.82rem; color: var(--pa-muted); }
+.stage + .stage::before { content: ""; width: 1.25rem; height: 2px; margin: 0 0.4rem; background: var(--pa-border); border-radius: 1px; }
+.stage-done + .stage::before { background: var(--pa-ok); }
+.stage-mark { flex: none; width: 0.8rem; height: 0.8rem; border-radius: 50%; border: 2px solid var(--stage-color); box-sizing: border-box; }
+.stage-label { color: var(--pa-text); }
+.stage-todo .stage-label { color: var(--pa-muted); }
+.stage-done { --stage-color: var(--pa-ok); }
+.stage-done .stage-mark { background: var(--pa-ok); }
+.stage-active { --stage-color: var(--pa-accent); font-weight: 600; }
+.stage-active .stage-mark { background: color-mix(in srgb, var(--pa-accent) 35%, transparent); }
+.stage-stuck { --stage-color: var(--pa-warn); font-weight: 600; }
+.stage-stuck .stage-mark { border-radius: 2px; transform: rotate(45deg); background: var(--pa-warn); }
+.stage-waiting .stage-mark { border-style: dashed; }
+.stage-owner { font-size: 0.7rem; font-weight: 600; padding: 0 0.4rem; border-radius: 999px; border: 1px solid var(--pa-border); color: var(--pa-muted); }
+.stage-owner.owner-you { background: var(--pa-accent); border-color: var(--pa-accent); color: var(--pa-bg); }
+.stage-parallel { display: inline-flex; align-items: center; gap: 2px; }
+.stage-parallel .pip { width: 0.45rem; height: 0.45rem; border-radius: 50%; border: 1.5px solid var(--pa-muted); box-sizing: border-box; }
+.stage-parallel .pip-done { background: var(--pa-ok); border-color: var(--pa-ok); }
+.stage-parallel .pip-running { background: var(--pa-accent); border-color: var(--pa-accent); }
+.stage-parallel .pip-stuck { background: var(--pa-warn); border-color: var(--pa-warn); border-radius: 1px; }
+.stage-count { margin-left: 0.25rem; font-variant-numeric: tabular-nums; color: var(--pa-muted); font-weight: 400; }
+/* Pulse: three bars whose height cycles while the agent is producing output. */
+.stage-pulse { display: inline-flex; align-items: flex-end; gap: 2px; height: 0.9rem; color: var(--pa-ok); font-weight: 400; font-variant-numeric: tabular-nums; }
+.stage-pulse i { width: 3px; height: 40%; background: currentColor; border-radius: 1px; }
+.stage-pulse time, .stage-pulse > span { margin-left: 0.3rem; align-self: center; color: var(--pa-muted); }
+.stage-pulse.pulse-live i { animation: stage-pulse 1s ease-in-out infinite; }
+.stage-pulse.pulse-live i:nth-child(2) { animation-delay: 0.15s; }
+.stage-pulse.pulse-live i:nth-child(3) { animation-delay: 0.3s; }
+.stage-pulse.pulse-recent { color: var(--pa-accent); }
+.stage-pulse.pulse-stale, .stage-pulse.pulse-unknown { color: var(--pa-warn); }
+.stage-pulse.pulse-stale i, .stage-pulse.pulse-unknown i { animation: none; height: 25%; }
+@keyframes stage-pulse { 0%, 100% { height: 30%; } 50% { height: 100%; } }
+@media (prefers-reduced-motion: reduce) { .stage-pulse i { animation: none !important; height: 70%; } }
+.stage-strip-compact .stage { font-size: 0.76rem; }
+.stage-strip-compact .stage + .stage::before { width: 0.7rem; margin: 0 0.25rem; }

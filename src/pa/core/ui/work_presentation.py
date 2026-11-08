@@ -346,6 +346,19 @@ def _session_facts(session: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+def child_work_status(card: Any, dispatch_state: str | None = None) -> str:
+    """Coarse status of one child card for the parent's parallel tally."""
+    lane = str(_enum_value(_value(card, "lane", "")) or "")
+    state = str(dispatch_state or "")
+    if lane == "done":
+        return "done"
+    if state in ACTIVE_DISPATCH_STATES and state != "blocked":
+        return "running"
+    if state in {"failed", "blocked"}:
+        return "stuck"
+    return "todo"
+
+
 def _action(kind: str, label: str, **values: Any) -> dict[str, Any]:
     return {"kind": kind, "label": label, **values}
 
@@ -380,6 +393,7 @@ def present_work_item(
     session: dict[str, Any] | None = None,
     start_receipt: dict[str, Any] | None = None,
     watches: Iterable[Any] = (),
+    children: Iterable[str] = (),
     target_instance_name: str | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
@@ -884,6 +898,22 @@ def present_work_item(
         "action": action,
         "action_explanation": action_explanation,
     }
+    from pa.core.ui.stage_strip import build_stage_strip
+    requirement = _value(card, "completion_requirement")
+    if hasattr(requirement, "model_dump"):
+        requirement = requirement.model_dump(mode="json")
+    presentation["stage_strip"] = build_stage_strip(
+        requirement=requirement or None,
+        completion=completion,
+        lane=lane,
+        state_code=state_code,
+        group=group,
+        session_active=bool(session_facts["active"]),
+        has_execution=bool(dispatch_id or session_id),
+        activity_at=(session or {}).get("observed_at") or latest.get("last_activity_at") or latest.get("occurred_at") or timestamp,
+        children=tuple(children),
+        now=now,
+    )
     presentation["accessible_label"] = "; ".join(
         part
         for part in (
@@ -892,10 +922,16 @@ def present_work_item(
             outcome,
             presentation["relative_time"],
             action.get("label"),
+            _strip_accessible(presentation["stage_strip"]),
         )
         if part
     )
     return presentation
+
+
+def _strip_accessible(strip: dict[str, Any]) -> str:
+    names = {"done": "done", "active": "in progress", "todo": "not started", "stuck": "stuck"}
+    return ", ".join(f"{item['label']} {names[item['state']]}" for item in strip["stages"])
 
 
 def present_reconciliation(
