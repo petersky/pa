@@ -327,3 +327,116 @@ def test_old_server_cannot_interpret_selected_cleanup_as_global_collection():
     def global_gc(body:dict):calls.append(body);return {'global':True}
     response=TestClient(legacy).post('/api/workspaces/collect-selected',json={'targets':[{'lease_id':'a'*64}]})
     assert response.status_code==404 and calls==[]
+
+
+def _squash_scenario(tmp_path, *, concurrent_same_file, tamper=None):
+    """Real squash merge of a lease branch; optionally with a concurrent edit to the
+    same file on main (so the PR head's blob differs from the squash result)."""
+    import subprocess
+    manager, (selected, other) = setup(tmp_path)
+    tree = Path(selected.worktree_path)
+    git(tree, 'config', 'user.name', 'Fixture'); git(tree, 'config', 'user.email', 'fixture@pa.invalid')
+    (tree / 'README.md').write_text('base\nfeature\n')
+    git(tree, 'add', 'README.md'); git(tree, 'commit', '-m', 'feature')
+    head = git(tree, 'rev-parse', 'HEAD').stdout.strip()
+    git(tree, 'push', 'origin', f'HEAD:refs/heads/{selected.branch}')
+    integrator = tmp_path / 'integrator'
+    subprocess.run(['git', 'clone', selected.repository_url, str(integrator)], check=True, capture_output=True)
+    git(integrator, 'config', 'user.name', 'Fixture'); git(integrator, 'config', 'user.email', 'fixture@pa.invalid')
+    if concurrent_same_file:
+        (integrator / 'README.md').write_text('intro\nbase\n')
+        git(integrator, 'add', 'README.md'); git(integrator, 'commit', '-m', 'concurrent edit to the same file')
+    git(integrator, 'merge', '--squash', f'origin/{selected.branch}')
+    if tamper == 'extra_file':
+        (integrator / 'extra.txt').write_text('not in the PR\n'); git(integrator, 'add', 'extra.txt')
+    if tamper == 'dropped_change':
+        git(integrator, 'checkout', 'HEAD', '--', 'README.md')
+    git(integrator, 'commit', '--allow-empty', '-m', 'squash feature')
+    merge = git(integrator, 'rev-parse', 'HEAD').stdout.strip()
+    git(integrator, 'push', 'origin', 'main')
+    git(integrator, 'push', 'origin', '--delete', selected.branch)
+    return manager, selected, other, tree, head, merge
+
+
+def _selected_proof(manager, selected, head, merge, *, pr=359):
+    selected.repository_url = 'https://github.com/pa-test/repo'  # fixture identity only
+    manager._save(selected)
+    selected = manager.get_by_id(selected.id)
+    request = target(selected); request.expected_head = head
+    proof = {'source': 'github_merged_cleanup_revalidation', 'repository': 'pa-test/repo',
+        'pr_number': pr, 'watched_head_sha': head, 'confirmed_head_sha': head, 'merge_commit_sha': merge,
+        'lease_id': selected.id, 'session_id': selected.session_id, 'fencing_token': selected.fencing_token}
+    return selected, request, proof
+
+
+def test_squash_with_concurrent_edit_to_same_file_is_proven_by_three_way_tree(tmp_path):
+    manager, selected, other, tree, head, merge = _squash_scenario(tmp_path, concurrent_same_file=True)
+    # The PR head's README is not the squash result's README: strict blob equality cannot pass.
+    assert git(tree, 'rev-parse', f'{head}:README.md').stdout != git(tree, 'rev-parse', f'{merge}:README.md').stdout \
+        or git(Path(selected.cache_path), 'rev-parse', f'{head}:README.md').stdout != git(Path(selected.cache_path), 'rev-parse', f'{merge}:README.md').stdout
+    selected, request, proof = _selected_proof(manager, selected, head, merge)
+    result = manager.collect_garbage(targets=[request], merged_proofs={selected.id: proof})
+    assert result['cleaned'] == 1 and not tree.exists(), result
+    saved = manager.get_by_id(selected.id)
+    assert saved.cleanup_evidence['merge_method'] == 'squash'
+    assert 'three-way merge' in saved.cleanup_evidence['proof']
+    assert Path(other.worktree_path).exists()
+
+
+@pytest.mark.parametrize('tamper', ['extra_file', 'dropped_change'])
+def test_three_way_proof_still_rejects_squash_that_differs_from_the_pr(tmp_path, tamper):
+    manager, selected, other, tree, head, merge = _squash_scenario(tmp_path, concurrent_same_file=True, tamper=tamper)
+    selected, request, proof = _selected_proof(manager, selected, head, merge)
+    result = manager.collect_garbage(targets=[request], merged_proofs={selected.id: proof})
+    assert result['cleaned'] == 0 and tree.exists(), result
+    assert (tree / 'README.md').read_text() == 'base\nfeature\n'
+    assert 'not proven integrated' in (manager.get_by_id(selected.id).error or '')
+
+
+def test_three_way_proof_does_not_write_to_the_repository_cache(tmp_path):
+    manager, selected, other, tree, head, merge = _squash_scenario(tmp_path, concurrent_same_file=True)
+    cache = Path(selected.cache_path)
+    git(cache, 'fetch', 'origin', 'main')  # cleanup refreshes origin before judging, so do the same
+    base = git(cache, 'merge-base', head, f'{merge}^').stdout.strip()
+    before = git(cache, 'count-objects', '-v').stdout
+    ok = manager._squash_reproduces_tree(cache, base, f'{merge}^', head, merge)
+    assert ok is True
+    assert git(cache, 'count-objects', '-v').stdout == before  # merge ran in a throwaway object dir
+
+
+def test_explicit_revalidated_proof_supersedes_stale_watch_for_another_head(tmp_path):
+    from tests.test_repository_workspaces import _terminal_watch
+    manager, selected, other, tree, head, merge = _squash_scenario(tmp_path, concurrent_same_file=False)
+    selected, request, proof = _selected_proof(manager, selected, head, merge)
+    stale = _terminal_watch(selected, 'a' * 40, 'b' * 40)  # merged watch for a different PR head
+    stale.pr_number, stale.id = 490, 'watch-stale'
+    stale.repository = 'pa-test/repo'  # same repository, so it is not filtered out before the guard
+    manager.set_pr_watch_provider(lambda **_: [stale])
+    result = manager.collect_garbage(targets=[request], merged_proofs={selected.id: proof})
+    assert result['cleaned'] == 1 and not tree.exists(), result
+    assert manager.get_by_id(selected.id).cleanup_evidence['source'] == 'github_merged_cleanup_revalidation'
+
+
+def test_stale_watch_alone_still_blocks_without_an_explicit_proof(tmp_path):
+    from tests.test_repository_workspaces import _terminal_watch
+    manager, selected, other, tree, head, merge = _squash_scenario(tmp_path, concurrent_same_file=False)
+    selected, request, _ = _selected_proof(manager, selected, head, merge)
+    stale = _terminal_watch(selected, 'a' * 40, 'b' * 40)
+    stale.repository = 'pa-test/repo'
+    manager.set_pr_watch_provider(lambda **_: [stale])
+    result = manager.collect_garbage(targets=[request])
+    assert result['cleaned'] == 0 and tree.exists(), result
+
+
+def test_terminal_evidence_prefers_the_watch_for_the_branch_tip_over_a_newer_one(tmp_path):
+    from tests.test_repository_workspaces import _terminal_watch
+    manager, selected, other, tree, head, merge = _squash_scenario(tmp_path, concurrent_same_file=False)
+    good = _terminal_watch(selected, head, merge)
+    newer = _terminal_watch(selected, 'a' * 40, 'b' * 40)
+    newer.pr_number, newer.id = 490, 'watch-newer'
+    newer.updated_at = good.updated_at + timedelta(minutes=5)
+    manager.set_pr_watch_provider(lambda **_: [good, newer])
+    selected = manager.get_by_id(selected.id)
+    assert manager._terminal_pr_evidence(selected)['watched_head_sha'] == head
+    result = manager.collect_garbage(targets=[target(selected).model_copy(update={'expected_head': head})])
+    assert result['cleaned'] == 1 and not tree.exists(), result
