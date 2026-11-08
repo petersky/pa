@@ -40,3 +40,12 @@ The content budget remains 16 MiB per page, read in unbuffered chunks of at most
 minutes. A complete result is still only observation: no receipt, preservation
 revision or apply eligibility is created. Existing mutation guards remain the
 sole authority for preservation and repair.
+
+An initial disposable sample exposed repeated Git subprocess amplification:
+five pages all exceeded 500 ms. Batching equivalent Git identity queries and
+retaining the bounded immutable HEAD manifest reduced driver calls from 60 to
+20 across five pages. Current tracked stats and index are still checked before
+and after each content page; the durable lease is checked again before return.
+The repeat sample was 260–362 ms/page with less than 1 MiB traced Python peak.
+Both samples and all test failures must remain in the performance evidence;
+neither tiny sample establishes deployed responsiveness or whole-card acceptance.

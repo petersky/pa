@@ -41,6 +41,12 @@ def test_large_file_streams_across_pages_without_copies_or_mutation(tmp_path, mo
     def no_inventory(*a):
         raise AssertionError('no untracked/ignored hydration')
     monkeypatch.setattr(materialization, 'inventory', no_inventory)
+    original_fdopen = pages.os.fdopen
+    def bounded_source(fd, *a, **k):
+        if pages.os.fstat(fd).st_size == 40 * 1024 * 1024:
+            assert k.get('buffering') == 0, 'budgeted reads must not prefetch'
+        return original_fdopen(fd, *a, **k)
+    monkeypatch.setattr(pages.os, 'fdopen', bounded_source)
     service = MaterializationRepair(manager)
     with pytest.raises(WorkspaceProvisioningError, match='bounded diagnostic'):
         service.operate(**args, action='diagnose')
@@ -81,11 +87,12 @@ def test_large_file_streams_across_pages_without_copies_or_mutation(tmp_path, mo
     assert git(tree, 'hash-object', str(tree / 'large')).stdout.strip() == expected
     assert service.operate(**args, action='status')['phase'] == 'not_started'
     assert not (manager.root / 'materialization-repairs' / result['operation_id']).exists()
+    monkeypatch.setattr(pages.os, 'fdopen', original_fdopen)
     with pytest.raises(WorkspaceProvisioningError, match='bytes differ'):
         service.operate(**args, action='prepare')
 
 
-@pytest.mark.parametrize('change', ['file', 'index', 'head', 'fence', 'parent'])
+@pytest.mark.parametrize('change', ['file', 'index', 'index_rewrite', 'head', 'branch', 'fence', 'parent', 'cache'])
 def test_changed_inputs_reject_continuation(tmp_path, monkeypatch, change):
     manager, lease, tree, index, args = fixture_tree(tmp_path, count=3)
     monkeypatch.setattr(materialization, 'MAX_DIAGNOSTIC_BYTES', 1)
@@ -97,12 +104,20 @@ def test_changed_inputs_reject_continuation(tmp_path, monkeypatch, change):
         (tree / 'README.md').write_bytes(b'new retained data')
     elif change == 'index':
         git(tree, 'read-tree', 'HEAD')
+    elif change == 'index_rewrite':
+        index.write_bytes(index.read_bytes())
     elif change == 'head':
         git(tree, 'read-tree', 'HEAD')
         git(tree, 'commit', '--allow-empty', '-m', 'new head')
         git(tree, 'read-tree', '--empty')
     elif change == 'fence':
         lease.fencing_token += 1
+        manager._save(lease)
+    elif change == 'branch':
+        git(tree, 'branch', 'other', args['expected_head'])
+        git(tree, 'symbolic-ref', 'HEAD', 'refs/heads/other')
+    elif change == 'cache':
+        lease.cache_path = str(Path(lease.cache_path).parent / 'other-cache')
         manager._save(lease)
     else:
         (tree / 'README.md').unlink()
@@ -187,7 +202,7 @@ def test_index_and_cache_capacity_fail_closed(tmp_path, monkeypatch):
     manager, lease, tree, index, args = fixture_tree(tmp_path)
     service = MaterializationRepair(manager)
     monkeypatch.setattr(pages, 'MAX_INDEX_BYTES', 1)
-    with pytest.raises(WorkspaceProvisioningError, match='index exceeds'):
+    with pytest.raises(WorkspaceProvisioningError, match='control file exceeds'):
         service.operate(**args, action='diagnose_page')
     monkeypatch.setattr(pages, 'MAX_INDEX_BYTES', 1024 * 1024)
     monkeypatch.setattr(pages, 'MAX_SCANS', 1)
@@ -195,6 +210,45 @@ def test_index_and_cache_capacity_fail_closed(tmp_path, monkeypatch):
     with pytest.raises(WorkspaceProvisioningError, match='cache capacity'):
         service.operate(**{**args, 'idempotency_key':'different-observation'}, action='diagnose_page')
     assert service.operate(**args, action='status')['phase'] == 'not_started'
+
+
+@pytest.mark.parametrize('control', ['index', 'HEAD', '.git'])
+def test_nonregular_control_files_reject_without_blocking(tmp_path, monkeypatch, control):
+    manager, lease, tree, index, args = fixture_tree(tmp_path)
+    path = index if control == 'index' else tree / '.git'
+    if control == 'HEAD':
+        path = Path(git(tree, 'rev-parse', '--path-format=absolute', '--git-path', 'HEAD').stdout.strip())
+    path.unlink()
+    pages.os.mkfifo(path)
+    original = pages.os.open
+    def checked_open(p, flags, *a, **k):
+        if str(p) == str(path):
+            assert flags & pages.os.O_NONBLOCK
+        return original(p, flags, *a, **k)
+    monkeypatch.setattr(pages.os, 'open', checked_open)
+    service = MaterializationRepair(manager)
+    with pytest.raises(WorkspaceProvisioningError, match='control file exceeds'):
+        service.operate(**args, action='diagnose_page')
+    assert service.operate(**args, action='status')['phase'] == 'not_started'
+
+
+def test_regular_file_replaced_with_fifo_before_open_does_not_block(tmp_path, monkeypatch):
+    manager, lease, tree, index, args = fixture_tree(tmp_path)
+    before = index.read_bytes()
+    original = pages.os.open
+    replaced = False
+    def racing_open(path, flags, *a, **k):
+        nonlocal replaced
+        if path == 'README.md' and not replaced:
+            assert flags & pages.os.O_NONBLOCK
+            replaced = True
+            (tree / path).unlink()
+            pages.os.mkfifo(tree / path)
+        return original(path, flags, *a, **k)
+    monkeypatch.setattr(pages.os, 'open', racing_open)
+    with pytest.raises(WorkspaceProvisioningError, match='changed before read'):
+        MaterializationRepair(manager).operate(**args, action='diagnose_page')
+    assert replaced and index.read_bytes() == before
 
 
 @pytest.mark.asyncio

@@ -70,7 +70,7 @@ class MaterializationRepair:
     def __init__(self, manager):
         self.manager = manager
 
-    def _lease(self, session_id, lease_id, card_id, fence):
+    def _lease(self, session_id, lease_id, card_id, fence, *, verify_worktree=True):
         leases = [l for l in self.manager.list(card_id=card_id)
                   if l.id == lease_id and l.session_id == session_id]
         if len(leases) != 1 or leases[0].fencing_token != fence:
@@ -78,7 +78,8 @@ class MaterializationRepair:
         lease = leases[0]
         if lease.state not in {'ready', 'failed'} or lease.completed or lease.merged:
             raise WorkspaceProvisioningError('Lease is not an unfinished materialization target')
-        self.manager._verify_worktree(Path(lease.cache_path), Path(lease.worktree_path), lease)
+        if verify_worktree:
+            self.manager._verify_worktree(Path(lease.cache_path), Path(lease.worktree_path), lease)
         self.manager._assert_managed_path(Path(lease.worktree_path))
         return lease
 
@@ -191,7 +192,10 @@ class MaterializationRepair:
         # immutable objects using its own object-store concurrency guarantees;
         # the route fences the idle owner and apply owns its native index.lock.
         with self.manager.admission_guard(card_id=card_id, session_id=session_id):
-            lease = self._lease(session_id, lease_id, card_id, expected_fence)
+            # Paged observation performs these same root/common/branch checks
+            # together with its HEAD/index snapshot in one Git invocation.
+            lease = self._lease(session_id, lease_id, card_id, expected_fence,
+                                verify_worktree=action != 'diagnose_page')
             with self.manager._repository_lock('materialization-' + lease.id):
                 if action == 'diagnose_page':
                     if receipt.exists() and json.loads(receipt.read_text())['fingerprint'] != fingerprint:
@@ -201,7 +205,12 @@ class MaterializationRepair:
                                      byte_limit=MAX_DIAGNOSTIC_BYTES,
                                      path_limit=MAX_DIAGNOSTIC_PATHS)
                     # Recheck the durable fence before publishing an observation.
-                    self._lease(session_id, lease_id, card_id, expected_fence)
+                    current = self._lease(session_id, lease_id, card_id, expected_fence,
+                                          verify_worktree=False)
+                    for field in ('repository_id', 'cache_path', 'worktree_path',
+                                  'branch', 'base_sha', 'card_id', 'session_id', 'project_id'):
+                        if getattr(current, field) != getattr(lease, field):
+                            raise WorkspaceProvisioningError('Exact lease or fencing token changed')
                     return {'operation_id': key, **result}
                 if action == 'diagnose':
                     if receipt.exists() and json.loads(receipt.read_text())['fingerprint'] != fingerprint:

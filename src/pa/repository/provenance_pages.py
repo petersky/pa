@@ -55,12 +55,28 @@ def parent_fd(tree, name):
         os.close(fd)
 
 
-def records(tree, head):
+def control_bytes(path, limit):
+    """Bound control-file reads even if a path is replaced after inspection."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        fail('unsafe metadata control file')
+    with os.fdopen(fd, 'rb', buffering=0) as source:
+        before = os.fstat(source.fileno())
+        if not stat.S_ISREG(before.st_mode) or before.st_size > limit:
+            fail('metadata control file exceeds capacity or type')
+        data = source.read(limit + 1)
+        if len(data) != before.st_size or signature(before) != signature(os.fstat(source.fileno())):
+            fail('metadata control file changed during read')
+    return data, signature(before)
+
+
+def records(tree, head, *, index=False):
     # Stream NUL records rather than materializing an unbounded ls-tree result.
     env = dict(os.environ, GIT_TERMINAL_PROMPT='0', GIT_LFS_SKIP_SMUDGE='1')
     process = subprocess.Popen(
         ['git', '-c', 'credential.interactive=never', '-C', str(tree),
-         'ls-tree', '-rzl', '--full-tree', head], stdout=subprocess.PIPE,
+         *(['ls-files', '--stage', '-z'] if index else ['ls-tree', '-rzl', '--full-tree', head])], stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL, env=env)
     timer = threading.Timer(30, process.kill)
     timer.start()
@@ -85,28 +101,60 @@ def records(tree, head):
         process.wait()
 
 
-def snapshot(manager, lease, head, path_limit):
+def snapshot(manager, lease, head, path_limit, metadata_rows=None):
     tree = Path(lease.worktree_path)
     git = lambda *args: manager._git('-C', str(tree), *args).stdout.strip()
-    if git('rev-parse', 'HEAD') != head:
+    link_bytes, link_sig = control_bytes(tree / '.git', 4096)
+    link_text = os.fsdecode(link_bytes).strip()
+    if not link_text.startswith('gitdir: ') or '\n' in link_text:
+        fail('unsafe metadata control file')
+    git_dir = Path(link_text[len('gitdir: '):])
+    if not git_dir.is_absolute():
+        git_dir = tree / git_dir
+    manager._assert_managed_path(git_dir)
+    head_path = git_dir / 'HEAD'
+    head_bytes, head_sig = control_bytes(head_path, 4096)
+    values = git('rev-parse', '--path-format=absolute', '--show-toplevel',
+                 '--git-common-dir', '--git-path', 'HEAD', '--git-path', 'index', 'HEAD').splitlines()
+    if len(values) != 5:
+        fail('tracked metadata stream failed')
+    root, common, head_file, index_file, actual_head = values
+    if Path(root).resolve() != tree.resolve():
+        raise WorkspaceProvisioningError('Worktree root does not match the leased path')
+    if Path(common).resolve() != (Path(lease.cache_path) / '.git').resolve():
+        raise WorkspaceProvisioningError('Worktree belongs to a different repository cache')
+    if Path(head_file).resolve() != head_path.resolve():
+        fail('unsafe metadata control file')
+    if os.fsdecode(head_bytes).strip() != 'ref: refs/heads/' + lease.branch:
+        raise WorkspaceProvisioningError('Leased worktree is detached or on the wrong branch')
+    if actual_head != head:
         fail('HEAD changed')
-    index = Path(git('rev-parse', '--path-format=absolute', '--git-path', 'index'))
+    index = Path(index_file)
     manager._assert_managed_path(index)
     if index.is_symlink() or index.with_name('index.lock').exists():
         fail('index has a writer or unsafe path')
     # Empty-index observation is small, including extensions. Never hydrate an
     # unbounded index merely to determine whether it is eligible.
-    if index.exists() and index.stat().st_size > MAX_INDEX_BYTES:
-        fail('index exceeds metadata capacity')
-    if git('ls-files', '--stage', '-z'):
-        fail('index is no longer empty')
-    index_sig = signature(index.stat()) if index.exists() else None
-    index_hash = hashlib.sha256(index.read_bytes()).hexdigest() if index.exists() else None
+    if index.exists():
+        index_bytes, index_sig = control_bytes(index, MAX_INDEX_BYTES)
+        index_hash = hashlib.sha256(index_bytes).hexdigest()
+    else:
+        index_sig, index_hash = None, None
+    index_stream = records(tree, head, index=True)
+    try:
+        if next(index_stream, None) is not None:
+            fail('index is no longer empty')
+    finally:
+        index_stream.close()
     result = []
     identity_hash = hashlib.sha256(json.dumps(
-        [head, signature(tree.lstat()), index_sig, index_hash]).encode())
+        [head, link_bytes.hex(), link_sig, head_bytes.hex(), head_sig,
+         signature(tree.lstat()), index_sig, index_hash]).encode())
     total = 0
-    stream = records(tree, head)
+    # The immutable HEAD manifest can be reused after verifying the same HEAD,
+    # repository association and branch. Current tracked stats are always read.
+    cached_metadata = [] if metadata_rows is None else metadata_rows
+    stream = records(tree, head) if metadata_rows is None else iter(metadata_rows)
     try:
         for raw in stream:
             if len(result) >= path_limit:
@@ -115,6 +163,8 @@ def snapshot(manager, lease, head, path_limit):
             if total > MAX_METADATA_BYTES:
                 fail('tracked metadata exceeds byte capacity')
             metadata, raw_name = raw.split(b'\t', 1)
+            if metadata_rows is None:
+                cached_metadata.append(raw)
             mode, kind, oid, size = metadata.decode('ascii').split()
             name = os.fsdecode(raw_name)
             parts = Path(name).parts
@@ -155,10 +205,11 @@ def snapshot(manager, lease, head, path_limit):
             identity_hash.update(encoded)
             result.append(row)
     finally:
-        stream.close()
+        if hasattr(stream, 'close'):
+            stream.close()
     if not result:
         fail('HEAD has no tracked paths')
-    return result, identity_hash.hexdigest()
+    return result, identity_hash.hexdigest(), cached_metadata
 
 
 def observe(manager, lease, fingerprint, cursor, *, byte_limit, path_limit):
@@ -184,7 +235,8 @@ def observe(manager, lease, fingerprint, cursor, *, byte_limit, path_limit):
             if len(cache) >= MAX_SCANS:
                 # Never evict an in-flight scan to admit another one.
                 fail('observation cache capacity reached; wait for expiry')
-    rows, identity = snapshot(manager, lease, fingerprint['expected_head'], path_limit)
+    rows, identity, metadata = snapshot(manager, lease, fingerprint['expected_head'], path_limit,
+                                       state['metadata'] if state else None)
     if state is not None:
         if identity != state['identity']:
             with _lock:
@@ -227,7 +279,7 @@ def observe(manager, lease, fingerprint, cursor, *, byte_limit, path_limit):
                     read += len(data)
                     offset = size
                 else:
-                    fd = os.open(leaf, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent)
+                    fd = os.open(leaf, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
                     with os.fdopen(fd, 'rb', buffering=0) as source:
                         if signature(os.fstat(source.fileno())) != tuple(info):
                             fail('tracked file changed before read')
@@ -252,7 +304,7 @@ def observe(manager, lease, fingerprint, cursor, *, byte_limit, path_limit):
         offset, hasher = 0, None
         if read == byte_limit:
             break
-    _, after = snapshot(manager, lease, fingerprint['expected_head'], path_limit)
+    _, after, _ = snapshot(manager, lease, fingerprint['expected_head'], path_limit, metadata)
     if after != identity:
         with _lock:
             cache.pop(key, None)
@@ -268,7 +320,7 @@ def observe(manager, lease, fingerprint, cursor, *, byte_limit, path_limit):
         next_cursor=next_cursor, apply_eligible=False,
         notice='Read-only metadata, not preservation or apply authority. '
                'Process-local cursor expires; complete tracked metadata fence remains capped.'))
-    updated = dict(identity=identity, position=position, offset=offset,
+    updated = dict(identity=identity, metadata=metadata, position=position, offset=offset,
                    hasher=hasher, completed=completed, missing=missing,
                    differing=differing, cursor=next_cursor, previous=cursor,
                    reply=json.dumps(reply), time=time.monotonic())
