@@ -159,3 +159,89 @@ def test_json_payload_bound_is_encoded_bytes_and_finite():
         with pytest.raises(ValidationError):
             Schedule(**base,payload=payload)
     assert Schedule(**base,payload={'text':'é'*100}).payload=={'text':'é'*100}
+
+
+def test_overdue_delivery_health_survives_fresh_ticks_and_backoff(client, monkeypatch):
+    import asyncio
+    from pa.scheduling.errors import DeliveryError
+    service = client.app.state.ctx.services['scheduling']
+    ledger = service.ledger
+    monkeypatch.setattr('pa.modules.scheduling.time.time', lambda: 1000)
+    # A real cycle and disposable unavailable adapter reproduce a healthy worker
+    # alongside a past-due delivery; no model or production recipient is used.
+    async def unavailable(item):
+        raise DeliveryError('fixture_target_unavailable')
+    service.deliver = unavailable
+    service.task = SimpleNamespace(done=lambda: False)
+    record = create(client).json()
+    oid = ledger.fire('owner', record['id'], 'due', 880)['occurrence_id']
+    asyncio.run(service.cycle(now=1000))
+
+    def health(user='owner', **params):
+        response = client.get('/api/schedules', headers={'test-user':user}, params=params)
+        assert response.status_code == 200
+        return response.json()['health']
+
+    result = health()
+    assert result['running'] and not result['worker_overdue'] and result['overdue']
+    assert result['overdue_delivery_count'] == 1
+    assert result['oldest_overdue_due_at'] == 880
+    occurrence = ledger.history('owner', record['id'])[0]
+    assert occurrence['next_retry'] > 1000 and occurrence['error'] == 'fixture_target_unavailable'
+    assert not health('other')['overdue']
+    assert health('other')['oldest_overdue_due_at'] is None
+    # Aggregate is independent of list pagination, even beyond the last page.
+    assert health(cursor='z')['overdue_delivery_count'] == 1
+
+    claimed = ledger.claim(oid, 1002)
+    assert claimed and health()['overdue_delivery_count'] == 1
+    ledger.finish(oid, 1002, accepted=True)
+    assert not health()['overdue']
+    assert health()['oldest_overdue_due_at'] is None
+    # Future and exactly-due notifications are not yet overdue.
+    ledger.fire('owner', record['id'], 'future', 1001)
+    ledger.fire('owner', record['id'], 'exact', 1000)
+    assert health()['overdue_delivery_count'] == 0
+
+
+def test_exhausted_overdue_health_pause_resume_delete_and_coalesce(client, monkeypatch):
+    from pa.scheduling.store import Schedule
+    service = client.app.state.ctx.services['scheduling']
+    ledger = service.ledger
+    monkeypatch.setattr('pa.modules.scheduling.time.time', lambda: 1000)
+    service.last_tick = 1000
+    spec = Schedule(name='health', trigger={'kind':'manual'}, coalesce=True,
+                    destination={'kind':'inbox','target':'owner'}, payload='Check current state')
+    record = ledger.create('owner', 'health-create', spec, 0)
+    sid = record['id']
+    ledger.fire('owner', sid, 'coalesced', 1)
+    oid = ledger.fire('owner', sid, 'latest', 2)['occurrence_id']
+    for attempt in range(8):
+        ledger.finish(oid, 10 + attempt, error='fixture_target_unavailable')
+    assert ledger.history('owner', sid)[0]['state'] == 'failed'
+
+    def health():
+        return client.get('/api/schedules', headers={'test-user':'owner'}).json()['health']
+
+    assert health()['overdue_delivery_count'] == 1
+    assert health()['oldest_overdue_due_at'] == 2
+    paused = spec.model_copy(update={'enabled':False})
+    ledger.update('owner', sid, 'pause-health', paused, 1, 1000)
+    assert not health()['overdue']
+    assert ledger.history('owner', sid)[0]['error'] == 'fixture_target_unavailable'
+    ledger.update('owner', sid, 'resume-health', spec, 2, 1000)
+    assert health()['overdue']
+    ledger.retry('owner', sid, oid, 'retry-health', 1000)
+    assert health()['overdue_delivery_count'] == 1
+    ledger.update('owner', sid, 'delete-health', spec, 3, 1000, delete=True)
+    assert not health()['overdue']
+    assert health()['oldest_overdue_due_at'] is None
+
+
+@pytest.mark.parametrize('last_tick,overdue', [(None,True),(940,False),(939.99,True),(1000,False)])
+def test_worker_health_threshold_is_preserved(client, monkeypatch, last_tick, overdue):
+    monkeypatch.setattr('pa.modules.scheduling.time.time', lambda: 1000)
+    client.app.state.ctx.services['scheduling'].last_tick = last_tick
+    health = client.get('/api/schedules', headers={'test-user':'owner'}).json()['health']
+    assert health['worker_overdue'] is overdue and health['overdue'] is overdue
+    assert health['overdue_delivery_count'] == 0
