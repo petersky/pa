@@ -261267,6 +261267,24 @@
         "cleanup": "Original0337/control9bb/lease379 repair statusnot_started/effectnone; tracked-byte mismatch and14targets protected. No activation-dependent diagnose, prepare, apply, direct target access, collection or reclaimed bytes.",
         "acceptance": "All740 rows/181 concerns and independent17d OPEN.713.058ms prior fixture violation and all historical foreground/background/native/peer/log/retention gaps remain. This is correctness source validation, not representative performance acceptance."
       }
+    },
+    {
+      "id": "concern:notification-context-full-hydration",
+      "kind": "concern",
+      "finding": "Full linked models reloaded per notification for display labels",
+      "family": "notifications",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_amplification_private_comparison_live_tail_partially_attributed",
+      "cause": "Per-notice full model reads for scalar labels. Live SQL wall732.578ms/CPU147.144ms does not prove sole cause.",
+      "implemented": "Bounded page scalar labels; same realm/global-session semantics/fallbacks; routing/lifecycle unchanged.",
+      "merged": [],
+      "deployed": "uninstalled source",
+      "retested": "152tests;30alternating response-equal pairs;600SELECTs to3; mixed100iterations zero observed violations/9600ordered events.",
+      "resolution": "open",
+      "next_actor": "this fresh session; independent scheduler/user:local acceptance",
+      "next_action": "Protected integration; separate exact activation/retest and all remaining original criteria.",
+      "artifact": "docs/benchmarks/systemic-fresh-context-notification-labels-20261108.json",
+      "report_id": "25f02f12-9ec3-4fe8-bd91-e39dfc1f0823"
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -366519,7 +366537,7 @@
     "prior_complete_bundle": "docs/benchmarks/systemic-installed635-20261101.raw.json.gz",
     "scope": "Source repair of confirmed duplicate index/write amplification only; current runtime635 unchanged; every performance residual and exact17d scheduler acceptance remains open."
   },
-  "current_status": "731rows178concerns OPEN; source resume custody repair, prior integration and first failures preserved; current runtime unchanged, no cleanup success/acceptance.",
+  "current_status": "741findings/182concerns OPEN; fresh sessiond768 source label repair/private verification. Native/fleet acceptance remains open.",
   "source638_session_wire_stage_20261101": {
     "artifact": "docs/benchmarks/systemic-session-wire638-20261101.json",
     "source_base": "2db5c50f2fa2e841dbeb3d5789abc6c7b5fb135e",
@@ -369469,5 +369487,47 @@
         "recovery5be6"
       ]
     }
-  }
+  },
+  "fresh_context_20261108": {
+    "context": {
+      "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "session_id": "d7689970-034c-4580-940c-a7667f49766d",
+      "dispatch_id": "64df3396-da53-4ab4-aa85-f62fb02d50ba",
+      "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+      "repository": "https://github.com/petersky/pa",
+      "base": "ab46641f26218dfaf80936a11bb6542973a394f8",
+      "lease_id": "8c60de31eba0e4a503dd6539af0e04e45fc068e1505eeedaea790cb3cff3cea5",
+      "lease_fence": 393,
+      "branch": "pa/7894e44b-eef9-4d-45ae26f1-d7689970-034c-45-241f75f7-266ade2c",
+      "workspace": "current verified execution worktree only",
+      "initial_git": "clean; HEAD equals cached origin/main; branch has no upstream yet"
+    },
+    "loaded_identity": {
+      "version": "1.6.2",
+      "build_id": "1.6.2+df785779e748",
+      "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+      "process_id": 53580,
+      "runtime_build": {
+        "loaded_module_version": "1.6.2",
+        "source_revision": null,
+        "package_identity": "sha256:a56de1ea93b861c7d08b04bc2cf6df641c02e2a37002e010efca888282e46e6e",
+        "pid": 53580,
+        "startup_id": "b5c72d7d-86f9-4af9-a0f6-22d38e0c6c35"
+      }
+    },
+    "disposition": {
+      "source": "implemented/private verification; protected PR/CI/supervision pending",
+      "deployed": "No install/restart; runtime1.6.2 not claimed to contain this patch",
+      "acceptance": "OPEN; independent17d policy/user:local unchanged, no receipt/human_override",
+      "scope_limits": [
+        "Private mixed fixture zero warnings/threshold violations/failures/timeouts/rejections,9600ordered events; not deployed/provider/fleet acceptance.",
+        "Hydration amplification confirmed; live853ms sample includes unclassified offCPU and is not fully explained.",
+        "Native maintenance4579.484ms, collection3759.58ms, provision10170.224ms, provider844.977ms, bootstrap887.014ms, peer failures and loop591ms remain.",
+        "All original740 rows retained; accepted Backup/DB/recovery bounded scopes remain closed.",
+        "No other worktree/lease/evidence edited/relocated/deleted; no historical handoff replay."
+      ]
+    },
+    "artifact": "docs/benchmarks/systemic-fresh-context-notification-labels-20261108.json"
+  },
+  "current_status_before_fresh_context": "731rows178concerns OPEN; source resume custody repair, prior integration and first failures preserved; current runtime unchanged, no cleanup success/acceptance."
 }
