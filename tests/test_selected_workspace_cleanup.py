@@ -152,6 +152,62 @@ async def test_legacy_cleanup_revalidation_never_expands_credentials_or_reposito
     client._request.assert_not_called()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize('fault', [None, 'http', 'errors', 'foreign_repo', 'number',
+    'unmerged', 'head', 'merge', 'confirmed_head', 'null_commit', 'non_object'])
+async def test_primary_cleanup_missing_rest_merge_requires_exact_graphql_identity(fault):
+    import httpx
+    from pa.pr_supervisor.github import GITHUB_API_VERSION
+    head, merge = 'a' * 40, 'b' * 40
+    rest = {'number':359, 'merged':True, 'merged_at':'2026-08-22T23:20:46Z',
+        'state':'closed', 'head':{'sha':head}, 'base':{'repo':{'full_name':'pa-test/repo'}}}
+    pr = {'number':359, 'merged':True, 'headRefOid':head, 'mergeCommit':{'oid':merge}}
+    repo = {'nameWithOwner':'pa-test/repo', 'pullRequest':pr}
+    payload = {'data':{'repository':repo}}
+    if fault == 'errors': payload['errors'] = [{'message':'fixture unavailable'}]
+    if fault == 'foreign_repo': repo['nameWithOwner'] = 'other/repo'
+    if fault == 'number': pr['number'] = 388
+    if fault == 'unmerged': pr['merged'] = False
+    if fault == 'head': pr['headRefOid'] = 'c' * 40
+    if fault == 'merge': pr['mergeCommit']['oid'] = 'invalid'
+    if fault == 'null_commit': pr['mergeCommit'] = None
+    if fault == 'non_object': payload = []
+    requests = []
+    def handler(request):
+        requests.append(request)
+        assert request.headers['X-GitHub-Api-Version'] == GITHUB_API_VERSION
+        assert request.headers['Authorization'] == 'Bearer fixture-only'
+        if request.method == 'POST':
+            body = __import__('json').loads(request.content)
+            assert body['variables'] == {'owner':'pa-test','name':'repo','number':359}
+            assert 'reviewThreads' not in body['query']
+            return httpx.Response(503 if fault == 'http' else 200, json=payload)
+        response = {**rest, 'head':{'sha':'c' * 40}} if fault == 'confirmed_head' and len(requests) > 1 else rest
+        return httpx.Response(200, json=response)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as transport:
+        client = GitHubClient(GitHubCredentials(token='fixture-only'), client=transport)
+        if fault:
+            with pytest.raises(ValueError): await client.merged_cleanup_proof('pa-test/repo',359,head)
+        else:
+            proof = await client.merged_cleanup_proof('pa-test/repo',359,head)
+            assert proof['merge_commit_sha'] == merge
+            assert proof['watched_head_sha'] == proof['confirmed_head_sha'] == head
+            assert [r.method for r in requests] == ['GET','POST','GET']
+            assert 'stable_green_evidence' not in proof and 'green' not in proof
+
+
+@pytest.mark.asyncio
+async def test_cleanup_does_not_replace_explicit_invalid_rest_merge_or_wrong_head():
+    client = GitHubClient(GitHubCredentials(token='fixture-only'))
+    client._cleanup_graphql_merge = AsyncMock(return_value='b' * 40)
+    valid = {'number':359,'merged':True,'merged_at':'2026-08-22T23:20:46Z','state':'closed',
+        'head':{'sha':'a' * 40},'base':{'repo':{'full_name':'pa-test/repo'}}}
+    for invalid in [{**valid,'merge_commit_sha':''},{**valid,'head':{'sha':'c' * 40}}]:
+        client._request = AsyncMock(return_value=(200,invalid))
+        with pytest.raises(ValueError): await client.merged_cleanup_proof('pa-test/repo',359,'a' * 40)
+    client._cleanup_graphql_merge.assert_not_called()
+
+
 @pytest.mark.parametrize('fault', [None,'foreign_scope','merge_not_remote','different_content'])
 def test_legacy_cleanup_still_requires_real_git_integration_and_preserves_unselected(tmp_path, fault):
     import subprocess

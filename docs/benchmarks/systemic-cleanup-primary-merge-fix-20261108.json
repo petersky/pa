@@ -1,0 +1,184 @@
+{
+  "contract": "pa.cleanup14-primary-merge-fallback/v1",
+  "observed_at": "2026-11-08T05:19:41.313266+00:00",
+  "owner": {
+    "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+    "cleanup_card_id": "7938e21e-05fe-4dc9-b85e-98689957dd9d",
+    "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+    "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "lease_fence": 376,
+    "original_base": "4697ed583f6a5eceead72217d07ba2ebaf4ccc83",
+    "source_parent": "d2beecf9ac7cf0ba669dbd3eb3a987f3c470bc41"
+  },
+  "cause_certainty": "Confirmed client contract gap, reproduced with independent primary payloads under the same API-version header. Actual PA server credential activation/retest remains open; no broad GitHub API deprecation inferred.",
+  "cause": "Selected cleanup requires REST merge_commit_sha, which both observed merged PR359/388 primary responses omit. The ordinary supervisor already reads GraphQL mergeCommit. Every other exact REST identity predicate, including second head, passes independently.",
+  "rest_reproduction": {
+    "observed_at": "2026-11-08T05:09:50.040898+00:00",
+    "rows": [
+      {
+        "pr_number": 359,
+        "expected_head": "1acb02ae2449c2b7d047aa2eb1028c5b3dcf3c8d",
+        "merge_commit": "",
+        "predicates": {
+          "number_matches": true,
+          "merged_true": true,
+          "merged_at_present": true,
+          "state_closed": true,
+          "base_repository_matches": true,
+          "head_matches_expected": true,
+          "merge_oid_valid": false,
+          "second_head_matches_expected": true
+        },
+        "all_primary_predicates_pass": false,
+        "raw_primary_hash_only": [
+          {
+            "phase": "initial",
+            "bytes": 16281,
+            "sha256": "1959209d2b63181ef3030aa7f11f4caddf8f13a31686d0d29ee27eb5f018149b"
+          },
+          {
+            "phase": "confirmed_head",
+            "bytes": 16281,
+            "sha256": "1959209d2b63181ef3030aa7f11f4caddf8f13a31686d0d29ee27eb5f018149b"
+          }
+        ],
+        "scope": "Independent primary GitHub CLI credential with the same API version; PA server credential/actual failing response unobserved. No inference of historical green, acceptance or server proof success.",
+        "next_action": "If all pass, preserve existing PA409 and do not guess a repair or weaken guards. Owning PA integration must supply a bounded exact failing response/predicate through supported authority before source repair."
+      },
+      {
+        "pr_number": 388,
+        "expected_head": "4fc25ef221df9b551a7e8a767a76f6d10a008fb2",
+        "merge_commit": "",
+        "predicates": {
+          "number_matches": true,
+          "merged_true": true,
+          "merged_at_present": true,
+          "state_closed": true,
+          "base_repository_matches": true,
+          "head_matches_expected": true,
+          "merge_oid_valid": false,
+          "second_head_matches_expected": true
+        },
+        "all_primary_predicates_pass": false,
+        "raw_primary_hash_only": [
+          {
+            "phase": "initial",
+            "bytes": 16840,
+            "sha256": "1653527390a2e1c464b9bcddf63fea90ce432efb2cc6ed8e6e3f06a7ae4c311c"
+          },
+          {
+            "phase": "confirmed_head",
+            "bytes": 16840,
+            "sha256": "1653527390a2e1c464b9bcddf63fea90ce432efb2cc6ed8e6e3f06a7ae4c311c"
+          }
+        ],
+        "scope": "Independent primary GitHub CLI credential with the same API version; PA server credential/actual failing response unobserved. No inference of historical green, acceptance or server proof success.",
+        "next_action": "If all pass, preserve existing PA409 and do not guess a repair or weaken guards. Owning PA integration must supply a bounded exact failing response/predicate through supported authority before source repair."
+      }
+    ],
+    "target_mutations": 0,
+    "legacy_watch_or_dispatch_replayed": false
+  },
+  "primary_graphql_reproduction": {
+    "observed_at": "2026-11-08T05:13:11.324203+00:00",
+    "rows": [
+      {
+        "pr": 359,
+        "expected_head": "1acb02ae2449c2b7d047aa2eb1028c5b3dcf3c8d",
+        "primary_graphql_merge": "1328015ba18f3b00a2754da2bea6d8d2ce91a449",
+        "all_exact_identity_predicates_pass": true,
+        "response_bytes": 219,
+        "response_sha256": "f7d69afd13b74094debd0a669e6b313dd39d292fd02efe77f54d9fcc104ba608"
+      },
+      {
+        "pr": 388,
+        "expected_head": "4fc25ef221df9b551a7e8a767a76f6d10a008fb2",
+        "primary_graphql_merge": "c483cd3592dfb9aa75de1e57d1a2bd187da39562",
+        "all_exact_identity_predicates_pass": true,
+        "response_bytes": 219,
+        "response_sha256": "a90161689cf7edae8b8515edd2c43e8e26778b5221ae6b0604b6b03864b4aacd"
+      }
+    ],
+    "query_source": "Exact source fallback query; same API header and independent existing GitHub CLI credential. PA server credential rollout/retest remains unverified.",
+    "target_mutations": 0,
+    "primary_schema_reference": "https://docs.github.com/en/graphql/reference/objects#pullrequest"
+  },
+  "repair": "Only when the REST merge field is absent, request bounded primary GraphQL repository/PR number/merged/head/mergeCommit identity with the existing credential, scope, HTTP runtime and deadlines. Keep strict REST predicates, malformed or explicitly empty merge rejection, second REST head recheck and all existing Git/owner/lease/queue/restart/acceptance/dirty/content equivalence gates. No cached/historical green or fake dispatch provenance.",
+  "source_files_sha256": {
+    "src/pa/pr_supervisor/github.py": "c364ca7e5c0d49bb8942175d7f6410fbb4cc50005699ed9d3427e136856dfb6c",
+    "tests/test_selected_workspace_cleanup.py": "a92412f04ae7c61b8e8fe0dc110f248b8080ab62c340c795b5c9d6e46a4692c8"
+  },
+  "tests": {
+    "corrected": {
+      "exit_code": 0,
+      "log_bytes": 160,
+      "log_sha256": "ff986e6190180b379c5ef74b3e32894d2754068555d84a4bc1d60cef83fea260",
+      "duration_seconds": 182.933,
+      "private_both_roots": true,
+      "agent_defaults_preserved": true
+    },
+    "suites": [
+      "tests/test_selected_workspace_cleanup.py",
+      "tests/test_repository_workspaces.py",
+      "tests/test_pr_supervisor.py::GitHubFixtureTests"
+    ],
+    "interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3 -I -B",
+    "runtime_dependencies": "Installed service dependencies preferred; isolated test-runner dependencies appended from existing project virtualenv. No runtime dependency installation or default change.",
+    "first_failure": {
+      "log_bytes": 28217,
+      "log_sha256": "caade0be8048ac340a7ea104532a071ad27cfb817186739528e7a50be4227d76",
+      "failed_tests": 7,
+      "cause": "Harness incorrectly set PA_AGENT_ENABLED=false (instruction applies to disposable serve, not fixture tests). Product assertions unchanged; corrected run preserves normal defaults. First failed log retained, not hidden."
+    }
+  },
+  "stage": "Source present and corrected tests pass; PR654/watch9572890c-395c-4e10-80e5-812a23591cc1 must track final changed head and pass normal CI/review/supervisor gates. No new install/restart or live selected retry performed for this repair.",
+  "activation_coordination": {
+    "prior_handoff_id": "a709caaa-cb78-59b3-bf0f-c6c3cfbcd977",
+    "observed_status": "continuation_queued",
+    "effect": "pending",
+    "next_action": "Let existing exact-session continuation settle; never rearm/edit/reinstall652. Independently revalidate source/integration/runtime/disk/pins/lease and all gates before the separately authorized minimal repair activation. Do not create a new restart while the existing handoff is unsettled.",
+    "prior651_647": "Both continuation_delivered/effectcomplete; never replay."
+  },
+  "actual_cleanup_unchanged": {
+    "original_targets": 14,
+    "removed_by_this_session": 2,
+    "retained_or_unresolved": 12,
+    "removed_du_allocation_bytes": 318234624,
+    "per_operation_concurrent_free_deltas_bytes": [
+      14110720,
+      256942080
+    ],
+    "exclusive_physical_APFS_reclamation_proven": false,
+    "ledger": "docs/benchmarks/systemic-cleanup-second-removal-20261108.json",
+    "private_custody_archive_bytes": 30856052,
+    "private_custody_archive_sha256": "d35a332058f58607b4451a8b5df1a5d4cd5778ec051694025a10f0de4f53c4ac"
+  },
+  "original_card_publication": {
+    "updated_at": "2026-11-08T05:09:24.570798Z",
+    "attachments_preserved": 10,
+    "outcome": "Version-checked body append succeeded; full actual14 ledger, custody hashes and12residuals retained without deleting attachments or raising the cap."
+  },
+  "report": {
+    "id": "a014ec8c-88a6-419f-b584-58092d2afd24",
+    "revision": 45,
+    "hash": "9f4b113437f02d846717b735599e418d82db7001dea0de4e70e6b5260e13938f"
+  },
+  "acceptance": {
+    "findings_open": 740,
+    "concerns_open": 181,
+    "requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+    "accepted": false,
+    "residuals": [
+      "713.058ms fixture residual",
+      "first failure1c7764a3",
+      "native/peer/log/foreground/background gaps",
+      "remaining original12 cleanup targets",
+      "PA server credential proof and deployment acceptance"
+    ],
+    "bounded_accepted_scopes_remain_closed": [
+      "Backup0331",
+      "DB89957",
+      "recovery5be6"
+    ]
+  }
+}

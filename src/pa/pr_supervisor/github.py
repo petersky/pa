@@ -258,12 +258,17 @@ class GitHubClient:
             raise ValueError("cleanup PR repository is outside the configured GitHub scope")
         _, pr = await self._request("GET", f"/repos/{repository}/pulls/{number}",
                                     operation="revalidate merged cleanup PR")
-        merge = str(pr.get("merge_commit_sha") or "")
         if (pr.get("number") != number or pr.get("merged") is not True or not pr.get("merged_at")
                 or pr.get("state") != "closed"
                 or ((pr.get("base") or {}).get("repo") or {}).get("full_name", "").lower() != repository.lower()
-                or (pr.get("head") or {}).get("sha") != expected_head
-                or not re.fullmatch(r"[0-9a-f]{40,64}", merge)
+                or (pr.get("head") or {}).get("sha") != expected_head):
+            raise ValueError("merged cleanup PR identity is unconfirmed")
+        # Some primary REST responses omit this field entirely. The ordinary
+        # supervisor already obtains merge identity from GraphQL; cleanup must
+        # independently bind that same primary identity to this exact PR/head.
+        merge = (await self._cleanup_graphql_merge(repository, number, expected_head)
+                 if "merge_commit_sha" not in pr else str(pr.get("merge_commit_sha") or ""))
+        if (not re.fullmatch(r"[0-9a-f]{40,64}", merge)
                 or await self.get_pull_head(repository, number) != expected_head):
             raise ValueError("merged cleanup PR identity is unconfirmed")
         from datetime import UTC, datetime
@@ -272,6 +277,44 @@ class GitHubClient:
             "merge_commit_sha": merge, "github_merged_at": pr["merged_at"],
             "github_revalidated_at": datetime.now(UTC).isoformat(),
             "notice": "Cleanup integration proof only; no historical stable-green, dispatch or acceptance inference."}
+
+    async def _cleanup_graphql_merge(self, repository: str, number: int, expected_head: str) -> str:
+        """Read only bounded primary merge identity, never reviews or cached proof."""
+        owner, name = repository.split("/", 1)
+        query = """
+        query PACleanupMerge($owner: String!, $name: String!, $number: Int!) {
+          repository(owner: $owner, name: $name) {
+            nameWithOwner
+            pullRequest(number: $number) {
+              number merged headRefOid mergeCommit { oid }
+            }
+          }
+        }
+        """
+        owns = self._provided_client is None
+        client = self._provided_client or httpx.AsyncClient(timeout=20.0)
+        try:
+            response = await self._send(client.post(self.graphql_url, headers=self._headers(),
+                json={"query": query, "variables": {"owner": owner, "name": name, "number": number}}))
+            if response.status_code != 200:
+                raise ValueError("primary cleanup GraphQL identity is unavailable")
+            payload = await self._decode(response)
+            data = payload.get("data") if isinstance(payload, dict) else None
+            repo = data.get("repository") if isinstance(data, dict) else None
+            pr = repo.get("pullRequest") if isinstance(repo, dict) else None
+            commit = pr.get("mergeCommit") if isinstance(pr, dict) else None
+            if not all(isinstance(value, dict) for value in (payload, repo, pr, commit)):
+                raise ValueError("primary cleanup GraphQL identity is unconfirmed")
+            merge = str(commit.get("oid") or "")
+            if (payload.get("errors") or str(repo.get("nameWithOwner") or "").lower() != repository.lower()
+                    or pr.get("number") != number or pr.get("merged") is not True
+                    or pr.get("headRefOid") != expected_head
+                    or not re.fullmatch(r"[0-9a-f]{40,64}", merge)):
+                raise ValueError("primary cleanup GraphQL identity is unconfirmed")
+            return merge
+        finally:
+            if owns:
+                await client.aclose()
 
     async def snapshot(
         self, repository: str, number: int, *, policy: PRPolicy | None = None
