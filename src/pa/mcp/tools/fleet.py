@@ -801,6 +801,7 @@ def register_mcp(mcp, ctx: AppContext) -> None:
             for item in request_local_pa(ctx.settings, "GET", path)["handoffs"]
             if item["status"] not in {
                 "failed",
+                "dismissed",
                 "continuation_delivered",
                 "restart_completed",
             }

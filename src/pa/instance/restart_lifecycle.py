@@ -9,6 +9,11 @@ from __future__ import annotations
 from pa.core.operation_observation import OperationObservation
 
 TERMINAL = frozenset({"continuation_delivered", "restart_completed"})
+# An operator can retire a *failed* handoff so it stops blocking session close,
+# workspace cleanup and card completion. It is not a success: the receipt, its
+# prompt and its history are kept, and no effect is claimed either way.
+DISMISSED = "dismissed"
+INACTIVE = TERMINAL | {DISMISSED}
 LEGAL_TRANSITIONS = {
     "requested": {"waiting_for_turn_end", "failed"},
     "waiting_for_turn_end": {"quiescing", "failed"},
@@ -16,7 +21,8 @@ LEGAL_TRANSITIONS = {
     "restarting": {"resuming", "restart_completed", "continuation_delivered", "failed"},
     "resuming": {"continuation_queued", "continuation_delivered", "restart_completed", "failed"},
     "continuation_queued": {"continuation_delivered", "failed"},
-    "failed": {"continuation_delivered"},
+    "failed": {"continuation_delivered", DISMISSED},
+    DISMISSED: set(),
     "continuation_delivered": set(),
     "restart_completed": set(),
 }
@@ -71,11 +77,12 @@ def restart_observation_fields(receipt, *, session=None, runtime=None) -> dict:
         "continuation_delivered": ("succeeded", "confirmed", "absent", None),
         "restart_completed": ("succeeded", "confirmed", "absent", None),
         "failed": ("failed", "unknown", "unconfirmed", "inspect_failure"),
+        DISMISSED: ("dismissed", "unknown", "absent", None),
     }.get(status, ("reconciling", "unknown", "unconfirmed", "inspect_legacy_receipt"))
     reason = receipt.reason_code or status
     # A receipt write can fail after enqueue checkpointed the exact prompt.
     # Observe residual work independently of attempt failure and pause state.
-    if status not in TERMINAL:
+    if status not in INACTIVE:
         prompt_id = receipt.continuation_prompt_id
         if runtime is not None:
             running = (getattr(runtime, "_in_flight", None), getattr(runtime, "_draining_prompt", None))
@@ -87,7 +94,7 @@ def restart_observation_fields(receipt, *, session=None, runtime=None) -> dict:
             durable = (session.config_json or {}).get("durable_runtime") or {}
             if any(item.get("id") == prompt_id for item in durable.get("queued_prompts", [])):
                 worker = "queued"
-    if status not in TERMINAL and session is not None:
+    if status not in INACTIVE and session is not None:
         durable = (session.config_json or {}).get("durable_runtime") or {}
         paused = runtime._queue_paused if runtime is not None else durable.get("queue_paused")
         if session.status == "closed" or session.archived_at:

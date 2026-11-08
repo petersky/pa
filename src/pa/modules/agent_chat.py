@@ -1623,6 +1623,39 @@ async def retry_restart_handoff(
     return {**handoff.model_dump(mode="json"), "observation": restart_observation_fields(handoff, session=session, runtime=mgr.get(session_id))}
 
 
+@router.post("/sessions/{session_id}/restart-handoffs/{handoff_id}/dismiss")
+async def dismiss_restart_handoff(
+    request: Request, session_id: str, handoff_id: str
+) -> dict:
+    """Retire one failed handoff so it stops blocking close, cleanup and completion.
+
+    Never restarts PA or sends a continuation. The receipt stays for audit.
+    """
+    mgr = _require_session_traffic_ready(request)
+    session = await _offload(
+        mgr, "sqlite.agent_session_read", mgr.store.get_session, session_id
+    )
+    _require_session_traffic_ready(request)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    principal_id = get_principal_id(request)
+    user = getattr(request.state, "user", None)
+    if (
+        request.app.state.ctx.settings.auth_required is True
+        and session.principal_id != principal_id
+        and getattr(user, "role", None) != "admin"
+    ):
+        raise HTTPException(status_code=403, detail="Session is owned by another principal")
+    try:
+        handoff = await mgr.dismiss_restart_handoff(
+            session_id=session_id, handoff_id=handoff_id
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    from pa.instance.restart_lifecycle import restart_observation_fields
+    return {**handoff.model_dump(mode="json"), "observation": restart_observation_fields(handoff, session=session, runtime=mgr.get(session_id))}
+
+
 @router.get("/observability/v1/capabilities")
 def session_observability_capabilities() -> dict[str, Any]:
     return {

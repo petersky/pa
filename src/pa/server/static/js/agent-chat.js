@@ -2167,6 +2167,7 @@
           ? "PA service restarted; the continuation turn completed."
           : "PA service restarted; no continuation prompt was sent.",
         restart_completed: "PA service restarted; no continuation prompt was sent.",
+        dismissed: "Restart handoff dismissed by an operator; it no longer blocks this session.",
         failed: "Restart handoff failed: " + (handoff.error || "operator repair and retry required.")
       };
       const observation = handoff.observation || {};

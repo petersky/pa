@@ -5504,7 +5504,7 @@ class CardProjection:
                 raise CompletionConflict("exact_session_closed")
             active = conn.execute(
                 """SELECT * FROM agent_restart_handoffs
-                   WHERE session_id=? AND status NOT IN ('failed', 'continuation_delivered', 'restart_completed')
+                   WHERE session_id=? AND status NOT IN ('failed', 'dismissed', 'continuation_delivered', 'restart_completed')
                    ORDER BY created_at, id LIMIT 1""",
                 (handoff.session_id,),
             ).fetchone()
@@ -5560,7 +5560,7 @@ class CardProjection:
         return conn.execute(
             f"SELECT 1 FROM agent_restart_handoffs WHERE {field}=? "
             "AND delivered_at IS NULL "
-            "AND status NOT IN ('continuation_delivered', 'restart_completed') "
+            "AND status NOT IN ('continuation_delivered', 'restart_completed', 'dismissed') "
             "AND continuation_prompt != '' LIMIT 1",
             (value,),
         ).fetchone() is not None
@@ -5640,7 +5640,7 @@ class CardProjection:
                 raise RestartTransitionConflict("Restart receipt owner does not match")
             if current.status in TERMINAL and status == current.status:
                 return current
-            if retry and conn.execute("SELECT 1 FROM agent_restart_handoffs WHERE session_id=? AND id!=? AND status NOT IN ('failed', 'continuation_delivered', 'restart_completed') LIMIT 1", (current.session_id, handoff_id)).fetchone():
+            if retry and conn.execute("SELECT 1 FROM agent_restart_handoffs WHERE session_id=? AND id!=? AND status NOT IN ('failed', 'dismissed', 'continuation_delivered', 'restart_completed') LIMIT 1", (current.session_id, handoff_id)).fetchone():
                 raise RestartTransitionConflict("Session already has another nonterminal restart handoff")
             validate_transition(current, status=status, expected_status=expected_status, expected_version=expected_version, owner_instance_id=owner_instance_id, retry=retry)
             if status == current.status:
@@ -5702,6 +5702,39 @@ class CardProjection:
             ).fetchone()
         return self._row_to_restart_handoff(refreshed)
 
+    def dismiss_restart_handoff(
+        self, handoff_id: str, *, session_id: str
+    ) -> RestartHandoff:
+        """Retire one *failed* receipt so it no longer blocks close or cleanup.
+
+        This never re-arms a restart, sends a prompt, or deletes the receipt: the
+        row, its prompt and its transition history stay for audit. Dismissal
+        makes no claim that the continuation did or did not take effect.
+        Idempotent for an already dismissed receipt.
+        """
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM agent_restart_handoffs WHERE id=? AND session_id=?",
+                (handoff_id, session_id),
+            ).fetchone()
+        if row is None:
+            raise ValueError("Restart handoff not found for this session")
+        handoff = self._row_to_restart_handoff(row)
+        if handoff.status == "dismissed":
+            return handoff
+        if handoff.status != "failed":
+            raise ValueError(
+                "Only a failed restart handoff can be dismissed; "
+                f"this one is {handoff.status}"
+            )
+        return self.update_restart_handoff(
+            handoff_id, status="dismissed", expected_status="failed",
+            expected_version=handoff.phase_version,
+            owner_instance_id=handoff.instance_id or "local",
+            error=handoff.error, failure_stage=handoff.failure_stage,
+            reason_code="operator_dismissed",
+        )
+
     def retry_restart_handoff(
         self, handoff_id: str, *, session_id: str
     ) -> RestartHandoff:
@@ -5722,12 +5755,14 @@ class CardProjection:
                 "restart_completed",
             }:
                 return handoff
+            if handoff.status == "dismissed":
+                raise ValueError("Restart handoff was dismissed and cannot be retried")
             if handoff.status != "failed":
                 raise ValueError("Restart handoff is not retryable in its current state")
             competing = conn.execute(
                 """SELECT id FROM agent_restart_handoffs
                    WHERE session_id=? AND id!=?
-                     AND status NOT IN ('failed', 'continuation_delivered', 'restart_completed')
+                     AND status NOT IN ('failed', 'dismissed', 'continuation_delivered', 'restart_completed')
                    LIMIT 1""",
                 (session_id, handoff_id),
             ).fetchone()
