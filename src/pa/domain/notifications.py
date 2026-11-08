@@ -183,6 +183,9 @@ class InteractionRequest(BaseModel):
     delivery_error: str | None = Field(default=None, max_length=1000)
     delivery_retryable: bool = True
     delivery_recovery_action: str | None = Field(default=None, max_length=1000)
+    # Stable machine-readable cause of the last failure ("source_superseded",
+    # "interrupted"); None for unclassified failures. Never shown as the only reason.
+    delivery_failure_code: str | None = Field(default=None, max_length=100)
 
     @model_validator(mode="after")
     def validate_input_contract(self) -> InteractionRequest:

@@ -146,10 +146,31 @@
     var interaction = item.interaction;
     if (!interaction || item.resolved_at) return "";
     if (["failed", "answered", "delivery_pending"].indexOf(interaction.state) >= 0) {
-      if (interaction.delivery_retryable === false || (!item.continuation_transfer && /^Original execution binding differs in:/.test(interaction.delivery_error || ""))) {
-        return '<div class="notification-actions"><p>Response recorded. Workspace recovery requires action before delivery can continue.</p><p>' + esc(interaction.delivery_recovery_action || "Inspect the owning session and restore its original workspace through PA, or authorize a linked continuation.") + '</p></div>';
+      var presentation = item.presentation || {};
+      var failed = interaction.state === "failed";
+      // Say why it failed; a bare "Delivery failed" gives no way to act on it.
+      var reasonText = failed ? (presentation.failure_reason || interaction.delivery_error || "") : "";
+      var reason = reasonText ? '<p class="notification-delivery-error" role="status"><strong>Why delivery failed:</strong> ' + esc(reasonText) + '</p>' : "";
+      var recovery = presentation.recovery;
+      var transfer = failed && recovery && recovery.kind === "transfer_to_linked_run"
+        ? '<button type="button" class="primary small" data-notification-transfer' +
+          ' data-expected-session="' + esc(recovery.expected_session_id) + '"' +
+          ' data-expected-dispatch="' + esc(recovery.expected_dispatch_id) + '"' +
+          ' data-successor-session="' + esc(recovery.successor_session_id) + '"' +
+          ' data-successor-dispatch="' + esc(recovery.successor_dispatch_id) + '">' + esc(recovery.label || "Send to the linked run") + '</button>' : "";
+      // A recorded response that can no longer be delivered must be retireable.
+      var dismiss = failed ? '<button type="button" class="ghost small" data-notification-dismiss-failed>Dismiss without delivering</button>' : "";
+      // A verified linked run means the source is superseded even if an older
+      // record still calls the failure retryable; retrying it cannot succeed.
+      var superseded = interaction.delivery_failure_code === "source_superseded" || !!transfer;
+      if (interaction.delivery_retryable === false || !!transfer || (!item.continuation_transfer && /^Original execution binding differs in:/.test(interaction.delivery_error || ""))) {
+        var heading = superseded
+          ? "Response recorded. The session that asked is superseded by a linked run."
+          : "Response recorded. Workspace recovery requires action before delivery can continue.";
+        var action = interaction.delivery_recovery_action || (superseded ? presentation.required_action : "") || "Inspect the owning session and restore its original workspace through PA, or authorize a linked continuation.";
+        return '<div class="notification-actions"><p>' + heading + '</p><p>' + esc(action) + '</p>' + reason + transfer + dismiss + '</div>';
       }
-      return '<div class="notification-actions"><button type="button" class="primary small" data-notification-retry>Retry delivery</button></div>';
+      return '<div class="notification-actions">' + reason + '<button type="button" class="primary small" data-notification-retry>Retry delivery</button>' + dismiss + '</div>';
     }
     if (interaction.state !== "outstanding") return "";
     var choices = choiceControls(interaction, item.id);
@@ -211,7 +232,7 @@
       var destination = item.routing && item.routing.destination;
       var remote = item.routing && item.routing.response_mode === "remote";
       var presentation = item.presentation || {};
-      return '<article class="notification-item priority-' + esc(item.priority) + ' category-' + esc(presentation.category || "notice") + '" data-notification-id="' + esc(item.id) + '" tabindex="0"' + (destination ? ' data-notification-destination="' + esc(destination) + '"' : "") + '>' +
+      return '<article class="notification-item priority-' + esc(item.priority) + ' category-' + esc(presentation.category || "notice") + '" data-notification-id="' + esc(item.id) + '" data-notification-version="' + esc(item.version) + '" tabindex="0"' + (destination ? ' data-notification-destination="' + esc(destination) + '"' : "") + '>' +
         '<div class="notification-item-heading"><strong>' + esc(item.title) + '</strong><time datetime="' + esc(item.updated_at) + '">' + age(item.updated_at) + "</time></div>" +
         '<div class="notification-context">' + esc(routeContext(item)) + "</div>" +
         '<p class="notification-status"><strong>' + esc(presentation.status || "Notice") + "</strong></p>" +
@@ -265,19 +286,27 @@
       })
       .finally(function () { state.loading = false; state.refreshPending = false; });
   }
-  function mutate(item, action, body, pendingText) {
+  function postAction(id, action, body) {
+    return fetch("/api/notifications/" + encodeURIComponent(id) + "/" + action, {
+      method: "POST", credentials: "same-origin",
+      headers: Object.assign({ "Content-Type": "application/json" }, csrf()),
+      body: JSON.stringify(body)
+    }).then(function (response) {
+      if (!response.ok) return response.json().catch(function () { return {}; }).then(function (data) { throw new Error((data.detail && data.detail.message) || "Action could not be completed"); });
+      return response;
+    });
+  }
+  function mutate(item, action, body, pendingText, followUp) {
     if (item.dataset.notificationBusy === "true") return Promise.resolve();
     item.dataset.notificationBusy = "true";
     item.setAttribute("aria-busy", "true");
     item.querySelectorAll("button,input,textarea,select").forEach(function (control) { control.disabled = true; });
     var feedback = item.querySelector("[data-notification-feedback]");
     if (feedback) feedback.textContent = pendingText || "Submitting…";
-    return fetch("/api/notifications/" + encodeURIComponent(item.dataset.notificationId) + "/" + action, {
-      method: "POST", credentials: "same-origin",
-      headers: Object.assign({ "Content-Type": "application/json" }, csrf()),
-      body: JSON.stringify(body)
-    }).then(function (response) {
-      if (!response.ok) return response.json().catch(function () { return {}; }).then(function (data) { throw new Error((data.detail && data.detail.message) || "Action could not be completed"); });
+    var run = postAction(item.dataset.notificationId, action, body);
+    // A second step (retry after routing) runs only when the first one succeeded.
+    if (followUp) run = run.then(function () { return postAction(item.dataset.notificationId, followUp.action, followUp.body); });
+    return run.then(function () {
       clearDrafts(item.dataset.notificationId);
       state.offset = 0;
       return load(false, true);
@@ -286,6 +315,8 @@
       item.removeAttribute("aria-busy");
       item.querySelectorAll("button,input,textarea,select").forEach(function (control) { control.disabled = false; });
       if (feedback) feedback.textContent = error.message + " Your draft is preserved; try again or open the linked session.";
+      // The routing step may already have been recorded; show the card's real state.
+      if (followUp) { state.offset = 0; load(false, true); }
     });
   }
   function key() { return "ui:" + Date.now() + ":" + Math.random().toString(36).slice(2); }
@@ -343,6 +374,16 @@
     if (event.target.closest("[data-notification-read]")) return void mutate(item, "read", { idempotency_key: key() }, "Marking read…");
     if (event.target.closest("[data-notification-resolve]")) return void mutate(item, "resolve", { idempotency_key: key() }, "Dismissing notice…");
     if (event.target.closest("[data-notification-retry]")) return void mutate(item, "respond", { idempotency_key: key(), retry: true }, "Retrying the recorded response…");
+    if (event.target.closest("[data-notification-dismiss-failed]")) return void mutate(item, "resolve", { idempotency_key: key() }, "Dismissing the request…");
+    var transferButton = event.target.closest("[data-notification-transfer]");
+    if (transferButton) {
+      return void mutate(item, "transfer-continuation", {
+        idempotency_key: key(), expected_version: Number(item.dataset.notificationVersion),
+        expected_session_id: transferButton.dataset.expectedSession, expected_dispatch_id: transferButton.dataset.expectedDispatch,
+        successor_session_id: transferButton.dataset.successorSession, successor_dispatch_id: transferButton.dataset.successorDispatch,
+        reason: "Operator sent the recorded response to the explicitly linked run"
+      }, "Routing the response to the linked run…", { action: "respond", body: { idempotency_key: key(), retry: true } });
+    }
     if (event.target.closest("[data-notification-send-choices]")) {
       var selected = Array.from(item.querySelectorAll("[data-notification-multi-choice]:checked")).map(function (input) { return input.dataset.notificationMultiChoice; });
       if (selected.length) mutate(item, "respond", { idempotency_key: key(), choice_ids: selected }, "Submitting selected responses…");
