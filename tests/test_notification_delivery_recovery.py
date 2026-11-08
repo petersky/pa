@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from pa.domain.notifications import ContinuationTransferRequest, InteractionState
 from pa.execution.selection import SelectionError
 from pa.notifications import NotificationConflict
-from pa.notifications.service import SUPERSEDED_SOURCE_ACTION
+from pa.notifications.service import LINKED_RUN_ENDED_ACTION, SUPERSEDED_SOURCE_ACTION
 from tests.test_notification_continuation_transfer import recovery, respond, transfer  # noqa: F401
 
 FENCED = "This source has a durable linked attempt; resume that target, not the superseded native context"
@@ -274,3 +274,31 @@ def test_record_classified_before_the_fix_still_gets_the_repair_from_the_fence(r
     retried = client.post(f"/api/notifications/{r.notice.id}/respond", json={"idempotency_key": "legacy-retry", "retry": True}, headers=headers)
     assert retried.status_code == 200 and retried.json()["interaction"]["state"] == "delivered"
     assert len(r.runtime._queue) == 1
+
+
+@pytest.mark.parametrize("stored_as", ["classified", "legacy"])
+def test_when_the_linked_run_has_ended_the_card_says_so_and_offers_only_dismissal(recovery, stored_as):
+    """Both sessions are closed: the response has nowhere left to go, and Retry cannot help."""
+    r = recovery
+    fence(r)
+    r.successor.status = "closed"                  # the linked run finished
+    r.store.save_session(r.successor)
+    fail_delivery(r, SelectionError("context_boundary_fenced", FENCED) if stored_as == "classified"
+                  else RuntimeError("Workspace recovery blocked"))
+    with pytest.raises(NotificationConflict):
+        asyncio.run(respond(r))
+    client, headers = api(r)
+    public = client.get(f"/api/notifications/{r.notice.id}").json()
+    presentation = public["presentation"]
+    assert presentation["recovery"]["kind"] == "linked_run_ended"
+    assert presentation["required_action"] == LINKED_RUN_ENDED_ACTION      # not "Retry delivery"
+    assert "cannot succeed" in presentation["next_effect"]
+    # No transfer is advertised, and the endpoint agrees it would be refused.
+    body = dict(idempotency_key="late-transfer", expected_version=public["version"],
+                expected_session_id="old", expected_dispatch_id="dispatch-old",
+                successor_session_id="successor", successor_dispatch_id="dispatch-successor",
+                reason="try anyway")
+    assert client.post(f"/api/notifications/{r.notice.id}/transfer-continuation", json=body, headers=headers).status_code == 409
+    resolved = client.post(f"/api/notifications/{r.notice.id}/resolve", json={"idempotency_key": "dismiss-ended"}, headers=headers)
+    assert resolved.status_code == 200
+    assert client.get(f"/api/notifications/{r.notice.id}").json()["interaction"]["response"] is not None

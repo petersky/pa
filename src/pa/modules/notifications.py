@@ -27,7 +27,7 @@ from pa.domain.notifications import (
     OperatorInputWithdrawalRequest,
 )
 from pa.notifications import NotificationConflict, NotificationService
-from pa.notifications.service import SUPERSEDED_SOURCE_ACTION
+from pa.notifications.service import LINKED_RUN_ENDED_ACTION, SUPERSEDED_SOURCE_ACTION
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -319,7 +319,9 @@ def _delivery_recovery(request: Request, item: Notification) -> dict[str, Any] |
         or successor.status == "closed"
         or successor.archived_at is not None
     ):
-        return None
+        # The source is still fenced, but the run that replaced it has ended, so
+        # the response has nowhere left to go. Say that instead of offering a retry.
+        return {"kind": "linked_run_ended", "successor_session_id": target_id}
     return {
         "kind": "transfer_to_linked_run",
         "label": "Send the recorded response to the linked run",
@@ -338,7 +340,11 @@ def _public_notice(request: Request, item: Notification, labels: dict | None = N
         presentation["recovery"] = recovery
         # A fenced source can never take the response, whatever an older record
         # says about retryability, so describe what will actually work.
-        presentation["required_action"] = SUPERSEDED_SOURCE_ACTION
+        presentation["required_action"] = (
+            SUPERSEDED_SOURCE_ACTION
+            if recovery["kind"] == "transfer_to_linked_run"
+            else LINKED_RUN_ENDED_ACTION
+        )
         presentation["next_effect"] = (
             "Retrying cannot succeed until the destination is repaired. "
             "The recorded response is preserved either way."
