@@ -1494,8 +1494,9 @@ class WorkspaceManager:
                         result["transient_retry"] += 1
                     else:
                         proof = (merged_proofs or {}).get(lease.id) if selected is not None else None
-                        cleaned = (self._cleanup_lease_locked(lease, merged_proof=proof)
-                                   if proof else self._cleanup_lease_locked(lease))
+                        cleaned = (self._cleanup_lease_locked(lease, merged_proof=proof,
+                                                            expected_target=selected[lease.id])
+                                   if selected is not None else self._cleanup_lease_locked(lease))
                         if (
                             not cleaned
                             and lease.cleanup_decision == "missing_evidence"
@@ -1516,10 +1517,11 @@ class WorkspaceManager:
                             free_delta = shutil.disk_usage(Path(cache_path)).free-free_before
                         except OSError:
                             free_delta = None
+                        removed = not Path(lease.worktree_path).exists()
                         outcomes[lease.id].update(state="cleaned" if cleaned else "blocked",
                             reason=lease.error, cleanup_decision=lease.cleanup_decision,
                             cleanup_evidence=lease.cleanup_evidence,
-                            reclaimed_bytes=allocated if cleaned else 0,
+                            worktree_removed=removed, reclaimed_bytes=allocated if removed else 0,
                             reclaimed_bytes_basis="removed tree du allocation; not physical exclusive-block proof",
                             filesystem_free_bytes_delta=free_delta,
                             resulting_lease_updated_at=lease.updated_at.isoformat())
@@ -1717,7 +1719,8 @@ class WorkspaceManager:
             "changed_paths": sorted(source_changes),
         }
 
-    def _cleanup_lease_locked(self, lease: WorkspaceLease, *, merged_proof: dict[str, Any] | None = None) -> bool:
+    def _cleanup_lease_locked(self, lease: WorkspaceLease, *, merged_proof: dict[str, Any] | None = None,
+                              expected_target: WorkspaceCleanupTarget | None = None) -> bool:
         worktree = Path(lease.worktree_path)
         cache = Path(lease.cache_path)
         try:
@@ -1800,13 +1803,24 @@ class WorkspaceManager:
                     raise WorkspaceProvisioningError("card completion requirements changed before cleanup")
                 if self.store.pending_restart_continuation(session_id=lease.session_id):
                     raise WorkspaceProvisioningError("restart continuation became pending before cleanup")
+                if expected_target is not None:
+                    self.selected_cleanup_leases([expected_target])
+                    self._verify_worktree(cache, worktree, lease)
+                    if self._git("-C", str(worktree), "rev-parse", "HEAD").stdout.strip() != expected_target.expected_head:
+                        raise WorkspaceProvisioningError("selected HEAD changed before cleanup")
                 self._git("-C", str(cache), "worktree", "remove", str(worktree))
                 for empty_parent in (worktree.parent, worktree.parent.parent):
                     try:
                         empty_parent.rmdir()
                     except OSError:
                         break
-            self._git("-C", str(cache), "branch", "-D", lease.branch, check=False)
+            if expected_target is not None:
+                # Atomic expected-value ref deletion preserves any intervening
+                # unique commit. Tracking configuration is intentionally retained.
+                self._git("-C", str(cache), "update-ref", "-d", "refs/heads/" + lease.branch,
+                          expected_target.expected_head)
+            else:
+                self._git("-C", str(cache), "branch", "-D", lease.branch, check=False)
             lease.state = "cleaned"
             lease.stage = "cleaned"
             lease.error = None

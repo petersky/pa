@@ -75,6 +75,24 @@ def test_owner_change_during_fetch_is_rejected_under_lock_without_cleanup(tmp_pa
     assert manager.get_by_id(other.id).model_dump() == before
 
 
+def test_last_boundary_head_change_preserves_unique_commit_and_tree(tmp_path):
+    manager,(selected,other)=setup(tmp_path)
+    tree=Path(selected.worktree_path)
+    git(tree,'config','user.name','Fixture');git(tree,'config','user.email','fixture@pa.invalid')
+    calls=0
+    def accepted(_):
+        nonlocal calls
+        calls+=1
+        if calls==3:git(tree,'commit','--allow-empty','-m','retain intervening history')
+        return True
+    manager.store.card_completion_eligible.side_effect=accepted
+    result=manager.collect_garbage(targets=[target(selected)])
+    assert result['cleaned']==0 and tree.exists()
+    assert 'selected HEAD changed' in result['targets'][0]['reason']
+    assert git(tree,'log','-1','--format=%s').stdout.strip()=='retain intervening history'
+    assert Path(other.worktree_path).exists()
+
+
 @pytest.mark.parametrize('guard', ['active','incomplete','unmerged','unexpired','acceptance','restart','dirty','untracked','unique','head'])
 def test_selected_path_preserves_existing_guards_and_all_retained_bytes(tmp_path, guard):
     manager, (selected, other) = setup(tmp_path)
@@ -124,6 +142,14 @@ async def test_primary_legacy_proof_is_exact_and_never_infers_historical_green(f
         assert proof['watched_head_sha'] == proof['confirmed_head_sha'] == head
         assert proof['merge_commit_sha'] == merge
         assert 'stable_green_evidence' not in proof and 'green' not in proof
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('credentials', [GitHubCredentials(),GitHubCredentials(token='fixture-only',configuration_status='missing'),GitHubCredentials(token='fixture-only',allowed_repositories=['other/repo'])])
+async def test_legacy_cleanup_revalidation_never_expands_credentials_or_repository_scope(credentials):
+    client=GitHubClient(credentials);client._request=AsyncMock()
+    with pytest.raises(ValueError):await client.merged_cleanup_proof('pa-test/repo',359,'a'*40)
+    client._request.assert_not_called()
 
 
 @pytest.mark.parametrize('fault', [None,'foreign_scope','merge_not_remote','different_content'])

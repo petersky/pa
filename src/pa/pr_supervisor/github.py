@@ -254,6 +254,8 @@ class GitHubClient:
             raise ValueError("authenticated cleanup PR revalidation is unavailable")
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) or number < 1:
             raise ValueError("invalid cleanup PR identity")
+        if not self.credentials.capability("cleanup").supports(repository):
+            raise ValueError("cleanup PR repository is outside the configured GitHub scope")
         _, pr = await self._request("GET", f"/repos/{repository}/pulls/{number}",
                                     operation="revalidate merged cleanup PR")
         merge = str(pr.get("merge_commit_sha") or "")

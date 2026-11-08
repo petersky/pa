@@ -1,5 +1,7 @@
 # Bounded cleanup provenance
 
+Deferred under the later fourteen-target cleanup priority. Product source is preserved at pushed commit `11a5c7d802e7aa920e45f75a44b8cc71e052828a` and reversed by `4226df2cfb336904febca0c7540b7fa116d14e22`. Historical tests and measurements remain evidence, not a feature in the current cleanup candidate. See `selected-cleanup-requirements.md` for the active scope.
+
 The original cleanup owner has an empty index and retained tracked edits. The
 legacy whole-scan diagnostic rejects its large tracked content at the 16 MiB
 budget (HTTP 409, correlation 4562bdef-8e92-4318-8884-51ebbb1145a8). That guard
