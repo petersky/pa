@@ -59,7 +59,11 @@ async def list_schedules(request: Request, cursor: str | None = Query(default=No
     principal = owner(request)
     current = scheduler(request)
     page = await call(current.ledger.list_page, principal, cursor=cursor, limit=limit)
-    return {**page, 'health':current.health()}
+    health = current.health()
+    delivery = await call(current.ledger.delivery_health, principal, time.time())
+    health.update(delivery)
+    health['overdue'] = health['worker_overdue'] or delivery['overdue_delivery_count'] > 0
+    return {**page, 'health':health}
 
 
 @router.get('/{schedule_id}/history')
