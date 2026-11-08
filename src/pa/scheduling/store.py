@@ -382,3 +382,18 @@ class Ledger:
         with self.connect() as db:
             self._get(db, owner, sid)
             return self._summary(db, sid)
+
+    def delivery_health(self, owner, now):
+        """Unaccepted past-due deliveries across all of this owner's pages.
+
+        Backoff and exhaustion do not erase overdue delivery. Paused/deleted
+        schedules are excluded until actionable again; acceptance clears it.
+        """
+        with self.connect() as db:
+            row = db.execute("""SELECT COUNT(*) AS overdue_delivery_count,
+              MIN(json_extract(o.envelope,'$.due_at')) AS oldest_overdue_due_at
+              FROM occurrences o JOIN schedules s ON s.id=o.schedule_id
+              WHERE s.owner=? AND s.deleted=0 AND json_extract(s.spec,'$.enabled')=1
+                AND o.state IN ('pending','delivering','failed')
+                AND json_extract(o.envelope,'$.due_at')<?""", (owner, now)).fetchone()
+            return dict(row)

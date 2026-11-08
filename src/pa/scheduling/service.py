@@ -98,8 +98,10 @@ class Scheduler:
                 await self.task
 
     def health(self):
+        worker_overdue = self.last_tick is None or time.time() - self.last_tick > 60
         return {'running': bool(self.task and not self.task.done()), 'last_tick':self.last_tick,
-                'event_error':self.event_error, 'overdue': self.last_tick is None or time.time() - self.last_tick > 60, 'error':self.error}
+                'event_error':self.event_error, 'overdue':worker_overdue,
+                'worker_overdue':worker_overdue, 'error':self.error}
 
     async def deliver_to_destination(self, item):
         destination = Destination.model_validate_json(item['destination'])

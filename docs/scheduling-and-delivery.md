@@ -85,6 +85,16 @@ Commands and source-frontier identities remain durable. Pending/error records ar
 retained for correction. Scheduler health and history remain available when a
 recipient channel fails. There is no permanent model process.
 
+List health combines worker lag with owner-scoped overdue delivery. `worker_overdue`
+retains the 60-second last-tick threshold (and is true before the first tick).
+`overdue_delivery_count` counts pending, in-flight and exhausted failed occurrences
+whose original due time is before now, including retries waiting in backoff;
+`oldest_overdue_due_at` is their earliest due timestamp, or null. The aggregate
+`overdue` is true when either worker lag or overdue delivery exists. Delivery health
+spans all list pages, excludes paused/deleted schedules, and clears on destination
+acceptance without assessing recipient actions. The UI and MCP show the same list
+health. Paused failures remain available in history for correction.
+
 ## Verification and activation
 
 Compressed-clock tests cover transactional occurrence creation, concurrent ticks,
