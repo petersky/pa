@@ -109,7 +109,7 @@ def _get_mcp():
         for name in (
             "backups", "fleet", "sync", "notifications", "projects",
             "pr_supervisor", "items", "goals", "intake", "limbic", "instance",
-            "collaboration", "agent_chat", "telemetry", "health_journal", "browser", "agent_providers",
+            "scheduling", "collaboration", "agent_chat", "telemetry", "health_journal", "browser", "agent_providers",
         ):
             import_module(f"pa.mcp.tools.{name}").register_mcp(guarded, ctx)
         registry.load_entrypoints()
