@@ -1,3 +1,11 @@
+## Actual selected cleanup — 2026-11-08
+
+**1 of the original14 worktrees removed;13 remain guarded.** PR652 is integrated and exact9e10 is activated (PID46326 / startup e30d773a), independently matched to452 source files,453 package RECORD entries and54 unchanged pins. The earlier source/install stages below remain historical.
+
+PA first preserved5 audit documents /106,771 bytes intact, backed by original-card attachment `091b6c0324d84c4ba40017df72228044` (ZIP32,974B / SHA256 `29e172a14801ef134f5eb201ec3db096cc52425bbb6138b1f44c88b9486e5bb7`). Fresh clean-tree and selected safety gates then passed for lease a93e87ea; native followup independently confirms cleaned. Removed-tree du allocation was13,799,424B and concurrent free-space delta14,110,720B; neither proves exclusive physical APFS reclamation. Postcleanup preservation status remains complete.
+
+The [actual fourteen-target ledger](benchmarks/systemic-cleanup-actual-removal-20261108.json) retains every prior outcome and next actor/action. Six data cases, three unique-history cases, one queued-prompt owner, one wrong-branch case and two legacy primary-proof rejections remain open. Dirty/untracked counters accompanying an explicit safety rejection are not clean proof. No global collection, target reset/edit, dropped prompt, repeated install/restart or replay occurred. **All740 findings /181 concerns remain OPEN** under independent acceptance17d034a6; accepted bounded Backup/DB/recovery scopes remain closed.
+
 ## Current cleanup preservation stage — 2026-11-08
 
 All **740 findings / 181 concerns remain open**. PR651 is integrated and its exact package f0ba is activated; the earlier source-stage “not invoked” labels below are historical. The original fourteen selected cleanup attempts produced **0 removed / 0 bytes reclaimed**, with each actual guard result retained in the [current artifact](benchmarks/systemic-cleanup-preservation-20261108.json).
