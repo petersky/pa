@@ -74,6 +74,16 @@ class WorkspaceSelectedCleanupRequest(BaseModel):
     targets: list[WorkspaceCleanupTarget] = Field(min_length=1, max_length=32)
 
 
+class WorkspaceUntrackedPreservationRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    target: WorkspaceCleanupTarget
+    relative_path: str = Field(min_length=1, max_length=255)
+    attachment_card_id: str = Field(min_length=1, max_length=200)
+    attachment_id: str = Field(pattern=r'^[0-9a-f]{32}$')
+    attachment_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    action: Literal['preserve', 'status']
+
+
 class WorkspaceMaterializationRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=200)
     card_id: str = Field(min_length=1, max_length=200)
@@ -462,6 +472,78 @@ async def collect_selected_workspaces(
                 agent._admitting_sessions.difference_update(sessions)
         key = hashlib.sha256(json.dumps([principal, body.model_dump(mode="json")], sort_keys=True).encode()).hexdigest()
         return await runtime.run_owned("workspace-cleanup:" + key, selected_cleanup)
+
+
+@router.post('/workspaces/preserve-selected-untracked')
+async def preserve_selected_untracked(request: Request, body: WorkspaceUntrackedPreservationRequest) -> dict:
+    """Retain one fully attachment-backed directory outside an idle terminal tree."""
+    from pathlib import Path
+    from pa.repository.untracked_preservation import UntrackedPreservation
+    ctx = request.app.state.ctx
+    agent = ctx.require_service('instance_agent')
+    manager = agent.workspace_manager
+    runtime = ctx.require_service('async_runtime')
+    user = require_user(request)
+    principal = get_principal_id(request)
+    service = UntrackedPreservation(manager)
+
+    async def owned():
+        if body.action == 'status':
+            return await runtime.run_blocking('workspace.untracked_preservation_status', service.operate,
+                target=body.target, relative_path=body.relative_path, attachment_path=Path('.'),
+                attachment_sha256=body.attachment_sha256, principal=principal, action='status')
+        try:
+            lease = (await runtime.run_blocking('workspace.preservation_lease_read',
+                manager.selected_cleanup_leases, [body.target]))[0]
+        except WorkspaceProvisioningError as exc:
+            raise HTTPException(409, str(exc)) from None
+        if lease.session_id in agent._admitting_sessions:
+            raise HTTPException(409, 'Exact preservation owner is being admitted')
+        agent._admitting_sessions.add(lease.session_id)
+        try:
+            live = agent.get(lease.session_id)
+            if live is not None and not live._closed:
+                raise HTTPException(409, 'Exact preservation owner has a live runtime')
+            owner = await runtime.run_blocking('workspace.preservation_owner_read',
+                agent.store.get_session, lease.session_id)
+            durable = (owner.config_json or {}).get('durable_runtime') if owner else None
+            if (not owner or owner.card_id != lease.card_id
+                    or lease.id not in (owner.execution_binding or {}).get('lease_ids', [])
+                    or not isinstance(durable, dict) or 'in_flight' not in durable
+                    or durable['in_flight'] is not None or durable.get('queued_prompts') != []):
+                raise HTTPException(409, 'Exact bound owner idle evidence is unavailable')
+            if owner.principal_id not in {None, principal} and getattr(user, 'role', None) != 'admin':
+                raise HTTPException(403, 'Preservation owner belongs to another principal')
+
+            def preserve():
+                from pa.modules.items import _card_attachment_or_404, _attachment_store
+                _, attachment = _card_attachment_or_404(request, body.attachment_card_id, body.attachment_id)
+                if attachment.sha256 != body.attachment_sha256:
+                    raise WorkspaceProvisioningError('Durable preservation attachment identity changed')
+                # Require an already local durable blob; no remote fetch or guessed path.
+                path = _attachment_store(request).blob_path(attachment.sha256)
+                if not path.is_file():
+                    raise WorkspaceProvisioningError('Durable preservation attachment is not locally available')
+                latest = agent.store.get_session(lease.session_id)
+                state = (latest.config_json or {}).get('durable_runtime') if latest else None
+                if (not latest or latest.card_id != owner.card_id
+                        or latest.principal_id != owner.principal_id
+                        or latest.execution_binding != owner.execution_binding
+                        or not isinstance(state, dict) or 'in_flight' not in state
+                        or state['in_flight'] is not None or state.get('queued_prompts') != []):
+                    raise WorkspaceProvisioningError('Exact preservation owner changed before the effect')
+                return service.operate(target=body.target, relative_path=body.relative_path,
+                    attachment_path=path, attachment_sha256=attachment.sha256,
+                    principal=principal, action='preserve')
+            try:
+                return await runtime.run_blocking('workspace.preserve_untracked', preserve,
+                    timeout=30.0, wait_for_completion=True)
+            except (WorkspaceProvisioningError, ValueError, KeyError) as exc:
+                raise HTTPException(409, str(exc)) from None
+        finally:
+            agent._admitting_sessions.discard(lease.session_id)
+    key = hashlib.sha256(json.dumps([principal, body.model_dump(mode='json')], sort_keys=True).encode()).hexdigest()
+    return await runtime.run_owned('workspace-preserve-untracked:' + key, owned)
 
 
 @router.post("/workspaces/reconcile")
