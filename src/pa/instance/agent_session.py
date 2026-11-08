@@ -5314,6 +5314,17 @@ class AgentSessionManager:
         if self._resume_on_start:
             await self._resume_restart_handoffs()
 
+    async def dismiss_restart_handoff(
+        self, *, session_id: str, handoff_id: str
+    ) -> RestartHandoff:
+        """Retire a failed receipt without restarting anything or sending a prompt."""
+        return await self._offload(
+            "sqlite.restart_handoff_dismiss",
+            self.store.dismiss_restart_handoff,
+            handoff_id,
+            session_id=session_id,
+        )
+
     async def retry_restart_handoff(
         self, *, session_id: str, handoff_id: str
     ) -> RestartHandoff:

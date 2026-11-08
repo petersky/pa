@@ -27,6 +27,7 @@ from pa.modules.agent_chat import (
     recover_session as recover_normal_session,
     request_restart_handoff as request_normal_restart_handoff,
     retry_restart_handoff as retry_normal_restart_handoff,
+    dismiss_restart_handoff as dismiss_normal_restart_handoff,
 )
 from pa.modules.fleet import (
     AssignedRestartHandoffBody,
@@ -2007,3 +2008,50 @@ def test_pending_restart_blocks_card_done_until_original_prompt_completes(tmp_pa
     assert store.create_restart_handoff(receipt).id == receipt.id
     with pytest.raises(CompletionConflict, match="exact_session_closed"):
         store.create_restart_handoff(RestartHandoff(session_id=session.id, idempotency_key="new", continuation_prompt_id="new-exact"))
+
+
+def test_dismiss_route_is_owned_refuses_live_handoffs_and_unblocks_session(tmp_path: Path) -> None:
+    store = CardProjection(tmp_path / "pa.db")
+    session = store.save_session(AgentSession(id="dismiss-me", agent_name="codex", principal_id="user:owner"))
+
+    def make(key: str, status: str) -> RestartHandoff:
+        return store.create_restart_handoff(RestartHandoff(
+            session_id=session.id, idempotency_key=key, continuation_prompt="old work",
+            continuation_prompt_id=f"{key}-prompt", status=status, error="boom" if status == "failed" else None,
+            failure_stage="restarting" if status == "failed" else None))
+
+    failed = make("old-failure", "failed")
+
+    async def dismiss(**kw):
+        return store.dismiss_restart_handoff(kw["handoff_id"], session_id=kw["session_id"])
+
+    manager = SimpleNamespace(store=store, get=lambda _: None, dismiss_restart_handoff=dismiss)
+    request = MagicMock()
+    request.app.state.ctx.settings.auth_required = True
+    request.state.user.role = "member"
+    assert store.pending_restart_continuation(session_id=session.id)
+
+    with (
+        patch("pa.modules.agent_chat._require_session_traffic_ready", return_value=manager),
+        patch("pa.modules.agent_chat.get_principal_id", return_value="user:other"),
+        pytest.raises(HTTPException) as denied,
+    ):
+        asyncio.run(dismiss_normal_restart_handoff(request, session.id, failed.id))
+    assert denied.value.status_code == 403
+    assert store.get_restart_handoff(failed.id).status == "failed"
+
+    with (
+        patch("pa.modules.agent_chat._require_session_traffic_ready", return_value=manager),
+        patch("pa.modules.agent_chat.get_principal_id", return_value="user:owner"),
+    ):
+        result = asyncio.run(dismiss_normal_restart_handoff(request, session.id, failed.id))
+        assert result["status"] == "dismissed"
+        assert result["observation"]["phase"] == "dismissed"
+        assert not store.pending_restart_continuation(session_id=session.id)
+
+        live = make("in-flight", "quiescing")
+        with pytest.raises(HTTPException) as refused:
+            asyncio.run(dismiss_normal_restart_handoff(request, session.id, live.id))
+        assert refused.value.status_code == 409
+        assert store.get_restart_handoff(live.id).status == "quiescing"
+        assert store.pending_restart_continuation(session_id=session.id)

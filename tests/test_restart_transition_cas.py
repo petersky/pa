@@ -96,3 +96,64 @@ def test_observation_uses_current_pause_and_exact_prompt_worker(tmp_path):
     assert running["phase"] == "running"
     assert running["worker_state"] == "active"
     assert running["effect_state"] == "pending"
+
+
+def test_dismiss_retires_only_failed_handoff_and_unblocks_pending_check(tmp_path):
+    store = CardProjection(tmp_path / "cards.db")
+    failed = receipt(store, status="failed", error="restart blew up", failure_stage="restarting", reason_code="restart_operation_failed")
+    assert store.pending_restart_continuation(session_id=failed.session_id)
+
+    dismissed = store.dismiss_restart_handoff(failed.id, session_id=failed.session_id)
+
+    assert dismissed.status == "dismissed"
+    assert dismissed.reason_code == "operator_dismissed"
+    # Audit trail survives: same row, prompt, original error and prior state.
+    assert dismissed.id == failed.id
+    assert dismissed.continuation_prompt == "Continue"
+    assert dismissed.error == "restart blew up"
+    assert dismissed.delivered_at is None
+    assert dismissed.transition_history[-1]["status"] == "failed"
+    assert dismissed.transition_history[-1]["reason_code"] == "restart_operation_failed"
+    # No claim of success or of a confirmed effect.
+    assert dismissed.observation["phase"] == "dismissed"
+    assert dismissed.observation["effect_state"] == "unknown"
+    assert dismissed.observation["next_action"] is None
+    # It no longer blocks close/cleanup/completion, by session or by card.
+    assert not store.pending_restart_continuation(session_id=failed.session_id)
+    # Idempotent, and survives reopening the database.
+    assert store.dismiss_restart_handoff(failed.id, session_id=failed.session_id) == dismissed
+    assert CardProjection(tmp_path / "cards.db").get_restart_handoff(failed.id).status == "dismissed"
+    # It cannot be retried or revived, and does not count as a competing handoff.
+    with pytest.raises(ValueError, match="dismissed"):
+        store.retry_restart_handoff(failed.id, session_id=failed.session_id)
+    with pytest.raises(RestartTransitionConflict, match="Illegal"):
+        advance(store, dismissed, "requested")
+
+
+@pytest.mark.parametrize("status", ["requested", "waiting_for_turn_end", "quiescing", "restarting", "resuming", "continuation_queued"])
+def test_dismiss_refuses_in_flight_handoffs(tmp_path, status):
+    store = CardProjection(tmp_path / "cards.db")
+    live = receipt(store, status=status)
+    with pytest.raises(ValueError, match="Only a failed"):
+        store.dismiss_restart_handoff(live.id, session_id=live.session_id)
+    assert store.get_restart_handoff(live.id).status == status
+    assert store.pending_restart_continuation(session_id=live.session_id)
+
+
+def test_dismiss_is_scoped_to_its_session_and_leaves_delivered_alone(tmp_path):
+    store = CardProjection(tmp_path / "cards.db")
+    failed = receipt(store, status="failed", error="x", failure_stage="restarting")
+    with pytest.raises(ValueError, match="not found"):
+        store.dismiss_restart_handoff(failed.id, session_id="some-other-session")
+    assert store.get_restart_handoff(failed.id).status == "failed"
+    delivered = store.create_restart_handoff(RestartHandoff(session_id="exact-session", idempotency_key="twice", continuation_prompt="Continue", continuation_prompt_id="p2", instance_id="owner", status="continuation_delivered"))
+    with pytest.raises(ValueError, match="Only a failed"):
+        store.dismiss_restart_handoff(delivered.id, session_id="exact-session")
+
+
+def test_dismissed_handoff_does_not_block_a_new_handoff(tmp_path):
+    store = CardProjection(tmp_path / "cards.db")
+    failed = receipt(store, status="failed", error="x", failure_stage="restarting")
+    store.dismiss_restart_handoff(failed.id, session_id=failed.session_id)
+    fresh = store.create_restart_handoff(RestartHandoff(session_id="exact-session", idempotency_key="fresh", continuation_prompt="Again", continuation_prompt_id="p3", instance_id="owner"))
+    assert fresh.status == "requested"
