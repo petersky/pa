@@ -1,0 +1,19 @@
+{
+  "contract": "pa.lossless-retained-parent-delta/v2",
+  "bytes": 12603,
+  "sha256": "dff53240b19f984d4ff652e11633c52855efe0df101175fca43f8ad4ea8c11e2",
+  "ordered_chunks": [
+    {
+      "path": "docs/benchmarks/systemic-cleanup-preservation-20261108.raw.json.gz.part001",
+      "bytes": 12603,
+      "sha256": "dff53240b19f984d4ff652e11633c52855efe0df101175fca43f8ad4ea8c11e2"
+    }
+  ],
+  "retained_parent": {
+    "manifest_path": "docs/benchmarks/systemic-selected-cleanup-20261108.manifest.json",
+    "bytes": 1469396,
+    "sha256": "9140e45f2280bffec3dc0fed682f75f8dc867d7495c975c822ebc34f889eb570"
+  },
+  "public_inputs": 1,
+  "local_hash_only_inputs": 138
+}

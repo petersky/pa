@@ -259,6 +259,28 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         )
 
     @mcp.tool()
+    async def workspace_preserve_selected_untracked(
+        target: dict[str, Any], relative_path: str, attachment_card_id: str,
+        attachment_id: str, attachment_sha256: str,
+        action: Literal['preserve', 'status'],
+    ) -> dict:
+        """Relocate one exact attachment-backed directory intact, without collecting.
+
+        Fixed bounds: one flat directory, at most 64 regular files/16 MiB.
+        Requires a durable ZIP with preservation-manifest.json, exact owner
+        idle/lease/HEAD proof and no open files. No reset, index or ref edits.
+        After an uncertain response call status with the identical arguments;
+        never repeat preserve. Selected cleanup still requires a clean tree.
+        """
+        runtime = ctx.require_service('async_runtime')
+        return await runtime.run_blocking('mcp.workspace_preserve_selected_untracked_http',
+            request_local_pa, settings, 'POST', '/api/workspaces/preserve-selected-untracked',
+            json={'target': target, 'relative_path': relative_path,
+                  'attachment_card_id': attachment_card_id, 'attachment_id': attachment_id,
+                  'attachment_sha256': attachment_sha256, 'action': action},
+            timeout_seconds=45.0, timeout=60.0)
+
+    @mcp.tool()
     async def workspace_materialization_repair(
         lease_id: str, session_id: str, card_id: str, expected_fence: int,
         expected_head: str, idempotency_key: str,
