@@ -1,0 +1,292 @@
+{
+  "contract": "pa.loaded671-maintenance-attribution/v1",
+  "assembled_at": "2026-11-08T20:24:42.023182+00:00",
+  "read_interval": {
+    "a": {
+      "current_time": "2026-11-08 20:21:59 UTC"
+    },
+    "b": {
+      "current_time": "2026-11-08 20:21:59 UTC"
+    }
+  },
+  "loaded_proof": {
+    "installed_identity": "sha256:6dd525876777ff732d353afc778f6e06bf9935bc8f26bc364ec572b413327f99",
+    "entries": 453,
+    "loaded_pid": 4234,
+    "loaded_startup": "24a13e1d-72d2-4d8d-9527-385ae741be4b",
+    "loaded_owner_identity": "sha256:6dd525876777ff732d353afc778f6e06bf9935bc8f26bc364ec572b413327f99",
+    "sync_consistent": true,
+    "acceptance": false
+  },
+  "source_parent": "6f4fdd9b721fe860b0549454c1fdda5afb02bc46",
+  "lease_fence": 395,
+  "pr671": {
+    "head": "374b1dd9fca72bc1235f9f786a53082fa7a44f76",
+    "merge": "49c8931a1f825c929860a8b523b3e59bb5690d82",
+    "tree": "88be740f73652562a2d062297044649c25205ce3",
+    "head_ci": 42517997820,
+    "main_ci": 42518532804,
+    "checks": "5 terminal success each",
+    "watch": "4e12f9c0-7edd-42f4-9fe9-6e061f3e6a7f"
+  },
+  "limits": [
+    "Natural collection one invocation579.512ms:3Gitcalls400.147ms/fetch364.023ms,lockhold405.535ms/wait.002875ms,SQL173.647ms. Inclusive intervals may overlap; not historical proof or a distribution.",
+    "Native maintenance3768.730ms; projection before431439872B/free229376B. Existing health/reclamation retained.",
+    "Private151MB database is smaller than native431MB;3 repetitions each,100 durable FULL writes per repetition. Exact retained row count/length,100 updates,integrity and actual reclamation asserted. Native busy/disk/GIL remain unseparated.",
+    "Incremental experiment enables auto_vacuum before tables and substitutes exhausted PRAGMA only in fixture. Existing database conversion cost,transaction/restart/cancellation/large fragmented migration and B-tree defragmentation parity remain unverified. No product maintenance change or skip.",
+    "First raw pin comparison failed formatting/order; normalized55versions identical. Read-only journal lookup rejected oversized page limits422; original overlap report submission receipt remains unknown, no new-key replay.",
+    "No whole-card acceptance;752findings184concernsOPEN;independent17d/userlocal unchanged; accepted boundedBackup/DB/recovery/scheduling scopes stayclosed."
+  ],
+  "local_hashes": {
+    "pr671-loaded-native-snapshot.json": {
+      "bytes": 747825,
+      "sha256": "3cacac2ec73bde06815b1b496e19e91dd6820b77e2b2c35cb59b671201918509"
+    },
+    "pr671-install.log": {
+      "bytes": 443,
+      "sha256": "24ef6dd5ca0f6851e43e584df8c06e24c35a11cdbe1b156cf124b83f40bff590"
+    },
+    "maintenance-contention-first.log": {
+      "bytes": 2392,
+      "sha256": "dd6e59f177530e821aa9f2103a8cc08c9aa28c5b0358dd9958d0ef906094e654"
+    },
+    "maintenance-contention-incremental.log": {
+      "bytes": 3292,
+      "sha256": "d595ef3f66a433547cc380dc04a76d3709c7818ee4ccb17fbdd011391aafb92a"
+    }
+  },
+  "full_archive": {
+    "path": "systemic-loaded671-maintenance-20261108.raw.json.gz",
+    "bytes": 131226,
+    "sha256": "55cf184cb59a573297aff2712e42e0a87f43f32a7ab890e09ce1a4d325cd7f8c",
+    "decoded_bytes": 2998929,
+    "decoded_sha256": "34dc26c569b52b6624aa0ae2b4910d978a9c841fc5a1346131da31897ed3e228"
+  },
+  "native_operation_count": 89,
+  "private_comparison": {
+    "baseline": [
+      {
+        "foreground": {
+          "samples": 100,
+          "max": 560.493,
+          "p50": 0.024,
+          "p95": 0.03,
+          "p99": 0.071
+        },
+        "vacuum_ms": 604.404709,
+        "before": {
+          "page_count": 36877,
+          "page_size": 4096,
+          "freelist_count": 71,
+          "bytes": 151048192,
+          "free_bytes": 290816
+        },
+        "after": {
+          "page_count": 36806,
+          "page_size": 4096,
+          "freelist_count": 0,
+          "bytes": 150757376,
+          "free_bytes": 0
+        }
+      },
+      {
+        "foreground": {
+          "samples": 100,
+          "max": 476.65,
+          "p50": 0.035,
+          "p95": 0.054,
+          "p99": 0.331
+        },
+        "vacuum_ms": 511.67425,
+        "before": {
+          "page_count": 36877,
+          "page_size": 4096,
+          "freelist_count": 71,
+          "bytes": 151048192,
+          "free_bytes": 290816
+        },
+        "after": {
+          "page_count": 36806,
+          "page_size": 4096,
+          "freelist_count": 0,
+          "bytes": 150757376,
+          "free_bytes": 0
+        }
+      },
+      {
+        "foreground": {
+          "samples": 100,
+          "max": 472.444,
+          "p50": 0.06,
+          "p95": 0.085,
+          "p99": 0.126
+        },
+        "vacuum_ms": 524.052083,
+        "before": {
+          "page_count": 36877,
+          "page_size": 4096,
+          "freelist_count": 71,
+          "bytes": 151048192,
+          "free_bytes": 290816
+        },
+        "after": {
+          "page_count": 36806,
+          "page_size": 4096,
+          "freelist_count": 0,
+          "bytes": 150757376,
+          "free_bytes": 0
+        }
+      }
+    ],
+    "incremental_experiment": [
+      {
+        "foreground": {
+          "samples": 100,
+          "max": 1.364,
+          "p50": 0.056,
+          "p95": 0.064,
+          "p99": 0.078
+        },
+        "vacuum_ms": 0.69425,
+        "before": {
+          "page_count": 36923,
+          "page_size": 4096,
+          "freelist_count": 71,
+          "bytes": 151236608,
+          "free_bytes": 290816
+        },
+        "after": {
+          "page_count": 36851,
+          "page_size": 4096,
+          "freelist_count": 0,
+          "bytes": 150941696,
+          "free_bytes": 0
+        }
+      },
+      {
+        "foreground": {
+          "samples": 100,
+          "max": 1.348,
+          "p50": 0.054,
+          "p95": 0.066,
+          "p99": 0.075
+        },
+        "vacuum_ms": 0.693417,
+        "before": {
+          "page_count": 36923,
+          "page_size": 4096,
+          "freelist_count": 71,
+          "bytes": 151236608,
+          "free_bytes": 290816
+        },
+        "after": {
+          "page_count": 36851,
+          "page_size": 4096,
+          "freelist_count": 0,
+          "bytes": 150941696,
+          "free_bytes": 0
+        }
+      },
+      {
+        "foreground": {
+          "samples": 100,
+          "max": 1.348,
+          "p50": 0.053,
+          "p95": 0.066,
+          "p99": 0.086
+        },
+        "vacuum_ms": 0.971792,
+        "before": {
+          "page_count": 36923,
+          "page_size": 4096,
+          "freelist_count": 71,
+          "bytes": 151236608,
+          "free_bytes": 290816
+        },
+        "after": {
+          "page_count": 36851,
+          "page_size": 4096,
+          "freelist_count": 0,
+          "bytes": 150941696,
+          "free_bytes": 0
+        }
+      }
+    ]
+  },
+  "final_benchmark_contract_runs": {
+    "full": {
+      "sha256": "f23d3c6bcd79f8f0f22a7a6f0b15828757d36735b837c0744dd16810ac2d5057",
+      "samples": 3,
+      "writes": 300,
+      "write_latency": [
+        {
+          "samples": 100,
+          "max": 469.311,
+          "p50": 0.087,
+          "p95": 0.115,
+          "p99": 0.859
+        },
+        {
+          "samples": 100,
+          "max": 471.643,
+          "p50": 0.024,
+          "p95": 0.032,
+          "p99": 0.065
+        },
+        {
+          "samples": 100,
+          "max": 472.348,
+          "p50": 0.061,
+          "p95": 0.089,
+          "p99": 0.361
+        }
+      ],
+      "maintenance_status": [
+        "ok",
+        "deferred",
+        "ok"
+      ],
+      "scope": "Exact published script; prospective incremental excludes existing conversion. Earlier runs retained in archive."
+    },
+    "incremental": {
+      "sha256": "6cf221db56d9969b27e32058edc287c72a1fbd47bab387d18bc528c9f78838d6",
+      "samples": 3,
+      "writes": 300,
+      "write_latency": [
+        {
+          "samples": 100,
+          "max": 1.355,
+          "p50": 0.054,
+          "p95": 0.068,
+          "p99": 0.081
+        },
+        {
+          "samples": 100,
+          "max": 1.358,
+          "p50": 0.064,
+          "p95": 0.075,
+          "p99": 0.091
+        },
+        {
+          "samples": 100,
+          "max": 1.347,
+          "p50": 0.052,
+          "p95": 0.059,
+          "p99": 0.063
+        }
+      ],
+      "maintenance_status": [
+        "ok",
+        "ok",
+        "ok"
+      ],
+      "scope": "Exact published script; prospective incremental excludes existing conversion. Earlier runs retained in archive."
+    }
+  },
+  "first_final_fixture_failure": {
+    "sha256": "aa183ef2d011c2ac16a990378cf5529063f7ceafc901eb127499e8f1b4749995",
+    "bytes": 8484,
+    "meaning": "First final-script baseline completed reclamation but failed overstrict fixture status==ok because concurrent post-VACUUM checkpoint deferred busy. Corrected fixture records busy/deferred honestly and still asserts zero free pages, reduced file size, integrity, all retained rows and100 durable updates. No product code or deadline changed."
+  },
+  "benchmark_script_sha256": "a1fe61ea510f5a6994713d23b980a6d8cb0e9ea33cea6ec70cc58f9711a85c94"
+}

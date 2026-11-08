@@ -1,3 +1,15 @@
+## Loaded Git timing and maintenance contention — 2026-11-08
+
+**752 findings / 184 concerns remain open.** [Full evidence](benchmarks/systemic-loaded671-maintenance-20261108.json) preserves the native operation inventory and all private samples in a lossless archive. No earlier row or failure was removed.
+
+PR671 is integrated as49c8931a with equal reviewed tree88be740f and five successful checks each on head/main. The newly authorized exact wheel is now loaded on macbook: package6dd525, PID4234/startup24a13. All453 package entries independently match the wheel;54 dependency versions are unchanged. The managed handoff resumed this same session. This establishes activation, not performance acceptance.
+
+One natural collection call took579.512ms: three Git calls used400.147ms, including364.023ms in fetch. Repositorylock hold405.535ms and wait0.002875ms separate held work from contention; SQL173.647ms and CPU27.257ms remain. Inclusive phases may overlap. This one sample cannot explain historical tails or establish percentiles.
+
+Native maintenance remains3768.730ms. Its projection starts at431439872B with229376B free pages. Three private151MB baseline databases each reclaim290816B using unchanged full VACUUM while retaining32704 blobs and100 durable FULL synchronous updates. Foreground maxima560.493/476.650/472.444ms reproduce interference; full VACUUM604.405/511.674/524.052ms remains. A separately seeded incremental-auto-vacuum experiment reclaims all free pages with write maxima1.364/1.348/1.348ms. It excludes conversion of existing databases and B-tree defragmentation parity; it is not a product repair or deployed result. No production maintenance was triggered and no health/reclamation checks or deadlines were skipped.
+
+Next work is safe existing-database conversion and crash/concurrency/reclamation validation. All native/provider/peer/log/foreground/background/startup/drain and independent17d acceptance requirements remain. Earlier status sections below are immutable history; this overlay supersedes their deployment labels.
+
 ## Active 1.6.4 evidence and Git subprocess phases — 2026-11-08
 
 **752 findings / 184 concerns remain open.** All751 earlier rows and stage histories remain. [Complete evidence](benchmarks/systemic-workspace-git-phases-20261108.json) records native observations, exact source/instance provenance, all operation distributions and the current source verification.
