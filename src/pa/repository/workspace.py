@@ -26,8 +26,22 @@ from urllib.parse import urlsplit, urlunsplit
 from pydantic import BaseModel, Field, field_validator
 
 from pa.config import Settings
+from pa.core.operation_budget import measured_lock
 from pa.core.sqlite_metrics import ObservedConnection, derived_connection
 from pa.domain.models import Repository
+
+
+class _RepositoryFileLock:
+    """Adapt the existing blocking flock without changing its ownership."""
+
+    def __init__(self, fd: int):
+        self.fd = fd
+
+    def acquire(self):
+        fcntl.flock(self.fd, fcntl.LOCK_EX)
+
+    def release(self):
+        fcntl.flock(self.fd, fcntl.LOCK_UN)
 
 
 def workspace_blocks_admission(
@@ -465,11 +479,14 @@ class WorkspaceManager:
         lock_path = self.lock_root / f"{repo_key}.lock"
         self._assert_managed_path(lock_path)
         with lock_path.open("a+") as handle:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            try:
+            # Previously raw flock: observe wait/hold/unlock, but retain its
+            # existing blocking behavior and the caller's original deadline.
+            with measured_lock(
+                _RepositoryFileLock(handle.fileno()),
+                name="workspace.repository_file", filesystem=True,
+                track_deadline=False,
+            ):
                 yield
-            finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def _git(
         self,

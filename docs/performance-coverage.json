@@ -261277,14 +261277,385 @@
       "cause_classification": "confirmed_amplification_private_comparison_live_tail_partially_attributed",
       "cause": "Per-notice full model reads for scalar labels. Live SQL wall732.578ms/CPU147.144ms does not prove sole cause.",
       "implemented": "Bounded page scalar labels; same realm/global-session semantics/fallbacks; routing/lifecycle unchanged.",
-      "merged": [],
+      "merged": [
+        "https://github.com/petersky/pa/pull/662"
+      ],
       "deployed": "uninstalled source",
       "retested": "152tests;30alternating response-equal pairs;600SELECTs to3; mixed100iterations zero observed violations/9600ordered events.",
       "resolution": "open",
       "next_actor": "this fresh session; independent scheduler/user:local acceptance",
-      "next_action": "Protected integration; separate exact activation/retest and all remaining original criteria.",
+      "next_action": "Exact reviewed activation/deployed retests; live notice offCPU attribution and all remaining original criteria. No blanketclosure.",
       "artifact": "docs/benchmarks/systemic-fresh-context-notification-labels-20261108.json",
-      "report_id": "25f02f12-9ec3-4fe8-bd91-e39dfc1f0823"
+      "report_id": "25f02f12-9ec3-4fe8-bd91-e39dfc1f0823",
+      "integration_evidence": {
+        "head": "8557d93b2ee9ecb8e2ca68b58eb176038b53a945",
+        "merge": "17c4b31f71fe7daa672359a9b4f56471746f2685",
+        "equal_tree": "4039aaf852e1cb36c17ce5c04f3b5d80fa42bc50",
+        "watch": "3b2b3ac5-c58e-4560-bcc0-86fd2279ee5d",
+        "head_ci": 42511124073,
+        "main_ci": 42511639175,
+        "head_and_main": "5terminalsuccess each"
+      }
+    },
+    {
+      "id": "runtime-followup:scheduling.UserDirectory",
+      "kind": "runtime_followup",
+      "finding": "scheduling.UserDirectory",
+      "family": "scheduling",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "existing_source_owner": "4acf4af8-7938-4391-a4b9-3c85b738867a (accepted bounded scope stays closed)",
+      "measurement": {
+        "snapshot_observed_at": "2026-11-08T18:37:47.162Z",
+        "population": "Local process counters/lifetime max and bounded window are distinct; no peer or wholebranch acceptance.",
+        "values": {
+          "submitted": 3,
+          "completed": 3,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "max_runtime_ms": 0.51,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 3,
+            "max": 0.51,
+            "p50": 0.491,
+            "p95": 0.51,
+            "p99": 0.51
+          }
+        }
+      },
+      "cause_classification": "measured_no_500ms_violation_in_snapshot_not_full_branch_acceptance",
+      "implemented": "Existing scheduling implementation; no duplicate repair inferred from this sample.",
+      "merged": [],
+      "deployed": "Existing baseab46641 byte-matched to startup packagea56de; source scheduling semantics not changed here.",
+      "retested": "Passive owner snapshot only; scheduling outcomes/recipient coverage and external channels remain open.",
+      "resolution": "open",
+      "next_actor": "This systemic session for broader performance coverage; existing scheduling owner for its accepted functional scope.",
+      "next_action": "Exercise remaining normal scheduling/recipient/provider/external branches privately and obtain supported deployed measurements; preserve receipt/ownership/admission semantics.",
+      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json"
+    },
+    {
+      "id": "runtime-followup:scheduling.claim",
+      "kind": "runtime_followup",
+      "finding": "scheduling.claim",
+      "family": "scheduling",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "existing_source_owner": "4acf4af8-7938-4391-a4b9-3c85b738867a (accepted bounded scope stays closed)",
+      "measurement": {
+        "snapshot_observed_at": "2026-11-08T18:37:47.162Z",
+        "population": "Local process counters/lifetime max and bounded window are distinct; no peer or wholebranch acceptance.",
+        "values": {
+          "submitted": 3,
+          "completed": 3,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "max_runtime_ms": 13.294,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 3,
+            "max": 13.294,
+            "p50": 2.299,
+            "p95": 13.294,
+            "p99": 13.294
+          }
+        }
+      },
+      "cause_classification": "measured_no_500ms_violation_in_snapshot_not_full_branch_acceptance",
+      "implemented": "Existing scheduling implementation; no duplicate repair inferred from this sample.",
+      "merged": [],
+      "deployed": "Existing baseab46641 byte-matched to startup packagea56de; source scheduling semantics not changed here.",
+      "retested": "Passive owner snapshot only; scheduling outcomes/recipient coverage and external channels remain open.",
+      "resolution": "open",
+      "next_actor": "This systemic session for broader performance coverage; existing scheduling owner for its accepted functional scope.",
+      "next_action": "Exercise remaining normal scheduling/recipient/provider/external branches privately and obtain supported deployed measurements; preserve receipt/ownership/admission semantics.",
+      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json"
+    },
+    {
+      "id": "runtime-followup:scheduling.finish",
+      "kind": "runtime_followup",
+      "finding": "scheduling.finish",
+      "family": "scheduling",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "existing_source_owner": "4acf4af8-7938-4391-a4b9-3c85b738867a (accepted bounded scope stays closed)",
+      "measurement": {
+        "snapshot_observed_at": "2026-11-08T18:37:47.162Z",
+        "population": "Local process counters/lifetime max and bounded window are distinct; no peer or wholebranch acceptance.",
+        "values": {
+          "submitted": 3,
+          "completed": 3,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "max_runtime_ms": 0.798,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 3,
+            "max": 0.798,
+            "p50": 0.724,
+            "p95": 0.798,
+            "p99": 0.798
+          }
+        }
+      },
+      "cause_classification": "measured_no_500ms_violation_in_snapshot_not_full_branch_acceptance",
+      "implemented": "Existing scheduling implementation; no duplicate repair inferred from this sample.",
+      "merged": [],
+      "deployed": "Existing baseab46641 byte-matched to startup packagea56de; source scheduling semantics not changed here.",
+      "retested": "Passive owner snapshot only; scheduling outcomes/recipient coverage and external channels remain open.",
+      "resolution": "open",
+      "next_actor": "This systemic session for broader performance coverage; existing scheduling owner for its accepted functional scope.",
+      "next_action": "Exercise remaining normal scheduling/recipient/provider/external branches privately and obtain supported deployed measurements; preserve receipt/ownership/admission semantics.",
+      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json"
+    },
+    {
+      "id": "runtime-followup:scheduling.get_session",
+      "kind": "runtime_followup",
+      "finding": "scheduling.get_session",
+      "family": "scheduling",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "existing_source_owner": "4acf4af8-7938-4391-a4b9-3c85b738867a (accepted bounded scope stays closed)",
+      "measurement": {
+        "snapshot_observed_at": "2026-11-08T18:37:47.162Z",
+        "population": "Local process counters/lifetime max and bounded window are distinct; no peer or wholebranch acceptance.",
+        "values": {
+          "submitted": 3,
+          "completed": 3,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "max_runtime_ms": 3.637,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 3,
+            "max": 3.637,
+            "p50": 3.418,
+            "p95": 3.637,
+            "p99": 3.637
+          }
+        }
+      },
+      "cause_classification": "measured_no_500ms_violation_in_snapshot_not_full_branch_acceptance",
+      "implemented": "Existing scheduling implementation; no duplicate repair inferred from this sample.",
+      "merged": [],
+      "deployed": "Existing baseab46641 byte-matched to startup packagea56de; source scheduling semantics not changed here.",
+      "retested": "Passive owner snapshot only; scheduling outcomes/recipient coverage and external channels remain open.",
+      "resolution": "open",
+      "next_actor": "This systemic session for broader performance coverage; existing scheduling owner for its accepted functional scope.",
+      "next_action": "Exercise remaining normal scheduling/recipient/provider/external branches privately and obtain supported deployed measurements; preserve receipt/ownership/admission semantics.",
+      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json"
+    },
+    {
+      "id": "runtime-followup:scheduling.open",
+      "kind": "runtime_followup",
+      "finding": "scheduling.open",
+      "family": "scheduling",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "existing_source_owner": "4acf4af8-7938-4391-a4b9-3c85b738867a (accepted bounded scope stays closed)",
+      "measurement": {
+        "snapshot_observed_at": "2026-11-08T18:37:47.162Z",
+        "population": "Local process counters/lifetime max and bounded window are distinct; no peer or wholebranch acceptance.",
+        "values": {
+          "submitted": 1,
+          "completed": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "max_runtime_ms": 3.581,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 3.581,
+            "p50": 3.581,
+            "p95": 3.581,
+            "p99": 3.581
+          }
+        }
+      },
+      "cause_classification": "measured_no_500ms_violation_in_snapshot_not_full_branch_acceptance",
+      "implemented": "Existing scheduling implementation; no duplicate repair inferred from this sample.",
+      "merged": [],
+      "deployed": "Existing baseab46641 byte-matched to startup packagea56de; source scheduling semantics not changed here.",
+      "retested": "Passive owner snapshot only; scheduling outcomes/recipient coverage and external channels remain open.",
+      "resolution": "open",
+      "next_actor": "This systemic session for broader performance coverage; existing scheduling owner for its accepted functional scope.",
+      "next_action": "Exercise remaining normal scheduling/recipient/provider/external branches privately and obtain supported deployed measurements; preserve receipt/ownership/admission semantics.",
+      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json"
+    },
+    {
+      "id": "runtime-followup:scheduling.pending",
+      "kind": "runtime_followup",
+      "finding": "scheduling.pending",
+      "family": "scheduling",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "existing_source_owner": "4acf4af8-7938-4391-a4b9-3c85b738867a (accepted bounded scope stays closed)",
+      "measurement": {
+        "snapshot_observed_at": "2026-11-08T18:37:47.162Z",
+        "population": "Local process counters/lifetime max and bounded window are distinct; no peer or wholebranch acceptance.",
+        "values": {
+          "submitted": 2005,
+          "completed": 2005,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "max_runtime_ms": 134.845,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 25.549,
+            "p50": 0.741,
+            "p95": 1.351,
+            "p99": 3.721
+          }
+        }
+      },
+      "cause_classification": "measured_no_500ms_violation_in_snapshot_not_full_branch_acceptance",
+      "implemented": "Existing scheduling implementation; no duplicate repair inferred from this sample.",
+      "merged": [],
+      "deployed": "Existing baseab46641 byte-matched to startup packagea56de; source scheduling semantics not changed here.",
+      "retested": "Passive owner snapshot only; scheduling outcomes/recipient coverage and external channels remain open.",
+      "resolution": "open",
+      "next_actor": "This systemic session for broader performance coverage; existing scheduling owner for its accepted functional scope.",
+      "next_action": "Exercise remaining normal scheduling/recipient/provider/external branches privately and obtain supported deployed measurements; preserve receipt/ownership/admission semantics.",
+      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json"
+    },
+    {
+      "id": "runtime-followup:scheduling.poll_events",
+      "kind": "runtime_followup",
+      "finding": "scheduling.poll_events",
+      "family": "scheduling",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "existing_source_owner": "4acf4af8-7938-4391-a4b9-3c85b738867a (accepted bounded scope stays closed)",
+      "measurement": {
+        "snapshot_observed_at": "2026-11-08T18:37:47.162Z",
+        "population": "Local process counters/lifetime max and bounded window are distinct; no peer or wholebranch acceptance.",
+        "values": {
+          "submitted": 2005,
+          "completed": 2005,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "max_runtime_ms": 76.01,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 7.154,
+            "p50": 1.815,
+            "p95": 3.478,
+            "p99": 5.052
+          }
+        }
+      },
+      "cause_classification": "measured_no_500ms_violation_in_snapshot_not_full_branch_acceptance",
+      "implemented": "Existing scheduling implementation; no duplicate repair inferred from this sample.",
+      "merged": [],
+      "deployed": "Existing baseab46641 byte-matched to startup packagea56de; source scheduling semantics not changed here.",
+      "retested": "Passive owner snapshot only; scheduling outcomes/recipient coverage and external channels remain open.",
+      "resolution": "open",
+      "next_actor": "This systemic session for broader performance coverage; existing scheduling owner for its accepted functional scope.",
+      "next_action": "Exercise remaining normal scheduling/recipient/provider/external branches privately and obtain supported deployed measurements; preserve receipt/ownership/admission semantics.",
+      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json"
+    },
+    {
+      "id": "runtime-followup:scheduling.recover",
+      "kind": "runtime_followup",
+      "finding": "scheduling.recover",
+      "family": "scheduling",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "existing_source_owner": "4acf4af8-7938-4391-a4b9-3c85b738867a (accepted bounded scope stays closed)",
+      "measurement": {
+        "snapshot_observed_at": "2026-11-08T18:37:47.162Z",
+        "population": "Local process counters/lifetime max and bounded window are distinct; no peer or wholebranch acceptance.",
+        "values": {
+          "submitted": 2005,
+          "completed": 2005,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "max_runtime_ms": 130.389,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 102.825,
+            "p50": 1.478,
+            "p95": 5.247,
+            "p99": 15.866
+          }
+        }
+      },
+      "cause_classification": "measured_no_500ms_violation_in_snapshot_not_full_branch_acceptance",
+      "implemented": "Existing scheduling implementation; no duplicate repair inferred from this sample.",
+      "merged": [],
+      "deployed": "Existing baseab46641 byte-matched to startup packagea56de; source scheduling semantics not changed here.",
+      "retested": "Passive owner snapshot only; scheduling outcomes/recipient coverage and external channels remain open.",
+      "resolution": "open",
+      "next_actor": "This systemic session for broader performance coverage; existing scheduling owner for its accepted functional scope.",
+      "next_action": "Exercise remaining normal scheduling/recipient/provider/external branches privately and obtain supported deployed measurements; preserve receipt/ownership/admission semantics.",
+      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json"
+    },
+    {
+      "id": "runtime-followup:scheduling.tick",
+      "kind": "runtime_followup",
+      "finding": "scheduling.tick",
+      "family": "scheduling",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "existing_source_owner": "4acf4af8-7938-4391-a4b9-3c85b738867a (accepted bounded scope stays closed)",
+      "measurement": {
+        "snapshot_observed_at": "2026-11-08T18:37:47.162Z",
+        "population": "Local process counters/lifetime max and bounded window are distinct; no peer or wholebranch acceptance.",
+        "values": {
+          "submitted": 2005,
+          "completed": 2005,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "max_runtime_ms": 22.983,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 8.038,
+            "p50": 0.774,
+            "p95": 1.404,
+            "p99": 6.272
+          }
+        }
+      },
+      "cause_classification": "measured_no_500ms_violation_in_snapshot_not_full_branch_acceptance",
+      "implemented": "Existing scheduling implementation; no duplicate repair inferred from this sample.",
+      "merged": [],
+      "deployed": "Existing baseab46641 byte-matched to startup packagea56de; source scheduling semantics not changed here.",
+      "retested": "Passive owner snapshot only; scheduling outcomes/recipient coverage and external channels remain open.",
+      "resolution": "open",
+      "next_actor": "This systemic session for broader performance coverage; existing scheduling owner for its accepted functional scope.",
+      "next_action": "Exercise remaining normal scheduling/recipient/provider/external branches privately and obtain supported deployed measurements; preserve receipt/ownership/admission semantics.",
+      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json"
+    },
+    {
+      "id": "concern:workspace-repository-flock-timing",
+      "kind": "concern",
+      "finding": "Repository filesystem lock wait/hold/release missing from worker observations",
+      "family": "workspace",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_observability_gap_contention_cause_unverified",
+      "cause": "Raw repositoryflock was absent from existing numeric observer; native collection3759.58ms/491.787CPU/176.523SQLwall cannot be assigned to lockwait from0unobserved counters.",
+      "implemented": "Same native flock via existing bounded observer/staticworkspace.repository_file label,track_deadlineFalse; existing acquire/release/error semantics retained.",
+      "merged": [],
+      "deployed": "New source uninstalled; runtimea56de unchanged.",
+      "retested": "Native mutual exclusion/body-exception unlock/lock errors close handle/exact wait-hold-release/deadline passivity tests; numeric50pair overhead evidence.",
+      "resolution": "open",
+      "next_actor": "This systemic session; independent17d scheduler/user:local acceptance.",
+      "next_action": "Protected source integration, separate exact activation/scoped native retests; attribute actual wait versus subprocess/IO/CPU without changing deadlines or claiming historical cause.",
+      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json",
+      "report_id": "efb676bb-cac5-49ae-ba7e-0a3d1cb171c5"
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -366537,7 +366908,7 @@
     "prior_complete_bundle": "docs/benchmarks/systemic-installed635-20261101.raw.json.gz",
     "scope": "Source repair of confirmed duplicate index/write amplification only; current runtime635 unchanged; every performance residual and exact17d scheduler acceptance remains open."
   },
-  "current_status": "741findings/182concerns OPEN; fresh sessiond768 source label repair/private verification. Native/fleet acceptance remains open.",
+  "current_status": "751findings/183concerns OPEN; repositoryflock timing source,9new scheduling observations; protected integration/exact activation/fullacceptance remain.",
   "source638_session_wire_stage_20261101": {
     "artifact": "docs/benchmarks/systemic-session-wire638-20261101.json",
     "source_base": "2db5c50f2fa2e841dbeb3d5789abc6c7b5fb135e",
@@ -369529,5 +369900,24 @@
     },
     "artifact": "docs/benchmarks/systemic-fresh-context-notification-labels-20261108.json"
   },
-  "current_status_before_fresh_context": "731rows178concerns OPEN; source resume custody repair, prior integration and first failures preserved; current runtime unchanged, no cleanup success/acceptance."
+  "current_status_before_fresh_context": "731rows178concerns OPEN; source resume custody repair, prior integration and first failures preserved; current runtime unchanged, no cleanup success/acceptance.",
+  "workspace_repository_lock_observations_20261108": {
+    "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json",
+    "scope": "Instrumentation only, not a latency repair or deployed/native contention result. Same acquire/release/blocking/error/deadline behavior. No commands, paths, identifiers or payload retained by lock timeline. Existing64event bound and numericfields reused.",
+    "disposition": {
+      "rows": 751,
+      "concerns": 183,
+      "status": "OPEN; source/CI/integration/exact activation/full native/provider/peer/log/foreground/background acceptance remain",
+      "implemented_not_deployed": true,
+      "accepted_bounded_scopes": "Backup0331/DB89957/recovery5be6 and scheduling4acf remain closed; no broad performance closure inferred.",
+      "acceptance": "independent_agent_v1 requirement17d unpaused; user:local owns acceptance; no self-verification/receipt/human_override/Done.",
+      "residuals": [
+        "Native repositoryflock contention/other offCPU cause unverified; source counters cannot reinterpret earlierzero values.",
+        "Native maintenance4578.515ms includes vacuum1905.981ms and preintegrity1032.627ms; all reclamation/durability/freshhealth requirements retained.",
+        "Collection3759.58ms,provision10170.224ms,provider/bootstrap/peer/log/foreground-background/coldstart/drain gaps remain.",
+        "No install/restart/cleanup/otherworktree/evidence/policy/default/deadline/threshold changes."
+      ]
+    }
+  },
+  "current_status_before_workspace_lock": "741findings/182concerns OPEN; fresh sessiond768 source label repair/private verification. Native/fleet acceptance remains open."
 }
