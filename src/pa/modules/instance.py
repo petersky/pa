@@ -74,8 +74,7 @@ class WorkspaceMaterializationRequest(BaseModel):
     expected_fence: int = Field(gt=0)
     expected_head: str = Field(pattern=r'^[0-9a-f]{40,64}$')
     idempotency_key: str = Field(min_length=1, max_length=200)
-    action: Literal['prepare', 'apply', 'status', 'diagnose', 'diagnose_page']
-    diagnostic_cursor: str | None = Field(default=None, pattern=r'^[0-9a-f]{32}$')
+    action: Literal['prepare', 'apply', 'status', 'diagnose']
     expected_revision: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$')
     quarantine_untracked: bool = False
 
