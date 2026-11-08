@@ -476,7 +476,7 @@ async def collect_selected_workspaces(
 
 @router.post('/workspaces/preserve-selected-untracked')
 async def preserve_selected_untracked(request: Request, body: WorkspaceUntrackedPreservationRequest) -> dict:
-    """Retain one fully attachment-backed directory outside an idle terminal tree."""
+    """Retain one fully attachment-backed file or directory outside an idle terminal tree."""
     from pathlib import Path
     from pa.repository.untracked_preservation import UntrackedPreservation
     ctx = request.app.state.ctx
