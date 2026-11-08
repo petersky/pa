@@ -148,6 +148,24 @@ class WorkspaceLease(BaseModel):
     expires_at: datetime
 
 
+class WorkspaceCleanupTarget(BaseModel):
+    """An explicit comparison against one observed lease, never a GC wildcard."""
+
+    model_config = {"extra": "forbid"}
+    lease_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_fence: int = Field(gt=0)
+    expected_head: str = Field(pattern=r"^[0-9a-f]{40,64}$")
+    expected_updated_at: datetime
+    merged_pr_number: int | None = Field(default=None, gt=0)
+
+    @field_validator("expected_updated_at")
+    @classmethod
+    def aware_timestamp(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("expected_updated_at must include a timezone")
+        return value
+
+
 class ArtifactWorkspaceLease(BaseModel):
     id: str
     session_id: str
@@ -568,6 +586,25 @@ class WorkspaceManager:
                 (repository_id, session_id),
             ).fetchone()
         return self._row(row) if row else None
+
+    def get_by_id(self, lease_id: str) -> WorkspaceLease | None:
+        with derived_connection(self, self._connect) as conn:
+            row = conn.execute("SELECT * FROM workspace_leases WHERE id=?", (lease_id,)).fetchone()
+        return self._row(row) if row else None
+
+    def selected_cleanup_leases(self, targets: list[WorkspaceCleanupTarget]) -> list[WorkspaceLease]:
+        if not 1 <= len(targets) <= 32 or len({t.lease_id for t in targets}) != len(targets):
+            raise WorkspaceProvisioningError("cleanup requires 1-32 distinct explicit targets")
+        leases = []
+        for target in targets:
+            lease = self.get_by_id(target.lease_id)
+            if lease is None:
+                raise WorkspaceProvisioningError("unknown cleanup target: " + target.lease_id)
+            if (lease.fencing_token != target.expected_fence
+                    or lease.updated_at != target.expected_updated_at):
+                raise WorkspaceProvisioningError("stale cleanup target: " + target.lease_id)
+            leases.append(lease)
+        return leases
 
     def list(
         self, *, card_id: str | None = None, include_cleaned: bool = True,
@@ -1384,7 +1421,9 @@ class WorkspaceManager:
         *,
         now: datetime | None = None,
         active_session_ids: set[str] | None = None,
-    ) -> dict[str, int]:
+        targets: list[WorkspaceCleanupTarget] | None = None,
+        merged_proofs: dict[str, dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         now = now or datetime.now(UTC)
         active_session_ids = active_session_ids or set()
         result = {
@@ -1394,9 +1433,20 @@ class WorkspaceManager:
             "transient_retry": 0,
             "retained": 0,
         }
+        selected = {t.lease_id: t for t in targets} if targets is not None else None
+        leases_to_check = (self.selected_cleanup_leases(targets) if targets is not None
+                           else self.list(include_cleaned=False))
+        outcomes: dict[str, dict[str, Any]] = {}
+        if selected is not None:
+            result["targets"] = []
         candidates: dict[str, list[WorkspaceLease]] = {}
-        for lease in self.list(include_cleaned=False):
+        for lease in leases_to_check:
+            if selected is not None:
+                outcomes[lease.id] = {"lease_id": lease.id, "state": "retained",
+                    "reason": "existing completion, expiry or active-owner guard", "reclaimed_bytes": 0}
             if lease.state == "cleaned":
+                if selected is not None:
+                    outcomes[lease.id].update(state="already_cleaned", reason=None)
                 continue
             if (
                 lease.session_id in active_session_ids
@@ -1412,6 +1462,30 @@ class WorkspaceManager:
             with self._repository_lock(Path(cache_path).name):
                 refresh_error = self._refresh_origin_for_cleanup(Path(cache_path))
                 for lease in leases:
+                    allocated = free_before = None
+                    if selected is not None:
+                        try:
+                            # Provisioning uses this same repository lock. Compare
+                            # durable ownership again after both lock and fetch waits.
+                            lease = self.selected_cleanup_leases([selected[lease.id]])[0]
+                            tree = self._assert_managed_path(Path(lease.worktree_path))
+                            if not tree.is_dir() or Path(lease.worktree_path).is_symlink():
+                                raise WorkspaceProvisioningError("selected worktree is missing or unsafe")
+                            self._verify_worktree(Path(lease.cache_path), tree, lease)
+                            head = self._git("-C", str(tree), "rev-parse", "--verify", "HEAD").stdout.strip()
+                            outcomes[lease.id]["observed_head"] = head
+                            if head != selected[lease.id].expected_head:
+                                raise WorkspaceProvisioningError("selected HEAD changed")
+                            # Report measured removed allocation and the concurrent
+                            # filesystem delta separately (APFS/shared writes differ).
+                            usage = subprocess.run(["du", "-sk", str(tree)], capture_output=True,
+                                                   text=True, timeout=30, check=True)
+                            allocated = int(usage.stdout.split()[0]) * 1024
+                            free_before = shutil.disk_usage(tree).free
+                        except Exception as exc:
+                            outcomes[lease.id].update(state="rejected", reason=self._redact_error(str(exc))[:1000])
+                            result["blocked"] += 1
+                            continue
                     if refresh_error:
                         self._block_cleanup(
                             lease, refresh_error, decision="transient_retry"
@@ -1419,7 +1493,9 @@ class WorkspaceManager:
                         cleaned = False
                         result["transient_retry"] += 1
                     else:
-                        cleaned = self._cleanup_lease_locked(lease)
+                        proof = (merged_proofs or {}).get(lease.id) if selected is not None else None
+                        cleaned = (self._cleanup_lease_locked(lease, merged_proof=proof)
+                                   if proof else self._cleanup_lease_locked(lease))
                         if (
                             not cleaned
                             and lease.cleanup_decision == "missing_evidence"
@@ -1435,6 +1511,20 @@ class WorkspaceManager:
                     self._increment_metric(
                         "cleaned_workspaces" if cleaned else "cleanup_blocked"
                     )
+                    if selected is not None:
+                        try:
+                            free_delta = shutil.disk_usage(Path(cache_path)).free-free_before
+                        except OSError:
+                            free_delta = None
+                        outcomes[lease.id].update(state="cleaned" if cleaned else "blocked",
+                            reason=lease.error, cleanup_decision=lease.cleanup_decision,
+                            cleanup_evidence=lease.cleanup_evidence,
+                            reclaimed_bytes=allocated if cleaned else 0,
+                            reclaimed_bytes_basis="removed tree du allocation; not physical exclusive-block proof",
+                            filesystem_free_bytes_delta=free_delta,
+                            resulting_lease_updated_at=lease.updated_at.isoformat())
+        if selected is not None:
+            result["targets"] = [outcomes[t.lease_id] for t in targets]
         return result
 
     def _refresh_origin_for_cleanup(self, cache: Path) -> str | None:
@@ -1627,7 +1717,7 @@ class WorkspaceManager:
             "changed_paths": sorted(source_changes),
         }
 
-    def _cleanup_lease_locked(self, lease: WorkspaceLease) -> bool:
+    def _cleanup_lease_locked(self, lease: WorkspaceLease, *, merged_proof: dict[str, Any] | None = None) -> bool:
         worktree = Path(lease.worktree_path)
         cache = Path(lease.cache_path)
         try:
@@ -1651,6 +1741,24 @@ class WorkspaceManager:
                 ).stdout.strip()
                 if unpushed:
                     evidence = self._terminal_pr_evidence(lease)
+                    if not evidence and merged_proof:
+                        # Cleanup-only primary GitHub proof. This does not create
+                        # a watch, repair dispatch binding or infer historical green.
+                        canonical, _ = canonical_repository_identity(lease.repository_url)
+                        identity = urlsplit(canonical)
+                        if (identity.hostname != "github.com"
+                                or merged_proof.get("repository", "").lower() != identity.path.strip("/").lower()
+                                or merged_proof.get("source") != "github_merged_cleanup_revalidation"
+                                or merged_proof.get("lease_id") != lease.id
+                                or merged_proof.get("fencing_token") != lease.fencing_token
+                                or merged_proof.get("session_id") != lease.session_id):
+                            raise WorkspaceProvisioningError("legacy cleanup proof scope changed")
+                        refs = self._git("-C", str(cache), "for-each-ref", "--format=%(refname)",
+                                         "--contains=" + merged_proof["merge_commit_sha"],
+                                         "refs/remotes/origin/").stdout.strip()
+                        if not refs:
+                            raise WorkspaceProvisioningError("revalidated merge is absent from refreshed origin refs")
+                        evidence = dict(merged_proof)
                     if not evidence:
                         commits = unpushed.splitlines()
                         self._block_cleanup(

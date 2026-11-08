@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -246,6 +247,29 @@ class GitHubClient:
             operation="get pull request head",
         )
         return str((data.get("head") or {}).get("sha") or "")
+
+    async def merged_cleanup_proof(self, repository: str, number: int, expected_head: str) -> dict[str, Any]:
+        """Primary integration identity only; never historical green or acceptance."""
+        if not self.credentials.token or self.credentials.configuration_status != "valid":
+            raise ValueError("authenticated cleanup PR revalidation is unavailable")
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) or number < 1:
+            raise ValueError("invalid cleanup PR identity")
+        _, pr = await self._request("GET", f"/repos/{repository}/pulls/{number}",
+                                    operation="revalidate merged cleanup PR")
+        merge = str(pr.get("merge_commit_sha") or "")
+        if (pr.get("number") != number or pr.get("merged") is not True or not pr.get("merged_at")
+                or pr.get("state") != "closed"
+                or ((pr.get("base") or {}).get("repo") or {}).get("full_name", "").lower() != repository.lower()
+                or (pr.get("head") or {}).get("sha") != expected_head
+                or not re.fullmatch(r"[0-9a-f]{40,64}", merge)
+                or await self.get_pull_head(repository, number) != expected_head):
+            raise ValueError("merged cleanup PR identity is unconfirmed")
+        from datetime import UTC, datetime
+        return {"source": "github_merged_cleanup_revalidation", "repository": repository,
+            "pr_number": number, "watched_head_sha": expected_head, "confirmed_head_sha": expected_head,
+            "merge_commit_sha": merge, "github_merged_at": pr["merged_at"],
+            "github_revalidated_at": datetime.now(UTC).isoformat(),
+            "notice": "Cleanup integration proof only; no historical stable-green, dispatch or acceptance inference."}
 
     async def snapshot(
         self, repository: str, number: int, *, policy: PRPolicy | None = None
