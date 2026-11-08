@@ -18,6 +18,7 @@ from pa.core.contracts import Module
 from pa.domain.notifications import (
     RESTART_FAILURE_NOTICE_CAPABILITY,
     ContinuationTransferRequest,
+    InteractionKind,
     InteractionResponse,
     InteractionState,
     Notification,
@@ -26,6 +27,7 @@ from pa.domain.notifications import (
     OperatorInputWithdrawalRequest,
 )
 from pa.notifications import NotificationConflict, NotificationService
+from pa.notifications.service import SUPERSEDED_SOURCE_ACTION
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -184,8 +186,15 @@ def _presentation_metadata(item: Notification) -> dict[str, Any]:
     if interaction:
         state = interaction.state
         if state == InteractionState.FAILED:
-            required_action = "Retry delivery of the recorded response"
             status = "Delivery failed"
+            if interaction.delivery_retryable:
+                required_action = "Retry delivery of the recorded response"
+            else:
+                # Retrying cannot succeed until the destination is repaired.
+                required_action = (
+                    interaction.delivery_recovery_action
+                    or "Repair the destination, or dismiss this request"
+                )
         elif state == InteractionState.DELIVERY_PENDING:
             required_action = "No new response needed while delivery is pending"
             status = "Response submitted · delivering"
@@ -224,6 +233,9 @@ def _presentation_metadata(item: Notification) -> dict[str, Any]:
         if state == InteractionState.FAILED:
             next_effect = (
                 "Retry sends the same recorded response; it does not create a new reply."
+                if interaction.delivery_retryable
+                else "Retrying cannot succeed until the destination is repaired. "
+                "The recorded response is preserved either way."
             )
         if item.resolved_at:
             required_action = None
@@ -235,11 +247,17 @@ def _presentation_metadata(item: Notification) -> dict[str, Any]:
             }:
                 status = "Request retired · resolved"
                 next_effect = "No further response delivery is allowed. The saved response and prior delivery outcome are preserved."
+        failure_reason = (
+            interaction.delivery_error
+            if state == InteractionState.FAILED and not item.resolved_at
+            else None
+        )
         return {
             "category": "request",
             "status": status,
             "required_action": required_action,
             "next_effect": next_effect,
+            "failure_reason": failure_reason,
         }
     blocker_types = {
         NotificationType.DISPATCH_FAILURE,
@@ -266,8 +284,65 @@ def _presentation_metadata(item: Notification) -> dict[str, Any]:
     }
 
 
+def _delivery_recovery(request: Request, item: Notification) -> dict[str, Any] | None:
+    """Offer the one safe repair for a response whose source was superseded.
+
+    Only when the source session carries a durable linked-run fence that names a
+    live successor. The transfer endpoint remains the authority and revalidates
+    every binding, so this is a hint to the UI, never a grant.
+    """
+    interaction = item.interaction
+    ctx = request.app.state.ctx
+    if (
+        not interaction
+        or interaction.state != InteractionState.FAILED
+        or interaction.delivered_at
+        or item.resolved_at
+        or item.continuation_transfer
+        or not item.session_id
+        or not item.dispatch_id
+        or interaction.kind != InteractionKind.MCP_OPERATOR_INPUT
+        or interaction.protocol_method != "pa/report_dispatch_progress.operator_input"
+        or interaction.continuation_mode != "prompt"
+        or item.owner_instance_id not in {None, ctx.settings.instance_id}
+    ):
+        return None
+    source = ctx.store.get_session(item.session_id)
+    fence = ((source.config_json if source else None) or {}).get("execution_context_boundary") or {}
+    target_id = fence.get("target_session_id")
+    if fence.get("state") != "linked" or fence.get("source_dispatch_id") != item.dispatch_id or not target_id:
+        return None
+    successor = ctx.store.get_session(target_id)
+    if (
+        not successor
+        or not successor.dispatch_id
+        or successor.status == "closed"
+        or successor.archived_at is not None
+    ):
+        return None
+    return {
+        "kind": "transfer_to_linked_run",
+        "label": "Send the recorded response to the linked run",
+        "expected_session_id": source.id,
+        "expected_dispatch_id": item.dispatch_id,
+        "successor_session_id": successor.id,
+        "successor_dispatch_id": successor.dispatch_id,
+        "successor_label": successor.title or successor.label or f"{successor.agent_name} session",
+    }
+
+
 def _public_notice(request: Request, item: Notification, labels: dict | None = None) -> dict[str, Any]:
     presentation = _presentation_metadata(item)
+    recovery = _delivery_recovery(request, item)
+    if recovery:
+        presentation["recovery"] = recovery
+        # A fenced source can never take the response, whatever an older record
+        # says about retryability, so describe what will actually work.
+        presentation["required_action"] = SUPERSEDED_SOURCE_ACTION
+        presentation["next_effect"] = (
+            "Retrying cannot succeed until the destination is repaired. "
+            "The recorded response is preserved either way."
+        )
     interaction = item.interaction
     if interaction:
         continuation = "Not requested"

@@ -56,6 +56,12 @@ def can_view_notification(
     )
 
 
+SUPERSEDED_SOURCE_ACTION = (
+    "This session was superseded by a linked run, so it cannot take this response. "
+    "Send the recorded response to the linked run, or dismiss this request."
+)
+
+
 class NotificationService:
     def __init__(self, ctx: AppContext) -> None:
         self.ctx = ctx
@@ -764,10 +770,12 @@ class NotificationService:
             and all(lease.state == "cleaned" and not Path(lease.worktree_path).exists() for lease in leases)
             and any(lease.base_sha != original_binding["base_sha"] for lease in leases)
         )
+        superseded = self._superseded_by_linked_run(old, successor, transfer)
         if old.status not in {"closed", "recovery_blocked"} or not (
             not old.external_session_id
             or (old.recovery_json.get("blocked") and old.recovery_json.get("context_lost"))
             or workspace_lost
+            or superseded
         ):
             reject("Original session is not demonstrably unrecoverable")
         successor_record = ledger.get(transfer.successor_dispatch_id)
@@ -796,6 +804,29 @@ class NotificationService:
             item.get("id") == prompt_id for item in admissions
         ):
             reject("Original session already admitted this response; delivery is ambiguous")
+
+    @staticmethod
+    def _superseded_by_linked_run(old, successor, transfer) -> bool:
+        """True when `old` was durably fenced by an explicit linked attempt that is exactly `successor`.
+
+        Such a source is superseded by design: its native context is deliberately
+        no longer resumable, so a response to it can only go to the linked run. The
+        link must be mutual (fence on the source, matching origin on the successor)
+        and bind the same source dispatch, so this cannot match an unrelated session.
+        """
+        fence = (old.config_json or {}).get("execution_context_boundary") or {}
+        origin = (successor.config_json or {}).get("execution_context_boundary_from") or {}
+        return bool(
+            fence.get("contract") == "pa.execution-context-boundary/v1"
+            and fence.get("state") == "linked"
+            and fence.get("id")
+            and fence.get("source_session_id") == old.id
+            and fence.get("source_dispatch_id") == transfer.expected_dispatch_id
+            and fence.get("target_session_id") == successor.id
+            and origin.get("id") == fence.get("id")
+            and origin.get("source_session_id") == old.id
+            and origin.get("target_session_id") == successor.id
+        )
 
     async def transfer_continuation(
         self, notification: Notification, request: ContinuationTransferRequest,
@@ -849,6 +880,7 @@ class NotificationService:
                     )
                     interaction.delivery_retryable = True
                     interaction.delivery_recovery_action = None
+                    interaction.delivery_failure_code = None
                     current.version += 1
                     current.updated_at = now
                     await self._save_async(current, principal_id=principal_id)
@@ -974,6 +1006,28 @@ class NotificationService:
             previous = current.model_copy(deep=True)
             try:
                 await self._deliver(current, delivery_response)
+            except asyncio.CancelledError:
+                # A client disconnect or shutdown mid-delivery must not leave the
+                # request in "delivery pending", which offers no way forward. The
+                # same recorded response can be retried; admission is idempotent.
+                interaction.delivery_attempts += 1
+                interaction.delivery_retryable = True
+                interaction.delivery_recovery_action = None
+                interaction.delivery_failure_code = "interrupted"
+                interaction.delivery_error = (
+                    "Delivery was interrupted before it was confirmed; "
+                    "retry sends the same recorded response"
+                )
+                interaction.state = InteractionState.FAILED
+                current.delivery_state = DeliveryState.FAILED
+                current.delivery_updated_at = datetime.now(UTC)
+                current.version += 1
+                current.updated_at = current.delivery_updated_at
+                await asyncio.shield(
+                    self._save_async(current, principal_id="system:delivery", previous=previous)
+                )
+                self._publish(current)
+                raise
             except Exception as exc:
                 interaction.delivery_attempts += 1
                 from pa.instance.agent_session import WorkspaceBindingMismatch
@@ -985,10 +1039,17 @@ class NotificationService:
                 session = await asyncio.to_thread(self.store.get_session, target) if target else None
                 provisioning = (session.config_json or {}).get("provisioning", {}) if session else {}
                 blocked = isinstance(exc, WorkspaceBindingMismatch) or provisioning.get("retryable") is False
-                interaction.delivery_retryable = not blocked
-                interaction.delivery_recovery_action = (
-                    provisioning.get("action") or WorkspaceBindingMismatch.remedy
-                ) if blocked else None
+                # The source was superseded by a linked run: no retry to it can ever
+                # succeed, so say so instead of offering an endless "Retry delivery".
+                superseded = getattr(exc, "code", None) == "context_boundary_fenced"
+                interaction.delivery_retryable = not (blocked or superseded)
+                interaction.delivery_failure_code = "source_superseded" if superseded else None
+                if superseded:
+                    interaction.delivery_recovery_action = SUPERSEDED_SOURCE_ACTION
+                else:
+                    interaction.delivery_recovery_action = (
+                        provisioning.get("action") or WorkspaceBindingMismatch.remedy
+                    ) if blocked else None
                 interaction.delivery_error = (
                     "Delivery to the owning request failed"
                     if interaction.sensitive
@@ -1008,6 +1069,7 @@ class NotificationService:
             interaction.delivery_error = None
             interaction.delivery_retryable = True
             interaction.delivery_recovery_action = None
+            interaction.delivery_failure_code = None
             interaction.delivered_at = datetime.now(UTC)
             interaction.state = (
                 InteractionState.CANCELLED

@@ -198,3 +198,80 @@ for (const response_mode of ["local", "remote"]) {
         capture_output=True, text=True,
     )
     assert completed.returncode == 0, completed.stderr
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is required for UI tests")
+def test_failed_delivery_card_explains_failure_offers_repair_and_can_be_dismissed() -> None:
+    script = ROOT / "src/pa/server/static/js/notifications.js"
+    harness = r"""
+const assert = require("assert");
+function escapeHtml(value) {
+  return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
+}
+const list = { innerHTML: "", querySelectorAll: () => [], querySelector: () => null, insertAdjacentHTML() {} };
+const chrome = { querySelector: (s) => s === "[data-notification-list]" ? list : null };
+global.window = { sessionStorage: { length: 0, getItem: () => null, setItem() {}, removeItem() {}, key: () => null }, setTimeout, clearInterval() {} };
+global.document = {
+  readyState: "loading", addEventListener() {},
+  querySelector: (s) => s === "[data-notification-chrome]" ? chrome : null,
+  createElement: () => ({ set textContent(v) { this._t = String(v); }, get innerHTML() { return escapeHtml(this._t); } })
+};
+global.EventSource = function () {};
+require(process.argv[1]);
+const ui = window.PANotificationsTest;
+
+// A source superseded by a linked run: why it failed, the one safe repair, and a way out.
+const recovery = { kind: "transfer_to_linked_run", label: "Send the recorded response to the linked run",
+  expected_session_id: "old-s", expected_dispatch_id: "old-d", successor_session_id: "new-s", successor_dispatch_id: "new-d" };
+const superseded = ui.interactionControls({ id: "n1", presentation: { recovery,
+    failure_reason: 'This source has a durable linked attempt <img src=x onerror="window.xss=1">' },
+  interaction: { state: "failed", delivery_retryable: false, delivery_failure_code: "source_superseded",
+    delivery_recovery_action: "Send the recorded response to the linked run, or dismiss this request." } });
+assert.ok(superseded.includes("superseded by a linked run"));
+assert.ok(superseded.includes("Why delivery failed:") && superseded.includes("durable linked attempt"));
+assert.ok(superseded.includes("&lt;img src=x onerror=&quot;window.xss=1&quot;&gt;"), "failure reason is escaped");
+assert.ok(!superseded.includes("<img"));
+assert.ok(!superseded.includes("data-notification-retry"), "retrying a fenced source cannot work, so it is not offered");
+assert.ok(superseded.includes("data-notification-transfer"));
+for (const [name, value] of [["expected-session", "old-s"], ["expected-dispatch", "old-d"], ["successor-session", "new-s"], ["successor-dispatch", "new-d"]]) {
+  assert.ok(superseded.includes("data-" + name + '="' + value + '"'), name);
+}
+assert.ok(superseded.includes("data-notification-dismiss-failed") && superseded.includes("Dismiss without delivering"));
+
+// An older record still marked retryable, but with a verified linked run: the repair
+// is offered and the retry that cannot succeed is not.
+const legacy = ui.interactionControls({ id: "n1b", presentation: { recovery, required_action: "Send it on" },
+  interaction: { state: "failed", delivery_retryable: true, delivery_error: "stale" } });
+assert.ok(legacy.includes("data-notification-transfer") && !legacy.includes("data-notification-retry"));
+assert.ok(legacy.includes("superseded by a linked run") && legacy.includes("Send it on"));
+
+// No verifiable successor: still explained and dismissible, but no transfer button.
+const noRepair = ui.interactionControls({ id: "n2", presentation: { failure_reason: "gone" },
+  interaction: { state: "failed", delivery_retryable: false, delivery_failure_code: "source_superseded" } });
+assert.ok(!noRepair.includes("data-notification-transfer") && !noRepair.includes("data-notification-retry"));
+assert.ok(noRepair.includes("data-notification-dismiss-failed"));
+
+// A transient failure keeps Retry, now with its reason, and can also be dismissed.
+const transient = ui.interactionControls({ id: "n3", presentation: { failure_reason: "No space left on device" },
+  interaction: { state: "failed", delivery_retryable: true } });
+assert.ok(transient.includes("data-notification-retry") && transient.includes("No space left on device"));
+assert.ok(transient.includes("data-notification-dismiss-failed") && !transient.includes("data-notification-transfer"));
+
+// Only a failed response is dismissible: answered / delivery-pending ones must settle first.
+for (const state of ["answered", "delivery_pending"]) {
+  assert.ok(!ui.interactionControls({ id: "n4", interaction: { state } }).includes("data-notification-dismiss-failed"), state);
+}
+// Retired notices stay non-actionable.
+assert.strictEqual(ui.interactionControls({ id: "n5", resolved_at: "2026-01-01T00:00:00Z",
+  presentation: { recovery }, interaction: { state: "failed", delivery_retryable: false } }), "");
+
+// The rendered card carries the version the transfer must name.
+ui.render([{ id: "n6", version: 7, priority: "high", title: "T", updated_at: "2026-01-01T00:00:00Z",
+  presentation: { category: "request", status: "Delivery failed" },
+  interaction: { state: "failed", delivery_retryable: true } }], false);
+assert.ok(list.innerHTML.includes('data-notification-version="7"'));
+"""
+    completed = subprocess.run([shutil.which("node"), "-e", harness, str(script)],
+                               check=False, capture_output=True, text=True)
+    assert completed.returncode == 0, completed.stderr or completed.stdout
