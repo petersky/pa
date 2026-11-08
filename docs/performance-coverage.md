@@ -7200,3 +7200,23 @@ The ledger now contains740 open rows/181 concerns, preserving every prior row an
 ### Post-commit ownership review — 2026-11-07
 
 Review of PR649 added a second fast-completion contract: a successful post-commit callback must also run exactly once before a completed result returns, so immediate shutdown cannot race it. Two new assertions failed on the initial accounting patch. The final patch gives the independent commit callback its own guard and a completed-worker fallback;86 broader tests now pass, including held-worker late delivery after timeout and cancellation. Previous suites overlap and every failed stage remains retained. Final source is not installed; PR647 activation and original14-tree cleanup remain blocked as recorded above. All740 rows/181 concerns and independent17d remain open. Evidence: `docs/benchmarks/systemic-runtime-commit-ownership-20261107.json` and adjacent lossless manifest/chunks.
+
+
+### Paged cleanup provenance — 2026-11-08
+
+The exact saved647 handoff is delivered/effectcomplete and its f8db loaded build was independently verified. A newly authorized read-only retry retained HTTP409 `workspace_materialization_diagnostic_capacity`, correlation4562bdef-8e92-4318-8884-51ebbb1145a8. The earlier lost error remains unknown. Original0337/control9bb/lease379 still has12untracked files;14targets are preserved, with zero collection/reclaimed bytes.
+
+New opt-in `diagnose_page` streams large tracked files within the original16MiB content and10000-path limits, exports at most64 completed-path rows, and rejects changed or expired input cursors. Legacy diagnostic, preservation and apply guards remain.116 corrected-source tests pass locally; four realstdio subprocess registration cases require the locked CI environment and remain mandatory there. The prior43/112/109/112 suites overlap, with all fixture/environment/assertion failures retained.
+
+The first40MiB/132-path direct source sample had five500ms violations (715–817ms/page). Attribution measured60Git driver calls across five pages. Batching equivalent identity reads and caching only the bounded immutable HEAD manifest retained fresh index/stat/fence checks. The final five-page sample completed exact ordered hashes at296–397ms/page, p50=316.652ms, p95/p99/max=396.868ms, traced Python peak1662468bytes,21total Git child commands and zero sampled500ms violations. These are tiny disposable source samples, not worker/HTTP/deployed/mixed-load acceptance. Explicit metadata/index/cache capacities remain open workload limits. Source repair awaits reviewed integration and coordinated eligible activation; all740findings/181concerns remain open.
+
+Evidence: `docs/benchmarks/systemic-paged-provenance-20261108.json` and adjacent retained-parent delta manifest. The complete126372039-byte prior protected root remains byte-exact in its existing tracked chunks. The new publication adds a verified delta and references that retained parent; `scripts/verify_provenance_evidence.py` independently verifies the entire closure. No existing evidence file is deleted or rewritten.
+
+
+### Explicit fourteen-target cleanup priority — 2026-11-08
+
+Paged product code is deferred and safely reversed by4226df2c; pushed11a5c7d8 and its complete source/evidence are preserved. The active repair adds a distinct selected-cleanup endpoint/tool. An older server returns404 rather than ignoring a selector and running global GC. Each explicit lease compares fence/timestamp/HEAD; unknown or stale inputs fail closed. Existing dirty/untracked/history/active-owner/acceptance/restart checks remain, with per-target results and separate removed allocation/free-space measurements. Optional primary GitHub legacy proof is cleanup-only and must pass existing local integration checks; it does not manufacture a watch, dispatch binding, historical green or acceptance.
+
+Original7938/0337/control9bb provenance remains. The14recorded blockers are8uncommitted-data,5integration-evidence and1missingbranch. Exact PR359/388 merged-head/ancestry evidence is attached to that original card, together with real PA linkage/inspection failures. No target is yet removed by this source stage. Full CI, supervisor integration, the one coordinated exact build activation including scheduling648/650 and actual per-target operations remain required. All740 findings/181 concerns stay open.
+
+Validation, every retained failure and private custody hashes: `docs/benchmarks/systemic-selected-cleanup-20261108.json` and adjacent retained-parent delta manifest. Both the prior126372039-byte full root and1671415-byte paging delta remain byte-exact in their tracked chunks.

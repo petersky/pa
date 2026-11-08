@@ -46,6 +46,7 @@ from pa.instance.agent_session import AgentStartupNotReady
 from pa.instance.quiesce import QuiesceProgress
 from pa.modules.agent_lifecycle import startup_recovery_error
 from pa.repository.state import RepositorySnapshotInput
+from pa.repository.workspace import WorkspaceCleanupTarget, WorkspaceProvisioningError, canonical_repository_identity
 
 router = APIRouter()
 
@@ -66,6 +67,11 @@ class RepositoryReconcileRequest(BaseModel):
 
 class WorkspaceReconcileRequest(BaseModel):
     collect: bool = True
+
+
+class WorkspaceSelectedCleanupRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    targets: list[WorkspaceCleanupTarget] = Field(min_length=1, max_length=32)
 
 
 class WorkspaceMaterializationRequest(BaseModel):
@@ -392,11 +398,75 @@ def workspace_leases(request: Request, card_id: str | None = None) -> dict:
     }
 
 
-@router.post("/workspaces/reconcile")
-async def reconcile_workspace_leases(
-    request: Request, body: WorkspaceReconcileRequest
+@router.post("/workspaces/collect-selected")
+async def collect_selected_workspaces(
+    request: Request, body: WorkspaceSelectedCleanupRequest
 ) -> dict:
-    """Reconcile terminal cards/sessions into local lease state and collect safely."""
+    """Collect only exact selected leases; old servers reject this distinct route."""
+    agent = request.app.state.ctx.require_service("instance_agent")
+    manager = agent.workspace_manager
+    runtime = request.app.state.ctx.require_service("async_runtime")
+
+    if body.targets is not None:
+        # A selected request never performs global terminal reconciliation.
+        user = require_user(request)
+        principal = get_principal_id(request)
+        async def selected_cleanup():
+            try:
+                leases = await runtime.run_blocking("workspace.cleanup_targets_read",
+                    manager.selected_cleanup_leases, body.targets)
+            except WorkspaceProvisioningError as exc:
+                raise HTTPException(409, str(exc)) from None
+            sessions = {lease.session_id for lease in leases}
+            if sessions & agent._admitting_sessions:
+                raise HTTPException(409, "selected owner admission is in progress")
+            # Exclude new provider admissions until the mutation has actually
+            # finished, including after client cancellation/deadline delivery.
+            agent._admitting_sessions.update(sessions)
+            try:
+                for lease in leases:
+                    owner = await runtime.run_blocking("workspace.cleanup_owner_read",
+                        agent.store.get_session, lease.session_id)
+                    if not owner or (owner.principal_id not in {None, principal}
+                                     and getattr(user, "role", None) != "admin"):
+                        raise HTTPException(403, "selected workspace owner is unavailable or belongs to another principal")
+                proofs = {}
+                for target, lease in zip(body.targets, leases, strict=True):
+                    if target.merged_pr_number is not None:
+                        from urllib.parse import urlsplit
+                        canonical, _ = canonical_repository_identity(lease.repository_url)
+                        repository = urlsplit(canonical)
+                        if repository.hostname != "github.com":
+                            raise HTTPException(422, "legacy cleanup revalidation requires GitHub")
+                        from pa.pr_supervisor.github import GitHubAPIError
+                        from httpx import HTTPError
+                        try:
+                            proof = await asyncio.wait_for(
+                                request.app.state.ctx.require_service("pr_supervisor").github.merged_cleanup_proof(
+                                    repository.path.strip("/"), target.merged_pr_number, target.expected_head), 60)
+                        except (ValueError, TimeoutError) as exc:
+                            raise HTTPException(409, str(exc)) from None
+                        except (GitHubAPIError, HTTPError) as exc:
+                            raise HTTPException(409, {"code":"cleanup_pr_revalidation_unavailable",
+                                "category":type(exc).__name__}) from None
+                        proofs[lease.id] = {**proof, "lease_id": lease.id,
+                            "session_id": lease.session_id, "fencing_token": lease.fencing_token}
+                active = {item.session_id for item in agent.list_runtimes() if not getattr(item, "_closed", False)}
+                try:
+                    return await runtime.run_blocking("workspace.collect_selected", manager.collect_garbage,
+                        active_session_ids=active, targets=body.targets, merged_proofs=proofs,
+                        timeout=300.0, wait_for_completion=True)
+                except WorkspaceProvisioningError as exc:
+                    raise HTTPException(409, str(exc)) from None
+            finally:
+                agent._admitting_sessions.difference_update(sessions)
+        key = hashlib.sha256(json.dumps([principal, body.model_dump(mode="json")], sort_keys=True).encode()).hexdigest()
+        return await runtime.run_owned("workspace-cleanup:" + key, selected_cleanup)
+
+
+@router.post("/workspaces/reconcile")
+async def reconcile_workspace_leases(request: Request, body: WorkspaceReconcileRequest) -> dict:
+    """Legacy global reconciliation/collection; never used for selected cleanup."""
     agent = request.app.state.ctx.require_service("instance_agent")
     manager = agent.workspace_manager
     runtime = request.app.state.ctx.require_service("async_runtime")

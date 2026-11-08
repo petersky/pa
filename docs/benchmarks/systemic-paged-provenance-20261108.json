@@ -1,0 +1,842 @@
+{
+  "contract": "pa.paged-provenance-repair/v1",
+  "stage": {
+    "observed_at": "2026-11-08T01:40:14.616257+00:00",
+    "requirements_first": "a26908c8",
+    "source_commit": "80ab5aa12324ac4cfd8320343c0ab8c08fce7db4",
+    "source_base": "2773194b53c5ab9d1f97d2e5db5b4016d64e6d0b",
+    "scope": "New opt-in diagnose_page observation under unchanged exact-owner/receipt/mutation guards. No production observation or target change yet.",
+    "design": "Opaque process-local expiring cursor, bounded incremental hash state and immutable HEAD manifest, fresh metadata/index/HEAD/root/common/branch fence both sides of each page, durable lease rechecked before publication. Nonblocking/no-follow source and bounded regular control reads. No payload export or apply authority.",
+    "limits": {
+      "tracked_content_bytes_per_page": 16777216,
+      "distinct_tracked_paths_in_complete_metadata_fence": 10000,
+      "metadata_bytes": 4194304,
+      "empty_index_bytes": 1048576,
+      "completed_rows_per_page": 64,
+      "scoped_process_local_cursors": 4,
+      "ttl_seconds": 300,
+      "notice": "Explicit residual capacities; not arbitrary path-count or crash-persistent scanning. Changed or expired inputs fail closed."
+    },
+    "tests_overlapping_not_summed": {
+      "stage3": {
+        "contract": "pa.provenance-pages-frozen-source-test/v1",
+        "observed_at": "2026-11-08T01:24:47.354671+00:00",
+        "exit_code": 0,
+        "duration_seconds": 182.232,
+        "tests": 109,
+        "failures": 0,
+        "errors": 0,
+        "source_hashes": {
+          "src/pa/repository/provenance_pages.py": "3ac5cde710310e80b8c1cc6d6f91b27c3060dfc6a5f1a8bee2a36291034c4e34",
+          "src/pa/repository/materialization.py": "b8de0ba60add46c927d651578985f48a9588cbf6646c658a1acfa84268921eac",
+          "src/pa/repository/materialization_errors.py": "34021626ca005e9201f8a6b9a30d60c7a6d74e2cd3bdba4f710c87b3179c3b19",
+          "src/pa/modules/instance.py": "37821f20cd599fbf1bb11fba0457d32ebdaaa28f95f6e8851c9abbc6970c00bd",
+          "src/pa/mcp/tools/instance.py": "f8e35e2bb754c8d1e8be081a195b677b8c34666ea27fd0fb2187cd71c95f96ad",
+          "tests/test_materialization_pages.py": "7994c683431f9e3d79b03f31ae36ce157925ba10d4c4005e5ab536151a7c4c01"
+        },
+        "after_hashes_match": true,
+        "local_excluded": "Four actual_stdio registration subprocess cases require croniter in frozen service interpreter. In-process schema/registration and provider fixture cases included; all unchanged protocol tests remain mandatory in CI with locked project dependencies. No product guard/test assertion/deadline changed.",
+        "private_both_roots": true,
+        "no_global_agent_disable": true,
+        "development_dependencies_only": true
+      },
+      "stage4": {
+        "contract": "pa.provenance-pages-frozen-source-test/v1",
+        "observed_at": "2026-11-08T01:31:21.015591+00:00",
+        "exit_code": 1,
+        "duration_seconds": 176.553,
+        "tests": 112,
+        "failures": 1,
+        "errors": 0,
+        "source_hashes": {
+          "src/pa/repository/provenance_pages.py": "30c2e5729f8f4c8c3114dff1c5f9b162172b8f2a4ccf97cf094c758da2ab9647",
+          "src/pa/repository/materialization.py": "8bef8aff8eaafadf9e778d61ef39625ae0dfd95b74930ba4edc854be72e195aa",
+          "src/pa/repository/materialization_errors.py": "34021626ca005e9201f8a6b9a30d60c7a6d74e2cd3bdba4f710c87b3179c3b19",
+          "src/pa/modules/instance.py": "37821f20cd599fbf1bb11fba0457d32ebdaaa28f95f6e8851c9abbc6970c00bd",
+          "src/pa/mcp/tools/instance.py": "f8e35e2bb754c8d1e8be081a195b677b8c34666ea27fd0fb2187cd71c95f96ad",
+          "tests/test_materialization_pages.py": "7db86fbe1e980ca9d9a3d97df80c7ec0b2b28e369acd8356034396c6ea47f434"
+        },
+        "after_hashes_match": true,
+        "local_excluded": "Four actual_stdio registration subprocess cases require croniter in frozen service interpreter. In-process schema/registration and provider fixture cases included; all unchanged protocol tests remain mandatory in CI with locked project dependencies. No product guard/test assertion/deadline changed.",
+        "private_both_roots": true,
+        "no_global_agent_disable": true,
+        "development_dependencies_only": true
+      },
+      "stage5": {
+        "contract": "pa.provenance-pages-frozen-source-test/v1",
+        "observed_at": "2026-11-08T01:35:35.285441+00:00",
+        "exit_code": 0,
+        "duration_seconds": 180.931,
+        "tests": 116,
+        "failures": 0,
+        "errors": 0,
+        "source_hashes": {
+          "src/pa/repository/provenance_pages.py": "12d5d5db979ca57213b38ca77945b31f4dbcd560c597fc199ae0e2bcf0ad5a66",
+          "src/pa/repository/materialization.py": "8bef8aff8eaafadf9e778d61ef39625ae0dfd95b74930ba4edc854be72e195aa",
+          "src/pa/repository/materialization_errors.py": "83f40af5eaa404b3f4055e0a9eea1967a62348a8e849f8db19024f11df0a48b3",
+          "src/pa/modules/instance.py": "37821f20cd599fbf1bb11fba0457d32ebdaaa28f95f6e8851c9abbc6970c00bd",
+          "src/pa/mcp/tools/instance.py": "f8e35e2bb754c8d1e8be081a195b677b8c34666ea27fd0fb2187cd71c95f96ad",
+          "tests/test_materialization_pages.py": "c1ccbe1ff0768153c9e864bae1c640f95db51c352d1540cc80c4a9549ca839da"
+        },
+        "after_hashes_match": true,
+        "local_excluded": "Four actual_stdio registration subprocess cases require croniter in frozen service interpreter. In-process schema/registration and provider fixture cases included; all unchanged protocol tests remain mandatory in CI with locked project dependencies. No product guard/test assertion/deadline changed.",
+        "private_both_roots": true,
+        "no_global_agent_disable": true,
+        "development_dependencies_only": true
+      }
+    },
+    "local_environment_first_failures": {
+      "contract": "pa.paged-provenance-source-stages/v1",
+      "observed_at": "2026-11-08T01:21:06.315333+00:00",
+      "source_base": "2773194b53c5ab9d1f97d2e5db5b4016d64e6d0b",
+      "requirements_first_commit": "a26908c8",
+      "original_cleanup_guard": {
+        "code": "workspace_materialization_diagnostic_capacity",
+        "correlation": "4562bdef-8e92-4318-8884-51ebbb1145a8",
+        "original_lost_error": "UNKNOWN; not reconstructed from later observation"
+      },
+      "first_local_suite": {
+        "tests": 43,
+        "failed": 1,
+        "passed": 42,
+        "failure": "New large-file fixture followed a deliberately dangling tracked symlink in its inode assertion before executing pages; corrected assertion to lstat. No production failure relabelled."
+      },
+      "schema_first_attempt": {
+        "outcome": "ModuleNotFoundError croniter after clean fast-forward includes scheduling648; corrected using development .venv dependencies. No source schema result produced on first attempt."
+      },
+      "development_uv_sync": {
+        "command": "uv sync --frozen",
+        "exit": 0,
+        "scope": "Checkout .venv editable PA1.6 and missing lockfile dependencies croniter6.2.4/python-dateutil4.0/tzdata2026.6. No installed-service-wheel operation invoked.",
+        "isolation_omission": "This one dev sync/build command omitted explicit private PA_DATA_DIR/PA_WORKSPACE_ROOT wrapper. Recorded as local workflow deviation; no Kernel/Store test command ran through it. All explicit PA imports/metadata/tests/schema helpers used private both roots and exact isolated interpreter. Do not infer production data effects or acceptance."
+      },
+      "second_suite": "Running wider overlapping suites; includes module edits after process imports, so not final corrected-source proof. Preserve all failures. Final frozen-source replay required.",
+      "source_hashes_at_record": {
+        "src/pa/repository/provenance_pages.py": "3ac5cde710310e80b8c1cc6d6f91b27c3060dfc6a5f1a8bee2a36291034c4e34",
+        "src/pa/repository/materialization.py": "b8de0ba60add46c927d651578985f48a9588cbf6646c658a1acfa84268921eac"
+      },
+      "target_changes": false,
+      "production_activation": "Existing647f8db active; no new install/restart. All740findings open."
+    },
+    "source_samples_not_merged_populations": {
+      "disposable-measurement": {
+        "contract": "pa.paged-provenance-disposable-measurement/v1",
+        "observed_at": "2026-11-08T01:25:21.760914+00:00",
+        "scope": "One disposable40MiB file plus130additionalfiles; direct source service, not HTTP/worker/production/representative whole-PA acceptance. Tiny page sample percentiles only.",
+        "pages": [
+          {
+            "page": 1,
+            "elapsed_ms": 817.382,
+            "tracked_bytes_read": 121,
+            "completed_rows": 64,
+            "complete": false
+          },
+          {
+            "page": 2,
+            "elapsed_ms": 791.749,
+            "tracked_bytes_read": 155,
+            "completed_rows": 64,
+            "complete": false
+          },
+          {
+            "page": 3,
+            "elapsed_ms": 761.302,
+            "tracked_bytes_read": 16777216,
+            "completed_rows": 3,
+            "complete": false
+          },
+          {
+            "page": 4,
+            "elapsed_ms": 714.792,
+            "tracked_bytes_read": 16777216,
+            "completed_rows": 0,
+            "complete": false
+          },
+          {
+            "page": 5,
+            "elapsed_ms": 796.683,
+            "tracked_bytes_read": 8388617,
+            "completed_rows": 1,
+            "complete": true
+          }
+        ],
+        "page_latency_ms": {
+          "samples": 5,
+          "p50": 791.749,
+          "p95": 817.382,
+          "p99": 817.382,
+          "max": 817.382
+        },
+        "python_tracemalloc_peak_bytes": 942480,
+        "tracked_paths": 132,
+        "differing_paths": 1,
+        "missing_paths": 0,
+        "all_rows_ordered_complete": true,
+        "one_stable_input_identity": true,
+        "file_hash_exact": true,
+        "index_bytes_unchanged": true,
+        "repair_receipt_created": false,
+        "page_500ms_exceedances": 5,
+        "async_worker_warning_population": "Not exercised by this direct service scenario; no zero-warning claim.",
+        "raw_metadata_hash_only": {
+          "path": ".dev/provenance-pages-disposable-rows-20261108.LOCAL.json",
+          "bytes": 29575,
+          "sha256": "723ea80bbf3f610f2d0b48926372c116f10152175a2ef76d071616f41d95d7ae"
+        },
+        "source_hash": "3ac5cde710310e80b8c1cc6d6f91b27c3060dfc6a5f1a8bee2a36291034c4e34",
+        "private_both_roots": true,
+        "all740findings_open": true,
+        "production_target_mutations": 0
+      },
+      "git-attribution": {
+        "contract": "pa.paged-provenance-disposable-measurement/v1",
+        "observed_at": "2026-11-08T01:26:28.154899+00:00",
+        "scope": "One disposable40MiB file plus130additionalfiles; direct source service, not HTTP/worker/production/representative whole-PA acceptance. Tiny page sample percentiles only.",
+        "pages": [
+          {
+            "page": 1,
+            "elapsed_ms": 796.81,
+            "tracked_bytes_read": 121,
+            "completed_rows": 64,
+            "complete": false
+          },
+          {
+            "page": 2,
+            "elapsed_ms": 796.86,
+            "tracked_bytes_read": 155,
+            "completed_rows": 64,
+            "complete": false
+          },
+          {
+            "page": 3,
+            "elapsed_ms": 762.328,
+            "tracked_bytes_read": 16777216,
+            "completed_rows": 3,
+            "complete": false
+          },
+          {
+            "page": 4,
+            "elapsed_ms": 810.132,
+            "tracked_bytes_read": 16777216,
+            "completed_rows": 0,
+            "complete": false
+          },
+          {
+            "page": 5,
+            "elapsed_ms": 730.188,
+            "tracked_bytes_read": 8388617,
+            "completed_rows": 1,
+            "complete": true
+          }
+        ],
+        "page_latency_ms": {
+          "samples": 5,
+          "p50": 796.81,
+          "p95": 810.132,
+          "p99": 810.132,
+          "max": 810.132
+        },
+        "git_driver_calls": [
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 54.588
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 49.453
+          },
+          {
+            "subcommand": "symbolic-ref",
+            "elapsed_ms": 49.48
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 44.307
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 49.836
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 47.272
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 51.729
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 49.862
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 53.992
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 55.251
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 42.954
+          },
+          {
+            "subcommand": "symbolic-ref",
+            "elapsed_ms": 49.262
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 44.958
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 45.248
+          },
+          {
+            "subcommand": "symbolic-ref",
+            "elapsed_ms": 48.769
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 47.499
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 44.516
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 47.908
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 49.198
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 45.598
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 51.666
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 78.316
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 48.782
+          },
+          {
+            "subcommand": "symbolic-ref",
+            "elapsed_ms": 46.932
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 46.326
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 47.493
+          },
+          {
+            "subcommand": "symbolic-ref",
+            "elapsed_ms": 46.976
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 44.57
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 47.229
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 45.282
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 55.33
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 46.997
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 46.944
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 49.288
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 47.514
+          },
+          {
+            "subcommand": "symbolic-ref",
+            "elapsed_ms": 44.686
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 49.698
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 49.462
+          },
+          {
+            "subcommand": "symbolic-ref",
+            "elapsed_ms": 53.455
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 43.847
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 49.083
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 53.176
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 51.753
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 50.586
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 53.303
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 51.438
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 52.326
+          },
+          {
+            "subcommand": "symbolic-ref",
+            "elapsed_ms": 52.374
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 48.847
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 54.148
+          },
+          {
+            "subcommand": "symbolic-ref",
+            "elapsed_ms": 48.691
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 42.223
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 46.899
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 51.54
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 43.783
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 44.587
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 46.763
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 44.959
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 35.403
+          },
+          {
+            "subcommand": "symbolic-ref",
+            "elapsed_ms": 39.239
+          }
+        ],
+        "git_driver_call_count": 60,
+        "git_driver_total_ms": 2923.594,
+        "python_tracemalloc_peak_bytes": 945889,
+        "tracked_paths": 132,
+        "differing_paths": 1,
+        "missing_paths": 0,
+        "all_rows_ordered_complete": true,
+        "one_stable_input_identity": true,
+        "file_hash_exact": true,
+        "index_bytes_unchanged": true,
+        "repair_receipt_created": false,
+        "page_500ms_exceedances": 5,
+        "async_worker_warning_population": "Not exercised by this direct service scenario; no zero-warning claim.",
+        "raw_metadata_hash_only": {
+          "path": ".dev/provenance-pages-git-attribution-rows-20261108.LOCAL.json",
+          "bytes": 29575,
+          "sha256": "723ea80bbf3f610f2d0b48926372c116f10152175a2ef76d071616f41d95d7ae"
+        },
+        "source_hash": "3ac5cde710310e80b8c1cc6d6f91b27c3060dfc6a5f1a8bee2a36291034c4e34",
+        "private_both_roots": true,
+        "all740findings_open": true,
+        "production_target_mutations": 0
+      },
+      "optimized-measurement": {
+        "contract": "pa.paged-provenance-disposable-measurement/v1",
+        "observed_at": "2026-11-08T01:27:31.312318+00:00",
+        "scope": "One disposable40MiB file plus130additionalfiles; direct source service, not HTTP/worker/production/representative whole-PA acceptance. Tiny page sample percentiles only.",
+        "pages": [
+          {
+            "page": 1,
+            "elapsed_ms": 361.919,
+            "tracked_bytes_read": 121,
+            "completed_rows": 64,
+            "complete": false
+          },
+          {
+            "page": 2,
+            "elapsed_ms": 317.427,
+            "tracked_bytes_read": 155,
+            "completed_rows": 64,
+            "complete": false
+          },
+          {
+            "page": 3,
+            "elapsed_ms": 301.904,
+            "tracked_bytes_read": 16777216,
+            "completed_rows": 3,
+            "complete": false
+          },
+          {
+            "page": 4,
+            "elapsed_ms": 300.313,
+            "tracked_bytes_read": 16777216,
+            "completed_rows": 0,
+            "complete": false
+          },
+          {
+            "page": 5,
+            "elapsed_ms": 260.038,
+            "tracked_bytes_read": 8388617,
+            "completed_rows": 1,
+            "complete": true
+          }
+        ],
+        "page_latency_ms": {
+          "samples": 5,
+          "p50": 301.904,
+          "p95": 361.919,
+          "p99": 361.919,
+          "max": 361.919
+        },
+        "git_driver_calls": [
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 55.9
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 43.689
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 51.437
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 52.763
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 52.187
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 50.295
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 50.267
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 55.693
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 47.811
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 50.345
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 52.575
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 50.157
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 45.795
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 49.22
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 51.992
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 52.837
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 39.777
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 45.036
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 38.913
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 49.972
+          }
+        ],
+        "git_driver_call_count": 20,
+        "git_driver_total_ms": 986.661,
+        "python_tracemalloc_peak_bytes": 954986,
+        "tracked_paths": 132,
+        "differing_paths": 1,
+        "missing_paths": 0,
+        "all_rows_ordered_complete": true,
+        "one_stable_input_identity": true,
+        "file_hash_exact": true,
+        "index_bytes_unchanged": true,
+        "repair_receipt_created": false,
+        "page_500ms_exceedances": 0,
+        "async_worker_warning_population": "Not exercised by this direct service scenario; no zero-warning claim.",
+        "raw_metadata_hash_only": {
+          "path": ".dev/provenance-pages-optimized-rows-20261108.LOCAL.json",
+          "bytes": 29575,
+          "sha256": "723ea80bbf3f610f2d0b48926372c116f10152175a2ef76d071616f41d95d7ae"
+        },
+        "source_hash": "30c2e5729f8f4c8c3114dff1c5f9b162172b8f2a4ccf97cf094c758da2ab9647",
+        "private_both_roots": true,
+        "all740findings_open": true,
+        "production_target_mutations": 0
+      },
+      "final-measurement": {
+        "contract": "pa.paged-provenance-disposable-measurement/v1",
+        "observed_at": "2026-11-08T01:35:58.519762+00:00",
+        "scope": "One disposable40MiB file plus130additionalfiles; direct source service, not HTTP/worker/production/representative whole-PA acceptance. Tiny page sample percentiles only.",
+        "pages": [
+          {
+            "page": 1,
+            "elapsed_ms": 352.374,
+            "tracked_bytes_read": 121,
+            "completed_rows": 64,
+            "complete": false
+          },
+          {
+            "page": 2,
+            "elapsed_ms": 316.652,
+            "tracked_bytes_read": 155,
+            "completed_rows": 64,
+            "complete": false
+          },
+          {
+            "page": 3,
+            "elapsed_ms": 396.868,
+            "tracked_bytes_read": 16777216,
+            "completed_rows": 3,
+            "complete": false
+          },
+          {
+            "page": 4,
+            "elapsed_ms": 308.824,
+            "tracked_bytes_read": 16777216,
+            "completed_rows": 0,
+            "complete": false
+          },
+          {
+            "page": 5,
+            "elapsed_ms": 296.126,
+            "tracked_bytes_read": 8388617,
+            "completed_rows": 1,
+            "complete": true
+          }
+        ],
+        "page_latency_ms": {
+          "samples": 5,
+          "p50": 316.652,
+          "p95": 396.868,
+          "p99": 396.868,
+          "max": 396.868
+        },
+        "git_stream_calls": [
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 47.868
+          },
+          {
+            "subcommand": "ls-tree",
+            "elapsed_ms": 75.704
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 50.994
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 52.606
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 49.9
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 49.618
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 62.845
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 50.454
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 51.852
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 50.615
+          },
+          {
+            "subcommand": "ls-files",
+            "elapsed_ms": 48.683
+          }
+        ],
+        "git_total_child_count": 21,
+        "git_driver_calls": [
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 59.482
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 47.377
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 50.418
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 51.533
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 53.22
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 55.941
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 51.144
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 50.26
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 51.247
+          },
+          {
+            "subcommand": "rev-parse",
+            "elapsed_ms": 52.091
+          }
+        ],
+        "git_driver_call_count": 10,
+        "git_driver_total_ms": 522.713,
+        "python_tracemalloc_peak_bytes": 1662468,
+        "tracked_paths": 132,
+        "differing_paths": 1,
+        "missing_paths": 0,
+        "all_rows_ordered_complete": true,
+        "one_stable_input_identity": true,
+        "file_hash_exact": true,
+        "index_bytes_unchanged": true,
+        "repair_receipt_created": false,
+        "page_500ms_exceedances": 0,
+        "async_worker_warning_population": "Not exercised by this direct service scenario; no zero-warning claim.",
+        "raw_metadata_hash_only": {
+          "path": ".dev/provenance-pages-final-rows-20261108.LOCAL.json",
+          "bytes": 29575,
+          "sha256": "723ea80bbf3f610f2d0b48926372c116f10152175a2ef76d071616f41d95d7ae"
+        },
+        "source_hash": "12d5d5db979ca57213b38ca77945b31f4dbcd560c597fc199ae0e2bcf0ad5a66",
+        "private_both_roots": true,
+        "all740findings_open": true,
+        "production_target_mutations": 0
+      }
+    },
+    "integration": "Pending scoped ready PR and durable stable-head supervisor gate; all required independent GitHub validation and full CI remain required.",
+    "runtime": "Verified647 f8db/PID64276/startup1748860e; saved18f is delivered/effectcomplete. New pages and648/649 source are not installed. No further647restart.",
+    "cleanup": {
+      "card": "7938e21e-05fe-4dc9-b85e-98689957dd9d",
+      "session": "0337e686-6170-470c-89c7-5285925f43f0",
+      "control": "9bb01f22-f57f-4e51-9797-c2bb915e75f5",
+      "lease_fence": 379,
+      "expected_head": "076d2eb1f4c898e0a8e0ef5ca628d790d2c2b63e",
+      "operation": "990c428757f55ea293f4a7d7a8d3c56108e10a63dc22367b747c2e2a142fcfd7",
+      "key": "systemic-pr645-cleanup9bb-materialization-20261107-v1",
+      "guard": "workspace_materialization_diagnostic_capacity",
+      "correlation": "4562bdef-8e92-4318-8884-51ebbb1145a8",
+      "historical_first409_detail": "UNKNOWN; later retry does not reconstruct it",
+      "repair_status": "not_started/effectnone",
+      "targets_preserved": 14,
+      "trees_collected": 0,
+      "bytes_reclaimed": 0
+    },
+    "coordination": "Scheduling successor0e6be21f/a954544f on separate tree; overdue-health repair is separate. No automatic package substitution or competing deployment.",
+    "acceptance": "All740 findings/181 concerns and independent17d OPEN. Source samples, merged code, installed code and deployed retest are distinct. No whole-PA acceptance."
+  },
+  "rows": 740,
+  "concerns": 181,
+  "existing_row_fields_preserved": true
+}

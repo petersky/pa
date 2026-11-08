@@ -243,6 +243,22 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         )
 
     @mcp.tool()
+    async def workspace_collect_selected(targets: list[dict[str, Any]]) -> dict:
+        """Collect only explicit lease/fence/HEAD/updated-at targets, never globally.
+
+        Each target requires lease_id, expected_fence, expected_head and
+        expected_updated_at; optional merged_pr_number admits cleanup-only
+        primary GitHub revalidation. Recover uncertain effects with workspace_leases.
+        This distinct route fails closed on servers without selected cleanup.
+        """
+        runtime = ctx.require_service("async_runtime")
+        return await runtime.run_blocking(
+            "mcp.workspace_collect_selected_http", request_local_pa, settings,
+            "POST", "/api/workspaces/collect-selected", json={"targets": targets},
+            timeout_seconds=120.0, timeout=300.0,
+        )
+
+    @mcp.tool()
     async def workspace_materialization_repair(
         lease_id: str, session_id: str, card_id: str, expected_fence: int,
         expected_head: str, idempotency_key: str,
