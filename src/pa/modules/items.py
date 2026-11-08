@@ -1348,6 +1348,17 @@ def _card_activity_context(request: Request, card) -> dict:
     }
 
 
+# Lifecycle groups a board column can filter by, independent of the stored lane.
+ATTENTION_FILTERS = {"actionable", "motion", "outcome", "idle"}
+# Work board columns when grouped by what is actually happening, not by stored lane.
+STATE_BUCKETS = (
+    ("actionable", "Needs you"),
+    ("motion", "In motion"),
+    ("idle", "Not started"),
+    ("outcome", "Done"),
+)
+
+
 def _bounded_attention_cards_context(
     request: Request,
     *,
@@ -1379,6 +1390,7 @@ def _bounded_attention_cards_context(
         "actionable": "attention",
         "motion": "motion",
         "outcome": "outcome",
+        "idle": "quiet",
     }[attention]
     matching_ids: list[str] = []
     total_cards = 0
@@ -1490,7 +1502,7 @@ def _cards_context(
     )
     if (
         result_limit is not None
-        and attention_filter in {"actionable", "motion", "outcome"}
+        and attention_filter in ATTENTION_FILTERS
         and hasattr(store, "list_card_work_projections")
     ):
         return _bounded_attention_cards_context(
@@ -1645,7 +1657,7 @@ def _work_context(request: Request) -> dict:
         "blocked": {"blocked": "Blocked", "unblocked": "Not blocked"},
         "updated": {"1": "Past day", "7": "Past week", "30": "Past month"},
         "tag_mode": {"and": "All tags (AND)", "or": "Any tag (OR)"},
-        "attention": {"actionable": "Actionable", "motion": "In motion", "outcome": "Outcomes"},
+        "attention": {"actionable": "Actionable", "motion": "In motion", "outcome": "Outcomes", "idle": "Not started"},
     }
     applied_filters = []
     for key, value in pairs:
@@ -1659,7 +1671,17 @@ def _work_context(request: Request) -> dict:
             "value": names.get(key, {}).get(value, value),
             "remove_url": "/work?" + urlencode(remaining),
         })
+    # State grouping is the default: the stored lane cannot say "an agent is working
+    # on this", so it contradicts the card. An explicit lane, lifecycle filter or
+    # group=lane keeps the lane board (which is where cards are dragged between lanes).
+    group = "lane" if (
+        request.query_params.get("group") == "lane"
+        or request.query_params.get("lane")
+        or filters["attention"]
+    ) else "state"
     return {
+        "group": group,
+        "state_buckets": [{"value": value, "label": label} for value, label in STATE_BUCKETS],
         "kinds": list(CardKind),
         "lanes": list(CardLane),
         "projects": projects,
@@ -3623,11 +3645,7 @@ def cards_partial(
 ) -> HTMLResponse:
     page_limit = min(100, max(10, limit))
     attention_filter = request.query_params.get("attention", "").strip()
-    filtered_pagination = attention_filter in {
-        "actionable",
-        "motion",
-        "outcome",
-    }
+    filtered_pagination = attention_filter in ATTENTION_FILTERS
     page_offset = max(0, offset) if filtered_pagination else 0
     context = _cards_context(
         request,

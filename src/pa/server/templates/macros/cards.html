@@ -54,55 +54,53 @@
   {% endif %}
 {% endmacro %}
 {% macro compact_card(card, project=None, session=None, progress=None, presentation=None, movable=false, lanes=[], title_only=false) %}
-<article class="compact-card item-{{ card.kind.value }}{% if title_only %} is-title-only{% endif %}"
+{# Board card: identity, the stage strip, and at most one action. Everything else is on hover or in the dialog. #}
+{% set group = presentation.group if presentation else none %}
+{% set action = presentation.action if presentation else none %}
+<article class="compact-card item-{{ card.kind.value }}{% if title_only %} is-title-only{% endif %}{% if group %} group-{{ group }}{% endif %}"
          {% if movable %}draggable="true"{% endif %}
          data-card-id="{{ card.id }}"
          data-realm="{{ card.realm_id }}"
          data-card-lane="{{ card.lane.value }}"
          data-card-version="{{ card.updated_at.isoformat() }}">
-  {% if not title_only %}
-  <div class="compact-card-meta">
-    <span class="badge">{{ card.kind.value }}</span>
-    {% if presentation %}
-    <span class="status status-{{ presentation.tone }}">{{ presentation.state_label }}</span>
-    {% else %}
-    <span class="status status-{{ card.lane.value }}">{{ card.lane.value }}</span>
-    {% endif %}
-    {% if project %}<span class="compact-card-project">{{ project.title }}</span>{% endif %}
-    {% if card.summary_stale %}
-    <span class="summary-stale" title="The source details changed after this summary was written">Summary needs review</span>
-    {% endif %}
-  </div>
-  {% endif %}
   <h3>
     <a href="?realm={{ card.realm_id }}&card={{ card.id }}"
        data-card-detail-link
        data-card-id="{{ card.id }}"
        data-card-realm="{{ card.realm_id }}">{{ card.title }}</a>
+    {% if card.kind.value != 'task' %}<span class="badge">{{ card.kind.value }}</span>{% endif %}
+    {% if not title_only and card.summary_stale %}<span class="summary-stale-dot" role="img" aria-label="Summary needs review" title="Summary needs review: the source details changed after it was written"></span>{% endif %}
   </h3>
-  {% if not presentation and card.completion_requirement and card.completion_status.missing %}
-  <p class="muted small">{% if card.completion_status.reason_code == 'verification_pending' %}PA is arranging independent verification.{% else %}Next: {{ card.completion_status.missing[0] | replace("_", " ") }}.{% endif %}</p>
-  {% endif %}
-  {% if presentation and presentation.action %}
-  {{ presentation_action(presentation.action, card.title, card.id, card.realm_id) }}
-  {% elif not progress and (not session or session.status in ('closed', 'quiesced')) %}
-  <button type="button" class="ghost small compact-card-dispatch" data-card-dispatch-open
-          data-card-id="{{ card.id }}" data-card-realm="{{ card.realm_id }}"
-          aria-label="Dispatch {{ card.title }}">Dispatch</button>
-  {% elif session and session.status not in ('closed', 'quiesced') %}
-  <a class="ghost small compact-card-dispatch" href="/agent?session={{ session.id }}"
-     aria-label="Open live agent session for {{ card.title }}">Open agent</a>
-  {% endif %}
   {% if not title_only %}
   {% if presentation %}
   <div class="compact-card-progress progress-{{ presentation.freshness }}"
        data-card-progress
        data-progress-state="{{ presentation.freshness }}">
     {{ stage_strip(presentation.stage_strip, compact=True) }}
-    {% if presentation.outcome and presentation.stage_strip.stages | length <= 2 %}<p class="work-outcome">{{ presentation.outcome }}</p>{% endif %}
-    {% if presentation.next_actor.id in ('operator', 'reviewer') %}<span class="muted small">{{ presentation.next_actor.label }}</span>{% endif %}
+    {# Words only where the strip cannot say it. Working, completed and not-started are self-evident, so their label is
+       kept for assistive technology only; every other state keeps a visible label and its explanation. #}
+    {% set self_evident = presentation.state in ('working', 'completed', 'not_started') %}
+    {% set explained = (presentation.outcome or presentation.summary) %}
+    {% if self_evident %}
+    <span class="sr-only">{{ presentation.state_label }}</span>
+    {% if presentation.state == 'not_started' and presentation.outcome %}
+    {# Nothing has run yet, so what the card is about is the only thing worth saying. #}
+    <p class="work-outcome compact-card-issue muted">{{ presentation.outcome }}</p>
+    {% endif %}
+    {% elif presentation.stage_strip.stages | length <= 2 and explained %}
+    <p class="work-outcome compact-card-issue"><span class="status status-{{ presentation.tone }}">{{ presentation.state_label }}</span> {{ explained }}</p>
+    {% else %}
+    <span class="status status-{{ presentation.tone }} compact-card-state">{{ presentation.state_label }}</span>
+    {% endif %}
   </div>
   {% else %}
+  <div class="compact-card-meta">
+    <span class="status status-{{ card.lane.value }}">{{ card.lane.value }}</span>
+    {% if project %}<span class="compact-card-project">{{ project.title }}</span>{% endif %}
+  </div>
+  {% if card.completion_requirement and card.completion_status.missing %}
+  <p class="muted small">{% if card.completion_status.reason_code == 'verification_pending' %}PA is arranging independent verification.{% else %}Next: {{ card.completion_status.missing[0] | replace("_", " ") }}.{% endif %}</p>
+  {% endif %}
   {% if card.summary and card.summary_source.value != 'fallback' %}
   <div class="card-markdown compact-card-summary" data-card-markdown>
     <span hidden data-card-markdown-source>{{ card.summary | tojson }}</span>
@@ -131,11 +129,24 @@
   <p class="compact-card-progress muted small">Lifecycle-only reporting · {{ progress.dispatch_state | replace('_', ' ') }}</p>
   {% endif %}
   {% endif %}
+  {# One action, and only when it is not just "open this card" (the title already does that). #}
+  {% if presentation %}
+  {% if action and action.kind != 'open_card' %}
+  {{ presentation_action(action, card.title, card.id, card.realm_id) }}
+  {% endif %}
+  {% elif not progress and (not session or session.status in ('closed', 'quiesced')) %}
+  <button type="button" class="ghost small compact-card-dispatch" data-card-dispatch-open
+          data-card-id="{{ card.id }}" data-card-realm="{{ card.realm_id }}"
+          aria-label="Dispatch {{ card.title }}">Dispatch</button>
+  {% elif session and session.status not in ('closed', 'quiesced') %}
+  <a class="ghost small compact-card-dispatch" href="/agent?session={{ session.id }}"
+     aria-label="Open live agent session for {{ card.title }}">Open agent</a>
+  {% endif %}
   <footer class="compact-card-footer">
     {% if presentation %}
-    {% if presentation.target_instance_id %}<span>{{ presentation.target_instance_name }}</span>{% endif %}
+    {% if project %}<span class="compact-card-project">{{ project.title }}</span>{% endif %}
     <time datetime="{{ presentation.occurred_at or card.updated_at.isoformat() }}"
-          title="{{ presentation.absolute_time }}">
+          title="{{ presentation.absolute_time }}{% if presentation.target_instance_id %} · {{ presentation.target_instance_name }}{% endif %}">
       {{ presentation.relative_time }}
     </time>
     {% else %}
@@ -192,10 +203,16 @@
        data-card-id="{{ order.id }}"
        data-card-realm="{{ order.card.realm_id or 'default' }}">{{ order.title }}</a>
   </h3>
-  {% if presentation.outcome | default(presentation.summary) %}<p class="attention-card-summary">{{ presentation.outcome | default(presentation.summary) }}</p>{% endif %}
+  {% set strip_nodes = presentation.stage_strip.stages | length if presentation.stage_strip else 0 %}
+  {% if presentation.group != 'outcome' %}{{ stage_strip(presentation.stage_strip, compact=True) }}{% endif %}
+  {# With declared checkpoints the strip already says where the card is; prose only where it cannot. #}
+  {% if strip_nodes <= 2 and presentation.outcome | default(presentation.summary) %}<p class="attention-card-summary">{{ presentation.outcome | default(presentation.summary) }}</p>{% endif %}
+  {# "Open card" would only repeat the title link, so a footer appears only for a real action. #}
+  {% if action and action.kind != 'open_card' %}
   <footer class="attention-card-actions">
     {{ presentation_action(action, order.title, order.id, order.card.realm_id or 'default', "button small") }}
     {% if presentation.next_actor is defined and presentation.next_actor.id in ('operator', 'reviewer') %}<span class="muted small">{{ presentation.next_actor.label }}</span>{% endif %}
   </footer>
+  {% endif %}
 </article>
 {% endmacro %}

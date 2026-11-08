@@ -501,7 +501,15 @@ def present_work_item(
         or reconciliation.get("condition")
     )
     reconciliation_at = _parsed_time(reconciliation.get("updated_at"))
-    historical_reconciliation = bool(
+    # A stale-version conflict whose intended lane is exactly the card's current lane
+    # has converged: nothing is left to decide, whatever the stored state still says.
+    converged_reconciliation = bool(
+        reconciliation_state in FAILED_RECONCILIATION_STATES
+        and reconciliation.get("condition") == "stale_card_version"
+        and lane
+        and lane == (dispatch.get("card_completion") or {}).get("lane_after")
+    )
+    historical_reconciliation = converged_reconciliation or bool(
         state in {"completed", "acknowledged"}
         and reconciliation_state == "failed"
         and reconciliation.get("disposition_error")
@@ -797,6 +805,21 @@ def present_work_item(
         tone = "failed"
         priority = 44
 
+    # Parallel work: a parent with no run of its own is still in motion while its
+    # children are. Without this it would sit under "Not started" beside a strip
+    # that shows running work.
+    child_states = tuple(children)
+    if state_code == "not_started" and "running" in child_states:
+        group = "motion"
+        state_code = "working"
+        state_label = "Working"
+        summary = "Child work is running."
+        reason = "One or more child cards are being worked."
+        tone = "active"
+        priority = 60
+        action = _action("open_card", "Open card", href=card_href)
+        action_explanation = "No operator action needed; child work is progressing."
+
     # Compact surfaces show a result and one action. Keep the full explanation
     # above for diagnostics; never expose machine tokens as the main result.
     outcome = summary
@@ -909,9 +932,10 @@ def present_work_item(
         state_code=state_code,
         group=group,
         session_active=bool(session_facts["active"]),
+        dispatch_active=state in ACTIVE_DISPATCH_STATES and state != "blocked",
         has_execution=bool(dispatch_id or session_id),
         activity_at=(session or {}).get("observed_at") or latest.get("last_activity_at") or latest.get("occurred_at") or timestamp,
-        children=tuple(children),
+        children=child_states,
         now=now,
     )
     presentation["accessible_label"] = "; ".join(

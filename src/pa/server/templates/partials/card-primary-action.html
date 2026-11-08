@@ -1,4 +1,5 @@
 {% from "macros/cards.html" import presentation_action %}
 <span id="card-primary-action-{{ card.id }}"{% if refresh_actions | default(false) %} hx-swap-oob="outerHTML"{% endif %}>
-  {{ presentation_action(work_presentation.action, card.title, card.id, card.realm_id, "button") }}
+  {# This is the card's own dialog: an "Open card" action here would only reopen it. #}
+  {% if work_presentation.action.kind != 'open_card' %}{{ presentation_action(work_presentation.action, card.title, card.id, card.realm_id, "button") }}{% endif %}
 </span>

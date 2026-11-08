@@ -12,9 +12,9 @@
       card_sessions.get(card.id),
       (card_progress.get(card.id) if card_progress is defined else none),
       presentation=(card_presentations.get(card.id) if card_presentations is defined else none),
-      movable=true,
+      movable=(lane is defined and lane),
       lanes=lanes,
-      title_only=lane and lane.value == 'done'
+      title_only=(lane and lane.value == 'done') or (not lane and card.lane.value == 'done' and card_presentations is defined and card_presentations.get(card.id) and card_presentations.get(card.id).state == 'completed')
     ) }}
   {% endfor %}
 </div>

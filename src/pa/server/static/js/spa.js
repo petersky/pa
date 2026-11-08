@@ -396,7 +396,7 @@
           candidate.setAttribute("aria-pressed", candidate === button ? "true" : "false");
         });
         document.querySelectorAll(".board-column").forEach(function (column) {
-          column.dataset.mobileActive = column.dataset.lane === lane ? "true" : "false";
+          column.dataset.mobileActive = (column.dataset.lane || column.dataset.bucket) === lane ? "true" : "false";
         });
       });
     });

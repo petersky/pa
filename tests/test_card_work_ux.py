@@ -985,10 +985,25 @@ class CoreWorkUiRouteTests(unittest.TestCase):
                 "Tag",
                 "Updated",
             ):
-                self.assertIn(f"<span>{label}</span>", response.text)
+                # Search and Project sit in the compact primary row, so their labels are
+                # visually hidden but still programmatically associated with the control.
+                hidden = label in {"Search", "Project"}
+                self.assertIn(f'<span class="sr-only">{label}</span>' if hidden else f"<span>{label}</span>", response.text)
             self.assertIn('name="q" value="ship"', response.text)
-            self.assertIn('data-board-lane="active"', response.text)
-            self.assertIn('aria-label="Work board"', response.text)
+            # The default groups by what is actually happening, not by stored lane.
+            self.assertIn('data-board-group="state"', response.text)
+            self.assertIn('aria-label="Work board by state"', response.text)
+            for bucket in ("actionable", "motion", "idle", "outcome"):
+                self.assertIn(f'data-board-lane="{bucket}"', response.text)
+                self.assertIn(f"attention={bucket}", response.text)
+            self.assertNotIn("draggable", response.text)
+            # An explicit lane grouping keeps the lane board and its drag targets.
+            lanes = client.get("/work?group=lane")
+            self.assertEqual(lanes.status_code, 200)
+            self.assertIn('data-board-group="lane"', lanes.text)
+            self.assertIn('data-board-lane="active"', lanes.text)
+            self.assertIn('aria-label="Work board"', lanes.text)
+            self.assertIn('name="group" value="lane"', lanes.text)
             self.assertIn(
                 'href="/work?realm=default&amp;blocked=blocked">Blocked work</a>',
                 response.text,
