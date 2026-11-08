@@ -246,6 +246,15 @@ const legacy = ui.interactionControls({ id: "n1b", presentation: { recovery, req
 assert.ok(legacy.includes("data-notification-transfer") && !legacy.includes("data-notification-retry"));
 assert.ok(legacy.includes("superseded by a linked run") && legacy.includes("Send it on"));
 
+// The linked run has ended: nothing can take the response, so no retry and no transfer.
+const ended = ui.interactionControls({ id: "n1c", presentation: { required_action: "The linked run that replaced this session has ended.",
+    recovery: { kind: "linked_run_ended", successor_session_id: "new-s" }, failure_reason: "fenced" },
+  interaction: { state: "failed", delivery_retryable: true, delivery_recovery_action: "Send the recorded response to the linked run, or dismiss this request." } });
+assert.ok(!ended.includes("data-notification-retry") && !ended.includes("data-notification-transfer"));
+assert.ok(ended.includes("data-notification-dismiss-failed"));
+assert.ok(ended.includes("The linked run that replaced this session has ended."), "live state wins over the stored action");
+assert.ok(!ended.includes("Send the recorded response to the linked run, or dismiss"));
+
 // No verifiable successor: still explained and dismissible, but no transfer button.
 const noRepair = ui.interactionControls({ id: "n2", presentation: { failure_reason: "gone" },
   interaction: { state: "failed", delivery_retryable: false, delivery_failure_code: "source_superseded" } });

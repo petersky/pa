@@ -61,6 +61,11 @@ SUPERSEDED_SOURCE_ACTION = (
     "Send the recorded response to the linked run, or dismiss this request."
 )
 
+LINKED_RUN_ENDED_ACTION = (
+    "The linked run that replaced this session has ended, so this response can no longer "
+    "be delivered to any session. Dismiss this request; the recorded response is kept."
+)
+
 
 class NotificationService:
     def __init__(self, ctx: AppContext) -> None:

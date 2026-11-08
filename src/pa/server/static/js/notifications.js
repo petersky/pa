@@ -162,12 +162,14 @@
       var dismiss = failed ? '<button type="button" class="ghost small" data-notification-dismiss-failed>Dismiss without delivering</button>' : "";
       // A verified linked run means the source is superseded even if an older
       // record still calls the failure retryable; retrying it cannot succeed.
-      var superseded = interaction.delivery_failure_code === "source_superseded" || !!transfer;
-      if (interaction.delivery_retryable === false || !!transfer || (!item.continuation_transfer && /^Original execution binding differs in:/.test(interaction.delivery_error || ""))) {
+      var runEnded = failed && !!recovery && recovery.kind === "linked_run_ended";
+      var superseded = interaction.delivery_failure_code === "source_superseded" || !!transfer || runEnded;
+      if (interaction.delivery_retryable === false || !!transfer || runEnded || (!item.continuation_transfer && /^Original execution binding differs in:/.test(interaction.delivery_error || ""))) {
         var heading = superseded
           ? "Response recorded. The session that asked is superseded by a linked run."
           : "Response recorded. Workspace recovery requires action before delivery can continue.";
-        var action = interaction.delivery_recovery_action || (superseded ? presentation.required_action : "") || "Inspect the owning session and restore its original workspace through PA, or authorize a linked continuation.";
+        // The card's live state wins over what was stored when the failure happened.
+        var action = (recovery ? presentation.required_action : "") || interaction.delivery_recovery_action || (superseded ? presentation.required_action : "") || "Inspect the owning session and restore its original workspace through PA, or authorize a linked continuation.";
         return '<div class="notification-actions"><p>' + heading + '</p><p>' + esc(action) + '</p>' + reason + transfer + dismiss + '</div>';
       }
       return '<div class="notification-actions">' + reason + '<button type="button" class="primary small" data-notification-retry>Retry delivery</button>' + dismiss + '</div>';
