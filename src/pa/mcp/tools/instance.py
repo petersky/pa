@@ -264,9 +264,9 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         attachment_id: str, attachment_sha256: str,
         action: Literal['preserve', 'status'],
     ) -> dict:
-        """Relocate one exact attachment-backed directory intact, without collecting.
+        """Relocate one exact attachment-backed file or flat directory, without collecting.
 
-        Fixed bounds: one flat directory, at most 64 regular files/16 MiB.
+        Fixed bounds: one regular file or flat directory, at most 64 files/16 MiB.
         Requires a durable ZIP with preservation-manifest.json, exact owner
         idle/lease/HEAD proof and no open files. No reset, index or ref edits.
         After an uncertain response call status with the identical arguments;

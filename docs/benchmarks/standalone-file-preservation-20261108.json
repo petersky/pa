@@ -1,0 +1,565 @@
+{
+  "contract": "pa.standalone-file-preservation-source-repair/v1",
+  "observed_at": "2026-11-08T07:00:26.959963+00:00",
+  "scope": "Small extension of existing selected untracked preservation/receipt path; source-stage evidence, not deployment or cleanup acceptance.",
+  "context": {
+    "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+    "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+    "cleanup_card_id": "7938e21e-05fe-4dc9-b85e-98689957dd9d",
+    "collector_session_id": "0337e686-6170-470c-89c7-5285925f43f0",
+    "control_id": "9bb01f22-f57f-4e51-9797-c2bb915e75f5",
+    "repository_id": "5ce49cd8-f632-5f6d-a0d5-0b9eaf61f9cd",
+    "repository": "https://github.com/petersky/pa",
+    "branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+    "original_base": "4697ed583f6a5eceead72217d07ba2ebaf4ccc83",
+    "lease_id": "d24899f49011107365c237bbf09a300f63beb5a5c9658eac682770304ade52f2",
+    "fence": 376
+  },
+  "source_parent_head": "9d1fccc2ff1dc1dd757836007422600fe2aef8a3",
+  "implementation": {
+    "selection": "One top-level regular single-link file, or existing bounded flat-directory case. Same durable ZIP format, manifest names/bytes/SHA256, owner and lease guards.",
+    "custody": "File renamed intact under existing receipt root files/<original-name>; exact inode/mode/mtime/bytes verified again. Directory layout and receipt identities retained.",
+    "race_guards": "File kind fixed across snapshots. Lease/head/index/acceptance/restart/source metadata and hash rechecked; symlink/hardlink/unsafe path rejected; file-specific fail-closed open-file observation.",
+    "receipt": "Same fingerprint/status recovery; interrupted effects stay unknown and preserve cannot be replayed.",
+    "bounds_unchanged": {
+      "files": 64,
+      "bytes": 16777216
+    },
+    "fresh_origin_and_integration_checks_unchanged": true,
+    "new_dependencies_or_request_fields": 0
+  },
+  "validation": {
+    "first_stage": {
+      "observed_at": "2026-11-08T06:56:51.512923+00:00",
+      "exit_code": 0,
+      "counts": {
+        "passed": 85
+      },
+      "elapsed_seconds": 87.695,
+      "source_hashes": {
+        "src/pa/repository/untracked_preservation.py": "847555d83d585cf4eb201d6dd4180468c819ec911cb513028467cde2349172b8",
+        "src/pa/mcp/tools/instance.py": "fe45f9dee4de3f19bb4dfecd5193f72dd6f4bb4117f0ab0c77634eef9e6dc8ce",
+        "src/pa/modules/instance.py": "970f9a8a14c1c89210acb1f67c9ffb29138fe2e06baddb4c09c5ee8c2f32ba7f",
+        "tests/test_untracked_preservation.py": "640932448cc46d011547cb82573eb7d749683a51b31c20182b7ebf72023f67de"
+      },
+      "log_bytes": 160,
+      "log_sha256": "e35c4fb0464f9c25fb1600faa381b8d99b1dfac2853362d44748385704772fe8",
+      "git_fixture_command_counts": {
+        "init": 72,
+        "config": 144,
+        "add": 74,
+        "commit": 72,
+        "rev-parse": 277,
+        "remote": 72,
+        "update-ref": 74,
+        "worktree": 146,
+        "symbolic-ref": 50,
+        "status": 41,
+        "ls-files": 30,
+        "rev-list": 2
+      },
+      "forbidden_git_attempts": [],
+      "private_both_PA_roots_before_imports": true,
+      "exact_service_python": "/Users/petersky/.local/share/uv/tools/pa/bin/python3",
+      "free_bytes_before": 1321402368,
+      "free_bytes_after": 1295388672,
+      "fixture_only_no_production_operations": true
+    },
+    "final_stage": {
+      "observed_at": "2026-11-08T06:59:09.154717+00:00",
+      "exit_code": 0,
+      "counts": {
+        "passed": 88
+      },
+      "elapsed_seconds": 91.746,
+      "source_hashes": {
+        "src/pa/repository/untracked_preservation.py": "c89b9c2f485ef7d2ab0ba37fba55a2c3ff226fde7229d6c9a81d8818c93cc330",
+        "src/pa/mcp/tools/instance.py": "fe45f9dee4de3f19bb4dfecd5193f72dd6f4bb4117f0ab0c77634eef9e6dc8ce",
+        "src/pa/modules/instance.py": "970f9a8a14c1c89210acb1f67c9ffb29138fe2e06baddb4c09c5ee8c2f32ba7f",
+        "tests/test_untracked_preservation.py": "b874fa058a05382b1308c6e5385feef901fef3b201b79dd1d6fe8ffaaa9ff849"
+      },
+      "log_bytes": 160,
+      "log_sha256": "31d4f6ed061187bd4bcaecd24059371e79ed220f567109eaef744423f52fcf35",
+      "git_fixture_command_counts": {
+        "init": 75,
+        "config": 150,
+        "add": 77,
+        "commit": 75,
+        "rev-parse": 284,
+        "remote": 75,
+        "update-ref": 77,
+        "worktree": 152,
+        "symbolic-ref": 51,
+        "status": 42,
+        "ls-files": 31,
+        "rev-list": 2
+      },
+      "forbidden_git_attempts": [],
+      "private_both_PA_roots_before_imports": true,
+      "exact_service_python": "/Users/petersky/.local/share/uv/tools/pa/bin/python3",
+      "free_bytes_before": 1294548992,
+      "free_bytes_after": 1268703232,
+      "fixture_only_no_production_operations": true
+    },
+    "fixtures": "Private disposable Git repositories initialized locally; production origin refresh is not changed. Fixture transport stubbed because all objects/refs already exist; command guard blocks clone/fetch/repack/gc/maintenance.",
+    "coverage": [
+      "1038-byte successful file preservation, exact metadata and retention after disposable selected cleanup",
+      "file/directory fence, head, timestamp, completion, expiry, acceptance, restart, tracked/index, attachment and observer guards",
+      "source byte/hash/inode/mode/mtime/kind races; symlink/hardlink and unsafe selection rejection",
+      "before/after rename interruption, unknown receipt, status recovery and preserve replay rejection",
+      "existing directory and MCP forwarding/admission/cancellation contracts"
+    ],
+    "metadata_reader_first_failure": "One metadata-only inspection command had a SyntaxError before execution; no PA import/source/test/production effect. Replaced by this bounded reader. Both pytest stages passed."
+  },
+  "original14": {
+    "removed": 2,
+    "retained_or_unresolved": 12,
+    "removed_du_allocation_bytes": 318234624,
+    "separate_concurrent_free_deltas_bytes": [
+      14110720,
+      256942080
+    ],
+    "exclusive_physical_reclamation_proven": false,
+    "new_source_phase_removals": 0,
+    "outcomes": [
+      {
+        "card_id": "d0a71e20-b646-45aa-ada3-d2a103a0e0e4",
+        "lease_id": "99634a50d77766bfbbb27dbfeb257ff2734cc60317ca2f0b254c92e8d42ce529",
+        "removed_by_this_session": false,
+        "source_repair_phase_target_mutation": false
+      },
+      {
+        "card_id": "2e21ffd0-dbf6-4d50-a7e4-dc5ea64937e9",
+        "lease_id": "752fc6b9097bd6f838cf6b38ec69e47d873134822b9101e89952f1309557a75c",
+        "removed_by_this_session": false,
+        "source_repair_phase_target_mutation": false
+      },
+      {
+        "card_id": "abffa04b-9f60-48b4-93db-b94800749a32",
+        "lease_id": "b7f26c49ce57c0ca5b5fd2f8343e76703519267168ecadceeb74945865b9153d",
+        "removed_by_this_session": false,
+        "source_repair_phase_target_mutation": false
+      },
+      {
+        "card_id": "e7c4065d-ab24-4ac9-8ac8-3cebcd42b7b1",
+        "lease_id": "39bb434e463582945cc378b3535eaf47a68a57647cefe90842e174fe56f29826",
+        "removed_by_this_session": false,
+        "source_repair_phase_target_mutation": false
+      },
+      {
+        "card_id": "5e09c172-43f4-4c3d-b71a-cf9edec7d596",
+        "lease_id": "513e422a5486282cbc5adcff0391385979df09d8470c4d6fb41c139d984cf94d",
+        "removed_by_this_session": false,
+        "source_repair_phase_target_mutation": false
+      },
+      {
+        "card_id": "6cdad949-26e0-4eaf-9408-a50dcd00878c",
+        "lease_id": "e24b866459b9b858177b5a071dc366fd5b4e8186698277f576d3b6f2967ae0c7",
+        "removed_by_this_session": false,
+        "source_repair_phase_target_mutation": false
+      },
+      {
+        "card_id": "3d68ced2-f7f8-4435-9d42-d34a855b6dd7",
+        "lease_id": "a93e87ea42895ed4453716bb50241e5d224bd52c7a408c1315982111127926ac",
+        "removed_by_this_session": true,
+        "source_repair_phase_target_mutation": false
+      },
+      {
+        "card_id": "0fb6c904-1660-4c82-a83a-e6a3e0a98c8e",
+        "lease_id": "637a76f7c08e42b0e0512958b25e0328eed445aea553b52cd035d370dbc19700",
+        "removed_by_this_session": false,
+        "source_repair_phase_target_mutation": false
+      },
+      {
+        "card_id": "304dba58-5bc8-47b9-bb41-8460eee12a92",
+        "lease_id": "aaa44e3c61a74732ebbef9046a2a7c6f9e2442b4a5077a67ab4934b1d45e8998",
+        "removed_by_this_session": true,
+        "source_repair_phase_target_mutation": false
+      },
+      {
+        "card_id": "a45a7794-0cb3-40cd-a088-576d6b005de7",
+        "lease_id": "954a83bb06d0339ac06731e4accd4b3b62902093da95fb7c0b059ae8ee730236",
+        "removed_by_this_session": false,
+        "source_repair_phase_target_mutation": false
+      },
+      {
+        "card_id": "42ed4384-5fe2-41d0-ab61-ec5264a45a56",
+        "lease_id": "5eee483a74c44387e6aa8fb3b70827ffb2004089eeb1c11c72ce523a802d3bc5",
+        "removed_by_this_session": false,
+        "source_repair_phase_target_mutation": false
+      },
+      {
+        "card_id": "b55bcf40-676d-4fe5-a813-5e02829e7e45",
+        "lease_id": "ad75c9561aaf4278f7d00d1b1b862be8c064457c693ce54dc3132d8c3dd7f6a7",
+        "removed_by_this_session": false,
+        "source_repair_phase_target_mutation": false
+      },
+      {
+        "card_id": "d2e34b5b-b208-4009-b30e-9c44e589d52e",
+        "lease_id": "09e25a1b2ec30d455e16faeec930cc5c560643f3e6470a26c94e2ae36bf7e64b",
+        "removed_by_this_session": false,
+        "source_repair_phase_target_mutation": false
+      },
+      {
+        "card_id": "93fa8580-d467-4612-ada7-fbf9a9aa5dc6",
+        "lease_id": "15cf4f4e9a148fb970e56cea277e592f4b9e8dbf97c2cf13bcea36a624e5952a",
+        "removed_by_this_session": false,
+        "source_repair_phase_target_mutation": false
+      }
+    ]
+  },
+  "retention": {
+    "baseline_checkpoint_sha256": "acc20675bca6a7e486362ea5c4839929c68aea3950bba1042d040fb1441d1dc7",
+    "protected_roots_preserved": [
+      {
+        "logical_bytes": 126372039,
+        "sha256": "eebd5f49b574383ade0457b1108509f64e2d62cfcd166ea6f4e18b323818dc38"
+      },
+      {
+        "logical_bytes": 1671415,
+        "sha256": "354b17c13004175140c7646d6fcf413a017fe639036085a879c8195583347995"
+      },
+      {
+        "logical_bytes": 1469396,
+        "sha256": "9140e45f2280bffec3dc0fed682f75f8dc867d7495c975c822ebc34f889eb570"
+      },
+      {
+        "logical_bytes": 12603,
+        "sha256": "dff53240b19f984d4ff652e11633c52855efe0df101175fca43f8ad4ea8c11e2"
+      },
+      {
+        "logical_bytes": 11909,
+        "sha256": "599e80fb1795b5eb1c430424c80412dd400a73a57e2c8c3d15ec7b834745e09b"
+      },
+      {
+        "logical_bytes": 12819,
+        "sha256": "ca30b345ee9b0a3c08a19af0c72c91c720b3701b0f2ccb5ce47ca52f07fe30af"
+      },
+      {
+        "logical_bytes": 10329,
+        "sha256": "50ec68f3e80c9650be441c74c60fdfa653a1c7d03637f8dca7b295c5739e0e6b"
+      }
+    ],
+    "later_custody_catalog": [
+      {
+        "local_reference": ".dev/cleanup14-652-continuation-pending-publication.manifest.json",
+        "bytes": 683,
+        "sha256": "5db43f04d136c21d99f0bcab8dfc5fc35a8d0357499e33f52b3889608f8e1e8e",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-652-continuation-pending-publication.raw.json.gz.part001",
+        "bytes": 21318,
+        "sha256": "9d9e746fba2cf062617ca6bd3329aa390ca14f676a56a851e4f408441ac3fae6",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-notice653-history-pending-publication.manifest.json",
+        "bytes": 1717,
+        "sha256": "00ef3ae7590c8dc80f0b7b4120d4b570c89886d6ff4c1379fcaaf5f0a4fc6759",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-notice653-history-pending-publication.raw.json.gz.part001",
+        "bytes": 22471,
+        "sha256": "9388ae652591fb97163017e637105b04051ac91c4de9a927789664b84d518144",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-notice653-final-hash-custody.manifest.json",
+        "bytes": 732,
+        "sha256": "8a5f1307b32c2d4e8564919fd15f97e3a0c50c092f16d3d216adeb01dff01bd6",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-notice653-final-hash-custody.raw.json.gz.part001",
+        "bytes": 4687,
+        "sha256": "d751a5ca73dc2fe874a6c2df0b29a16d89fad4f1755e99f95cf500b4d97ccb42",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-notice654-equivalence-pending-publication.manifest.json",
+        "bytes": 2089,
+        "sha256": "d19766ae5387e4ac73b5f04b3f1b7233466059286a1e252c2dc95222aeb4c1a6",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-notice654-equivalence-pending-publication.raw.json.gz.part001",
+        "bytes": 28071,
+        "sha256": "377bee460938ddca859af9d23d687579f38cd092d4051cebbec4e31af4df8ed0",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-notice654-exacthead-pending-publication.manifest.json",
+        "bytes": 1166,
+        "sha256": "7a2942fb717b087a404dbaea52b605d55be0dbfd327fd48b863bc6d275b0c471",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-notice654-exacthead-pending-publication.raw.json.gz.part001",
+        "bytes": 4887,
+        "sha256": "95532bfcd6b7133e8910252ce045bef600a606d33c51eb5c9cf2169b20cdf3e1",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-notice654-final-hash-custody.manifest.json",
+        "bytes": 735,
+        "sha256": "02935a679634454b0291024e3418b2cb5b6e124524abcadfbd392e29dd1f0ced",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-notice654-final-hash-custody.raw.json.gz.part001",
+        "bytes": 2853,
+        "sha256": "51192e94e7fa249d122caf6a38d55a987930453380399a5db6cb68f0c9207686",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-5e09-lease-fresh-20261108.LOCAL.json",
+        "bytes": 2055,
+        "sha256": "1e97950170b4c622b9a2e68165a465d39ef34d719756fd645df3dc6598f791ce",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-5e09-live-fresh-20261108.LOCAL.json",
+        "bytes": 11329,
+        "sha256": "51dc29ae0f1c72003d457d6f5e78716c4a4669d1ac1cf33e82b99bd3b8979102",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-cleanup-report-result-20261108.LOCAL.json",
+        "bytes": 480,
+        "sha256": "2bcaa1d16e7fd7c011dde7ebd3e08e82491ef5a6ece8f608133ddff833da316b",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-copy-open-observer-20261108.LOCAL.json",
+        "bytes": 45,
+        "sha256": "916bea32fb80f1e9d7e34403d67aedde16587cff25971eb0e8e92574db3bfcc3",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-current-guards-20261108.json",
+        "bytes": 4505,
+        "sha256": "160f60f3c558f0b17bc04f2ad3dd411c69959739bb7f7bcb6321052557fa79ba",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-current-tree-20261108.LOCAL.json",
+        "bytes": 1696270,
+        "sha256": "87be30fdff61eb2d4f8d63480b060be7e203f438bce733174ad31137f45d67e6",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-final-hash-custody-20261108.json",
+        "bytes": 10010,
+        "sha256": "7e1bd2e15b9f3100c5d00bb84e551dd5326e370ab565e1bad83ce1d339de5046",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-final-hash-custody.manifest.json",
+        "bytes": 718,
+        "sha256": "2434606bba32fc0785678d4a22389692cf9b4a022205ae826dd833d17d363037",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-final-hash-custody.raw.json.gz.part001",
+        "bytes": 3061,
+        "sha256": "2db575938443e50e7a26820784d75fefca88c02ef86cc2fddfb0071c0da435de",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-final-progress-result-20261108.LOCAL.json",
+        "bytes": 364,
+        "sha256": "f8e8f4bd72c1237666521a87ed1baa9f0de03441714c07432959dad850c1a7fe",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-guarded-retention-checkpoint-20261108.json",
+        "bytes": 135191,
+        "sha256": "acc20675bca6a7e486362ea5c4839929c68aea3950bba1042d040fb1441d1dc7",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-ignored-and-log-20261108.LOCAL.manifest.json",
+        "bytes": 9773,
+        "sha256": "0901db7e7da1af73d0f335b6ad086387f5aedc77bf01ee4e98225c4da8ec1e03",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-ignored-and-log-20261108.LOCAL.tar.gz",
+        "bytes": 55472,
+        "sha256": "ce93a6caa49df7123c44b592d6c8f4a64399ce23d8726deb1c418cf2eed87c54",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-ignored-local-custody-20261108.json",
+        "bytes": 1553,
+        "sha256": "8442476198f267fa71578c43fb7fd639a1aab38db235ec15fd7b1a38ad058221",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-note-original-card-20261108.LOCAL.json",
+        "bytes": 27674,
+        "sha256": "80c1b26ec799e95b5676452ab7d2cb6af0cc287a43c4039c12dce7d39b3af9c7",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-note-systemic-card-20261108.LOCAL.json",
+        "bytes": 138346,
+        "sha256": "9ecd86d62381aae4b7536ecaaf2651781a7b475fafedf8085168a52f16a418a2",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-original-card-20261108.LOCAL.json",
+        "bytes": 27674,
+        "sha256": "80c1b26ec799e95b5676452ab7d2cb6af0cc287a43c4039c12dce7d39b3af9c7",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-original-note-request-20261108.LOCAL.json",
+        "bytes": 24139,
+        "sha256": "494a0d3cf4e5c7b17340ddb62591474b34b1bd44bc0dfa1486a6a7f60e29c33a",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-original-note-result-20261108.LOCAL.json",
+        "bytes": 68217,
+        "sha256": "b5bd2344e560035af392f86130a6542988328847ca16b707a9f5366b08446b39",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-own-lease-fresh-20261108.LOCAL.json",
+        "bytes": 2002,
+        "sha256": "5fda9dd0820b9e4d2f0701f3ddf9df6fe4f195ad8e4c8d0f7e27592cab864975",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-pending-publication.manifest.json",
+        "bytes": 2082,
+        "sha256": "b50d4cadd25f93202f3370ce11deb517cee9c217935c0d3272d83231228e27ad",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-pending-publication.raw.json.gz.part001",
+        "bytes": 33349,
+        "sha256": "d125c01b2605b4e1f3a121f64cc6e7b716d5f09ec228ab4a3d73fe6363c2af57",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-postcopy-lease-20261108.LOCAL.json",
+        "bytes": 2055,
+        "sha256": "1e97950170b4c622b9a2e68165a465d39ef34d719756fd645df3dc6598f791ce",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-postcopy-liveness-20261108.LOCAL.json",
+        "bytes": 11329,
+        "sha256": "8e7f932225fa18abf39c56e9a11f9140795545001f47f40ff2042166af987877",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-recursive-open-observer-20261108.LOCAL.json",
+        "bytes": 45,
+        "sha256": "916bea32fb80f1e9d7e34403d67aedde16587cff25971eb0e8e92574db3bfcc3",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-restart-handoffs-20261108.LOCAL.json",
+        "bytes": 15,
+        "sha256": "2fa4326fd35da9ffaacdaa14b560adcb05fd27c8bae58e7e73b1189684e07581",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-status-fresh-20261108.LOCAL.json",
+        "bytes": 3897,
+        "sha256": "60dc7badaa0d8afeb8c68154b72041b40a3c766c9fd38fa0a620895a0a41e865",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-systemic-report-result-20261108.LOCAL.json",
+        "bytes": 481,
+        "sha256": "0499c428a93b4f1be13e6f5637f70ecbf08a051d6a90ced6a0083712af352c45",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/cleanup14-logcase-target-card-20261108.LOCAL.json",
+        "bytes": 10943,
+        "sha256": "f7d29a15da4d825e81a9029c17b67364e41e1d233533239f195eaba2a0edfb5f",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/file-preservation-repair-final-tests-20261108.json",
+        "bytes": 1255,
+        "sha256": "da7298bd8cff299a39ccb5c71533ba295c7dfbdc2d379f458b6b1e50517f0d3f",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/file-preservation-repair-own-lease-20261108.LOCAL.json",
+        "bytes": 2002,
+        "sha256": "1922bd69ff65909aa5a9d74c402f7494c314abad1d6206429e3b354808d81f56",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/file-preservation-repair-preflight-20261108.json",
+        "bytes": 1169,
+        "sha256": "37a3983758bafa3d30c4db0ab12d4cebef398b268c017b8726119b73e024f989",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/file-preservation-repair-tests-20261108.json",
+        "bytes": 1255,
+        "sha256": "f2ef94e105d998dc97ba80c08fd636a284b893a9b1ffbb6fccc0fbef0e4eb9ff",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/file-preservation-repair-final-tests-20261108.LOCAL.log",
+        "bytes": 160,
+        "sha256": "31d4f6ed061187bd4bcaecd24059371e79ed220f567109eaef744423f52fcf35",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      },
+      {
+        "local_reference": ".dev/file-preservation-repair-tests-20261108.LOCAL.log",
+        "bytes": 160,
+        "sha256": "e35c4fb0464f9c25fb1600faa381b8d99b1dfac2853362d44748385704772fe8",
+        "custody": "Retained LOCAL; hash-only publication. Raw payload not exported."
+      }
+    ],
+    "raw_native_control_answers_status_log_wheel_bytes": "LOCAL/hash-only; no raw payload attached or exported by this source publication. All preceding tracked manifests/chunks and LOCAL archives remain intact.",
+    "new_logcase_LOCAL_archive": {
+      "bytes": 55472,
+      "sha256": "ce93a6caa49df7123c44b592d6c8f4a64399ce23d8726deb1c418cf2eed87c54"
+    },
+    "all_queued_controls_unchanged": true
+  },
+  "stage": {
+    "implemented": true,
+    "integrated": "Pending normal ready-PR, durable supervisor, independent exact-head CI/review gates.",
+    "installed": false,
+    "production_restart": false,
+    "production_preserve_or_collect": false,
+    "current_runtime_identity": "sha256:9e10d0ace9e9dc844086206fea2e2205702ff177ef002413949ecf5bdb114260"
+  },
+  "next_required_steps": [
+    "Integrate through existing PR/supervisor workflow. This source phase performs no production installer, restart or cleanup.",
+    "Follow-up must revalidate resource capacity and separately authorize exact activation. Preserve capacity7802064f/version1/requestcleanup14-macbook-disk-headroom-20261108-v1 and all pending controls without an invented response or replacement question.",
+    "Standalone preservation still needs an exact durable attachment plus fresh source/owner/lease/open-file guards. Original file and LOCAL copies remain intact.",
+    "Collection still refreshes origin and enforces integration/history gates; current no-Git-network limitation remains explicit with no bypass flag."
+  ],
+  "whole_scope": {
+    "findings_open": 740,
+    "concerns_open": 181,
+    "completion_requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+    "accepted": false,
+    "retained_residuals": [
+      "713.058ms fixture residual",
+      "first failure1c7764a3",
+      "historical native/peer/log/foreground/background and production scheduling recipient acceptance gaps"
+    ],
+    "accepted_bounded_scopes_remain_closed": [
+      "Backup0331",
+      "DB89957",
+      "recovery5be6"
+    ]
+  }
+}
