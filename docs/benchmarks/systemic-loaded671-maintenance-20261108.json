@@ -57,10 +57,10 @@
   },
   "full_archive": {
     "path": "systemic-loaded671-maintenance-20261108.raw.json.gz",
-    "bytes": 131226,
-    "sha256": "55cf184cb59a573297aff2712e42e0a87f43f32a7ab890e09ce1a4d325cd7f8c",
-    "decoded_bytes": 2998929,
-    "decoded_sha256": "34dc26c569b52b6624aa0ae2b4910d978a9c841fc5a1346131da31897ed3e228"
+    "bytes": 159648,
+    "sha256": "8a31e0daa87daf7f3ba0b90170cab2c9dc75011559a89759453679e62d550d2a",
+    "decoded_bytes": 3586370,
+    "decoded_sha256": "b6c7ddb04dacdf60a2886aef83cbce76fda46582a77a9bfeb09b99ca9fbe59a8"
   },
   "native_operation_count": 89,
   "private_comparison": {
@@ -288,5 +288,42 @@
     "bytes": 8484,
     "meaning": "First final-script baseline completed reclamation but failed overstrict fixture status==ok because concurrent post-VACUUM checkpoint deferred busy. Corrected fixture records busy/deferred honestly and still asserts zero free pages, reduced file size, integrity, all retained rows and100 durable updates. No product code or deadline changed."
   },
-  "benchmark_script_sha256": "a1fe61ea510f5a6994713d23b980a6d8cb0e9ea33cea6ec70cc58f9711a85c94"
+  "benchmark_script_sha256": "a1fe61ea510f5a6994713d23b980a6d8cb0e9ea33cea6ec70cc58f9711a85c94",
+  "receipt_recovery": {
+    "report_id": "a12b17ff-a1e7-4bfd-bcdc-47e757c8b36d",
+    "original_revision": 1,
+    "original_hash": "496818512a2dd86daaf25c2480f607cdd0ecf56aa1ea70b15267a5d02a5a95ea",
+    "method": "38 supported bounded32-record pages; no replay. Supersedes earlier unknown receipt status retained in history."
+  },
+  "existing_conversion_experiment": {
+    "write_latency": [
+      {
+        "samples": 100,
+        "max": 467.475,
+        "p50": 0.094,
+        "p95": 0.127,
+        "p99": 0.148
+      },
+      {
+        "samples": 100,
+        "max": 476.704,
+        "p50": 0.06,
+        "p95": 0.077,
+        "p99": 0.481
+      },
+      {
+        "samples": 100,
+        "max": 476.584,
+        "p50": 0.062,
+        "p95": 0.079,
+        "p99": 2.82
+      }
+    ],
+    "vacuum_ms": [
+      555.896917,
+      527.071583,
+      557.3935
+    ],
+    "scope": "Private existing NONE-mode database converted during transactional fullVACUUM; assertsmode2/retainedrows/integrity/reclamation/100updates per repetition. Initial conversion remains blocking. Not product implementation or native acceptance."
+  }
 }
