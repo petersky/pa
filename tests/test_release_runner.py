@@ -10,6 +10,7 @@ from pa.release.runner import (
     create_release,
     ensure_release_pr,
     github_release_exists,
+    merge_channels_pr,
     merge_release_pr,
     publish_github_release,
     resolve_release_target,
@@ -337,3 +338,53 @@ def test_publish_github_release_pins_tag_on_edit(tmp_path) -> None:
     args = run.call_args.args[0]
     assert args[:3] == ["gh", "release", "edit"]
     assert args[args.index("--tag") + 1] == "v1.2.3"
+
+
+def _gh(responses):
+    """Fake `gh`: match on a distinguishing argument, record every call."""
+    calls = []
+
+    def capture(cmd, cwd=None):
+        calls.append(cmd)
+        for needle, out in responses.items():
+            if needle in cmd or needle in " ".join(cmd):
+                return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    return calls, capture
+
+
+CHANNEL_DIFF = 'diff --git a/channels.json b/channels.json\n--- a/channels.json\n+++ b/channels.json\n@@ -1,4 +1,4 @@\n {\n-  "release": "v1.7.0",\n+  "release": "v1.8.0",\n   "dev": "main"\n }\n'
+
+
+def test_merge_channels_pr_merges_the_expected_pointer_without_waiting_for_checks() -> None:
+    calls, capture = _gh({
+        "number,url,headRefOid": "684 https://example.test/pr/684 abc123",
+        "[.files[].path]": "channels.json",
+        "diff": CHANNEL_DIFF,
+    })
+    with patch("pa.release.runner._capture", side_effect=capture), patch("pa.release.runner._run") as run:
+        assert merge_channels_pr("1.8.0", timeout=1, poll_interval=0) == "https://example.test/pr/684"
+    assert run.call_args_list == [call(["gh", "pr", "merge", "684", "--merge", "--match-head-commit", "abc123"], cwd=ROOT)]
+    assert not any("checks" in cmd for cmd in calls)
+
+
+def test_merge_channels_pr_refuses_anything_but_one_pointer_change() -> None:
+    for files, diff in (
+        ("channels.json,src/pa/x.py", CHANNEL_DIFF),
+        ("channels.json", CHANNEL_DIFF.replace("v1.8.0", "v9.9.9")),
+        ("channels.json", CHANNEL_DIFF + '+  "extra": "v1.8.0"\n'),
+    ):
+        _, capture = _gh({"number,url,headRefOid": "684 https://example.test/pr/684 abc123",
+                          "[.files[].path]": files, "diff": diff})
+        with patch("pa.release.runner._capture", side_effect=capture), patch("pa.release.runner._run") as run:
+            assert merge_channels_pr("v1.8.0", timeout=1, poll_interval=0) is None
+        run.assert_not_called()
+
+
+def test_merge_channels_pr_gives_up_with_guidance_when_no_pr_appears(capsys) -> None:
+    _, capture = _gh({})
+    with patch("pa.release.runner._capture", side_effect=capture), patch("pa.release.runner._run") as run:
+        assert merge_channels_pr("v1.8.0", timeout=0, poll_interval=0) is None
+    run.assert_not_called()
+    assert "gh pr merge chore/channels-v1.8.0 --merge" in capsys.readouterr().out
