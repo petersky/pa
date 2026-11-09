@@ -7,6 +7,44 @@ from tests.test_wire_metadata import SID, NATIVE, PID, artifact, request, comple
 from tests.test_wire_metadata_pages import read
 
 
+def test_fifteen_known_lengths_fit_fixed_record_call_and_finite_pass_bounds(tmp_path, monkeypatch):
+    lengths = [1065829,1165122,1162696,1162696,1064175,1107358,1221317,
+               1199695,1221276,1188697,1053193,1146939,1048585,1140094,1049522]
+    assert sum(lengths) == 16997194
+    assert gaps.MAX_RECOVERY_LINE == 2*1024*1024
+    assert gaps.MAX_ASSESS_WORK == 6*1024*1024
+    total_work = total_read = 0
+    for length in lengths:
+        value = request(queued_prompt_id=PID, attempt=1)
+        value['private'] = ''
+        base = json.dumps(value).encode()
+        value['private'] = 'X'*(length-len(base)-1)
+        raw = json.dumps(value).encode()+b'\n'
+        assert len(raw) == length
+        path, cursor = prepare(tmp_path, monkeypatch, raw)
+        ordinary = read(tmp_path, cursor)
+        page = read(tmp_path, cursor, assess_unparsed=True)
+        detail = page.pop('unparsed_assessment')
+        assert page == ordinary
+        gap, = detail['gaps']
+        assert gap['recovery'] == 'metadata_recovered'
+        assert gap['record_end']-gap['record_start'] == length
+        assert gap['metadata']['correlation'] == 'exact'
+        assert detail['work_bytes'] <= 6*1024*1024
+        total_work += detail['work_bytes']; total_read += page['bytes_read']
+        assert 'private' not in json.dumps(detail)
+    assert total_work <= 90*1024*1024 and total_read <= 15*1024*1024
+
+
+def test_beyond_new_fixed_record_bound_remains_explicit_gap(tmp_path, monkeypatch):
+    value = request(); value['private'] = 'X'*(2*1024*1024)
+    _, cursor = prepare(tmp_path, monkeypatch, json.dumps(value).encode()+b'\n')
+    detail = read(tmp_path, cursor, assess_unparsed=True)['unparsed_assessment']
+    assert detail['gaps'][0]['recovery'] == 'record_limit'
+    assert detail['work_bytes'] <= 6*1024*1024
+    assert not detail['delivery_allowed'] and detail['effect'] == 'unknown'
+
+
 def prepare(tmp_path, monkeypatch, tail):
     monkeypatch.setattr(pages, 'MAX_OUTPUT', 1)
     path = artifact(tmp_path, [request()])
