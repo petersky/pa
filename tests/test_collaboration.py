@@ -560,6 +560,57 @@ class CollaborationServiceTests(IsolatedAsyncioTestCase):
         self.assertEqual(result.status.value, "unsupported")
         self.assertIn("did not forward", result.reason)
 
+    def _command_request(self, catalog, name, key, arguments=None):
+        return ExecuteCommandRequest(
+            session_id=self.session.id,
+            name=name,
+            arguments=arguments,
+            catalog_generation=catalog.generation,
+            dispatch_id=self.session.dispatch_id,
+            card_id=self.session.card_id,
+            authority_instance_id=self.session.authority_instance_id,
+            authority_version=self.domain.card.updated_at.isoformat(),
+            idempotency_key=key,
+        )
+
+    async def test_dollar_commands_are_skills_and_other_commands_are_not(self):
+        catalog = self.service.capture_available_commands(
+            self.session,
+            [{"name": "$seed", "description": "Make a seed"}, {"name": "review", "description": "Review"}],
+            connection_generation=3,
+        )
+        kinds = {command.name: command.kind for command in catalog.commands}
+        self.assertEqual(kinds["$seed"], "skill")
+        self.assertEqual(kinds["review"], "command")
+        self.assertEqual(kinds["pa:status"], "command")
+
+    async def test_skill_is_forwarded_as_plain_dollar_text_not_a_slash_command(self):
+        sent = []
+
+        async def prompt(text, **kwargs):
+            sent.append(text)
+            return "queued"
+
+        self.runtime.prompt = prompt
+        catalog = self.service.capture_available_commands(
+            self.session, [{"name": "$seed", "description": "Make a seed"}], connection_generation=3,
+        )
+        result = await self.service.execute_command(
+            self.session, self._command_request(catalog, "$seed", "skill-1", "from the notes")
+        )
+        self.assertEqual(result.status.value, "forwarded")
+        self.assertEqual(sent, ["$seed from the notes"])
+
+    async def test_status_command_works_while_the_provider_is_disconnected(self):
+        catalog = self.service.ensure_catalog(self.session)
+        self.runtime.connected = False
+        result = await self.service.execute_command(self.session, self._command_request(catalog, "pa:status", "status-1"))
+        self.assertEqual(result.status.value, "applied")
+        # Commands that need the provider still say so.
+        mode = await self.service.execute_command(self.session, self._command_request(catalog, "pa:plan", "plan-offline"))
+        self.assertEqual(mode.status.value, "failed")
+        self.assertIn("offline", mode.reason)
+
     async def test_plan_lifecycle_budget_falls_back_without_authority_change(self):
         self.service.save_policy(
             CollaborationPolicy(

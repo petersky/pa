@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -170,6 +170,9 @@ class SessionCommand(BaseModel):
     name: str
     description: str = ""
     origin: CommandOrigin
+    # Providers advertise skills as "$name" commands. They are invoked by writing the name
+    # in an ordinary prompt, not as a slash command, so clients list them separately.
+    kind: Literal["command", "skill"] = "command"
     provider: str | None = None
     input_hint: str | None = None
     input_required: bool = False
@@ -187,6 +190,12 @@ class SessionCommand(BaseModel):
         if not normalized or any(char.isspace() for char in normalized):
             raise ValueError("command name must be non-empty and contain no whitespace")
         return normalized
+
+    @model_validator(mode="after")
+    def skills_are_dollar_names(self) -> SessionCommand:
+        if self.name.startswith("$") and self.kind != "skill":
+            self.kind = "skill"
+        return self
 
 
 class CommandCatalog(BaseModel):
