@@ -611,6 +611,74 @@ def merge_release_pr(
     print(f"  Merged release PR: {pr}", flush=True)
 
 
+def _channels_pr_problem(pr: str, tag: str) -> str | None:
+    """Why a channels PR must not be merged unattended, or None when it is exactly the expected change."""
+    files = _capture(["gh", "pr", "view", pr, "--json", "files", "--jq", "[.files[].path] | join(\",\")"], cwd=ROOT)
+    if files.returncode != 0 or files.stdout.strip() != "channels.json":
+        return f"it changes {files.stdout.strip() or 'unknown files'}, not only channels.json"
+    diff = _capture(["gh", "pr", "diff", pr], cwd=ROOT)
+    if diff.returncode != 0:
+        return "its diff could not be read"
+    body = [line for line in diff.stdout.splitlines() if line[:1] in "+-" and not line.startswith(("+++", "---"))]
+    added = [line[1:] for line in body if line[0] == "+"]
+    removed = [line[1:] for line in body if line[0] == "-"]
+    key = lambda line: line.strip().rstrip(",").split(":", 1)[0].strip().strip('"')
+    if len(added) != 1 or f'"{tag}"' not in added[0] or len(removed) > 1 or (removed and key(removed[0]) != key(added[0])):
+        return f"it is not a single channel pointing at {tag}"
+    return None
+
+
+def merge_channels_pr(
+    tag: str,
+    *,
+    timeout: float = 300.0,
+    poll_interval: float = 10.0,
+) -> str | None:
+    """Merge the ``chore/channels-<tag>`` PR that the release workflow opens after the tag is pushed.
+
+    channels.json must point at a tag that exists, so it cannot ship in the release PR.
+    The PR is opened with the workflow token, whose CI runs are held for approval, so this
+    merges without waiting for checks, after confirming the PR changes only that pointer.
+    Returns the merged PR URL, or None (with guidance printed) when it could not be merged;
+    the release itself is already published by then, so this never fails the release.
+    """
+    tag = _normalize_tag(tag)
+    branch = f"chore/channels-{tag}"
+    manual = f"gh pr merge {branch} --merge"
+    print(f"==> Waiting for the channels PR ({branch})...", flush=True)
+    deadline = time.monotonic() + timeout
+    url = number = head = None
+    while True:
+        found = _capture(
+            ["gh", "pr", "list", "--base", "main", "--head", branch, "--state", "open",
+             "--limit", "1", "--json", "number,url,headRefOid",
+             "--jq", r'.[0] | select(. != null) | "\(.number) \(.url) \(.headRefOid)"'],
+            cwd=ROOT,
+        )
+        if found.returncode == 0 and found.stdout.strip():
+            number, url, head = found.stdout.split()
+            break
+        if time.monotonic() >= deadline:
+            print(
+                f"  warning: no channels PR appeared for {tag}; once the release workflow "
+                f"finishes, run: {manual}",
+                flush=True,
+            )
+            return None
+        time.sleep(min(poll_interval, max(0.0, deadline - time.monotonic())))
+    problem = _channels_pr_problem(number, tag)
+    if problem:
+        print(f"  warning: not merging {url} automatically because {problem}. Review it, then: {manual}", flush=True)
+        return None
+    try:
+        _run(["gh", "pr", "merge", number, "--merge", "--match-head-commit", head], cwd=ROOT)
+    except RuntimeError as exc:
+        print(f"  warning: could not merge {url}: {exc}\n  Then run: {manual}", flush=True)
+        return None
+    print(f"  Merged channels PR: {url}", flush=True)
+    return url
+
+
 def cleanup_release_branch(branch: str, *, remote: str = "origin") -> None:
     """Switch back to main and delete the finished release branch locally and on origin.
 
