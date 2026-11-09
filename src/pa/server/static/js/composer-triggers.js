@@ -12,6 +12,7 @@
   var TRIGGERS = {
     "/": { startOnly: true, query: /^\S*$/ },
     "$": { startOnly: false, query: /^[\w:.-]*$/ },
+    "@": { startOnly: false, query: /^\S*$/ },
   };
 
   function isSpace(character) {

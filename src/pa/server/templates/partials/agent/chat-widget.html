@@ -276,7 +276,7 @@
     </div>
     <label class="sr-only" for="acw-input-{{ label | replace(':', '-') }}">Message</label>
     <textarea id="acw-input-{{ label | replace(':', '-') }}" data-acw-input rows="1"
-              placeholder="Message the agent, type / for commands, $ for skills, or drop images here…"
+              placeholder="Message the agent, type / for commands, $ for skills, @ to mention, or drop images here…"
               aria-autocomplete="list" aria-controls="acw-command-menu-{{ label | replace(':', '-') }}"
               aria-expanded="false"></textarea>
     <div id="acw-command-menu-{{ label | replace(':', '-') }}"

@@ -71,3 +71,10 @@ def test_ranking_prefers_prefix_then_word_part_then_substring_then_description()
     ranked = run(f'T.rank({json.dumps(items)}, "docs", {{strip: "$"}}).map(i => i.name)')
     assert ranked == ["$docs-tool", "$google-docs", "$openai-docs", "$xdocsx", "$unrelated"]
     assert run(f'T.rank({json.dumps(items)}, "", {{strip: "$"}}).length') == 6
+
+
+def test_at_opens_at_word_starts_so_email_addresses_are_ordinary_text():
+    assert find("@src/app", None, ("@",))["query"] == "src/app"
+    assert find("see @card:fix please", 13, ("@",))["query"] == "card:fix"
+    assert find("mail ada@example.com", None, ("@",)) is None
+    assert find("@", None, ("@",))["query"] == ""

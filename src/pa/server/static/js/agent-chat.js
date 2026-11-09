@@ -654,7 +654,7 @@
           if ((e.key === "Enter" || (e.key === "Tab" && !e.ctrlKey && !e.metaKey && !e.altKey)) &&
               !e.shiftKey && !e.isComposing && e.keyCode !== 229 && self.commandMatches.length) {
             e.preventDefault();
-            self.selectCommand(self.commandMatches[self.commandSelectedIndex]);
+            self.selectMenuItem(self.commandMatches[self.commandSelectedIndex]);
             return;
           }
         }
@@ -4868,8 +4868,16 @@
     if (!this.els.input || !this.els.commandMenu || !this.els.commandOptions) return;
     const triggers = window.PAComposerTriggers;
     const found = triggers
-      ? triggers.find(this.els.input.value || "", this.els.input.selectionStart, ["/", "$"])
+      ? triggers.find(this.els.input.value || "", this.els.input.selectionStart, ["/", "$", "@"])
       : null;
+    if (found && found.trigger === "@") {
+      this.commandTrigger = found;
+      // Re-evaluations that leave the query alone (catalog refreshes, caret moves) must not
+      // restart a search that is already running or finished.
+      if (this._mentionQuery !== found.query) this.startMentionSearch(found.query);
+      return;
+    }
+    this.cancelMentionSearch();
     if (!found) {
       this.commandTrigger = null;
       this.closeCommandMenu();
@@ -4888,59 +4896,165 @@
       return;
     }
     this.commandTrigger = found;
-    if (this.commandSelectedIndex >= this.commandMatches.length) this.commandSelectedIndex = 0;
+    this.renderMenu(found.trigger, this.commandMatches, this.commandLoading
+      ? "Loading commands…"
+      : this.commandError
+        ? this.commandError
+        : this.commandMatches.length
+          ? this.commandMatches.length + (skills ? " skill" : " command") + (this.commandMatches.length === 1 ? "" : "s")
+          : "No matching commands.");
+  };
+
+  AgentChatWidget.prototype.menuRow = function (item, trigger) {
+    if (trigger === "@") {
+      const image = item.action === "attach_image";
+      const hints = {
+        file: image ? "Attaches the image" : "Inserts the path",
+        card: "Inserts the card id",
+        session: "Inserts the conversation id",
+        user: "Inserts the username",
+      };
+      return {
+        key: item.kind + "-" + item.id,
+        title: item.kind === "file" ? "@" + item.id : item.label,
+        origin: image ? "image" : item.kind === "session" ? "conversation" : item.kind,
+        description: item.kind === "file" ? "" : (item.detail || ""),
+        hint: hints[item.kind] || "",
+        disabled: false,
+      };
+    }
+    const skills = trigger === "$";
+    const disabled = !!(item.availability && item.availability !== "available");
+    return {
+      key: item.name,
+      title: skills ? item.name : "/" + item.name,
+      origin: item.origin === "pa" ? "PA" : (item.provider || "provider"),
+      description: item.description || "No description provided.",
+      hint: disabled
+        ? (item.disabled_reason || "Unavailable")
+        : skills
+          ? "Adds the skill to your message"
+          : item.input_required
+            ? ("Input required" + (item.input_hint ? ": " + item.input_hint : ""))
+            : item.input_hint
+              ? ("Optional input: " + item.input_hint)
+              : "Runs immediately",
+      disabled: disabled,
+    };
+  };
+
+  AgentChatWidget.prototype.renderMenu = function (trigger, items, stateText) {
+    if (this.commandSelectedIndex >= items.length) this.commandSelectedIndex = 0;
     this.els.commandOptions.innerHTML = "";
     const self = this;
-    this.commandMatches.forEach(function (command, index) {
+    items.forEach(function (item, index) {
+      const row = self.menuRow(item, trigger);
       const option = document.createElement("button");
       option.type = "button";
-      option.id = "acw-command-option-" + index + "-" + command.name.replace(/[^a-z0-9_-]/gi, "-");
+      option.id = "acw-command-option-" + index + "-" + row.key.replace(/[^a-z0-9_-]/gi, "-");
       option.className = "acw-command-option" + (index === self.commandSelectedIndex ? " is-selected" : "");
       option.setAttribute("role", "option");
       option.setAttribute("aria-selected", index === self.commandSelectedIndex ? "true" : "false");
-      const disabled = command.availability && command.availability !== "available";
-      option.disabled = disabled;
-      const title = document.createElement("span");
-      title.className = "acw-command-title";
-      title.textContent = skills ? command.name : "/" + command.name;
-      const origin = document.createElement("span");
-      origin.className = "acw-command-origin";
-      origin.textContent = command.origin === "pa" ? "PA" : (command.provider || "provider");
-      const description = document.createElement("span");
-      description.className = "acw-command-description";
-      description.textContent = command.description || "No description provided.";
-      const input = document.createElement("span");
-      input.className = "acw-command-input";
-      input.textContent = disabled
-        ? (command.disabled_reason || "Unavailable")
-        : skills
-          ? "Adds the skill to your message"
-          : command.input_required
-            ? ("Input required" + (command.input_hint ? ": " + command.input_hint : ""))
-            : command.input_hint
-              ? ("Optional input: " + command.input_hint)
-              : "Runs immediately";
-      option.appendChild(title);
-      option.appendChild(origin);
-      option.appendChild(description);
-      option.appendChild(input);
+      option.disabled = row.disabled;
+      [["title", row.title], ["origin", row.origin], ["description", row.description], ["input", row.hint]].forEach(function (part) {
+        if (!part[1] && part[0] === "description") return;
+        const span = document.createElement("span");
+        span.className = "acw-command-" + part[0];
+        span.textContent = part[1];
+        option.appendChild(span);
+      });
       option.addEventListener("pointerdown", function (event) { event.preventDefault(); });
-      option.addEventListener("click", function () { self.selectCommand(command); });
+      option.addEventListener("click", function () { self.selectMenuItem(item); });
       self.els.commandOptions.appendChild(option);
     });
     this.els.commandMenu.hidden = false;
     this.els.input.setAttribute("aria-expanded", "true");
     if (this.els.commandState) {
       this.els.commandState.hidden = false;
-      this.els.commandState.textContent = this.commandLoading
-        ? "Loading commands…"
-        : this.commandError
-          ? this.commandError
-          : this.commandMatches.length
-            ? this.commandMatches.length + (skills ? " skill" : " command") + (this.commandMatches.length === 1 ? "" : "s")
-            : "No matching commands.";
+      this.els.commandState.textContent = stateText;
     }
     this.moveCommandSelection(0);
+  };
+
+  AgentChatWidget.prototype.selectMenuItem = function (item) {
+    if (!item) return;
+    if (this.commandTrigger && this.commandTrigger.trigger === "@") this.selectMention(item);
+    else this.selectCommand(item);
+  };
+
+  AgentChatWidget.prototype.cancelMentionSearch = function () {
+    this._mentionQuery = null;
+    this._mentionSeq = (this._mentionSeq || 0) + 1;
+    if (this._mentionTimer) clearTimeout(this._mentionTimer);
+  };
+
+  AgentChatWidget.prototype.startMentionSearch = function (query) {
+    const self = this;
+    this.cancelMentionSearch();
+    this._mentionQuery = query;
+    const seq = this._mentionSeq;
+    this._mentionTimer = setTimeout(function () { self.runMentionSearch(query, seq); }, 120);
+  };
+
+  AgentChatWidget.prototype.runMentionSearch = function (query, seq) {
+    if (this.destroyed || !this.sessionId || seq !== this._mentionSeq) return;
+    const self = this;
+    const sessionId = this.sessionId;
+    this.api("/sessions/" + encodeURIComponent(sessionId) + "/mentions?q=" + encodeURIComponent(query))
+      .then(function (result) {
+        if (seq !== self._mentionSeq || sessionId !== self.sessionId) return;
+        const items = result && result.items || [];
+        // "@" is as often plain text as a mention, so nothing found means no menu.
+        if (!items.length) {
+          self.closeCommandMenu();
+          return;
+        }
+        self.commandMatches = items;
+        self.commandSelectedIndex = 0;
+        self.renderMenu("@", items, items.length + (items.length === 1 ? " match" : " matches"));
+      })
+      .catch(function () {
+        if (seq === self._mentionSeq) self.closeCommandMenu();
+      });
+  };
+
+  AgentChatWidget.prototype.selectMention = function (item) {
+    if (item.action === "attach_image") {
+      this.removeTrigger();
+      this.attachWorkspaceImage(item);
+      return;
+    }
+    this.completeTrigger(item.insert);
+  };
+
+  AgentChatWidget.prototype.removeTrigger = function () {
+    const found = this.commandTrigger;
+    if (!found) return;
+    const text = this.els.input.value || "";
+    let before = text.slice(0, found.start);
+    let after = text.slice(found.end);
+    if (/\s$/.test(before) && /^\s/.test(after)) after = after.slice(1);
+    this.els.input.value = before + after;
+    this.els.input.setSelectionRange(before.length, before.length);
+    this.closeCommandMenu();
+    this.els.input.focus();
+    this.els.input.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+
+  AgentChatWidget.prototype.attachWorkspaceImage = function (item) {
+    const self = this;
+    const fail = function (reason) {
+      self.addBubble("system", "Could not attach " + item.label + (reason ? ": " + reason : "."), new Date().toISOString(), { system: true, forceVisible: true });
+    };
+    fetch("/api/files/raw?path=" + encodeURIComponent(item.path), { credentials: "same-origin" })
+      .then(function (response) {
+        if (!response.ok) throw new Error(response.status === 413 ? "it is larger than the 20 MB viewer limit" : "the file could not be read");
+        return response.blob();
+      })
+      .then(function (blob) {
+        self.addImageFiles([new File([blob], item.label, { type: item.mime_type || blob.type })]);
+      })
+      .catch(function (error) { fail(error.message); });
   };
 
   AgentChatWidget.prototype.moveCommandSelection = function (delta) {
