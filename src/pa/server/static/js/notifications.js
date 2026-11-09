@@ -172,6 +172,10 @@
         var action = (recovery ? presentation.required_action : "") || interaction.delivery_recovery_action || (superseded ? presentation.required_action : "") || "Inspect the owning session and restore its original workspace through PA, or authorize a linked continuation.";
         return '<div class="notification-actions"><p>' + heading + '</p><p>' + esc(action) + '</p>' + reason + transfer + dismiss + '</div>';
       }
+      // Delivery is running right now: offer no action, since a retry would only race it.
+      if (!failed && presentation.delivery_active) {
+        return '<div class="notification-actions"><p class="notification-delivering" role="status" data-notification-delivering><span class="notification-spinner" aria-hidden="true"></span>Delivering your response…</p></div>';
+      }
       return '<div class="notification-actions">' + reason + '<button type="button" class="primary small" data-notification-retry>Retry delivery</button>' + dismiss + '</div>';
     }
     if (interaction.state !== "outstanding") return "";

@@ -423,6 +423,8 @@ class Kernel:
 
         import asyncio
 
+        maintenance_ready = asyncio.get_running_loop().create_future()
+        self.ctx.register_service("maintenance_startup_ready", maintenance_ready)
         agent_start_task = asyncio.create_task(start_agent(), name="pa-agent-startup")
         self.ctx.register_service("agent_start_task", agent_start_task)
         self.ctx.register_service("peer_registry", PeerRegistry(self.ctx.settings))
@@ -475,6 +477,18 @@ class Kernel:
             # /api/ready is deterministic for tests and `pa start` without ACP.
             await agent_start_task
 
+        # Keep the automatic full maintenance sweep behind both the complete
+        # schema and agent recovery (including restart handoff settlement).
+        # This does not change admission, skip a sweep, or await maintenance.
+        def startup_settled(task: asyncio.Task[None]) -> None:
+            # Agent failure/cancellation is a settled recovery attempt, not
+            # permission to starve maintenance while the API stays alive.
+            # Shutdown cancels this gate before cancelling agent startup.
+            if not maintenance_ready.done():
+                maintenance_ready.set_result(None)
+
+        agent_start_task.add_done_callback(startup_settled)
+
     async def shutdown(self, app: FastAPI) -> None:
         import asyncio
 
@@ -482,6 +496,9 @@ class Kernel:
         # can take seconds; leaving resume running there lets connect() call
         # session/new while Uvicorn is already shutting down.
         agent_start_task = self.ctx.services.get("agent_start_task")
+        maintenance_ready = self.ctx.services.get("maintenance_startup_ready")
+        if maintenance_ready is not None and not maintenance_ready.done():
+            maintenance_ready.cancel()
         agent: AgentSessionManager | None = self.ctx.services.get("instance_agent")
         if agent:
             agent._accepting = False
