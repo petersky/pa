@@ -87,3 +87,39 @@ proximity, ordering or a shared native history ID. Missing or uncorrelated
 records preserve UNKNOWN, including the legacy logger's independent UUIDs and
 unidentified terminal responses. A terminal result describes protocol outcome
 only; it does not prove task effects or reverse an intentional cancellation.
+
+## Snapshot pagination
+
+The same GET and MCP tool accept optional `paged=true`, `cursor`, and
+`selection=all|outcomes`. The legacy tail response remains the default. A new
+paged walk starts at byte zero and traverses every fixed artifact. Resume by
+passing the opaque `next_cursor` with the same identity preconditions and
+selection. Persist that cursor and the returned range receipts after each page;
+replaying it is deterministic while the snapshot remains unchanged.
+
+Cursors are HMAC authenticated with a domain-separated existing server secret.
+They bind the principal, authority, receipt/version, session/native history,
+attempt and selection to a fixed artifact manifest and directory identities.
+Device/inode, size, mtime and ctime fence every fixed file (including missing
+rotation entries) before and after each call. Growth, replacement, truncation,
+rotation, symlinks or changed directory bindings reject continuation with HTTP 409.
+A rejected snapshot must not be combined with a fresh generation. This metadata
+fence is not a full-file digest or a historical retention manifest.
+
+Each call reads at most 1 MiB, examines at most 20,000 complete records and returns
+at most 200 selected metadata records. It stops at the output limit instead of
+dropping the remaining records. Scanned byte ranges carry individual SHA256
+hashes and an ordered hash chain. Short boundary fragments are reread on the
+next page; lookahead is explicitly excluded from committed scanned coverage.
+Oversized records are counted and skipped across bounded pages without putting
+raw fragments in cursors. Malformed and unterminated records remain explicit
+metadata gaps. `snapshot_exhausted` attests only that all bytes of the fixed
+observed snapshot were consumed; historical retention remains UNKNOWN.
+
+`selection=all` pages every eligible allowlisted metadata record.
+`selection=outcomes` omits only identity-free session updates and counts them;
+requests, terminal responses, errors and correlation-bearing updates remain.
+Both selections report exact scanned ranges and cumulative counters. Neither
+selection permits negative inference from a partial range. Explicit message
+links are carried across pages with a bounded table; conflicting prompt/attempt
+identities or link overflow force UNKNOWN. Delivery remains prohibited.

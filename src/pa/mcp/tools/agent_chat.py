@@ -103,13 +103,16 @@ def register_mcp(mcp, ctx) -> None:
     def get_agent_session_wire_metadata(
         session_id: str, handoff_id: str, expected_native_id: str,
         expected_version: int, expected_attempt: int,
+        paged: bool = False, cursor: str | None = None,
+        selection: str = "all",
     ) -> dict:
         """Read fixed-session metadata only; absent records never prove non-delivery."""
         from urllib.parse import quote
         return request_local_pa(ctx.settings, "GET",
             f"/api/agent/observability/v1/sessions/{quote(session_id, safe='')}/restart-handoffs/{quote(handoff_id, safe='')}/wire-metadata",
             params=dict(expected_native_id=expected_native_id,
-                        expected_version=expected_version, expected_attempt=expected_attempt),
+                        expected_version=expected_version, expected_attempt=expected_attempt,
+                        paged=paged, selection=selection, **({"cursor": cursor} if cursor else {})),
             timeout_seconds=15.0, max_response_bytes=512 * 1024)
 
     @mcp.tool()
