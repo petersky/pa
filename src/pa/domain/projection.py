@@ -5977,18 +5977,22 @@ class CardProjection:
         if cancelled:
             raise ValueError("Closed session has a dismissed restart; explicit audited close disposition is required")
 
+    def native_history_session_ids(self, native_id: str) -> list[str]:
+        with self._conn() as conn:
+            rows = conn.execute('SELECT id FROM agent_sessions WHERE external_session_id=? LIMIT 65',
+                                (native_id,)).fetchall()
+        if len(rows) > 64:
+            raise ValueError("Native history ownership is ambiguous")
+        return [row['id'] for row in rows]
+
     def require_native_history_delivery_allowed(self, native_id: str) -> None:
         """An alias PA identity must not bypass a sealed saved native history."""
         with self._conn() as conn:
             if conn.execute('SELECT 1 FROM session_recovery_fences WHERE native_id=? LIMIT 1',
                             (native_id,)).fetchone():
                 raise ValueError("Native history is sealed by durable recovery fence")
-            rows = conn.execute('SELECT id FROM agent_sessions WHERE external_session_id=? LIMIT 65',
-                                (native_id,)).fetchall()
-        if len(rows) > 64:
-            raise ValueError("Native history ownership is ambiguous")
-        for row in rows:
-            self.require_session_delivery_allowed(row['id'])
+        for session_id in self.native_history_session_ids(native_id):
+            self.require_session_delivery_allowed(session_id)
 
     def prepare_session_recovery_fence(
         self, handoff_id: str, *, session_id: str, expected_version: int,

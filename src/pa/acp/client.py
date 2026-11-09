@@ -1037,6 +1037,12 @@ class AgentConnection:
             if workflow.get('kind') == 'conversation_branch' and workflow.get('source_session_id'):
                 await self._offload("sqlite.recovery_branch_source_guard",
                     self.store.require_session_delivery_allowed, workflow['source_session_id'])
+            if workflow.get('kind') == 'conversation_branch' and workflow.get('strategy') == 'native':
+                source_native = workflow.get('source_external_id')
+                if not isinstance(source_native, str) or not source_native:
+                    raise ValueError("Native branch requires its exact saved source identity")
+                await self._offload("sqlite.recovery_native_branch_start_guard",
+                    self.store.require_native_history_delivery_allowed, source_native)
         self._mcp_observer = None
         # Resolve intent before provider metadata can replace the saved aliases.
         if initial_configuration is None and existing_session is not None:
@@ -1571,6 +1577,8 @@ class AgentConnection:
         source_id = workflow.get("source_external_id")
         if not isinstance(source_id, str) or not source_id:
             raise RuntimeError("Native branch has no source provider session")
+        await self._offload("sqlite.recovery_native_branch_send_guard",
+            self.store.require_native_history_delivery_allowed, source_id)
         selected = (session.config_json.get("execution_selection") or {}).get("selected") or {}
         if selected.get("connection") != workflow.get("source_connection"):
             raise RuntimeError("Native fork requires the source provider connection")

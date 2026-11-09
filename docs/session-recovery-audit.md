@@ -101,6 +101,11 @@ The source coordinator for this card has not approved production close reversal,
 sealing or provider loading. Do not reopen, rearm, replay, replace a prompt, load
 history or fabricate a capacity/permission answer to exercise these choices.
 The original runtime and cleanup acceptance gates remain open.
+All authority executors would need this enforcement before operational sealing.
+Downgrading to an older binary that ignores the seal is not a safe release or
+rollback of a prepared fence. Already admitted work in another process or an
+independent branch cannot be retroactively cancelled by this receipt; exclusive
+native ownership remains unverified and is a prerequisite of any future load.
 
 `POST /api/agent/sessions/{session_id}/restart-handoffs/{handoff_id}/recovery-audit`
 records a fail-closed recovery assessment. It does not load a provider, reopen a

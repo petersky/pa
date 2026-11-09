@@ -130,6 +130,9 @@ def test_no_startup_recovery_publish_or_low_level_provider_native_load(tmp_path)
         target=s.model_copy(update={'id':'new-target','initiating_workflow':{
             'kind':'conversation_branch','strategy':'native','source_session_id':s.id}})
         with pytest.raises(ValueError):asyncio.run(conn.connect(existing_session=target))
+        alias=target.model_copy(update={'initiating_workflow':{'kind':'conversation_branch','strategy':'native',
+            'source_session_id':'unsealed-alias','source_external_id':s.external_session_id}})
+        with pytest.raises(ValueError):asyncio.run(conn.connect(existing_session=alias))
     conn.session=s;conn._conn=SimpleNamespace(prompt=AsyncMock())
     with pytest.raises(ValueError):asyncio.run(conn.prompt('must not send'))
     conn.session=s.model_copy(update={'id':'new-alias'})
@@ -230,3 +233,11 @@ def test_native_seal_survives_missing_session_projection_and_invalid_receipt(tmp
     restarted=CardProjection(tmp_path/'pa.db')
     with pytest.raises(ValueError):restarted.require_session_delivery_allowed(s.id)
     with pytest.raises(ValueError):restarted.require_native_history_delivery_allowed(s.external_session_id)
+
+
+def test_active_native_alias_prevents_preparation(tmp_path):
+    store,r,s,a,m,_=fixture(tmp_path)
+    store.save_session(s.model_copy(update={'id':'native-alias'}))
+    m._runtimes['native-alias']=SimpleNamespace(_closed=False)
+    with pytest.raises(SessionAdmissionInProgress):seal(r,a,m)
+    assert store.session_recovery_fence(s.id) is None

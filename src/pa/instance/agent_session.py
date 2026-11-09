@@ -6535,6 +6535,14 @@ class AgentSessionManager:
             if (not session or session.principal_id != expected['principal_id']
                     or session.authority_instance_id != self.settings.instance_id):
                 raise ValueError("Recovery fence session/authority mismatch")
+            aliases = await self._offload("sqlite.recovery_native_owners",
+                self.store.native_history_session_ids, session.external_session_id)
+            for alias in aliases:
+                if alias == session_id:
+                    continue
+                runtime = self.get(alias)
+                if alias in self._admitting_sessions or (runtime and not runtime._closed):
+                    raise SessionAdmissionInProgress("Native history has another active PA owner")
             # The seal can be retried after an unknown acknowledgement without
             # refreshing or altering saved settings, history or lease state.
             existing = await self._offload("sqlite.recovery_fence_read", self.store.session_recovery_fence, session_id)
