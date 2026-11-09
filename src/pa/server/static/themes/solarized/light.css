@@ -16,5 +16,9 @@
   --pa-shadow: 0 1px 3px rgb(88 74 45 / 0.14);
   --pa-focus: 0 0 0 3px rgb(38 139 210 / 0.30);
   --pa-chat-thought-bg: #e8e1cd;
-  --pa-chat-tool-bg: #f5e6bd;
+  --pa-chat-tool-bg: #f9edce;
+  --pa-chat-user-bg: #e7eadc;
+  --pa-chat-user-fg: #314b52;
+  --pa-chat-user-border: #bdd3ce;
+  --pa-selection: #aac8c8;
 }

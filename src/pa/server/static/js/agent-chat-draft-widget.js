@@ -105,6 +105,7 @@
       });
       input.addEventListener("input", function () {
         self.changed();
+        self.syncClearButton();
       });
       ["select", "click", "keyup"].forEach(function (name) {
         input.addEventListener(name, function () {
@@ -119,8 +120,19 @@
     }
   };
 
+  const QUIET_DRAFT_STATUSES = new Set(["No local draft.", "Draft saved locally.", "Drafts stay in this browser."]);
+
   WidgetDraftController.prototype.setStatus = function (message) {
-    if (this.status) this.status.textContent = message;
+    if (this.status) {
+      this.status.textContent = message;
+      this.status.hidden = !message || QUIET_DRAFT_STATUSES.has(message);
+    }
+    this.syncClearButton();
+  };
+
+  WidgetDraftController.prototype.syncClearButton = function () {
+    const input = this.widget.els.input;
+    if (this.clearButton) this.clearButton.hidden = !(input && input.value) && !this.attachmentMetadata.length;
   };
 
   WidgetDraftController.prototype.schedule = function () {

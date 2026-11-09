@@ -36,7 +36,7 @@ async def test_chat_detail_tabs_layout_keyboard_and_existing_actions(operator_se
 
         await wait_for("window.fixtureReady && document.querySelector('[data-issues-count]').textContent === '(1)'")
         await page.evaluate("window.tabs = [...document.querySelectorAll('#primary-widget [role=tab]')]; window.panels = [...document.querySelectorAll('#primary-widget [role=tabpanel]')]")
-        assert await page.evaluate("tabs.map(t => t.textContent.trim())") == ["Details", "Branch from here", "Issues (1)"]
+        assert await page.evaluate("tabs.map(t => t.textContent.trim())") == ["Details", "Branch", "Issues (1)"]
         assert await page.evaluate("panels.every(p => p.hidden && !p.querySelector('details').open)")
         assert await page.evaluate("new Set([...document.querySelectorAll('[role=tab], [role=tabpanel]')].map(e => e.id)).size") == 12
         assert await page.evaluate("tabs.every((t,i) => t.getAttribute('aria-controls') === panels[i].id && panels[i].getAttribute('aria-labelledby') === t.id)")

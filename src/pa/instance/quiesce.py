@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import json
 from datetime import UTC, datetime
+from functools import cached_property
 from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
@@ -50,8 +52,12 @@ class ImageAttachment(BaseModel):
     def decoded_size(self) -> int:
         return len(base64.b64decode(self.data))
 
+    @cached_property
+    def sha256(self) -> str:
+        return hashlib.sha256(base64.b64decode(self.data)).hexdigest()
+
     def public_dict(self) -> dict[str, str]:
-        return {"name": self.name, "mime_type": self.mime_type}
+        return {"name": self.name, "mime_type": self.mime_type, "sha256": self.sha256}
 
 
 class QueuedPrompt(BaseModel):

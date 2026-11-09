@@ -95,13 +95,14 @@
           </div>
         </div>
       </div>
-      <div class="agent-session-related">
-      {% for card in detail.cards or [] %}{% if not detail.card or card.id != detail.card.id %}<a class="agent-session-chip" href="/work?card={{ card.id }}">Card · {{ card.title }}</a>{% endif %}{% endfor %}
-      {% for watch in pr_watches_by_session.get(s.id, []) %}<a class="agent-session-chip" href="/pull-requests?watch={{ watch.id }}"
-         title="{{ watch.repository }}#{{ watch.pr_number }} PR supervision">
-        PR #{{ watch.pr_number }} · {{ watch.status.value if watch.status.value is defined else watch.status }}
-      </a>{% endfor %}
-      </div>
+      {% set extra_cards = (detail.cards or []) | rejectattr('id', 'equalto', detail.card.id if detail.card else none) | list %}
+      {% set session_watches = pr_watches_by_session.get(s.id, []) %}
+      {% set open_watches = session_watches | selectattr('status', 'in', ['active', 'blocked']) | list %}
+      {% set done_watches = session_watches | rejectattr('status', 'in', ['active', 'blocked']) | list %}
+      {% macro card_chip(card) %}<a class="agent-session-chip" href="/work?card={{ card.id }}">Card · {{ card.title }}</a>{% endmacro %}
+      {% macro watch_chip(watch) %}<a class="agent-session-chip" href="/pull-requests?watch={{ watch.id }}"
+         title="{{ watch.repository }}#{{ watch.pr_number }} PR supervision">PR #{{ watch.pr_number }} · {{ watch.status.value if watch.status.value is defined else watch.status }}</a>{% endmacro %}
+      <div class="agent-session-related">{% for card in extra_cards[:2] %}{{ card_chip(card) }}{% endfor %}{% for watch in open_watches %}{{ watch_chip(watch) }}{% endfor %}{% set hidden_chips = (extra_cards | length - 2 if extra_cards | length > 2 else 0) + (done_watches | length) %}{% if hidden_chips %}<details class="agent-session-more"><summary>+{{ hidden_chips }} more</summary>{% for card in extra_cards[2:] %}{{ card_chip(card) }}{% endfor %}{% for watch in done_watches %}{{ watch_chip(watch) }}{% endfor %}</details>{% endif %}</div>
       <details class="agent-session-details">
         <summary>Details</summary>
         <div class="agent-session-details-body">
@@ -245,15 +246,6 @@
     </div>
   </form>
 </dialog>
-<details class="panel agent-tips-panel">
-  <summary class="panel-header"><h2>Tips</h2></summary>
-  <ul class="muted tip-list">
-    <li>Messages queue while the agent is working.</li>
-    <li>Stop response affects only the current turn; queue controls are separate.</li>
-    <li>Conversation actions are in Session; resources and execution information are in Details.</li>
-    <li>Permission prompts appear inline unless auto-approve is on.</li>
-  </ul>
-</details>
 {% endset %}
 
 {% set main %}
