@@ -413,6 +413,14 @@ async def test_ordinary_bound_connection_mcp_report(fleet, monkeypatch, recovere
     class AdmissionObserved(Exception):
         pass
     async def offload(label, fn, *args, **kwargs):
+        if label == 'sqlite.recovery_native_start_guard':
+            assert recovered and args == ('fixture-recovered',)
+            assert fn == connection.store.require_native_history_delivery_allowed
+            return fn(*args)
+        if label == 'sqlite.recovery_provider_start_guard':
+            assert recovered and args == (bound.id,)
+            assert fn == connection.store.require_session_delivery_allowed
+            return fn(*args)
         if label == 'acp.pa_mcp_owner_probe':
             assert fn.keywords['principal_id'] == principal
             return {'state':'connected'}  # Readiness route is outside this isolated app.

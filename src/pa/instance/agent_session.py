@@ -127,7 +127,12 @@ def _fenced_session_admission(method):
     @wraps(method)
     async def admitted(self, *args, **kwargs):
         arguments = signature.bind(self, *args, **kwargs).arguments
+        candidate = arguments.get('existing')
+        workflow = arguments.get('initiating_workflow') or (candidate.initiating_workflow if candidate else {})
+        if workflow.get('kind') == 'conversation_branch' and workflow.get('source_session_id'):
+            self.store.require_session_delivery_allowed(workflow['source_session_id'])
         if arguments.get("context_source_session_id"):
+            self.store.require_session_delivery_allowed(arguments['context_source_session_id'])
             # Boundary resolution serializes the source and re-enters this
             # fence for its exact target before any provider startup. Acquiring
             # the target here would reject that nested admission and would
@@ -140,6 +145,7 @@ def _fenced_session_admission(method):
             else snapshot.session_id if snapshot is not None
             else arguments.get("session_id")
         ) or str(uuid4())
+        self.store.require_session_delivery_allowed(session_id)
         if snapshot is None and existing is None:
             kwargs["session_id"] = session_id
         if session_id in self._admitting_sessions:
@@ -1233,6 +1239,7 @@ class AgentSessionRuntime:
         initial_configuration: SessionConfigurationRequest | None = None,
         _defer_drain: bool = False,
     ) -> AgentSession:
+        self.store.require_session_delivery_allowed(self.session_id)
         if self.manager._should_abort_admission():
             raise RuntimeError("Agent is quiescing")
         browser_config = dict((self.session.config_json or {}).get("browser") or {})
@@ -1537,6 +1544,10 @@ class AgentSessionRuntime:
         )
 
     def _start_drain(self) -> None:
+        try:
+            self.store.require_session_delivery_allowed(self.session_id)
+        except ValueError:
+            return
         if self._drain_task and not self._drain_task.done():
             return
         if self._queue_paused or not self._queue:
@@ -1554,6 +1565,10 @@ class AgentSessionRuntime:
             and not self._closed
             and self.connected
         ):
+            try:
+                self.store.require_session_delivery_allowed(self.session_id)
+            except ValueError:
+                return
             if self.manager.quiescing:
                 break
             # Inspect queue order before doing I/O. A receipt behind an eligible
@@ -1666,6 +1681,7 @@ class AgentSessionRuntime:
         self._flush_transcript()
 
     def _require_execution_context_active(self):
+        self.store.require_session_delivery_allowed(self.session_id)
         if getattr(self, "_execution_boundary_reserved", False) or (
             self.session.config_json or {}
         ).get("execution_context_boundary"):
@@ -2273,6 +2289,8 @@ class AgentSessionRuntime:
             protocol_completed, selection_stop_reason = False, None
             try:
                 try:
+                    await self._offload("sqlite.recovery_delivery_guard",
+                        self.store.require_session_delivery_allowed, self.session_id)
                     stop_reason = await self.connection.prompt(
                         composition.text,
                         images=item.images,
@@ -2717,6 +2735,7 @@ class AgentSessionRuntime:
         self._flush_transcript()
 
     def resume_queue(self) -> None:
+        self.store.require_session_delivery_allowed(self.session_id)
         self._queue_paused = False
         self._append_transcript("queue_resumed", {})
         self._checkpoint_runtime(lifecycle="queued" if self._queue else "ready")
@@ -4226,6 +4245,7 @@ class AgentSessionManager:
         self.dispatch_store = dispatch_store
 
     def _require_not_terminal_repair_fenced(self, session_id: str) -> None:
+        self.store.require_session_delivery_allowed(session_id)
         fence_id = self.terminal_repair_fence_id(session_id)
         if fence_id is not None:
             raise AgentSessionRecoveryError(
@@ -4234,6 +4254,11 @@ class AgentSessionManager:
 
     async def _publish_runtime(self, runtime: AgentSessionRuntime) -> None:
         """Publish a started runtime unless terminal evidence fenced its session."""
+        try:
+            self.store.require_session_delivery_allowed(runtime.session_id)
+        except ValueError:
+            await runtime.close(reason="recovery_delivery_fenced", reconcile_workspace=False)
+            raise
         durable_fence_id = self.terminal_repair_fence_id(runtime.session_id)
         with self._runtime_lifecycle_lock:
             fence_id = self._terminal_repair_fences.get(runtime.session_id)
@@ -6496,6 +6521,53 @@ class AgentSessionManager:
             yield
         finally:
             self._admitting_sessions.difference_update(session_ids)
+
+    async def prepare_recovery_fence(self, handoff_id: str, *, session_id: str,
+                                     lease_expectations: list[dict], **expected) -> dict:
+        """Use the existing inactive-session reservation; never start a provider."""
+        self.require_startup_complete()
+        async with self.continuation_transfer_guard(session_id, session_id):
+            import hashlib
+            import json
+            expected['expected_lease_hash'] = hashlib.sha256(json.dumps(
+                sorted(lease_expectations, key=lambda x: x['lease_id']), sort_keys=True).encode()).hexdigest()
+            session = await self._offload("sqlite.recovery_fence_session", self.store.get_session, session_id)
+            if (not session or session.principal_id != expected['principal_id']
+                    or session.authority_instance_id != self.settings.instance_id):
+                raise ValueError("Recovery fence session/authority mismatch")
+            aliases = await self._offload("sqlite.recovery_native_owners",
+                self.store.native_history_session_ids, session.external_session_id)
+            for alias in aliases:
+                if alias == session_id:
+                    continue
+                runtime = self.get(alias)
+                if alias in self._admitting_sessions or (runtime and not runtime._closed):
+                    raise SessionAdmissionInProgress("Native history has another active PA owner")
+            # The seal can be retried after an unknown acknowledgement without
+            # refreshing or altering saved settings, history or lease state.
+            existing = await self._offload("sqlite.recovery_fence_read", self.store.session_recovery_fence, session_id)
+            evidence = existing['lease_evidence'] if existing else None
+            if existing is None:
+                ids = (session.execution_binding or {}).get('lease_ids') or []
+                if (not ids or len(ids) != len(set(ids))
+                        or {x['lease_id'] for x in lease_expectations} != set(ids)
+                        or len(lease_expectations) != len(ids)):
+                    raise ValueError("Exact saved workspace leases required")
+                leases = []
+                for wanted in lease_expectations:
+                    lease = await self._offload("workspace.recovery_fence_lease", self.workspace_manager.get_by_id, wanted['lease_id'])
+                    binding = session.execution_binding
+                    if (lease is None or lease.session_id != session_id or lease.state != 'ready'
+                            or lease.fencing_token != wanted['fencing_token']
+                            or lease.expires_at <= datetime.now(UTC)
+                            or lease.worktree_path not in (binding.get('worktree_paths') or [])
+                            or lease.branch != binding.get('branch') or lease.base_sha != binding.get('base_sha')
+                            or session.cwd != binding.get('cwd')):
+                        raise ValueError("Saved workspace/lease fence advanced or unavailable")
+                    leases.append(dict(lease_id=lease.id, fencing_token=lease.fencing_token))
+                evidence = dict(leases=leases, validation='snapshot_only_not_activation_permission')
+            return await self._offload("sqlite.recovery_fence_prepare", self.store.prepare_session_recovery_fence,
+                handoff_id, session_id=session_id, lease_evidence=evidence, **expected)
 
     async def recover_session(
         self,

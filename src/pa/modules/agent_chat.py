@@ -717,6 +717,19 @@ class SessionRecoveryAuditBody(BaseModel):
     idempotency_key: str = Field(min_length=1, max_length=200)
 
 
+class RecoveryLeaseExpectation(BaseModel):
+    model_config = {"extra": "forbid"}
+    lease_id: str = Field(min_length=1, max_length=200)
+    fencing_token: int = Field(ge=1)
+
+
+class SessionRecoveryFenceBody(SessionRecoveryAuditBody):
+    model_config = {"extra": "forbid"}
+    expected_native_id: str = Field(min_length=1, max_length=200)
+    expected_settings_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    lease_expectations: list[RecoveryLeaseExpectation] = Field(min_length=1, max_length=20)
+
+
 class SessionCardLinkBody(BaseModel):
     make_primary: bool = True
 
@@ -1720,6 +1733,34 @@ async def audit_session_recovery(
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/sessions/{session_id}/restart-handoffs/{handoff_id}/recovery-fence")
+async def prepare_session_recovery_fence(
+    request: Request, session_id: str, handoff_id: str, body: SessionRecoveryFenceBody,
+) -> dict:
+    """Seal only. No provider load, intentional-close reversal or fence release."""
+    mgr = _require_session_traffic_ready(request)
+    try:
+        return await mgr.prepare_recovery_fence(handoff_id, session_id=session_id,
+            owner_instance_id=request.app.state.ctx.settings.instance_id,
+            principal_id=get_principal_id(request), **body.model_dump())
+    except (ValueError, SessionAdmissionInProgress) as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.get("/sessions/{session_id}/restart-handoffs/{handoff_id}/recovery-fence")
+async def get_session_recovery_fence(request: Request, session_id: str, handoff_id: str) -> dict:
+    mgr = _require_session_traffic_ready(request)
+    def read():
+        session = mgr.store.get_session(session_id)
+        if not session or session.principal_id != get_principal_id(request):
+            raise HTTPException(404, "Exact owned session not found")
+        receipt = mgr.store.session_recovery_fence(session_id)
+        if not receipt or receipt['handoff_id'] != handoff_id or receipt['owner_instance_id'] != request.app.state.ctx.settings.instance_id:
+            raise HTTPException(404, "Exact recovery fence not found")
+        return receipt
+    return await _offload(mgr, "sqlite.recovery_fence_read", read)
 
 
 @router.post("/sessions/{session_id}/restart-handoffs/{handoff_id}/dismiss")
