@@ -22,7 +22,9 @@ LEGAL_TRANSITIONS = {
     "resuming": {"continuation_queued", "continuation_delivered", "restart_completed", "failed"},
     "continuation_queued": {"continuation_delivered", "failed"},
     "failed": {"continuation_delivered", DISMISSED},
-    DISMISSED: set(),
+    # Explicit evidence reconciliation may settle a dismissed receipt. It may
+    # never rearm it: cancellation and completion are independent facts.
+    DISMISSED: {"continuation_delivered"},
     "continuation_delivered": set(),
     "restart_completed": set(),
 }

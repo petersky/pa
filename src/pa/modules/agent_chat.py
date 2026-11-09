@@ -706,6 +706,10 @@ class RestartHandoffEditBody(BaseModel):
     continuation_prompt: str = ""
 
 
+class RestartHandoffReconcileBody(BaseModel):
+    expected_version: int = Field(ge=0)
+
+
 class SessionCardLinkBody(BaseModel):
     make_primary: bool = True
 
@@ -1664,6 +1668,34 @@ async def retry_restart_handoff(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     from pa.instance.restart_lifecycle import restart_observation_fields
     return {**handoff.model_dump(mode="json"), "observation": restart_observation_fields(handoff, session=session, runtime=mgr.get(session_id))}
+
+
+@router.post("/sessions/{session_id}/restart-handoffs/{handoff_id}/reconcile")
+async def reconcile_restart_handoff(
+    request: Request, session_id: str, handoff_id: str,
+    body: RestartHandoffReconcileBody,
+) -> dict:
+    """Audit unknown effects without reviving a dismissed continuation."""
+    mgr = _require_session_traffic_ready(request)
+    session = await _offload(mgr, "sqlite.agent_session_read", mgr.store.get_session, session_id)
+    _require_session_traffic_ready(request)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    principal_id = get_principal_id(request)
+    user = getattr(request.state, "user", None)
+    if (request.app.state.ctx.settings.auth_required is True
+            and session.principal_id != principal_id
+            and getattr(user, "role", None) != "admin"):
+        raise HTTPException(status_code=403, detail="Session is owned by another principal")
+    try:
+        return await _offload(
+            mgr, "sqlite.restart_handoff_reconcile", mgr.store.reconcile_restart_handoff,
+            handoff_id, session_id=session_id, expected_version=body.expected_version,
+            owner_instance_id=request.app.state.ctx.settings.instance_id,
+            principal_id=principal_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/sessions/{session_id}/restart-handoffs/{handoff_id}/dismiss")

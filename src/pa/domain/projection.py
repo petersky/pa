@@ -5793,6 +5793,55 @@ class CardProjection:
             reason_code="operator_dismissed",
         )
 
+    def reconcile_restart_handoff(
+        self, handoff_id: str, *, session_id: str, expected_version: int,
+        owner_instance_id: str, principal_id: str,
+    ) -> dict:
+        """Reconcile exact completion without undoing an operator dismissal.
+
+        No absence of local evidence proves non-delivery. Never enqueue, reopen
+        a session, retry a restart, or change the saved prompt/settings here.
+        """
+        from pa.instance.restart_lifecycle import RestartTransitionConflict
+        with measured_lock(self._mutation_lock, name="projection.mutation"):
+            current = self.get_restart_handoff(handoff_id)
+            if current is None or current.session_id != session_id:
+                raise ValueError("Restart handoff not found for this session")
+            if not principal_id or not owner_instance_id or current.instance_id != owner_instance_id:
+                raise RestartTransitionConflict("Restart reconciliation principal/owner does not match")
+            if current.phase_version != expected_version:
+                raise RestartTransitionConflict("The restart receipt advanced; reread the same operation")
+            if current.status not in {"dismissed", "failed", "continuation_delivered"}:
+                raise RestartTransitionConflict("Reconciliation requires an inactive receipt")
+            completed = self.find_prompt_completion(session_id, current.continuation_prompt_id)
+            lifecycle = self.transcripts.find_prompt_lifecycle(session_id, current.continuation_prompt_id)
+            if completed is not None and current.status != "continuation_delivered":
+                current = self.update_restart_handoff(
+                    current.id, status="continuation_delivered",
+                    expected_status=current.status, expected_version=expected_version,
+                    owner_instance_id=owner_instance_id,
+                    reason_code="exact_completion_reconciled",
+                )
+            # Each explicit observation is audited; no prompt content is copied.
+            self.append_transcript_events([TranscriptEvent(
+                session_id=session_id,
+                seq=self.next_transcript_seq(session_id),
+                event_type="restart_handoff_reconciled",
+                payload={"handoff_id": current.id, "expected_version": expected_version,
+                         "principal_id": principal_id, "owner_instance_id": owner_instance_id,
+                         "completion_event_id": completed.id if completed else None,
+                         "effect": "confirmed" if completed else "unknown"},
+            )])
+            return {
+                "handoff_id": current.id, "session_id": session_id,
+                "phase_version": current.phase_version, "status": current.status,
+                "effect": "confirmed" if completed else "unknown",
+                "completion_event_id": completed.id if completed else None,
+                "lifecycle_event_type": lifecycle.event_type if lifecycle else None,
+                "next_action": None if completed else "audit_native_history_and_dismissal",
+                "replayed": False,
+            }
+
     def retry_restart_handoff(
         self, handoff_id: str, *, session_id: str
     ) -> RestartHandoff:
