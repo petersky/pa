@@ -38,3 +38,32 @@ files under the data dir) — there is no separate database, cache, or broker to
   and `tests/test_fleet_topology_layout.py` spawn `google-chrome --dump-dom`; Chrome
   can hang until timeout under Firecracker and is not part of the GitHub suite.
   Run them locally only when Chrome is installed.
+
+## Releasing
+
+**Always cut a release with `./scripts/release.sh`; never hand-roll the version bump, PR or tag.**
+The script (`src/pa/release/script.py`) does the whole flow: bumps the version
+(`pyproject.toml`, `src/pa/__init__.py`), writes `releases/vX.Y.Z.md` with agent-generated
+notes, creates the `release/vX.Y.Z` branch and PR, then (with `--ship`) waits for checks,
+merges, tags `vX.Y.Z`, and publishes the GitHub release. Pushing the tag is what publishes, so
+it is outward-facing: only run `--ship` or `--publish` when the user has asked for a release.
+
+```bash
+./scripts/release.sh patch|minor|major --dry-run   # show the plan without doing anything
+./scripts/release.sh minor                         # prepare the release PR, then prompt to ship
+./scripts/release.sh minor --ship                  # PR, checks, merge, tag, publish
+./scripts/release.sh --publish --tag v1.7.0        # tag + publish an already-merged release PR
+./scripts/release.sh --amend --tag v1.7.0          # amend notes for an existing release
+```
+
+- It is resumable: re-running it for the same version reuses the existing `release/v*` branch,
+  commit and notes. It refuses to run if the checkout is behind `origin/main`.
+- Choose the bump by behavior: `patch` for fixes, `minor` for user-visible changes or changed
+  defaults. Pre-release tracks: `alpha`, `beta`, `rc`, or an explicit semver with `--channel`.
+- `--no-agent` skips the notes agent and uses the template (`docs/RELEASE_NOTES_TEMPLATE.md`);
+  other flags are listed in `./scripts/release.sh --help`.
+- After the tag is pushed, `.github/workflows/release.yml` builds the wheel, creates the release
+  and opens a `chore/channels-vX.Y.Z` PR that updates `channels.json`. Merge that PR so
+  `pa update` sees the new version.
+- `release/v*` PRs skip the pytest shards in CI (only the smoke check runs), so run the tests
+  before releasing.
