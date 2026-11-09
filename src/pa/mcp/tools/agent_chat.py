@@ -105,6 +105,7 @@ def register_mcp(mcp, ctx) -> None:
         expected_version: int, expected_attempt: int,
         paged: bool = False, cursor: str | None = None,
         selection: str = "all",
+        assess_unparsed: bool = False,
     ) -> dict:
         """Read fixed-session metadata only; absent records never prove non-delivery."""
         from urllib.parse import quote
@@ -112,7 +113,8 @@ def register_mcp(mcp, ctx) -> None:
             f"/api/agent/observability/v1/sessions/{quote(session_id, safe='')}/restart-handoffs/{quote(handoff_id, safe='')}/wire-metadata",
             params=dict(expected_native_id=expected_native_id,
                         expected_version=expected_version, expected_attempt=expected_attempt,
-                        paged=paged, selection=selection, **({"cursor": cursor} if cursor else {})),
+                        paged=paged, selection=selection, assess_unparsed=assess_unparsed,
+                        **({"cursor": cursor} if cursor else {})),
             timeout_seconds=15.0, max_response_bytes=512 * 1024)
 
     @mcp.tool()

@@ -123,3 +123,36 @@ Both selections report exact scanned ranges and cumulative counters. Neither
 selection permits negative inference from a partial range. Explicit message
 links are carried across pages with a bounded table; conflicting prompt/attempt
 identities or link overflow force UNKNOWN. Delivery remains prohibited.
+
+## Focused unparsed-record assessment
+
+Set `assess_unparsed=true` with an **existing** signed page cursor to revisit
+only that page's unparsed segments. The original snapshot, principal, authority,
+native history, receipt/version/attempt and selection fences still apply. No
+arbitrary path or byte offset is accepted. The ordinary records, counters,
+positions, next cursor and range hash chain remain identical to a normal replay.
+Use a preserved journal to select pages whose unparsed count increased; follow
+continuation segments only when needed to locate a skipped record's end. A
+fresh snapshot or a full rescan is not required or silently substituted.
+
+`unparsed_assessment.gaps` reports segment ranges, known record boundaries,
+oversized versus incomplete-EOF reasons, and recovery status. A continuation
+segment has no invented record start. Segment bytes lie inside the original
+page's committed range; a bounded lookahead may establish a later record end,
+but does not extend that committed range. Complete recovered records have a
+separate SHA256 over the JSON line excluding its newline.
+
+Only complete newline-terminated JSON records up to 1 MiB are interpreted.
+Recovery work (additional reads plus decoded input bytes) is capped at 4 MiB
+per call, nesting at 64, and gap descriptors at 32. Duplicate object keys are
+rejected. Larger records, incomplete EOF, ambiguous/malformed JSON, depth/work
+limits and filtered envelopes remain explicit gaps; prefixes are never treated
+as complete evidence. Existing envelope allowlisting is reused. Private content
+and raw fragments are neither returned nor placed in cursors.
+
+Recovered metadata reports an exact correlation only for an explicit matching
+native + prompt + attempt in that same complete envelope. It does not join
+independent IDs, reinterpret the original page's effect, reconcile a receipt,
+override dismissal/close, or permit delivery. Missing mappings still leave the
+historical effect UNKNOWN. Native provider stores and historical retention
+remain outside the reader's coverage.
