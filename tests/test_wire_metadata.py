@@ -190,3 +190,25 @@ def test_mcp_uses_get_fixed_route_and_bounded_response():
     assert api.call_args.args[1]=='GET'
     assert api.call_args.kwargs['max_response_bytes']==512*1024
     assert api.call_args.kwargs['params']['expected_attempt']==1
+
+
+def test_authorized_route_observes_without_mutation_and_revalidates(tmp_path):
+    from pa.domain.models import AgentSession, RestartHandoff
+    session=AgentSession(id=SID,agent_name='codex',status='closed',principal_id='user:owner',
+        authority_instance_id='owner',external_session_id=NATIVE)
+    receipt=RestartHandoff(id='receipt',session_id=SID,idempotency_key='key',instance_id='owner',
+        phase_version=6,attempts=1,continuation_prompt_id=PID,status='dismissed')
+    req=MagicMock();req.state.user.role='member'
+    req.app.state.ctx.settings.instance_id='owner';req.app.state.ctx.settings.data_dir=tmp_path
+    mgr=MagicMock();mgr.store.get_session.return_value=session;mgr.store.get_restart_handoff.return_value=receipt
+    with patch('pa.modules.agent_chat._manager',return_value=mgr),patch('pa.modules.agent_chat.get_principal_id',return_value='user:owner'):
+        result=asyncio.run(session_wire_metadata(req,SID,'receipt',NATIVE,6,1))
+        assert result['coverage']=='missing' and result['effect']=='unknown'
+        assert result['receipt_status']=='dismissed'
+        mgr.store.save_session.assert_not_called()
+        mgr.store.update_restart_handoff.assert_not_called()
+        mgr.create_session.assert_not_called()
+        mgr.store.get_session.side_effect=[session,session.model_copy(update={'principal_id':'foreign'})]
+        with pytest.raises(HTTPException) as e:
+            asyncio.run(session_wire_metadata(req,SID,'receipt',NATIVE,6,1))
+        assert e.value.status_code==409
