@@ -1,0 +1,29 @@
+{# Chat widget for the shell-level dialog. The label is unique per session so element ids
+   and draft keys never collide with a chat embedded in the page behind the dialog. #}
+<section class="chat-modal" data-chat-modal-body>
+  <header class="chat-modal-header">
+    <h2 id="chat-modal-title" class="chat-modal-title" tabindex="-1">{{ modal_title }}</h2>
+    <a class="ghost small chat-modal-full" data-chat-modal-full
+       href="/agent?session={{ session_id | urlencode }}{% if owner_instance_id %}&amp;instance={{ owner_instance_id | urlencode }}{% endif %}"
+       title="Open the full chat page">Open full page</a>
+    <button type="button" class="ghost small chat-modal-close" data-chat-modal-close aria-label="Close chat" title="Close (Esc)">&times;</button>
+  </header>
+  {% with
+      session_id=session_id,
+      owner_instance_id=owner_instance_id,
+      current_instance_id=instance_id,
+      create_label='modal:' ~ session_id,
+      card_id=card_id,
+      show_model=true,
+      show_mode=true,
+      show_thinking=true,
+      show_system_prompts=false,
+      show_queue=true,
+      show_metrics=false,
+      compact=false,
+      auto_start=false,
+      allow_card_capture=false
+  %}
+    {% include "partials/agent/chat-widget.html" %}
+  {% endwith %}
+</section>

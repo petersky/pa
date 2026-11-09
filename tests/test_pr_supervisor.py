@@ -3948,7 +3948,8 @@ class PRSupervisorTriagePageTests(unittest.TestCase):
                 page = client.get("/pull-requests").text
                 self.assertIn("Current supervisor health · healthy", page)
                 current, history = page.split('id="operations-history"', 1)
-                self.assertNotIn("3613", current)
+                # Whole-number match: the page's CSRF token embeds a timestamp that can contain these digits.
+                self.assertNotRegex(current, r"\b3613\b")
                 self.assertIn("3613", history)
                 self.assertIn("since this supervisor data store was initialized through", history)
                 self.assertIn("freshness window 120 seconds", current)

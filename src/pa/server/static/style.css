@@ -5711,3 +5711,40 @@ a.ghost:hover {
   .page-agent-main .acw-chat-stage { min-height: 0; flex: 1 1 auto; }
   .page-agent-main .agent-chat-widget { overflow-y: hidden; }
 }
+
+/* Chat opened as a dialog from other pages (chat-modal.js). */
+.chat-modal-dialog {
+  width: min(64rem, calc(100vw - 2rem));
+  height: min(90dvh, 52rem);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--pa-border);
+  border-radius: 12px;
+  background: var(--pa-surface-raised);
+  color: var(--pa-text);
+  box-shadow: 0 1.5rem 5rem rgb(0 0 0 / 0.35);
+}
+.chat-modal-dialog::backdrop { background: rgb(0 0 0 / 0.56); backdrop-filter: blur(2px); }
+.chat-modal-dialog:not([open]) { display: none; }
+#chat-modal-dialog-content { height: 100%; }
+.chat-modal { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 0.6rem 0.8rem 0.8rem; gap: 0.4rem; }
+.chat-modal-header { display: flex; align-items: center; gap: 0.5rem; }
+.chat-modal-title { flex: 1; margin: 0; font-size: 1rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-modal-close { font-size: 1.3rem; line-height: 1; padding: 0.1rem 0.5rem; }
+.chat-modal .agent-chat-widget { flex: 1; min-height: 0; }
+.chat-modal .acw-chat-stage,
+.chat-modal .acw-messages { min-height: 0; }
+@media (max-width: 720px) {
+  .chat-modal-dialog {
+    inset: 0;
+    box-sizing: border-box;
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+  .chat-modal { padding: max(0.6rem, env(safe-area-inset-top)) max(0.6rem, env(safe-area-inset-right)) max(0.6rem, env(safe-area-inset-bottom)) max(0.6rem, env(safe-area-inset-left)); }
+}
