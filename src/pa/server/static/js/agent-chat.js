@@ -5306,13 +5306,22 @@
     return result;
   }, {});
 
+  // The chat dialog (chat-modal.js) hosts its own widget; page-level session-list logic
+  // must keep talking to the widget that belongs to the page behind it.
+  function pageWidgetRoot() {
+    // The dialog follows <main> in the document, so the first widget is the page's own
+    // unless the page has none.
+    const first = document.querySelector("[data-agent-chat]");
+    return first && !(first.closest && first.closest("#chat-modal-dialog")) ? first : null;
+  }
+
   function selectedSessionId() {
-    const widget = document.querySelector("[data-agent-chat]");
+    const widget = pageWidgetRoot();
     return widget && widget._acw ? widget._acw.sessionId : "";
   }
 
   function localSessionWidget() {
-    const root = document.querySelector("[data-agent-chat]");
+    const root = pageWidgetRoot();
     const widget = root && root._acw;
     if (!widget || widget.destroyed) return null;
     return widget.apiBase === "/api/agent" ? widget : null;
@@ -6325,7 +6334,7 @@
       if (button._acwBound) return;
       button._acwBound = true;
       button.addEventListener("click", function () {
-        const widget = document.querySelector("[data-agent-chat]");
+        const widget = pageWidgetRoot();
         if (widget && widget._acw && widget._acw.threads) widget._acw.threads.branch("empty");
       });
     });
@@ -6344,7 +6353,7 @@
           const sessionId = li.dataset.sessionId;
           const unarchive = archiveButton.hasAttribute("data-agent-session-unarchive") ||
             archiveButton.dataset.archived === "true";
-          const widget = document.querySelector("[data-agent-chat]");
+          const widget = pageWidgetRoot();
           csrfFetch("/sessions/" + encodeURIComponent(sessionId) +
             (unarchive ? "/unarchive" : "/archive"), {
             method: "POST",
@@ -6401,7 +6410,7 @@
             method: "POST",
             body: "{}",
           }).then(function (snapshot) {
-            const widget = document.querySelector("[data-agent-chat]");
+            const widget = pageWidgetRoot();
             const sessionId = snapshot && snapshot.session && snapshot.session.id;
             if (widget && widget._acw && sessionId) {
               widget._acw.switchSession(sessionId, true, "");
@@ -6414,7 +6423,7 @@
           return;
         }
         if (!e.target.closest("[data-agent-session-open]")) return;
-        const widget = document.querySelector("[data-agent-chat]");
+        const widget = pageWidgetRoot();
         if (widget && widget._acw) {
           widget._acw.switchSession(
             li.dataset.sessionId,
@@ -6437,7 +6446,7 @@
           sessionSearch.hidden = !enabled;
           if (!enabled) sessionSearch.value = "";
         }
-        const widget = document.querySelector("[data-agent-chat]");
+        const widget = pageWidgetRoot();
         refreshSessionList(widget && widget._acw && widget._acw.sessionId);
       });
     }
@@ -6458,7 +6467,7 @@
         endAll.disabled = true;
         csrfFetch("/sessions/close-all", { method: "POST", body: "{}" })
           .then(function () {
-            const widget = document.querySelector("[data-agent-chat]");
+            const widget = pageWidgetRoot();
             if (widget && widget._acw && widget._acw.sessionId) {
               widget._acw.markSessionEnded(
                 "All sessions ended. Start a new session to continue."
@@ -6478,7 +6487,7 @@
     if (neu && !neu._acwBound) {
       neu._acwBound = true;
       neu.addEventListener("click", function () {
-        const widget = document.querySelector("[data-agent-chat]");
+        const widget = pageWidgetRoot();
         const dialog = document.querySelector("[data-agent-new-dialog]");
         if (!dialog) return;
         const error = dialog.querySelector("[data-agent-new-error]");
@@ -6503,7 +6512,7 @@
           dialog.querySelectorAll("[data-agent-new-model-provider], [data-agent-new-model], [data-agent-new-mode], [data-agent-new-effort]").forEach(function (select) {
             select.value = "";
           });
-          refreshNewSessionOptions(dialog, document.querySelector("[data-agent-chat]"));
+          refreshNewSessionOptions(dialog, pageWidgetRoot());
         });
       }
       const draftModel = dialog.querySelector("[data-agent-new-model]");
@@ -6514,7 +6523,7 @@
         modelProvider.addEventListener("change", function () {
           const model = dialog.querySelector("[data-agent-new-model]");
           if (model) model.value = "";
-          refreshNewSessionOptions(dialog, document.querySelector("[data-agent-chat]"));
+          refreshNewSessionOptions(dialog, pageWidgetRoot());
         });
       }
       dialog.querySelectorAll("[data-agent-new-cancel]").forEach(function (button) {
@@ -6573,7 +6582,7 @@
               list.setAttribute("aria-busy", "false");
             }
             refreshSessionList(sid, true);
-            const widget = document.querySelector("[data-agent-chat]");
+            const widget = pageWidgetRoot();
             if (widget && widget._acw && sid) widget._acw.switchSession(sid);
           })
           .catch(function (err) {

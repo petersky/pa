@@ -73,6 +73,7 @@
   <script src="{{ static_url('js/visualizations.js') }}" defer></script>
   <script src="{{ static_url('js/chat-format.js') }}" defer></script>
   <script src="{{ static_url('js/agent-chat.js') }}" defer></script>
+  <script src="{{ static_url('js/chat-modal.js') }}" defer></script>
   <script src="{{ static_url('js/file-browser.js') }}" defer></script>
   <script src="{{ static_url('js/fleet.js') }}" defer></script>
   <script src="{{ static_url('js/telemetry.js') }}" defer></script>
@@ -116,6 +117,9 @@
   </dialog>
   <dialog id="new-card-dialog" class="new-card-dialog" aria-labelledby="new-card-title">
     <div id="new-card-dialog-content" data-new-card-dialog-content></div>
+  </dialog>
+  <dialog id="chat-modal-dialog" class="chat-modal-dialog" aria-labelledby="chat-modal-title">
+    <div id="chat-modal-dialog-content" data-chat-modal-content></div>
   </dialog>
   <dialog id="card-dispatch-dialog" class="card-dispatch-dialog" aria-labelledby="card-dispatch-dialog-title">
     <div id="card-dispatch-dialog-content" data-card-dispatch-dialog-content></div>

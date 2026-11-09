@@ -515,6 +515,37 @@ def _agent_context(request: Request) -> dict:
     }
 
 
+@router.get("/partials/agent/chat-modal", response_class=HTMLResponse)
+def chat_modal_partial(
+    request: Request, session: str = "", instance: str = "", card: str = ""
+) -> HTMLResponse:
+    """A single chat widget (no session sidebar) for the shell-level chat dialog."""
+    ctx: AppContext = request.app.state.ctx
+    if not ctx.settings.agent_enabled:
+        raise HTTPException(status_code=404, detail="Agent disabled")
+    session_id = session.strip()
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session is required")
+    record = ctx.store.get_session(session_id) if not instance else None
+    if not instance and record is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    title = ""
+    if record is not None:
+        title = record.title or record.label or record.agent_name or ""
+    return _templates(request).TemplateResponse(
+        request,
+        "partials/agent/chat-modal.html",
+        {
+            "session_id": session_id,
+            "owner_instance_id": instance,
+            "card_id": card,
+            "modal_title": title or "Conversation",
+            "instance_id": ctx.settings.instance_id,
+            "terminal_output_char_limit": ctx.settings.terminal_output_char_limit,
+        },
+    )
+
+
 @router.get("/", response_class=HTMLResponse)
 def page_home(request: Request) -> HTMLResponse:
     page = request.app.state.ctx.require_service("pages").get_by_path("/")

@@ -101,3 +101,66 @@ async def test_bubbles_show_json_images_copy_and_visible_selection(operator_serv
     finally:
         await manager.close()
         await browser.close()
+
+
+@pytest.mark.skipif(not _browser_executable(), reason="managed Chromium is not installed")
+@pytest.mark.asyncio
+async def test_session_links_open_the_chat_in_a_dialog_and_clean_up(operator_server, tmp_path):
+    app, base = operator_server
+    browser = BrowserManager(tmp_path / "browser")
+    manager = BrowserSessionManager(browser, instance_id="chat-modal-test")
+    scope = BrowserScope("user:test", "chat-modal", "chat-modal-test")
+    async with httpx.AsyncClient(base_url=base, follow_redirects=False) as client:
+        await client.get("/fixture")
+    app.state.ctx.store.append_transcript_events([
+        TranscriptEvent(session_id="viz-session", seq=200, event_type="user_message",
+                        payload={"id": "modal", "message": "Seen from the dialog", "images": [], "source": "ui"}),
+    ])
+    try:
+        await manager.attach(scope, url=base + "/settings", width=1280, height=900)
+        page = manager.resolve(scope).page
+
+        async def wait_for(expression):
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                if await page.evaluate(expression):
+                    return
+                await asyncio.sleep(.05)
+            pytest.fail("Browser condition timed out: " + expression)
+
+        # A new-tab link keeps its normal behaviour; a plain link opens the dialog.
+        await page.evaluate("""(() => { const n = document.createElement('a'); n.id = 'newtab'; n.href = '/agent?session=viz-session';
+            n.target = '_blank'; n.addEventListener('click', e => e.preventDefault()); document.body.prepend(n);
+            n.click();
+            const a = document.createElement('a'); a.id = 'go'; a.href = '/agent?session=viz-session';
+            a.textContent = 'Open'; document.body.prepend(a); })()""")
+        assert await page.evaluate("document.getElementById('chat-modal-dialog').open") is False
+
+        await page.evaluate("document.getElementById('go').click()")
+        await wait_for("document.getElementById('chat-modal-dialog').open")
+        await wait_for("(() => { const r = document.querySelector('#chat-modal-dialog [data-agent-chat]'); return !!(r && r._acw && r._acw.sessionId === 'viz-session') })()")
+        await wait_for("document.querySelector('#chat-modal-dialog .acw-messages').textContent.includes('Seen from the dialog')")
+        # Ids and draft keys are scoped to the dialog's own conversation.
+        assert await page.evaluate("document.querySelector('#chat-modal-dialog [data-acw-input]').id") == "acw-input-modal-viz-session"
+        assert await page.evaluate("document.querySelector('#chat-modal-dialog [data-chat-modal-full]').getAttribute('href')") == "/agent?session=viz-session"
+
+        layout = """(() => { const d = document.getElementById('chat-modal-dialog').getBoundingClientRect(),
+            m = document.querySelector('#chat-modal-dialog .acw-messages').getBoundingClientRect(),
+            i = document.querySelector('#chat-modal-dialog [data-acw-input]').getBoundingClientRect();
+            return {messages: m.height, inside: i.bottom <= d.bottom + 1 && i.top >= d.top && m.bottom <= i.top + 1} })()"""
+        found = await page.evaluate(layout)
+        assert found["messages"] > 150 and found["inside"], found
+        await page.command("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 760, "deviceScaleFactor": 1, "mobile": True})
+        found = await page.evaluate(layout)
+        assert found["messages"] > 100 and found["inside"], found
+        assert await page.evaluate("document.getElementById('chat-modal-dialog').getBoundingClientRect().width") == 390
+        await page.command("Emulation.clearDeviceMetricsOverride")
+        for kind in ("keyDown", "keyUp"):
+            await page.command("Input.dispatchKeyEvent", {"type": kind, "key": "Escape", "code": "Escape",
+                                                          "windowsVirtualKeyCode": 27, "nativeVirtualKeyCode": 27})
+        await wait_for("!document.getElementById('chat-modal-dialog').open")
+        assert await page.evaluate("document.getElementById('chat-modal-dialog-content').childElementCount") == 0
+        assert await page.evaluate("document.activeElement && document.activeElement.id") == "go"
+    finally:
+        await manager.close()
+        await browser.close()
