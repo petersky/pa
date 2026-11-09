@@ -651,7 +651,8 @@
             self.closeCommandMenu();
             return;
           }
-          if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+          if ((e.key === "Enter" || (e.key === "Tab" && !e.ctrlKey && !e.metaKey && !e.altKey)) &&
+              !e.shiftKey && !e.isComposing && e.keyCode !== 229 && self.commandMatches.length) {
             e.preventDefault();
             self.selectCommand(self.commandMatches[self.commandSelectedIndex]);
             return;
@@ -665,6 +666,11 @@
       this.els.input.addEventListener("input", function () {
         self.updateCommandMenu();
         self.autosizeInput();
+      });
+      // Moving the caret into or out of a trigger word changes what the menu offers.
+      this.els.input.addEventListener("click", function () { self.updateCommandMenu(); });
+      this.els.input.addEventListener("keyup", function (e) {
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "Home" || e.key === "End") self.updateCommandMenu();
       });
       ["dragenter", "dragover"].forEach(function (name) {
         self.els.input.addEventListener(name, function (e) {
@@ -4860,20 +4866,28 @@
 
   AgentChatWidget.prototype.updateCommandMenu = function () {
     if (!this.els.input || !this.els.commandMenu || !this.els.commandOptions) return;
-    const raw = this.els.input.value || "";
-    if (raw.charAt(0) !== "/" || raw.indexOf("//") === 0 || /\s/.test(raw.slice(1))) {
+    const triggers = window.PAComposerTriggers;
+    const found = triggers
+      ? triggers.find(this.els.input.value || "", this.els.input.selectionStart, ["/", "$"])
+      : null;
+    if (!found) {
+      this.commandTrigger = null;
       this.closeCommandMenu();
       return;
     }
-    const query = raw.slice(1).toLowerCase();
-    const commands = this.commandCatalog && this.commandCatalog.commands || [];
-    this.commandMatches = commands
-      .filter(function (command) { return command.name.toLowerCase().indexOf(query) !== -1; })
-      .sort(function (a, b) {
-        const ap = a.name.toLowerCase().indexOf(query) === 0 ? 0 : 1;
-        const bp = b.name.toLowerCase().indexOf(query) === 0 ? 0 : 1;
-        return ap - bp || a.name.localeCompare(b.name) || a.origin.localeCompare(b.origin);
-      });
+    const skills = found.trigger === "$";
+    const commands = (this.commandCatalog && this.commandCatalog.commands || []).filter(function (command) {
+      return (command.kind === "skill" || command.name.charAt(0) === "$") === skills;
+    });
+    this.commandMatches = triggers.rank(commands, found.query, { strip: skills ? "$" : "" });
+    // A "$" is ordinary text far more often than a skill request, so it stays quiet
+    // unless something matches.
+    if (skills && !this.commandMatches.length) {
+      this.commandTrigger = null;
+      this.closeCommandMenu();
+      return;
+    }
+    this.commandTrigger = found;
     if (this.commandSelectedIndex >= this.commandMatches.length) this.commandSelectedIndex = 0;
     this.els.commandOptions.innerHTML = "";
     const self = this;
@@ -4888,7 +4902,7 @@
       option.disabled = disabled;
       const title = document.createElement("span");
       title.className = "acw-command-title";
-      title.textContent = "/" + command.name;
+      title.textContent = skills ? command.name : "/" + command.name;
       const origin = document.createElement("span");
       origin.className = "acw-command-origin";
       origin.textContent = command.origin === "pa" ? "PA" : (command.provider || "provider");
@@ -4899,9 +4913,13 @@
       input.className = "acw-command-input";
       input.textContent = disabled
         ? (command.disabled_reason || "Unavailable")
-        : command.input_required
-          ? ("Input required" + (command.input_hint ? ": " + command.input_hint : ""))
-          : "Runs immediately";
+        : skills
+          ? "Adds the skill to your message"
+          : command.input_required
+            ? ("Input required" + (command.input_hint ? ": " + command.input_hint : ""))
+            : command.input_hint
+              ? ("Optional input: " + command.input_hint)
+              : "Runs immediately";
       option.appendChild(title);
       option.appendChild(origin);
       option.appendChild(description);
@@ -4919,7 +4937,7 @@
         : this.commandError
           ? this.commandError
           : this.commandMatches.length
-            ? this.commandMatches.length + " command" + (this.commandMatches.length === 1 ? "" : "s")
+            ? this.commandMatches.length + (skills ? " skill" : " command") + (this.commandMatches.length === 1 ? "" : "s")
             : "No matching commands.";
     }
     this.moveCommandSelection(0);
@@ -4944,13 +4962,28 @@
     }
   };
 
+  AgentChatWidget.prototype.completeTrigger = function (insertion) {
+    const triggers = window.PAComposerTriggers;
+    const found = this.commandTrigger;
+    if (!triggers || !found) return;
+    const result = triggers.replace(this.els.input.value || "", found, insertion);
+    this.els.input.value = result.text;
+    this.els.input.setSelectionRange(result.caret, result.caret);
+    this.closeCommandMenu();
+    this.els.input.focus();
+    this.els.input.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+
   AgentChatWidget.prototype.selectCommand = function (command) {
     if (!command || (command.availability && command.availability !== "available")) return;
-    if (command.input_required) {
-      this.els.input.value = "/" + command.name + " ";
-      this.closeCommandMenu();
-      this.els.input.focus();
-      this.els.input.dispatchEvent(new Event("input", { bubbles: true }));
+    // Skills are plain "$name" text inside the message; nothing runs until it is sent.
+    if (command.kind === "skill" || command.name.charAt(0) === "$") {
+      this.completeTrigger(command.name);
+      return;
+    }
+    // A command that takes input, even optional input, waits for the user to add it.
+    if (command.input_required || command.input_hint) {
+      this.completeTrigger("/" + command.name);
       return;
     }
     this.closeCommandMenu();
@@ -4963,7 +4996,9 @@
     if (!match) return null;
     const name = match[1];
     const commands = this.commandCatalog && this.commandCatalog.commands || [];
-    const command = commands.find(function (item) { return item.name === name; });
+    const command = commands.find(function (item) {
+      return item.name === name && item.kind !== "skill" && name.charAt(0) !== "$";
+    });
     return command ? { command: command, arguments: match[2] || "" } : null;
   };
 

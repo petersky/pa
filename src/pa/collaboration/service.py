@@ -1065,15 +1065,18 @@ class CollaborationService:
                 "This command requires input.",
             )
         runtime = self.manager.get(session.id) if self.manager else None
-        if not runtime or not runtime.connected:
+        action = command.action or {"type": "forward_prompt"}
+        action_type = action.get("type")
+        # Reading PA's own state does not need the provider connection.
+        if action_type != "collaboration_status" and (
+            not runtime or not runtime.connected
+        ):
             return await self._save_command_failure(
                 session,
                 request,
                 CommandResultStatus.FAILED,
                 "The session owner is temporarily offline.",
             )
-        action = command.action or {"type": "forward_prompt"}
-        action_type = action.get("type")
         try:
             if action_type == "collaboration_status":
                 state = self.state(session).model_dump(mode="json")
@@ -1179,7 +1182,9 @@ class CollaborationService:
                     if isinstance(request.arguments, dict)
                     else str(request.arguments or "")
                 )
-                text = f"/{command.name}" + (
+                # Skills are named "$skill" in prompt text; everything else is a slash command.
+                prefix = "" if command.kind == "skill" else "/"
+                text = f"{prefix}{command.name}" + (
                     f" {argument_text}" if argument_text else ""
                 )
                 stop_reason = await runtime.prompt(

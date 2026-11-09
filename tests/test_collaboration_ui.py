@@ -10,8 +10,8 @@ def test_chat_widget_exposes_accessible_command_typeahead():
     script = (ROOT / "src/pa/server/static/js/agent-chat.js").read_text()
     assert 'role="listbox"' in template
     assert 'aria-autocomplete="list"' in template
-    assert 'raw.charAt(0) !== "/"' in script
-    assert 'raw.indexOf("//") === 0' in script
+    assert "window.PAComposerTriggers" in script
+    assert 'e.key === "Tab"' in script
     assert 'e.key === "ArrowDown"' in script
     assert 'e.key === "Escape"' in script
     assert "aria-activedescendant" in script
