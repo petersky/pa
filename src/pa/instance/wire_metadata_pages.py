@@ -86,7 +86,7 @@ def _decode(token, key):
 def read_wire_metadata_page(root: Path, *, session_id: str, native_id: str,
                             prompt_id: str, attempt: int, scope: str,
                             secret: str, cursor: str | None = None,
-                            selection: str = 'all') -> dict:
+                            selection: str = 'all', assess_unparsed: bool = False) -> dict:
     """Read one forward page; replaying a cursor replays the same immutable range.
 
     Cursor payloads contain only IDs, counters and filesystem identity metadata,
@@ -101,6 +101,8 @@ def read_wire_metadata_page(root: Path, *, session_id: str, native_id: str,
     key = hmac.new(secret.encode(), b'pa:wire-metadata-pages:v1', hashlib.sha256).digest()
     binding = _digest([session_id, native_id, prompt_id, attempt, scope, selection])
     previous = _decode(cursor, key) if cursor else None
+    if assess_unparsed and previous is None:
+        raise ValueError('Gap assessment requires an existing signed snapshot cursor')
     if previous and previous['binding'] != binding:
         raise ValueError('Wire cursor belongs to another binding')
     with _scope(root, session_id) as (fd, directories):
@@ -118,6 +120,8 @@ def read_wire_metadata_page(root: Path, *, session_id: str, native_id: str,
         snapshot_id = _digest({k: state[k] for k in ('binding','directories','files','nonce')})
         start_index, start_offset = state['index'], state['offset']
         rows, ranges = [], []
+        from pa.instance.wire_metadata_gaps import GapAssessment
+        assessment = GapAssessment(native_id, prompt_id, attempt) if assess_unparsed else None
         read_bytes, lookahead = 0, 0
         page_examined = 0
         # Skip only manifest entries with no readable bytes. Missing/unavailable
@@ -141,6 +145,11 @@ def read_wire_metadata_page(root: Path, *, session_id: str, native_id: str,
                 while pos < len(data) and page_examined < MAX_RECORDS and len(rows) < MAX_OUTPUT:
                     end = data.find(b'\n', pos)
                     if state['skipping']:
+                        if assessment:
+                            assessment.segment(wire_fd, artifact=name, start=begin+pos,
+                                end=begin+(len(data) if end < 0 else end+1),
+                                size=entry['identity'][2], reason='oversized_continuation',
+                                continued=True, terminated=end >= 0)
                         pos = len(data) if end < 0 else end+1
                         state['skipping'] = end < 0
                         continue
@@ -148,9 +157,15 @@ def read_wire_metadata_page(root: Path, *, session_id: str, native_id: str,
                         if begin+len(data) == entry['identity'][2]:
                             # Incomplete final line is covered but not evidence.
                             state['unparsed'] += 1
+                            if assessment:
+                                assessment.segment(wire_fd, artifact=name, start=begin+pos,
+                                    end=begin+len(data), size=entry['identity'][2], reason='incomplete_eof')
                             pos = len(data)
                         elif len(data)-pos > MAX_LINE:
                             state['unparsed'] += 1
+                            if assessment:
+                                assessment.segment(wire_fd, artifact=name, start=begin+pos,
+                                    end=begin+len(data), size=entry['identity'][2], reason='oversized')
                             state['skipping'] = True
                             pos = len(data)
                         # Otherwise leave the boundary line for the next page;
@@ -163,6 +178,10 @@ def read_wire_metadata_page(root: Path, *, session_id: str, native_id: str,
                     state['examined'] += 1
                     if len(raw) > MAX_LINE:
                         state['unparsed'] += 1
+                        if assessment:
+                            assessment.segment(wire_fd, artifact=name, start=record_start,
+                                end=begin+pos, size=entry['identity'][2], reason='oversized',
+                                raw=raw, terminated=True)
                         continue
                     try:
                         record = json.loads(raw)
@@ -241,7 +260,7 @@ def read_wire_metadata_page(root: Path, *, session_id: str, native_id: str,
             if after_directories != directories or _manifest(after_fd) != files:
                 raise ValueError('Wire snapshot changed during inspection')
         exhausted = state['index'] == len(files)
-        return dict(schema_version=2, snapshot_id=snapshot_id,
+        result = dict(schema_version=2, snapshot_id=snapshot_id,
                     session_id=session_id, native_history_id=native_id, prompt_id=prompt_id,
                     attempt=attempt, selection=selection,
                     artifacts=[{'name':f['name'], 'state':f['state'],
@@ -260,3 +279,6 @@ def read_wire_metadata_page(root: Path, *, session_id: str, native_id: str,
                     effect='unknown' if state['conflicts'] or state['link_overflow'] else state['effect'], delivery_allowed=False,
                     native_provider_store='unavailable_through_this_reader',
                     next_cursor=None if exhausted else _encode(state,key))
+        if assessment:
+            result['unparsed_assessment'] = assessment.result()
+        return result

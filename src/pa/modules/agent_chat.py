@@ -1849,6 +1849,7 @@ async def session_wire_metadata(
     expected_native_id: str, expected_version: int, expected_attempt: int,
     paged: bool = False, cursor: str | None = None,
     selection: Literal["all", "outcomes"] = "all",
+    assess_unparsed: bool = False,
 ) -> dict:
     """Read fixed retained diagnostics; never connect, recover or send prompts."""
     mgr = _manager(request)
@@ -1868,7 +1869,7 @@ async def session_wire_metadata(
                 or receipt.phase_version != expected_version
                 or receipt.attempts != expected_attempt):
             raise HTTPException(409, "Saved authority/native/receipt/attempt binding changed")
-        if paged or cursor is not None:
+        if paged or cursor is not None or assess_unparsed:
             from pa.instance.wire_metadata_pages import read_wire_metadata_page
             result = read_wire_metadata_page(request.app.state.ctx.settings.data_dir,
                 session_id=session.id, native_id=session.external_session_id,
@@ -1876,7 +1877,7 @@ async def session_wire_metadata(
                 secret=request.app.state.ctx.settings.session_secret,
                 scope=json.dumps([principal, owner, receipt.id, receipt.phase_version,
                                   session.updated_at.isoformat()]),
-                cursor=cursor, selection=selection)
+                cursor=cursor, selection=selection, assess_unparsed=assess_unparsed)
         else:
             result = read_wire_metadata(request.app.state.ctx.settings.data_dir,
                 session_id=session.id, native_id=session.external_session_id,

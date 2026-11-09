@@ -135,15 +135,17 @@ def test_byte_record_output_limits_and_rotation(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize('paged',[False,True])
+@pytest.mark.parametrize('assess_unparsed',[False,True])
 @pytest.mark.parametrize('change,status', [('principal',403),('owner',409),('native',409),('version',409),('attempt',409)])
-def test_route_fences_before_artifact_access(tmp_path,change,status,paged):
+def test_route_fences_before_artifact_access(tmp_path,change,status,paged,assess_unparsed):
     session=SimpleNamespace(id=SID,principal_id='user:owner',authority_instance_id='owner',external_session_id=NATIVE)
     receipt=SimpleNamespace(id='receipt',session_id=SID,instance_id='owner',phase_version=6,attempts=1,continuation_prompt_id=PID,status='dismissed')
     req=MagicMock();req.state.user.role='member'
     req.app.state.ctx.settings.instance_id='owner';req.app.state.ctx.settings.data_dir=tmp_path
     mgr=MagicMock();mgr.store.get_session.return_value=session;mgr.store.get_restart_handoff.return_value=receipt
     principal='user:other' if change=='principal' else 'user:owner'
-    args=dict(expected_native_id=NATIVE,expected_version=6,expected_attempt=1,paged=paged)
+    args=dict(expected_native_id=NATIVE,expected_version=6,expected_attempt=1,paged=paged,
+              assess_unparsed=assess_unparsed)
     if change=='owner':receipt.instance_id='foreign'
     if change=='native':args['expected_native_id']='foreign'
     if change=='version':args['expected_version']=7

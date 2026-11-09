@@ -79,7 +79,8 @@ def test_oversize_line_carries_no_content_across_cursor(tmp_path,monkeypatch):
 
 
 @pytest.mark.parametrize('change',['grow','truncate','replace','symlink','rotation','rewrite'])
-def test_snapshot_changes_rejected(tmp_path,monkeypatch,change):
+@pytest.mark.parametrize('assess',[False,True])
+def test_snapshot_changes_rejected(tmp_path,monkeypatch,change,assess):
     monkeypatch.setattr(pages,'MAX_OUTPUT',1)
     path=artifact(tmp_path,[request()]*3)
     page=read(tmp_path)
@@ -93,7 +94,7 @@ def test_snapshot_changes_rejected(tmp_path,monkeypatch,change):
     if change=='rewrite':
         data=path.read_bytes();path.write_bytes(data.replace(b'SECRET',b'PUBLIC'))
     with pytest.raises((ValueError,OSError)):
-        read(tmp_path,page['next_cursor'])
+        read(tmp_path,page['next_cursor'],assess_unparsed=assess)
 
 
 def test_cursor_scope_tamper_and_selection_fences(tmp_path,monkeypatch):
@@ -196,11 +197,12 @@ def test_route_pagination_reuses_auth_and_rejects_stale_receipt(tmp_path):
     with patch('pa.modules.agent_chat._manager',return_value=mgr),patch('pa.modules.agent_chat.get_principal_id',return_value='user:owner'):
         first=asyncio.run(session_wire_metadata(req,SID,'receipt',NATIVE,6,1,paged=True))
         assert first['next_cursor']
-        second=asyncio.run(session_wire_metadata(req,SID,'receipt',NATIVE,6,1,paged=True,cursor=first['next_cursor']))
+        second=asyncio.run(session_wire_metadata(req,SID,'receipt',NATIVE,6,1,paged=True,cursor=first['next_cursor'],assess_unparsed=True))
+        assert second['unparsed_assessment']['gaps']==[]
         assert second['snapshot_exhausted']
         assert second['totals']['emitted']==201
         mgr.store.get_restart_handoff.return_value=receipt.model_copy(update={'phase_version':7})
         with pytest.raises(HTTPException) as e:
-            asyncio.run(session_wire_metadata(req,SID,'receipt',NATIVE,6,1,paged=True,cursor=first['next_cursor']))
+            asyncio.run(session_wire_metadata(req,SID,'receipt',NATIVE,6,1,paged=True,cursor=first['next_cursor'],assess_unparsed=True))
         assert e.value.status_code==409
         mgr.store.save_session.assert_not_called();mgr.store.update_restart_handoff.assert_not_called()
