@@ -472,6 +472,15 @@ class TranscriptStorage:
             event_type=row["event_type"], payload=self._payload(row),
             created_at=datetime.fromisoformat(row["created_at"]))
 
+    def get_event(self, session_id: str, event_id: str) -> TranscriptEvent | None:
+        """Read one exact durable audit receipt without scanning native history."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM transcript_events WHERE session_id=? AND id=?",
+                (session_id, event_id),
+            ).fetchone()
+        return self._event(row) if row else None
+
     def list(self, session_id: str, *, after_seq: int = 0, limit: int = 500) -> list[TranscriptEvent]:
         limit = max(1, min(int(limit), MAX_PAGE_SIZE))
         with self._conn() as conn:

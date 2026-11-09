@@ -710,6 +710,13 @@ class RestartHandoffReconcileBody(BaseModel):
     expected_version: int = Field(ge=0)
 
 
+class SessionRecoveryAuditBody(BaseModel):
+    expected_version: int = Field(ge=0)
+    expected_session_version: datetime
+    expected_binding_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+
 class SessionCardLinkBody(BaseModel):
     make_primary: bool = True
 
@@ -1693,6 +1700,23 @@ async def reconcile_restart_handoff(
             handoff_id, session_id=session_id, expected_version=body.expected_version,
             owner_instance_id=request.app.state.ctx.settings.instance_id,
             principal_id=principal_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/sessions/{session_id}/restart-handoffs/{handoff_id}/recovery-audit")
+async def audit_session_recovery(
+    request: Request, session_id: str, handoff_id: str, body: SessionRecoveryAuditBody,
+) -> dict:
+    """Audited fail-closed assessment; this route never loads or sends prompts."""
+    mgr = _require_session_traffic_ready(request)
+    try:
+        return await _offload(
+            mgr, "sqlite.session_recovery_audit", mgr.store.audit_session_recovery,
+            handoff_id, session_id=session_id,
+            owner_instance_id=request.app.state.ctx.settings.instance_id,
+            principal_id=get_principal_id(request), **body.model_dump(),
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

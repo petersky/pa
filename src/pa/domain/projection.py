@@ -607,6 +607,11 @@ class CardProjection:
                 );
                 CREATE INDEX IF NOT EXISTS idx_knowledge_audit_entry_time
                     ON knowledge_audit_events(knowledge_id, created_at);
+                CREATE TABLE IF NOT EXISTS session_recovery_audits (
+                    id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+                    request_fingerprint TEXT NOT NULL, result_json TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS agent_transcript_events (
                     id TEXT PRIMARY KEY,
                     session_id TEXT NOT NULL,
@@ -5841,6 +5846,101 @@ class CardProjection:
                 "next_action": None if completed else "audit_native_history_and_dismissal",
                 "replayed": False,
             }
+
+    def audit_session_recovery(
+        self, handoff_id: str, *, session_id: str, expected_version: int,
+        expected_session_version: datetime, expected_binding_hash: str,
+        owner_instance_id: str, principal_id: str, idempotency_key: str,
+    ) -> dict:
+        """Persist an exact recovery assessment, never admission or delivery.
+
+        Until a persistent all-source delivery fence exists, even confirmed
+        completion cannot authorize loading a closed native session. No loader,
+        queue, restart or receipt transition is called by this operation.
+        """
+        from pa.instance.restart_lifecycle import RestartTransitionConflict
+        with measured_lock(self._mutation_lock, name="projection.mutation"):
+            session = self.get_session(session_id)
+            current = self.get_restart_handoff(handoff_id)
+            if not session or not current or current.session_id != session_id:
+                raise ValueError("Session/receipt identity does not match")
+            if (not principal_id or session.principal_id != principal_id
+                    or not owner_instance_id or current.instance_id != owner_instance_id
+                    or session.authority_instance_id != owner_instance_id):
+                raise RestartTransitionConflict("Recovery audit principal/owner does not match")
+            if not idempotency_key.strip():
+                raise ValueError("Recovery audit requires an idempotency key")
+            request = dict(handoff_id=handoff_id, expected_version=expected_version,
+                           expected_session_version=expected_session_version.isoformat(),
+                           expected_binding_hash=expected_binding_hash)
+            fingerprint = hashlib.sha256(json.dumps(request, sort_keys=True).encode()).hexdigest()
+            audit_id = str(uuid5(NAMESPACE_URL, json.dumps(
+                ["session-recovery-audit-v1", session_id, principal_id, owner_instance_id, idempotency_key])))
+            with self._conn() as conn:
+                previous = conn.execute(
+                    "SELECT result_json FROM session_recovery_audits WHERE id=? AND session_id=?",
+                    (audit_id, session_id),
+                ).fetchone()
+            if previous:
+                saved = json.loads(previous["result_json"])
+                if saved["request_fingerprint"] != fingerprint:
+                    raise RestartTransitionConflict("Recovery audit key belongs to another snapshot")
+                if not self.transcripts.get_event(session_id, audit_id):
+                    self.append_transcript_events([TranscriptEvent(
+                        id=audit_id, session_id=session_id, seq=self.next_transcript_seq(session_id),
+                        event_type="session_recovery_audited", payload=saved,
+                    )])
+                return saved
+            binding_hash = hashlib.sha256(json.dumps(
+                session.execution_binding, sort_keys=True, separators=(",", ":")
+            ).encode()).hexdigest()
+            if (current.phase_version != expected_version
+                    or session.updated_at != expected_session_version
+                    or binding_hash != expected_binding_hash):
+                raise RestartTransitionConflict("Recovery snapshot advanced; reread session/receipt/binding")
+            completed = self.find_prompt_completion(session_id, current.continuation_prompt_id)
+            lifecycle = self.transcripts.find_prompt_lifecycle(session_id, current.continuation_prompt_id)
+            blockers = ["all_source_delivery_fence_unavailable", "live_lease_and_worker_revalidation_required"]
+            if completed is None:
+                blockers.append("prompt_effect_unknown")
+            if session.status == "closed" or current.status == "dismissed":
+                blockers.append("explicit_close_or_dismissal_unresolved")
+            if self.pending_restart_continuation(session_id=session_id):
+                blockers.append("pending_continuation")
+            if not session.external_session_id:
+                blockers.append("saved_native_history_missing")
+            result = dict(
+                audit_id=audit_id, request_fingerprint=fingerprint,
+                principal_id=principal_id, owner_instance_id=owner_instance_id,
+                session_id=session_id, handoff_id=handoff_id,
+                session_version=session.updated_at.isoformat(), receipt_version=current.phase_version,
+                binding_hash=binding_hash,
+                native_history_id=session.external_session_id,
+                saved_settings_hash=hashlib.sha256(json.dumps(
+                    [session.agent_name, session.model_id, session.mode_id, session.config_json],
+                    sort_keys=True).encode()).hexdigest(),
+                effect="confirmed" if completed else "unknown",
+                completion_event_id=completed.id if completed else None,
+                lifecycle_event_type=lifecycle.event_type if lifecycle else None,
+                state="blocked", blockers=blockers, restored=False, delivery_allowed=False,
+                evidence_query={"session_id": session_id,
+                    "continuation_prompt_id": current.continuation_prompt_id,
+                    "required": ["authoritative_prompt_specific_completion_or_non_delivery",
+                                 "explicit_close_and_dismissal_disposition",
+                                 "saved_native_history_and_settings_verification"]},
+            )
+            # Keep the operation receipt independent of transcript retention.
+            # A failed audit mirror is repaired by a retry of this same key.
+            with self._conn() as conn:
+                conn.execute(
+                    "INSERT INTO session_recovery_audits VALUES (?, ?, ?, ?)",
+                    (audit_id, session_id, fingerprint, json.dumps(result)),
+                )
+            self.append_transcript_events([TranscriptEvent(
+                id=audit_id, session_id=session_id, seq=self.next_transcript_seq(session_id),
+                event_type="session_recovery_audited", payload=result,
+            )])
+            return result
 
     def retry_restart_handoff(
         self, handoff_id: str, *, session_id: str
