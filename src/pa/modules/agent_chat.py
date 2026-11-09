@@ -1843,6 +1843,47 @@ async def list_session_turns(request: Request, session_id: str) -> dict[str, Any
     }
 
 
+@router.get("/observability/v1/sessions/{session_id}/restart-handoffs/{handoff_id}/wire-metadata")
+async def session_wire_metadata(
+    request: Request, session_id: str, handoff_id: str,
+    expected_native_id: str, expected_version: int, expected_attempt: int,
+) -> dict:
+    """Read fixed retained diagnostics; never connect, recover or send prompts."""
+    mgr = _manager(request)
+    def collect():
+        from pa.instance.wire_metadata import read_wire_metadata
+        session = mgr.store.get_session(session_id)
+        receipt = mgr.store.get_restart_handoff(handoff_id)
+        if not session or not receipt or receipt.session_id != session_id:
+            raise HTTPException(404, "Exact session/receipt not found")
+        principal = get_principal_id(request)
+        user = getattr(request.state, "user", None)
+        if (not principal or session.principal_id != principal) and getattr(user, "role", None) != "admin":
+            raise HTTPException(403, "Session is owned by another principal")
+        owner = request.app.state.ctx.settings.instance_id
+        if (session.authority_instance_id != owner or receipt.instance_id != owner
+                or session.external_session_id != expected_native_id
+                or receipt.phase_version != expected_version
+                or receipt.attempts != expected_attempt):
+            raise HTTPException(409, "Saved authority/native/receipt/attempt binding changed")
+        result = read_wire_metadata(request.app.state.ctx.settings.data_dir,
+            session_id=session.id, native_id=session.external_session_id,
+            prompt_id=receipt.continuation_prompt_id, attempt=receipt.attempts)
+        result.update(handoff_id=receipt.id, attempt=receipt.attempts,
+                      receipt_version=receipt.phase_version,
+                      receipt_status=receipt.status)
+        # A concurrent session/receipt change invalidates the observation.
+        latest = mgr.store.get_session(session_id)
+        current = mgr.store.get_restart_handoff(handoff_id)
+        if latest != session or current != receipt:
+            raise HTTPException(409, "Saved recovery binding changed during inspection")
+        return result
+    try:
+        return await _offload(mgr, "agent.wire_metadata_read", collect, timeout=10.0)
+    except ValueError as exc:
+        raise HTTPException(409, "Invalid saved session identity") from exc
+
+
 @router.post("/observability/v1/sessions/{session_id}/diagnostics")
 def request_session_diagnostics(
     request: Request, session_id: str, limit: int = 50

@@ -57,3 +57,33 @@ terminal outcome with the receipt's single attempt. Audit the recorded close
 and dismissal separately. Neither absence of local turn evidence nor a healthy
 ACP launcher proves non-delivery. Preserve UNKNOWN if those links cannot be
 established. Do not rearm the receipt or replace its prompt identity.
+
+## Fixed wire metadata reader
+
+GET `/api/agent/observability/v1/sessions/{session_id}/restart-handoffs/{handoff_id}/wire-metadata`
+(and MCP `get_agent_session_wire_metadata`) requires the expected saved native ID,
+receipt version and attempt. The server checks the owning principal or admin,
+local session authority, receipt ownership and exact saved identities before
+reading. It rechecks saved bindings after inspection. It never opens a provider
+connection, loads history, changes receipt/session state or authorizes delivery.
+
+Only `sessions/<saved UUID>/wire.jsonl` and fixed suffixes `.1` through `.3`
+under the configured data root are readable. Descriptor-relative no-follow opens
+reject symlinks and nonregular artifacts. At most 1 MiB from each file tail,
+4 MiB total, 20,000 JSON records and 200 returned records are inspected/returned.
+The response describes byte ranges, inspected-range hashes, changed files,
+partial lines, malformed records, missing artifacts and output truncation.
+`observed_fixed_files_complete` means only that these observed file snapshots
+were fully inspected. Other rotations, prior logging loss, retention and native
+provider stores remain outside that claim: historical coverage stays UNKNOWN.
+
+Output contains fixed method/direction/status enums, validated opaque IDs,
+normalized timestamps and numeric error codes. Prompts, answers, raw errors,
+settings, tool results, headers and raw protocol envelopes are never returned.
+An outgoing request log is not a submission acknowledgment. Exact-attempt
+classification requires explicit prompt + native + attempt linkage, with a
+matching message ID for a separate response. No mapping is invented from time
+proximity, ordering or a shared native history ID. Missing or uncorrelated
+records preserve UNKNOWN, including the legacy logger's independent UUIDs and
+unidentified terminal responses. A terminal result describes protocol outcome
+only; it does not prove task effects or reverse an intentional cancellation.
