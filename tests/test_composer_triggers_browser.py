@@ -1,5 +1,8 @@
 """`/` and `$` menus in the real chat widget."""
 import asyncio
+import base64
+import json
+import subprocess
 import time
 
 import httpx
@@ -7,6 +10,7 @@ import pytest
 
 from pa.browser.manager import BrowserManager, _browser_executable
 from pa.browser.session import BrowserScope, BrowserSessionManager
+from pa.domain.models import AgentSession, CardCreate
 from tests.test_card_status_browser import operator_server  # noqa: F401
 from tests.visualization_chat_fixture import build_visualization_app
 
@@ -49,12 +53,12 @@ async def test_slash_and_dollar_menus_complete_text_without_running_anything(ope
             pytest.fail("Browser condition timed out: " + expression)
 
         await wait_for("!!(document.querySelector('[data-agent-chat]')._acw && document.querySelector('[data-acw-input]'))")
-        await page.evaluate(f"""(() => {{ const w = document.querySelector('[data-agent-chat]')._acw;
-            w.commandCatalog = {CATALOG!r}; w.commandCatalogSession = w.sessionId; }})()""".replace("True", "true"))
-
-        # The widget code is idempotent with respect to a fixed catalog; type through the real input handler.
-        type_text = """(([text, caret]) => { const i = document.querySelector('[data-acw-input]'); i.disabled = false;
-            i.value = text; i.setSelectionRange(caret, caret); i.dispatchEvent(new Event('input', {bubbles: true})); })"""
+        # A real catalog refresh can land at any moment, so the fixed catalog is re-applied on every keystroke.
+        catalog = json.dumps(CATALOG)
+        type_text = f"""(([text, caret]) => {{ const w = document.querySelector('[data-agent-chat]')._acw;
+            w.commandCatalog = {catalog}; w.commandCatalogSession = w.sessionId;
+            const i = document.querySelector('[data-acw-input]'); i.disabled = false;
+            i.value = text; i.setSelectionRange(caret, caret); i.dispatchEvent(new Event('input', {{bubbles: true}})); }})"""
         titles = "[...document.querySelectorAll('[data-acw-command-options] .acw-command-title')].map(e => e.textContent)"
         menu_open = "!document.querySelector('[data-acw-command-menu]').hidden"
 
@@ -75,7 +79,8 @@ async def test_slash_and_dollar_menus_complete_text_without_running_anything(ope
         # A skill is completed in place, mid-sentence, without running anything.
         await page.evaluate(f"{type_text}(['use $se now', 7])")
         assert await page.evaluate(titles) == ["$seed"]
-        await page.evaluate("document.querySelector('[data-acw-command-options] .acw-command-option').click()")
+        # Type and click in one task: a catalog refresh landing in between would legitimately re-render the menu.
+        await page.evaluate(f"({type_text})(['use $se now', 7]); document.querySelector('[data-acw-command-options] .acw-command-option').click()")
         assert await page.evaluate("document.querySelector('[data-acw-input]').value") == "use $seed now"
         assert await page.evaluate("document.querySelector('[data-acw-input]').selectionStart") == 10
         assert not await page.evaluate(menu_open)
@@ -83,14 +88,115 @@ async def test_slash_and_dollar_menus_complete_text_without_running_anything(ope
         # A command with optional input waits for it instead of running immediately.
         await page.evaluate(f"{type_text}(['/ren', 4])")
         assert "Optional input: new name" in await page.evaluate("document.querySelector('.acw-command-input').textContent")
-        await page.evaluate("document.querySelector('[data-acw-command-options] .acw-command-option').click()")
+        await page.evaluate(f"({type_text})(['/ren', 4]); document.querySelector('[data-acw-command-options] .acw-command-option').click()")
         assert await page.evaluate("document.querySelector('[data-acw-input]').value") == "/rename "
         assert await page.evaluate("document.body.textContent.includes('Running /rename')") is False
 
         # Tab completes the highlighted skill as well.
-        await page.evaluate(f"{type_text}(['$goo', 4])")
-        await page.evaluate("document.querySelector('[data-acw-input]').dispatchEvent(new KeyboardEvent('keydown', {key: 'Tab', bubbles: true, cancelable: true}))")
+        await page.evaluate(f"""({type_text})(['$goo', 4]);
+            document.querySelector('[data-acw-input]').dispatchEvent(new KeyboardEvent('keydown', {{key: 'Tab', bubbles: true, cancelable: true}}))""")
         assert await page.evaluate("document.querySelector('[data-acw-input]').value") == "$google-drive:google-docs "
+    finally:
+        await manager.close()
+        await browser.close()
+
+
+PIXEL = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+
+
+@pytest.mark.skipif(not _browser_executable(), reason="managed Chromium is not installed")
+@pytest.mark.asyncio
+async def test_at_mentions_search_the_server_and_complete_or_attach(operator_server, tmp_path):  # noqa: F811
+    app, base = operator_server
+    workspace = tmp_path / "repo"
+    (workspace / "src/app").mkdir(parents=True)
+    (workspace / "docs").mkdir()
+    (workspace / "src/app/server.py").write_text("print()\n")
+    (workspace / "docs/shot.png").write_bytes(base64.b64decode(PIXEL))
+    subprocess.run(["git", "init", "-q", str(workspace)], check=True)
+    browser = BrowserManager(tmp_path / "browser")
+    manager = BrowserSessionManager(browser, instance_id="composer-mentions-test")
+    scope = BrowserScope("user:test", "composer-mentions", "composer-mentions-test")
+    async with httpx.AsyncClient(base_url=base, follow_redirects=False) as client:
+        await client.get("/fixture")
+    store = app.state.ctx.store
+    session = store.get_session("viz-session")
+    store.save_session(AgentSession(id="planning-chat", agent_name="codex", purpose="chat", principal_id=session.principal_id,
+                                    title="Release planning"))
+    store.create_card(CardCreate(title="Fix release pipeline"))
+    # The workspace must be a trusted root for the image to be served back.
+    try:
+        await manager.attach(scope, url=base + "/agent?session=viz-session", width=1280, height=900)
+        page = manager.resolve(scope).page
+
+        def pin_workspace():
+            # Opening the page re-saves the session; keep pointing it at the test workspace.
+            current = store.get_session("viz-session")
+            if current.cwd != str(workspace):
+                current.cwd = str(workspace)
+                store.save_session(current)
+
+        async def wait_for(expression):
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                pin_workspace()
+                if await page.evaluate(expression):
+                    return
+                await asyncio.sleep(.05)
+            pytest.fail("Browser condition timed out: " + expression)
+
+        await wait_for("!!(document.querySelector('[data-agent-chat]')._acw && document.querySelector('[data-acw-input]'))")
+        pin_workspace()
+        type_text = """(([text, caret]) => { const i = document.querySelector('[data-acw-input]'); i.disabled = false;
+            i.value = text; i.setSelectionRange(caret, caret); i.dispatchEvent(new Event('input', {bubbles: true})); })"""
+        titles = "[...document.querySelectorAll('[data-acw-command-options] .acw-command-title')].map(e => e.textContent)"
+        value = "document.querySelector('[data-acw-input]').value"
+        menu_open = "!document.querySelector('[data-acw-command-menu]').hidden"
+        first = "document.querySelector('[data-acw-command-options] .acw-command-option').click()"
+
+        async def mention(text, caret, title):
+            """Type and wait for a result; retype if the fixture reset the working directory mid-search."""
+            for _ in range(6):
+                pin_workspace()
+                # An unchanged query never restarts a search, so clear the token before retyping it.
+                await page.evaluate(f"{type_text}(['', 0])")
+                await page.evaluate(f"{type_text}([{text!r}, {caret}])")
+                deadline = time.monotonic() + 3
+                while time.monotonic() < deadline:
+                    if title in await page.evaluate(titles):
+                        return
+                    await asyncio.sleep(.05)
+            pytest.fail(f"No mention result {title!r} for {text!r}")
+
+        # A file completes to its relative path.
+        await mention("@serv", 5, "@src/app/server.py")
+        await page.evaluate(first)
+        assert await page.evaluate(value) == "@src/app/server.py "
+
+        # A conversation completes to a labelled id; the kind prefix narrows the search.
+        await mention("talk to @session:rel", 19, "Release planning")
+        assert await page.evaluate(titles) == ["Release planning"]
+        await page.evaluate(first)
+        assert await page.evaluate(value) == "talk to @session:planning-chat "
+
+        # A card likewise.
+        await mention("@card:pipe", 10, "Fix release pipeline")
+        await page.evaluate(first)
+        assert (await page.evaluate(value)).startswith("@card:") and (await page.evaluate(value)).endswith(" ")
+
+        # An image is attached instead of typed, and its token is removed from the text.
+        await mention("look at @shot now", 13, "@docs/shot.png")
+        assert await page.evaluate("document.querySelector('.acw-command-origin').textContent") == "image"
+        await page.evaluate(first)
+        assert await page.evaluate(value) == "look at now"
+        await wait_for("document.querySelector('[data-agent-chat]')._acw.pendingImages.length === 1")
+        assert await page.evaluate("document.querySelector('[data-agent-chat]')._acw.pendingImages[0].name") == "shot.png"
+
+        # Plain text that merely contains "@" never shows a menu.
+        for text, caret in (("mail ada@example.com", 20), ("@nothingmatchesthis", 19)):
+            await page.evaluate(f"{type_text}([{text!r}, {caret}])")
+            await asyncio.sleep(.5)
+            assert not await page.evaluate(menu_open)
     finally:
         await manager.close()
         await browser.close()

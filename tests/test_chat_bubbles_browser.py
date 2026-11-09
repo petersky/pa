@@ -93,7 +93,8 @@ async def test_bubbles_show_json_images_copy_and_visible_selection(operator_serv
         await wait_for("getComputedStyle(document.querySelector('.page-sidebar-left')).display === 'none'")
         assert await page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         assert await page.evaluate("document.querySelector('[data-acw-input]').getBoundingClientRect().bottom <= innerHeight")
-        assert await page.evaluate("document.querySelector('[data-acw-messages]').getBoundingClientRect().height") > 250
+        # Layout settles a moment after the resize on a busy machine, so wait for it.
+        await wait_for("document.querySelector('[data-acw-messages]').getBoundingClientRect().height > 250")
         await page.evaluate("document.querySelector('[data-agent-sidebar-toggle]').click()")
         await wait_for("getComputedStyle(document.querySelector('.page-sidebar-left')).display !== 'none'")
         await page.evaluate("document.querySelector('[data-agent-session-open]').click()")

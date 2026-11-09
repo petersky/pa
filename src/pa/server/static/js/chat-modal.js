@@ -40,7 +40,7 @@
   function close() {
     var dlg = dialog();
     if (dlg && dlg.open) dlg.close();
-    else teardown();
+    finish();
   }
 
   function stateMarkup(title, message, retry) {
@@ -144,14 +144,33 @@
     open(target.session, { instance: target.instance, opener: anchor });
   });
 
+  // Cleanup must not depend on the dialog's "close" event alone: it is queued asynchronously
+  // and can arrive late (or not at all while the tab is starved), which would leave the
+  // widget and its event stream running behind a closed dialog. "cancel" (Esc) and "close"
+  // both finish the job, and finishing twice is harmless.
+  function restoreFocus() {
+    var dlg = dialog();
+    if (dlg && dlg.open) return; // Still modal: the page behind it cannot take focus yet.
+    if (opener && document.contains(opener) && typeof opener.focus === "function") opener.focus();
+    opener = null;
+  }
+
+  function finish() {
+    teardown();
+    restoreFocus();
+  }
+
+  function finishAfterCancel() {
+    teardown();
+    // The dialog closes right after "cancel" returns; focus can only move once it has.
+    setTimeout(restoreFocus, 0);
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     var dlg = dialog();
     if (!dlg) return;
-    dlg.addEventListener("close", function () {
-      teardown();
-      if (opener && document.contains(opener) && typeof opener.focus === "function") opener.focus();
-      opener = null;
-    });
+    dlg.addEventListener("cancel", finishAfterCancel);
+    dlg.addEventListener("close", finish);
     // A click on the backdrop (the dialog element itself, outside its content box) closes.
     dlg.addEventListener("mousedown", function (event) {
       if (event.target === dlg) dlg.close();
