@@ -101,6 +101,10 @@ class InstanceConfig(BaseModel):
         default=24 * 60 * 60, ge=60, le=7 * 24 * 60 * 60
     )
     terminal_output_char_limit: int = Field(default=1000, ge=100, le=100000)
+    chat_shell_access: Literal["disabled", "signed_in", "anyone"] = "anyone"
+    chat_shell_output_to_agent: bool = True
+    chat_shell_timeout_seconds: int = Field(default=60, ge=1, le=3600)
+    chat_shell_output_char_limit: int = Field(default=20000, ge=1000, le=1000000)
     transcript_retention_days: int = Field(default=14, ge=1, le=3650)
     mutation_operation_retention_days: int = Field(default=14, ge=1, le=3650)
     memory_auto_capture_enabled: bool = False

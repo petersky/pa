@@ -1,9 +1,10 @@
-/* Trigger parsing for the chat composer (`/commands`, `$skills`, and later `@mentions`).
+/* Trigger parsing for the chat composer (`/commands`, `$skills`, `@mentions` and `!shell`).
  *
  * Pure text functions so the rules live in one place and can be tested without a browser:
  *   find(text, caret, enabled)   the trigger token under the caret, or null
  *   replace(text, found, insert) text and caret after completing that token
  *   rank(items, query, options)  prefix matches first, then word-part, then substring
+ *   shell(text)                  `!cmd` / `!!cmd` parsed, or null
  */
 (function (root) {
   "use strict";
@@ -75,5 +76,22 @@
     return scored.map(function (entry) { return entry.item; });
   }
 
-  root.PAComposerTriggers = { find: find, replace: replace, rank: rank, TRIGGERS: TRIGGERS };
+  // `!cmd` runs a shell command; `!!cmd` runs it with the opposite "share output with the
+  // agent" choice. Unlike the token triggers, the command is the whole message and may contain
+  // spaces. `\!` at the start is the escape for literal text that begins with "!".
+  function shell(text) {
+    text = String(text || "");
+    if (text.charAt(0) !== "!") return null;
+    var flip = text.charAt(1) === "!";
+    return { flip: flip, command: text.slice(flip ? 2 : 1).trim() };
+  }
+
+  function unescapeShell(text) {
+    text = String(text || "");
+    return text.slice(0, 2) === "\\!" ? text.slice(1) : text;
+  }
+
+  root.PAComposerTriggers = {
+    find: find, replace: replace, rank: rank, shell: shell, unescapeShell: unescapeShell, TRIGGERS: TRIGGERS,
+  };
 })(typeof window !== "undefined" ? window : globalThis);

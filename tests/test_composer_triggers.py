@@ -78,3 +78,17 @@ def test_at_opens_at_word_starts_so_email_addresses_are_ordinary_text():
     assert find("see @card:fix please", 13, ("@",))["query"] == "card:fix"
     assert find("mail ada@example.com", None, ("@",)) is None
     assert find("@", None, ("@",))["query"] == ""
+
+
+def test_bang_makes_the_whole_message_a_shell_command_and_double_bang_flips_the_choice():
+    assert run('T.shell("!git status -s")') == {"flip": False, "command": "git status -s"}
+    assert run('T.shell("!!  ls | head")') == {"flip": True, "command": "ls | head"}
+    assert run('T.shell("!")') == {"flip": False, "command": ""}
+    assert run('T.shell("run !ls")') is None
+    assert run('T.shell("hello!")') is None
+
+
+def test_backslash_bang_is_the_escape_for_literal_text():
+    assert run(r'T.unescapeShell("\\!important")') == "!important"
+    assert run('T.unescapeShell("!important")') == "!important"
+    assert run('T.unescapeShell("plain")') == "plain"
