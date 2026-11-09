@@ -12,6 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 from jinja2 import Environment, FileSystemLoader
 from pydantic import ValidationError
@@ -22,6 +23,12 @@ from pa.core.kernel import Kernel
 from pa.execution.dispatch import DispatchRecord, DispatchStore
 from pa.instance.quiesce import ImageAttachment, QueuedPrompt
 from pa.modules.agent_chat import PromptBody, session_prompt
+
+
+@pytest.fixture(autouse=True)
+def _skip_image_retention_on_mocked_settings(monkeypatch):
+    # These requests are MagicMocks, whose data_dir would become a real path in the checkout.
+    monkeypatch.setattr("pa.modules.agent_chat._store_chat_images", lambda root, images: None)
 
 
 def _image(name: str = "pixel.png") -> ImageAttachment:
@@ -46,7 +53,7 @@ class ImageAttachmentTests(unittest.TestCase):
         self.assertEqual(body.message, "")
         self.assertEqual(
             queued.public_dict()["images"],
-            [{"name": "pixel.png", "mime_type": "image/png"}],
+            [{"name": "pixel.png", "mime_type": "image/png", "sha256": body.images[0].sha256}],
         )
         self.assertNotIn("data", queued.public_dict()["images"][0])
 
@@ -462,6 +469,7 @@ global.document = {
         this.parentNode = null;
       },
       setAttribute: function () {},
+      addEventListener: function () {},
     };
     Object.defineProperty(el, "textContent", {
       get: function () { return this._text || ""; },
@@ -830,7 +838,7 @@ setImmediate(function () {
         style = (root / "static" / "style.css").read_text()
 
         self.assertNotIn("page-agent is-sidebar-collapsed", page)
-        self.assertIn('aria-expanded="true">Hide sessions', widget)
+        self.assertIn('aria-expanded="true" aria-label="Hide sessions"', widget)
         self.assertIn('collapsed = saved === "1"', script)
         self.assertIn('classList.toggle("is-sidebar-collapsed", collapsed)', script)
         self.assertIn("viewport-fit=cover", shell)

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import inspect
 import json
 import logging
+import os
 import re
 from contextlib import AsyncExitStack
 from datetime import UTC, datetime
@@ -16,7 +18,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from pa.core.async_runtime import AsyncRuntime
@@ -66,6 +68,47 @@ async def _visualization_context(request, session_id):
         raise HTTPException(403, "Preview access denied")
     from pa.visualizations import VisualizationStore
     return manager, session, VisualizationStore(manager.settings, manager.store)
+
+
+CHAT_IMAGE_SUFFIXES = {
+    "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp",
+}
+CHAT_IMAGE_MEDIA_TYPES = {suffix: media for media, suffix in CHAT_IMAGE_SUFFIXES.items()}
+
+
+def _chat_image_root(request: Request, session_id: str) -> Path:
+    return Path(request.app.state.ctx.settings.data_dir) / "chat-images" / session_id
+
+
+def _store_chat_images(root: Path, images: list[ImageAttachment]) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    for image in images:
+        target = root / (image.sha256 + CHAT_IMAGE_SUFFIXES.get(image.mime_type, ".img"))
+        if target.exists():
+            continue
+        temporary = root / f".tmp-{uuid4().hex}"
+        temporary.write_bytes(base64.b64decode(image.data))
+        os.replace(temporary, target)
+
+
+@router.get("/sessions/{session_id}/images/{sha256}")
+async def get_chat_image(request: Request, session_id: str, sha256: str):
+    if not re.fullmatch(r"[0-9a-f]{64}", sha256):
+        raise HTTPException(404, "Image unavailable")
+    manager, session, _ = await _visualization_context(request, session_id)
+    root = _chat_image_root(request, session.id)
+
+    def locate() -> Path | None:
+        return next((path for suffix in CHAT_IMAGE_MEDIA_TYPES
+                     if (path := root / (sha256 + suffix)).is_file()), None)
+    found = await _offload(manager, "agent.chat_image_read", locate)
+    if found is None:
+        raise HTTPException(404, "Image unavailable")
+    return FileResponse(found, media_type=CHAT_IMAGE_MEDIA_TYPES[found.suffix], headers={
+        "Content-Security-Policy": "sandbox; default-src 'none'",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "private, max-age=31536000, immutable",
+    })
 
 
 @router.get("/sessions/{session_id}/rendering-capabilities")
@@ -3309,9 +3352,11 @@ def _prompt_acceptance_matches(
     event: TranscriptEvent, message: str, images: list[ImageAttachment]
 ) -> bool:
     payload = event.payload or {}
-    return payload.get("message") == message and list(
-        payload.get("images") or []
-    ) == _public_prompt_images(images)
+    # Identity is name and type: events recorded before PA kept image bytes have no hash.
+    identity = lambda image: (image.get("name"), image.get("mime_type"))
+    return payload.get("message") == message and [
+        identity(image) for image in payload.get("images") or []
+    ] == [identity(image) for image in _public_prompt_images(images)]
 
 
 async def _record_web_intake(
@@ -3619,6 +3664,15 @@ async def _session_prompt_owned(request: Request, session_id: str, body: PromptB
         getattr(request.state, "instance_authenticated", False) is True
     )
     session_record = runtime.session if runtime is not None else durable_session
+    if body.images:
+        # Best effort: losing the picture in history must never lose the prompt.
+        try:
+            await _offload(
+                _manager(request), "agent.chat_image_store", _store_chat_images,
+                _chat_image_root(request, session_record.id), body.images,
+            )
+        except (OSError, HTTPException):
+            logger.warning("Could not retain chat images for session %s", session_id, exc_info=True)
     if (
         not instance_authenticated
         and getattr(session_record, "purpose", "unknown") == "automated_run"

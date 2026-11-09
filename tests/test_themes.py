@@ -28,6 +28,10 @@ REQUIRED_VARIABLES = {
     "--pa-focus",
     "--pa-chat-thought-bg",
     "--pa-chat-tool-bg",
+    "--pa-chat-user-bg",
+    "--pa-chat-user-fg",
+    "--pa-chat-user-border",
+    "--pa-selection",
 }
 EXPECTED_THEMES = {
     "ayu": "ayu",

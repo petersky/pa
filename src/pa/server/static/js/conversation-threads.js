@@ -60,7 +60,7 @@
     const origin = snap && snap.session && snap.session.conversation_origin;
     this.renderOrigin(origin);
     if (origin && origin.strategy !== "empty" && !this.originLoaded && !this.originLoading) this.loadOrigin(origin);
-    if (this.navigation) this.navigation.hidden = !this.isChat;
+    if (this.navigation && !this.isChat) this.navigation.hidden = true;
     this.setEmptyDisabled(!this.isChat || this.busy || this.widget.ownerResolutionPending);
     if (this.isChat && !this.refreshTimer && !this.listLoading) this.loadThreads();
     if (this.panel && this.panel.open && !this.loaded) this.load();
@@ -152,6 +152,7 @@
     const hadSelection = this.list.querySelector('[aria-current="page"]');
     const focused = this.list.contains(document.activeElement) && document.activeElement.dataset.threadId;
     this.list.replaceChildren();
+    if (this.navigation) this.navigation.hidden = !this.isChat || threads.length < 2;
     threads.forEach(thread => {
       const link = document.createElement("a");
       link.className = "ghost small acw-thread-link";

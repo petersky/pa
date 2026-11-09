@@ -24,6 +24,26 @@
 {% set fresh = fresh if fresh is defined else false %}
 {% set allow_card_capture = allow_card_capture if allow_card_capture is defined else false %}
 
+{% set activity_rail %}
+      <nav class="acw-activity-rail" aria-label="Session artifacts">
+        <button type="button" class="ghost acw-rail-button" data-acw-tool-toggle
+                aria-label="Tool activity" title="Tools" aria-expanded="false">
+          <svg class="acw-gears" viewBox="0 0 24 24" aria-hidden="true">
+            <g class="acw-gear acw-gear-a"><circle cx="7.5" cy="7.5" r="3"/><path d="M7.5 1.5v2m0 8v2m-6-6h2m8 0h2M3.3 3.3l1.4 1.4m5.6 5.6 1.4 1.4m0-8.4-1.4 1.4m-5.6 5.6-1.4 1.4"/></g>
+            <g class="acw-gear acw-gear-b"><circle cx="17" cy="7" r="2.5"/><path d="M17 2v1.5m0 7V12m-5-5h1.5m7 0H22m-8.5-3.5 1.1 1.1m4.9 4.9 1.1 1.1m0-7.1-1.1 1.1m-4.9 4.9-1.1 1.1"/></g>
+            <g class="acw-gear acw-gear-c"><circle cx="14" cy="16" r="3"/><path d="M14 10v2m0 8v2m-6-6h2m8 0h2m-10.2-4.2 1.4 1.4m5.6 5.6 1.4 1.4m0-8.4-1.4 1.4m-5.6 5.6-1.4 1.4"/></g>
+          </svg>
+        </button>
+        <button type="button" class="ghost acw-rail-button acw-terminal-toggle" data-acw-terminal-toggle
+                aria-label="Terminal" title="Terminal" aria-expanded="false"><span aria-hidden="true">&gt;_</span></button>
+        <button type="button" class="ghost acw-rail-button" data-acw-plan-toggle
+                aria-label="Session plans" title="Plans" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm2 5h2V6H7v2Zm4 0h6V6h-6v2Zm-4 5h2v-2H7v2Zm4 0h6v-2h-6v2Zm-4 5h2v-2H7v2Zm4 0h6v-2h-6v2Z"/></svg>
+          <span class="acw-rail-badge" data-acw-plan-count hidden>0</span>
+        </button>
+      </nav>
+{% endset %}
+
 <div class="agent-chat-widget{% if compact %} is-compact{% endif %}"
      data-agent-chat
      data-new-chat="{{ '1' if new_chat | default(false) else '0' }}"
@@ -47,15 +67,15 @@
   <div class="acw-toolbar">
     <div class="acw-toolbar-left">
       {% if show_sidebar_toggle %}
-      <button type="button" class="ghost small acw-sidebar-toggle" data-agent-sidebar-toggle aria-expanded="true">Hide sessions</button>
+      <button type="button" class="ghost small acw-sidebar-toggle" data-agent-sidebar-toggle aria-expanded="true" aria-label="Hide sessions" title="Hide sessions"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
       {% endif %}
       <span class="acw-status-dot" data-acw-status title="Session status"></span>
       <span class="acw-title" data-acw-title>Agent</span>
     </div>
     <div class="acw-toolbar-right">
-      <span class="acw-effective-settings muted small" data-acw-effective-settings aria-label="Effective agent settings">Settings unavailable</span>
+      {% if not compact %}{{ activity_rail }}{% endif %}
       <details class="acw-menu acw-settings-menu">
-        <summary>Agent settings…</summary>
+        <summary title="Agent settings…"><span class="acw-effective-settings" data-acw-effective-settings aria-label="Effective agent settings">Settings unavailable</span></summary>
         <form class="acw-menu-body acw-settings-body" data-acw-settings-form>
           {% if show_model %}
           <label class="acw-select-wrap" data-acw-model-wrap hidden>
@@ -111,23 +131,7 @@
   <div class="acw-details" data-acw-details>
     <details data-acw-technical-details>
       <summary>Details</summary>
-      <nav class="acw-activity-rail" aria-label="Session artifacts">
-        <button type="button" class="ghost acw-rail-button" data-acw-tool-toggle
-                aria-label="Tool activity" title="Tools" aria-expanded="false">
-          <svg class="acw-gears" viewBox="0 0 24 24" aria-hidden="true">
-            <g class="acw-gear acw-gear-a"><circle cx="7.5" cy="7.5" r="3"/><path d="M7.5 1.5v2m0 8v2m-6-6h2m8 0h2M3.3 3.3l1.4 1.4m5.6 5.6 1.4 1.4m0-8.4-1.4 1.4m-5.6 5.6-1.4 1.4"/></g>
-            <g class="acw-gear acw-gear-b"><circle cx="17" cy="7" r="2.5"/><path d="M17 2v1.5m0 7V12m-5-5h1.5m7 0H22m-8.5-3.5 1.1 1.1m4.9 4.9 1.1 1.1m0-7.1-1.1 1.1m-4.9 4.9-1.1 1.1"/></g>
-            <g class="acw-gear acw-gear-c"><circle cx="14" cy="16" r="3"/><path d="M14 10v2m0 8v2m-6-6h2m8 0h2m-10.2-4.2 1.4 1.4m5.6 5.6 1.4 1.4m0-8.4-1.4 1.4m-5.6 5.6-1.4 1.4"/></g>
-          </svg>
-        </button>
-        <button type="button" class="ghost acw-rail-button acw-terminal-toggle" data-acw-terminal-toggle
-                aria-label="Terminal" title="Terminal" aria-expanded="false"><span aria-hidden="true">&gt;_</span></button>
-        <button type="button" class="ghost acw-rail-button" data-acw-plan-toggle
-                aria-label="Session plans" title="Plans" aria-expanded="false">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm2 5h2V6H7v2Zm4 0h6V6h-6v2Zm-4 5h2v-2H7v2Zm4 0h6v-2h-6v2Zm-4 5h2v-2H7v2Zm4 0h6v-2h-6v2Z"/></svg>
-          <span class="acw-rail-badge" data-acw-plan-count hidden>0</span>
-        </button>
-      </nav>
+{% if compact %}{{ activity_rail }}{% endif %}
       <span class="acw-turn-timer muted" data-acw-turn-timer hidden></span>
       <button type="button" class="ghost small" data-acw-browser-toggle title="Attach a browser to this session">Attach Browser</button>
     {% if telemetry_enabled and telemetry_session_header != 'hidden' %}
@@ -156,7 +160,7 @@
 
     </details>
     <details class="acw-threads" data-conversation-threads>
-      <summary>Branch from here</summary>
+      <summary>Branch</summary>
       <p class="muted small" data-thread-status role="status">Open to check branch support for this conversation.</p>
       <button type="button" class="ghost small" data-thread-native disabled>Fork latest history</button>
       <button type="button" class="ghost small" data-thread-copy disabled>Copy recent context</button>
@@ -271,7 +275,7 @@
       <span data-acw-working-label>Working…</span>
     </div>
     <label class="sr-only" for="acw-input-{{ label | replace(':', '-') }}">Message</label>
-    <textarea id="acw-input-{{ label | replace(':', '-') }}" data-acw-input rows="2"
+    <textarea id="acw-input-{{ label | replace(':', '-') }}" data-acw-input rows="1"
               placeholder="Message the agent, type / for commands, or drop images here…"
               aria-autocomplete="list" aria-controls="acw-command-menu-{{ label | replace(':', '-') }}"
               aria-expanded="false"></textarea>
@@ -291,11 +295,11 @@
     <div class="acw-composer-actions">
       <div class="acw-composer-draft-actions">
         <button type="button" class="ghost acw-attach" data-acw-attach
-                aria-label="Attach images" title="Attach images">📎 Attach</button>
+                aria-label="Attach images" title="Attach images"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 11.5-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l9-9a3.7 3.7 0 0 1 5.2 5.2l-9 9a1.8 1.8 0 0 1-2.6-2.6l8.3-8.3"/></svg></button>
         <button type="button" class="ghost small" data-acw-clear-draft
-                aria-label="Clear locally saved draft">Clear draft</button>
+                aria-label="Clear locally saved draft" hidden>Clear draft</button>
         <span class="muted small acw-draft-status" data-acw-draft-status
-              role="status" aria-live="polite">Drafts stay in this browser.</span>
+              role="status" aria-live="polite" hidden></span>
       </div>
       <div class="acw-send-group">
         <button type="button" class="ghost" data-acw-stop

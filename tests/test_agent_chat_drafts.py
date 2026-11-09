@@ -63,7 +63,7 @@ class AgentChatDraftContractTests(unittest.TestCase):
         self.assertIn('"principal_id": get_principal_id(request)', context)
         self.assertIn("@media (max-width: 480px)", style)
         self.assertIn("@media (max-width: 768px)", style)
-        self.assertIn("    align-self: flex-end;\n  }\n}\n\n.acw-message-images", style)
+        self.assertIn(".acw-composer-actions, .acw-composer-draft-actions { display: contents; }", style)
         self.assertIn("65,536", docs)
         self.assertIn("30 days", docs)
         self.assertIn("plaintext", docs)

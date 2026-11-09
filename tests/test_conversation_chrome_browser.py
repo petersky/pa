@@ -46,7 +46,7 @@ async def test_real_pa_initial_closed_issues_reload_and_recovery(operator_server
 
             await wait_for("document.querySelector('[data-issues-count]')?.textContent === '(2)'")
             assert await page.evaluate("!document.querySelector('[data-conversation-issues]').open")
-            assert await page.evaluate("[...document.querySelectorAll('[role=tab]')].map(e=>e.textContent.trim())") == ["Details", "Branch from here", "Issues (2)"]
+            assert await page.evaluate("[...document.querySelectorAll('[role=tab]')].map(e=>e.textContent.trim())") == ["Details", "Branch", "Issues (2)"]
             await wait_for("document.querySelectorAll('.acw-visualization iframe').length === 3")
 
             state = result.json()

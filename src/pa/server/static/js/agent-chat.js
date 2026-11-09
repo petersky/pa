@@ -42,6 +42,7 @@
   const sessionDomCache = new Map();
   let libsPromise = null;
   let detailTabsId = 0;
+  const NARROW_LAYOUT_QUERY = "(max-width: 768px)";
 
   function bindDetailTabs(root) {
     const group = root.querySelector("[data-acw-details]");
@@ -108,7 +109,13 @@
         tabs[next].focus(); // Manual activation avoids fetching on arrow navigation.
       });
     });
-    group.prepend(row);
+    const toolbar = root.classList.contains("is-compact") ? null : root.querySelector(".acw-toolbar-right");
+    if (toolbar) {
+      row.classList.add("is-in-toolbar");
+      toolbar.prepend(row);
+    } else {
+      group.prepend(row);
+    }
   }
 
   function loadScript(src) {
@@ -151,6 +158,20 @@
     const meta = document.querySelector('meta[name="csrf-token"]');
     if (meta && meta.content) headers["X-CSRF-Token"] = meta.content;
     return headers;
+  }
+
+  const COPY_MARKDOWN_LABEL = "Copy as Markdown";
+
+  function copyMarkdownButton() {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ghost acw-copy-markdown";
+    button.dataset.acwCopyMarkdown = "1";
+    button.setAttribute("aria-label", COPY_MARKDOWN_LABEL);
+    button.title = COPY_MARKDOWN_LABEL;
+    button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/>' +
+      '<path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>';
+    return button;
   }
 
   function escapeHtml(text) {
@@ -607,6 +628,10 @@
         }).catch(function (error) { self.addBubble("system", error.message, null, {forceVisible: true}); });
       });
     });
+    if (this.root && this.root.addEventListener) this.root.addEventListener("click", function (event) {
+      const button = event.target.closest && event.target.closest("[data-acw-copy-markdown]");
+      if (button) self.copyBubbleMarkdown(button);
+    });
     if (this.els.terminalToggle) this.els.terminalToggle.addEventListener("click", function () { self.toggleFlyout("terminal"); });
     if (this.els.toolToggle) this.els.toolToggle.addEventListener("click", function () { self.toggleFlyout("tool"); });
     if (this.els.planToggle) this.els.planToggle.addEventListener("click", function () { self.toggleFlyout("plan"); });
@@ -639,6 +664,7 @@
       });
       this.els.input.addEventListener("input", function () {
         self.updateCommandMenu();
+        self.autosizeInput();
       });
       ["dragenter", "dragover"].forEach(function (name) {
         self.els.input.addEventListener(name, function (e) {
@@ -683,6 +709,34 @@
       const y = (e.clientY - rect.top) * (self.els.browserImage.naturalHeight / rect.height) / scale;
       self.browserApi("/click", { method: "POST", body: JSON.stringify({ x: x, y: y }) }).then(function () { setTimeout(function () { self.refreshBrowser(); }, 250); });
     });
+  };
+
+  /* Browsers with field-sizing grow the textarea in CSS; this covers the rest. */
+  AgentChatWidget.prototype.autosizeInput = function () {
+    const input = this.els.input;
+    if (!input || !input.style || (window.CSS && CSS.supports && CSS.supports("field-sizing", "content"))) return;
+    input.style.height = "auto";
+    input.style.height = input.scrollHeight + 2 + "px";
+  };
+
+  AgentChatWidget.prototype.copyBubbleMarkdown = function (button) {
+    const holder = button.closest(".acw-msg, .acw-progress-update");
+    const bubble = holder && (holder.matches(".acw-progress-update") ? holder : holder.querySelector(".acw-bubble"));
+    if (!bubble || !window.PAChatFormat) return;
+    const text = bubble.dataset.markdown || bubble.innerText || "";
+    function settle(label, state) {
+      button.setAttribute("aria-label", label);
+      button.title = label;
+      button.dataset.copyState = state;
+      clearTimeout(button._copyTimer);
+      button._copyTimer = setTimeout(function () {
+        button.setAttribute("aria-label", COPY_MARKDOWN_LABEL);
+        button.title = COPY_MARKDOWN_LABEL;
+        delete button.dataset.copyState;
+      }, 1500);
+    }
+    window.PAChatFormat.copyText(text).then(function () { settle("Copied", "copied"); })
+      .catch(function () { settle("Copy unavailable", "failed"); });
   };
 
   AgentChatWidget.prototype.api = function (path, opts) {
@@ -2139,6 +2193,8 @@
 
   AgentChatWidget.prototype.setStatus = function (state) {
     if (!this.els.status) return;
+    // A blocked session is not "online" however healthy its connection looks.
+    if (this.recoveryBlocked && (state === "online" || state === "working")) state = "error";
     this.els.status.dataset.state = state;
     this.els.status.className = "acw-status-dot is-" + state;
   };
@@ -2151,7 +2207,7 @@
       this.els.status.parentNode.appendChild(this.els.mcpHealth);
     }
     const state = health && health.state;
-    const label = state === "checking" ? "PA tools starting" :
+    const label = this.recoveryBlocked ? "" : state === "checking" ? "PA tools starting" :
       state === "disconnected" ? "PA tools unavailable" : "";
     this.els.mcpHealth.textContent = label;
     this.els.mcpHealth.hidden = !label;
@@ -2281,6 +2337,25 @@
       outcome.hidden = !presentation.display_status;
       outcome.textContent = [presentation.display_status, actor.label ? "Next: " + actor.label : "", presentation.explanation].filter(Boolean).join(" · ");
     }
+    this.renderHeaderState(snap);
+  };
+
+  /* The header names a state only when something is wrong, and uses the same
+     words as the session list so the two can never disagree. */
+  AgentChatWidget.prototype.renderHeaderState = function (snap) {
+    const session = snap.session || {};
+    const provisioning = session.config_json && session.config_json.provisioning || {};
+    this.recoveryBlocked = session.status === "recovery_blocked" || provisioning.state === "blocked";
+    if (!this.els.status || !this.els.status.parentNode) return;
+    if (!this.els.headerState) {
+      this.els.headerState = document.createElement("span");
+      this.els.headerState.className = "acw-header-state";
+      this.els.headerState.setAttribute("role", "status");
+      this.els.status.parentNode.appendChild(this.els.headerState);
+    }
+    const label = this.recoveryBlocked ? ((snap.presentation || {}).display_status || "Recovery blocked") : "";
+    this.els.headerState.textContent = label;
+    this.els.headerState.hidden = !label;
   };
 
   AgentChatWidget.prototype.applySnapshot = function (snap) {
@@ -3311,6 +3386,7 @@
 
   AgentChatWidget.prototype.addBubble = function (role, text, ts, opts) {
     opts = opts || {};
+    const self = this;
     this.clearPlaceholder();
     const row = document.createElement("div");
     row.className = "acw-msg acw-msg-" + role + (opts.system ? " is-system" : "");
@@ -3323,17 +3399,26 @@
       const gallery = document.createElement("div");
       gallery.className = "acw-message-images";
       images.forEach(function (image) {
-        if (image.preview) {
-          const preview = document.createElement("img");
-          preview.src = image.preview;
-          preview.alt = image.name || "Attached image";
-          gallery.appendChild(preview);
-        } else {
+        const source = image.preview || (image.sha256 && self.sessionId
+          ? self.apiBase + "/sessions/" + encodeURIComponent(self.sessionId) + "/images/" + encodeURIComponent(image.sha256)
+          : "");
+        const label = image.name || "Attached image";
+        function nameChip() {
           const attachment = document.createElement("span");
           attachment.className = "acw-message-image-name";
-          attachment.textContent = image.name || "Attached image";
-          gallery.appendChild(attachment);
+          attachment.textContent = label;
+          return attachment;
         }
+        if (!source) {
+          gallery.appendChild(nameChip());
+          return;
+        }
+        const preview = document.createElement("img");
+        preview.src = source;
+        preview.alt = label;
+        // Images sent before PA retained them, or evicted since, keep their name.
+        preview.addEventListener("error", function () { preview.replaceWith(nameChip()); });
+        gallery.appendChild(preview);
       });
       bubble.appendChild(gallery);
     }
@@ -3345,13 +3430,17 @@
       bubble.appendChild(document.createTextNode(content));
     }
     row.appendChild(bubble);
+    const meta = document.createElement("div");
+    meta.className = "acw-msg-meta";
     if (ts) {
       const time = document.createElement("time");
       time.className = "acw-ts muted";
       time.dateTime = ts;
       time.textContent = new Date(ts).toLocaleTimeString();
-      row.appendChild(time);
+      meta.appendChild(time);
     }
+    meta.appendChild(copyMarkdownButton());
+    row.appendChild(meta);
     this.els.messages.appendChild(row);
     this.messageRowCount = (this.messageRowCount || 0) + 1;
     return { row: row, bubble: bubble };
@@ -3467,9 +3556,12 @@
         window.PAVisualizations.render(bubble, content, {
           markdown: renderMarkdown, apiBase: this.apiBase, sessionId: this.sessionId
         });
-      if (!rendered) { bubble._vizParts = null; bubble.innerHTML = renderMarkdown(content); }
+      const format = window.PAChatFormat;
+      if (!rendered) { bubble._vizParts = null; bubble.innerHTML = renderMarkdown(format ? format.prepare(content) : content); }
+      if (format) format.enhance(bubble);
       if (window.PALinks) window.PALinks.decorate(bubble);
     }
+    if (/(^|\s)acw-progress-update(\s|$)/.test(bubble.className || "")) bubble.appendChild(copyMarkdownButton());
     if (gallery) bubble.insertBefore(gallery, bubble.firstChild);
   };
 
@@ -3516,7 +3608,9 @@
         time.className = "acw-ts muted";
         time.dateTime = ts;
         time.textContent = new Date(ts).toLocaleTimeString();
-        stream.row.appendChild(time);
+        const meta = stream.row.querySelector(".acw-msg-meta");
+        if (meta) meta.insertBefore(time, meta.firstChild);
+        else stream.row.appendChild(time);
       }
     });
     if (anonymousOnly) {
@@ -4580,6 +4674,7 @@
     } else if (this.els.input && this.els.input.value === rawText) {
       this.els.input.value = "";
       this.clearPendingImages();
+      this.autosizeInput();
     }
     this.setSubmissionState(result.status || (result.queued ? "queued" : "accepted"), false, { retryVisible: false });
     this.refreshQueue();
@@ -5429,17 +5524,27 @@
       const usageParts = [];
       if (metrics.turns) usageParts.push(metrics.turns + " turn" + (metrics.turns === 1 ? "" : "s"));
       if (totalTokens) usageParts.push(compactSessionNumber(totalTokens) + " tokens");
-      const related = cards.filter(function (card) {
+      const relatedCards = cards.filter(function (card) {
         return !primaryCard || card.id !== primaryCard.id;
-      }).map(function (card) {
+      });
+      const cardChip = function (card) {
         return '<a class="agent-session-chip" href="/work?card=' +
           encodeURIComponent(card.id) + '">Card · ' + escapeHtml(card.title) + "</a>";
-      }).concat((s.pr_watches || []).map(function (watch) {
+      };
+      const watchChip = function (watch) {
         return '<a class="agent-session-chip" href="/pull-requests?watch=' +
           encodeURIComponent(watch.id) + '" title="' +
           escapeHtml(watch.repository + "#" + watch.pr_number + " PR supervision") +
           '">PR #' + escapeHtml(watch.pr_number) + " · " + escapeHtml(watch.status) + "</a>";
-      })).join("");
+      };
+      const isOpenWatch = function (watch) { return watch.status === "active" || watch.status === "blocked"; };
+      const watches = s.pr_watches || [];
+      const moreChips = relatedCards.slice(2).map(cardChip)
+        .concat(watches.filter(function (watch) { return !isOpenWatch(watch); }).map(watchChip));
+      const related = relatedCards.slice(0, 2).map(cardChip)
+        .concat(watches.filter(isOpenWatch).map(watchChip)).join("") +
+        (moreChips.length ? '<details class="agent-session-more"><summary>+' + moreChips.length +
+          " more</summary>" + moreChips.join("") + "</details>" : "");
       li.innerHTML =
         (presentation.purpose === "automated_run" || presentation.purpose === "one_shot_job"
           ? '<div class="agent-activity-group">' +
@@ -6568,9 +6673,13 @@
       toggle.addEventListener("click", function () {
         const layout = toggle.closest(".page-agent") || document.querySelector(".page-agent");
         if (!layout) return;
+        if (window.matchMedia && window.matchMedia(NARROW_LAYOUT_QUERY).matches) {
+          // Narrow screens show one pane; this choice is not the saved desktop one.
+          setSidebarToggle(toggle, !layout.classList.toggle("is-sessions-open"));
+          return;
+        }
         const collapsed = layout.classList.toggle("is-sidebar-collapsed");
-        toggle.textContent = collapsed ? "Show sessions" : "Hide sessions";
-        toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        setSidebarToggle(toggle, collapsed);
         try { localStorage.setItem("pa-agent-sidebar-collapsed", collapsed ? "1" : "0"); } catch (_) {}
       });
       let collapsed = false;
@@ -6580,9 +6689,26 @@
       } catch (_) {}
       const layout = toggle.closest(".page-agent") || document.querySelector(".page-agent");
       if (layout) layout.classList.toggle("is-sidebar-collapsed", collapsed);
-      toggle.textContent = collapsed ? "Show sessions" : "Hide sessions";
-      toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      const narrow = !!(window.matchMedia && window.matchMedia(NARROW_LAYOUT_QUERY).matches);
+      setSidebarToggle(toggle, narrow || collapsed);
+      if (layout && !layout._acwSessionsDismiss) {
+        layout._acwSessionsDismiss = true;
+        layout.addEventListener("click", function (event) {
+          if (!layout.classList.contains("is-sessions-open")) return;
+          const chose = event.target.closest("[data-agent-session-open]");
+          if (!chose && (event.target.closest(".page-sidebar-left") || event.target.closest("[data-agent-sidebar-toggle]"))) return;
+          layout.classList.remove("is-sessions-open");
+          setSidebarToggle(toggle, true);
+        });
+      }
     });
+  }
+
+  function setSidebarToggle(toggle, collapsed) {
+    const label = collapsed ? "Show sessions" : "Hide sessions";
+    toggle.setAttribute("aria-label", label);
+    toggle.title = label;
+    toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
   }
 
   function mountAll(scope) {

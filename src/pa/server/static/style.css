@@ -922,7 +922,8 @@ html {
 * { box-sizing: border-box; }
 
 ::selection {
-  background: color-mix(in srgb, var(--pa-accent) 26%, transparent);
+  background: var(--pa-selection, color-mix(in srgb, var(--pa-accent) 38%, var(--pa-surface)));
+  color: var(--pa-text);
 }
 
 html, body {
@@ -2231,8 +2232,9 @@ code {
 /* Agent chat widget tokens */
 :root {
   --pa-chat-agent-bg: var(--pa-surface-raised);
-  --pa-chat-user-bg: var(--pa-accent);
-  --pa-chat-user-fg: var(--pa-bg);
+  --pa-chat-user-bg: color-mix(in srgb, var(--pa-accent) 12%, var(--pa-surface));
+  --pa-chat-user-fg: var(--pa-text);
+  --pa-chat-user-border: color-mix(in srgb, var(--pa-accent) 30%, var(--pa-surface));
   --pa-chat-thought-fg: var(--pa-muted);
   --pa-chat-thought-bg: var(--pa-surface);
   --pa-chat-tool-bg: var(--pa-surface);
@@ -2263,11 +2265,6 @@ code {
 
 .page-agent.is-sidebar-collapsed .page-sidebar-left { display: none; }
 
-.agent-tips-panel > summary {
-  cursor: pointer;
-  list-style: none;
-}
-.agent-tips-panel > summary::-webkit-details-marker { display: none; }
 
 .agent-chat-widget {
   display: flex;
@@ -2660,21 +2657,7 @@ code {
 .acw-bubble-user {
   background: var(--pa-chat-user-bg);
   color: var(--pa-chat-user-fg);
-}
-
-/* User bubbles use --pa-bg as foreground; keep code readable on accent. */
-.acw-bubble-user code {
-  background: rgb(0 0 0 / 0.22);
-  color: #fff;
-}
-.acw-bubble-user pre {
-  background: rgb(0 0 0 / 0.28);
-  color: #f4f6fb;
-  border-color: rgb(255 255 255 / 0.18);
-}
-.acw-bubble-user pre code {
-  background: transparent;
-  color: inherit;
+  border: 1px solid var(--pa-chat-user-border);
 }
 
 .acw-bubble-agent {
@@ -2963,8 +2946,11 @@ code {
 }
 
 .acw-composer textarea {
-  resize: vertical;
-  min-height: 2.75rem;
+  resize: none;
+  field-sizing: content;
+  min-height: 2.4rem;
+  max-height: min(16rem, 40dvh);
+  overflow-y: auto;
   width: 100%;
 }
 
@@ -3110,21 +3096,6 @@ code {
 .acw-draft-attachments {
   margin: 0;
   overflow-wrap: anywhere;
-}
-
-@media (max-width: 480px) {
-  .acw-composer-actions {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .acw-composer-draft-actions {
-    width: 100%;
-  }
-
-  .acw-send-group {
-    align-self: flex-end;
-  }
 }
 
 .acw-message-images {
@@ -5584,7 +5555,7 @@ a.ghost:hover {
 
 /* Keep conversation controls compact; technical state is disclosed on demand. */
 .acw-effective-settings { max-width: 32rem; overflow-wrap: anywhere; }
-[data-acw-technical-details] .acw-activity-rail { position: static; display: flex; flex-direction: row; width: auto; border: 0; }
+.acw-toolbar .acw-activity-rail, [data-acw-technical-details] .acw-activity-rail { position: static; display: flex; flex-direction: row; width: auto; border: 0; }
 [data-acw-technical-details] .acw-resource-header { margin: .5rem 0; }
 .acw-history-notice > div, .acw-recovery { flex-wrap: wrap; }
 @media (max-width: 600px) {
@@ -5666,3 +5637,77 @@ a.ghost:hover {
 .notification-spinner { width: 0.9rem; height: 0.9rem; border: 2px solid var(--pa-border); border-top-color: var(--pa-accent); border-radius: 50%; animation: notification-spin 0.8s linear infinite; }
 @keyframes notification-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .notification-spinner { animation: none; border-top-color: var(--pa-border); } }
+
+/* ---- Chat: tighter chrome, calmer bubbles ------------------------------------ */
+.acw-toolbar-left { flex: 1 1 12rem; min-width: 0; }
+.acw-title { min-width: 0; overflow-wrap: anywhere; }
+.acw-toolbar-right { flex-wrap: wrap; justify-content: flex-end; }
+.acw-sidebar-toggle { display: grid; place-items: center; width: 2rem; height: 2rem; padding: .3rem; }
+.acw-sidebar-toggle svg, .acw-attach svg, .acw-copy-markdown svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.acw-header-state { color: var(--pa-danger); font-size: .8rem; font-weight: 600; white-space: nowrap; }
+.acw-header-state[hidden] { display: none; }
+.acw-toolbar .acw-activity-rail { padding: 0; gap: .15rem; }
+.acw-toolbar .acw-rail-button { width: 1.9rem; height: 1.9rem; padding: .3rem; }
+.acw-detail-tabs.is-in-toolbar { border-bottom: 0; padding: 0; }
+.acw-details:not(:has([role="tabpanel"]:not([hidden]))) { display: none; }
+.acw-details { max-height: min(24rem, 45dvh); }
+.acw-settings-menu > summary { max-width: min(24rem, 100%); }
+.acw-thread-navigation { padding: .15rem .25rem; }
+.acw-chat-stage { min-height: 0; }
+
+.acw-msg-meta { display: flex; align-items: center; gap: .3rem; min-height: 1.4rem; }
+.acw-msg-user .acw-msg-meta, .acw-msg-system .acw-msg-meta { flex-direction: row-reverse; }
+.acw-copy-markdown { display: grid; place-items: center; width: 1.4rem; height: 1.4rem; padding: .2rem; border: 0; background: transparent; color: var(--pa-text-muted); opacity: 0; transition: opacity .12s; }
+.acw-msg:is(:hover, :focus-within) .acw-copy-markdown, .acw-progress-update:is(:hover, :focus-within) .acw-copy-markdown, .acw-copy-markdown[data-copy-state] { opacity: 1; }
+.acw-copy-markdown[data-copy-state="copied"] { color: var(--pa-ok); }
+.acw-copy-markdown[data-copy-state="failed"] { color: var(--pa-danger); }
+.acw-progress-update .acw-copy-markdown { margin-left: auto; }
+@media (hover: none) { .acw-copy-markdown { opacity: .7; width: 2.75rem; height: 2.75rem; padding: .7rem; } }
+
+:is(.acw-bubble, .acw-progress-update) pre.acw-json { white-space: pre-wrap; max-height: 28rem; }
+.acw-json-block { margin: .35rem 0; }
+.acw-json-block > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: .15rem .5rem; cursor: pointer; font-size: .8rem; }
+.acw-json-label { font-weight: 600; white-space: nowrap; }
+.acw-json-preview { color: var(--pa-text-muted); overflow-wrap: anywhere; min-width: 0; }
+.acw-json-key { color: var(--pa-accent); }
+.acw-json-string { color: var(--pa-ok); }
+.acw-json-number, .acw-json-literal { color: var(--pa-warn); }
+
+.acw-media-holder { margin: .35rem 0; }
+.acw-media-link { display: inline-block; max-width: 100%; }
+.acw-media { display: block; max-width: 100%; border-radius: 6px; }
+.acw-media-image, .acw-media-video { max-height: 26rem; }
+.acw-media-video { width: min(36rem, 100%); background: #000; }
+.acw-media-audio { width: min(26rem, 100%); }
+.acw-media-unavailable { color: var(--pa-text-muted); font-size: .8rem; overflow-wrap: anywhere; }
+.acw-message-images img { max-width: min(26rem, 100%); max-height: 20rem; }
+
+/* One row: attach · message · send. Status and attachments take their own rows when present. */
+.acw-composer { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: .35rem; row-gap: 0; align-items: end; }
+.acw-composer > * { grid-column: 1 / -1; }
+.acw-composer > :not(textarea, .acw-composer-actions, label, input) { margin-bottom: .3rem; }
+.acw-composer > textarea { grid-column: 2; grid-row: 5; }
+.acw-composer-actions, .acw-composer-draft-actions { display: contents; }
+.acw-attach { grid-column: 1; grid-row: 5; display: grid; place-items: center; width: 2.4rem; height: 2.4rem; padding: .55rem; }
+.acw-send-group { grid-column: 3; grid-row: 5; }
+.acw-send-group > [data-acw-stop]:disabled { display: none; }
+[data-acw-clear-draft] { grid-column: 1 / span 2; grid-row: 6; justify-self: start; margin-top: .25rem; }
+[data-acw-clear-draft][hidden], .acw-draft-status[hidden] { display: none; }
+.acw-draft-status { grid-column: 2 / -1; grid-row: 6; margin-top: .25rem; }
+.acw-composer > [data-acw-working] { grid-row: 1; }
+.acw-composer > .acw-command-menu { grid-row: 2; }
+.acw-composer > .acw-attachments { grid-row: 3; }
+.acw-composer > .acw-draft-attachments { grid-row: 4; }
+
+.agent-session-more { flex: 1 1 100%; }
+.agent-session-more > summary { cursor: pointer; font-size: .75rem; color: var(--pa-text-muted); }
+.agent-session-more[open] { display: flex; flex-wrap: wrap; gap: .25rem; }
+.agent-session-more[open] > summary { flex: 1 1 100%; }
+
+/* Narrow screens: the conversation is the page; sessions slide over it on request. */
+@media (max-width: 768px) {
+  .page-agent:has([data-agent-session-view="chats"]) .page-sidebar-left { display: none; }
+  .page-agent.is-sessions-open .page-sidebar-left { display: block; position: fixed; inset-block: 3.75rem 0; inset-inline-start: 0; width: min(88vw, 24rem); z-index: 40; overflow-y: auto; background: var(--pa-bg); box-shadow: var(--pa-shadow); }
+  .page-agent-main .acw-chat-stage { min-height: 0; flex: 1 1 auto; }
+  .page-agent-main .agent-chat-widget { overflow-y: hidden; }
+}
