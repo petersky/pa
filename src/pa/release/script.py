@@ -28,6 +28,7 @@ from pa.release.runner import (
     ensure_release_branch,
     ensure_tag_available,
     head_commit,
+    merge_channels_pr,
     merge_release_pr,
     origin_main_release_notes,
     origin_main_version,
@@ -129,6 +130,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--ship",
         action="store_true",
         help="Create and merge the release PR, then tag and publish without prompting",
+    )
+    parser.add_argument(
+        "--skip-channels",
+        action="store_true",
+        help="With --ship, leave the channels.json PR opened by the release workflow for you to merge",
     )
     parser.add_argument(
         "--wait-ci",
@@ -380,6 +386,8 @@ def _run(argv: list[str] | None = None) -> int:
         assert pr_head_commit is not None
         merge_release_pr(pr_url, head_commit=pr_head_commit)
         _publish(tag, args, do_push=True)
+        if not args.skip_channels:
+            merge_channels_pr(tag)
         _cleanup_finished_release_branch(tag, branch)
         return 0
 

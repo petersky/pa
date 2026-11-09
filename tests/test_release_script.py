@@ -73,6 +73,7 @@ def test_ship_uses_head_captured_before_confirmation() -> None:
         patch("pa.release.script.head_commit", side_effect=current_head),
         patch("pa.release.script._confirm_ship", side_effect=confirm),
         patch("pa.release.script.merge_release_pr") as merge_pr,
+        patch("pa.release.script.merge_channels_pr") as merge_channels,
         patch("pa.release.script._publish"),
         patch("pa.release.script._cleanup_finished_release_branch") as cleanup,
     ):
@@ -108,6 +109,7 @@ def test_run_resumes_prepared_release_without_regenerating_notes() -> None:
         ),
         patch("pa.release.script.head_commit", return_value="pushed-pr-sha"),
         patch("pa.release.script.merge_release_pr") as merge_pr,
+        patch("pa.release.script.merge_channels_pr") as merge_channels,
         patch("pa.release.script._publish"),
         patch("pa.release.script._cleanup_finished_release_branch"),
     ):

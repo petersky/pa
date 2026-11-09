@@ -63,7 +63,10 @@ it is outward-facing: only run `--ship` or `--publish` when the user has asked f
 - `--no-agent` skips the notes agent and uses the template (`docs/RELEASE_NOTES_TEMPLATE.md`);
   other flags are listed in `./scripts/release.sh --help`.
 - After the tag is pushed, `.github/workflows/release.yml` builds the wheel, creates the release
-  and opens a `chore/channels-vX.Y.Z` PR that updates `channels.json`. Merge that PR so
-  `pa update` sees the new version.
+  and opens a `chore/channels-vX.Y.Z` PR that updates `channels.json` (it cannot be in the release
+  PR: the pointer must name a tag that already exists). That PR's CI is held for approval, which
+  does not block merging it. `--ship` merges it for you after checking it changes only that one
+  pointer; pass `--skip-channels` to leave it. Without `--ship`, merge it yourself, or `pa update`
+  will not see the new version.
 - `release/v*` PRs skip the pytest shards in CI (only the smoke check runs), so run the tests
   before releasing.
