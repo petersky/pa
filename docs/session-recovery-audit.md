@@ -142,8 +142,8 @@ page's committed range; a bounded lookahead may establish a later record end,
 but does not extend that committed range. Complete recovered records have a
 separate SHA256 over the JSON line excluding its newline.
 
-Only complete newline-terminated JSON records up to 1 MiB are interpreted.
-Recovery work (additional reads plus decoded input bytes) is capped at 4 MiB
+Only complete newline-terminated JSON records up to 2 MiB are interpreted.
+Recovery work (additional reads plus decoded input bytes) is capped at 6 MiB
 per call, nesting at 64, and gap descriptors at 32. Duplicate object keys are
 rejected. Larger records, incomplete EOF, ambiguous/malformed JSON, depth/work
 limits and filtered envelopes remain explicit gaps; prefixes are never treated
@@ -156,3 +156,10 @@ independent IDs, reinterpret the original page's effect, reconcile a receipt,
 override dismissal/close, or permit delivery. Missing mappings still leave the
 historical effect UNKNOWN. Native provider stores and historical retention
 remain outside the reader's coverage.
+
+The fixed limits cover the fifteen remaining known oversized records (16,997,194
+bytes total, largest 1,221,317 bytes including newline). Assess only their fifteen
+original signed pages, verifying the exact known record boundaries and original
+snapshot/page receipts. This finite pass has at most fifteen calls, 90 MiB of
+recovery work plus 15 MiB ordinary page reads, and does not repeat the full scan
+or the 533-record assessment. Limits cannot be supplied or disabled by a caller.

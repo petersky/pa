@@ -12,8 +12,11 @@ import os
 
 from pa.instance.wire_metadata import _metadata
 
-MAX_RECOVERY_LINE = 1024 * 1024
-MAX_ASSESS_WORK = 4 * 1024 * 1024
+# Covers the remaining finite observed records (largest 1,221,317B including
+# newline). A call covers <=1MiB ordinary page + <=2MiB extra read + <=2MiB
+# decoded record input. Keep a fixed work ceiling; never accept a caller limit.
+MAX_RECOVERY_LINE = 2 * 1024 * 1024
+MAX_ASSESS_WORK = 6 * 1024 * 1024
 MAX_GAPS = 32
 MAX_DEPTH = 64
 
