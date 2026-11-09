@@ -440,6 +440,17 @@ _DEFINITIONS = (
         normalizer="lowercase_keys",
     ),
     _s(
+        "completion_auto_verify_stalled_seconds",
+        "int",
+        24 * 60 * 60,
+        "Seconds a merged card's work must be finished before PA verifies it independently (0 disables).",
+        "Execution",
+        50,
+        "Applies only to cards whose acceptance principal is the local operator; a verifier agent run consumes provider capacity.",
+        apply="live",
+        validator="range:0:31536000",
+    ),
+    _s(
         "relay_enabled",
         "bool",
         False,

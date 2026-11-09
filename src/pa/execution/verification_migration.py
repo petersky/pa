@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime, timedelta
 
 from pa.domain.completion import CompletionConflict
 from pa.domain.models import CompletionRequirement
@@ -11,10 +12,53 @@ def comparable(value):
     return CompletionRequirement.model_validate(value).model_dump(exclude={'revision'})
 
 
+LOCAL_OPERATOR = 'user:local'
+
+
+def stalled_declared_plan(service, card, *, now=None):
+    """Hand a stalled, merged ``declared`` card to the independent verifier.
+
+    Only the narrow case where nothing else can ever record the remaining checkpoints:
+    the explicit acceptance principal is the local operator, the work is integrated, and
+    every dispatch for the card has been finished for ``completion_auto_verify_stalled_seconds``.
+    Criteria, milestones, principals and evidence are preserved; only the policy changes.
+    """
+    from pa.execution.dispatch import TERMINAL_DISPATCH_STATES
+    req = card.completion_requirement
+    threshold = service.ctx.settings.completion_auto_verify_stalled_seconds
+    if not threshold:
+        raise CompletionConflict('completion_auto_verification_disabled')
+    if (req.mode != 'explicit_acceptance' or req.provenance != 'explicit' or req.verification_policy != 'declared'
+            or LOCAL_OPERATOR not in req.acceptance_principals or 'integrated' not in card.completion_status['satisfied']):
+        raise CompletionConflict('explicit_requirement_preserved')
+    ledger = service.ctx.services['dispatch_store']
+    records = ledger.list(card_id=card.id, realm_id=card.realm_id, limit=101)
+    if not records or len(records) > 100:
+        raise CompletionConflict('verification_origin_unconfirmed')
+    now = now or datetime.now(UTC)
+    for record in records:
+        if record.state not in TERMINAL_DISPATCH_STATES:
+            raise CompletionConflict('completion_work_in_progress')
+        if now - record.updated_at < timedelta(seconds=threshold):
+            raise CompletionConflict('completion_not_stalled')
+        session = service.ctx.store.get_session(record.session_id) if record.session_id else None
+        if session and session.status == 'active':
+            raise CompletionConflict('completion_work_in_progress')
+    adopted = req.model_copy(update={'verification_policy': 'independent_agent_v1', 'verification_principal': LOCAL_OPERATOR,
+                                     'verification_authority_instance_id': service.ctx.settings.instance_id})
+    packet = service.packet(card.model_copy(update={'completion_requirement': adopted}))
+    if not (packet['origin_sessions'] or packet['origin_dispatches']):
+        raise CompletionConflict('verification_origin_unconfirmed')
+    return adopted.model_copy(update={'originating_session_ids': packet['origin_sessions'],
+                                      'originating_dispatch_ids': packet['origin_dispatches']})
+
+
 def migration_plan(service, card, kind):
     req = card.completion_requirement
     if not req or card.lane == 'done' or card.completion_status['accepted']:
         raise CompletionConflict('completion_migration_not_eligible')
+    if kind == 'stalled_declared':
+        return stalled_declared_plan(service, card)
     events = service.ctx.store.event_log.entity_history(card.realm_id, 'card', card.id)
     history = [r['event'] for r in events if r.get('projection_effect') != 'ignored_duplicate_create']
     if kind != 'system_health':

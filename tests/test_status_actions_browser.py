@@ -74,12 +74,15 @@ async def test_status_actions_desktop_narrow_and_zoom(operator_server, tmp_path,
 
         await page.navigate_and_wait(base + "/work")
         await wait_for(f"!!document.querySelector('.compact-card[data-card-id=\"{ready.id}\"]')")
-        await page.evaluate("document.querySelector('[data-board-lane=\"inbox\"]').click(); document.querySelector('[data-work-board]').scrollIntoView()")
+        await page.evaluate("document.querySelector('[data-board-lane=\"idle\"]').click(); document.querySelector('[data-work-board]').scrollIntoView()")
         ready_text = await page.evaluate(f"document.querySelector('.compact-card[data-card-id=\"{ready.id}\"]').innerText")
         assert "not started" in ready_text.lower() and "Open agent" not in ready_text
         await assert_layout(".compact-card, .work-outcome, .compact-card h3")
         (evidence / f"work-{width}.png").write_bytes(await page.screenshot())
 
+        # Narrow screens show one state column at a time; reveal the one holding this card.
+        bucket = await page.evaluate(f'''document.querySelector('.compact-card[data-card-id="{blocked.id}"]').closest('.board-column').dataset.bucket''')
+        await page.evaluate(f'''document.querySelector('[data-board-lane="{bucket}"]').click()''')
         await page.evaluate(f'''document.querySelector('.compact-card[data-card-id="{blocked.id}"] h3 a').scrollIntoView({{block:'center', behavior:'instant'}})''')
         await page.evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
         await manager.click(scope, selector=f'.compact-card[data-card-id="{blocked.id}"] h3 a')
@@ -98,7 +101,7 @@ async def test_status_actions_desktop_narrow_and_zoom(operator_server, tmp_path,
         assert "Source conversation" in agent and "No agent sessions yet" in agent
         await manager.click(scope, selector="[data-card-dialog-close]")
         await wait_for("!!document.querySelector('.compact-card')")
-        await page.evaluate("document.querySelector('[data-board-lane=\"inbox\"]').click()")
+        await page.evaluate("document.querySelector('[data-board-lane=\"idle\"]').click()")
         await page.evaluate("document.documentElement.style.zoom='2'")
         await assert_layout(".compact-card, .work-outcome, .compact-card h3")
     finally:

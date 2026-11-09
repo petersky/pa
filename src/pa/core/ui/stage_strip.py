@@ -67,6 +67,7 @@ def build_stage_strip(
     state_code: str,
     group: str,
     session_active: bool,
+    dispatch_active: bool = False,
     has_execution: bool,
     activity_at: Any = None,
     children: Iterable[str] = (),
@@ -78,7 +79,9 @@ def build_stage_strip(
     finished = lane == "done" or state_code == "completed"
 
     # --- Work ---------------------------------------------------------------
-    running = bool(session_active or (tally and tally["running"]))
+    # A dispatch that is queued/starting/running is work in motion even before any
+    # session evidence exists (e.g. while the runtime is still being provisioned).
+    running = bool(session_active or dispatch_active or (tally and tally["running"]))
     if running:
         work_state = "active"
     elif state_code in FAILURE_CODES or (tally and tally["stuck"]):
@@ -96,7 +99,7 @@ def build_stage_strip(
         "id": "work",
         "label": "Work",
         "state": work_state,
-        "owner": "you" if state_code == "not_started" else "agent",
+        "owner": "you" if state_code == "not_started" and not running else "agent",
     }
     if tally:
         work["parallel"] = tally

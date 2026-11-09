@@ -133,3 +133,20 @@ def test_markup_carries_state_in_attributes_and_has_no_prose():
     assert "pulse-live" in html and "Just now" in html
     assert 'owner-agent' not in html  # the agent owning Work is implied, not worth a chip
     assert "<ol" not in _render(None)
+
+
+def test_a_running_dispatch_without_session_evidence_is_active_not_done():
+    strip = _strip(session_active=False, dispatch_active=True, state_code="running")
+    assert strip["stages"][0]["state"] == "active" and strip["pulse"] is not None
+
+
+def test_parent_with_a_running_child_is_in_motion_not_not_started():
+    card = {"id": "p", "title": "Parent", "lane": "active", "updated_at": NOW.isoformat()}
+    idle = present_work_item(card, now=NOW)
+    assert idle["group"] == "quiet" and idle["state"] == "not_started"
+    moving = present_work_item(card, children=["done", "running", "todo"], now=NOW)
+    assert (moving["group"], moving["state"], moving["state_label"]) == ("motion", "working", "Working")
+    work = moving["stage_strip"]["stages"][0]
+    assert work["state"] == "active" and work["owner"] == "agent" and work["parallel"]["running"] == 1
+    # Children that are merely idle don't make the parent "working".
+    assert present_work_item(card, children=["done", "todo"], now=NOW)["state"] == "not_started"

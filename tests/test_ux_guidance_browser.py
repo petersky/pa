@@ -84,15 +84,22 @@ async def test_actions_results_evidence_and_permission_labels_without_help(opera
             assert bounds['top'] >= -1 and bounds['bottom'] <= bounds['height'] + 1, bounds
 
         await wait("document.querySelectorAll('.compact-card').length===3")
-        for name, lane, state, action in [('Not started', 'inbox', 'Not started', 'Start work'),
-                                         ('Turn ended', 'active', 'Work unfinished', 'Open card'),
-                                         ('Delivered', 'done', 'Delivered', 'Open card')]:
-            if width == 390:
-                await manager.click(scope, selector=f'[data-board-lane="{lane}"]')
+        # A card whose only action is "open this card" shows no button: the title already does that.
+        for name, state, action in [('Not started', 'Not started', 'Start work'),
+                                    ('Turn ended', 'Work unfinished', None),
+                                    ('Delivered', 'Delivered', None)]:
             selector = f'.compact-card[data-card-id="{cards[name].id}"]'
+            if width == 390:
+                # Narrow screens show one state column at a time; reveal the one holding this card.
+                bucket = await page.evaluate(f"document.querySelector('{selector}').closest('.board-column').dataset.bucket")
+                await manager.click(scope, selector=f'[data-board-lane="{bucket}"]')
             result = await inspect(name.lower().replace(' ', '-'), selector)
             assert state.lower() in result['text'].lower(), result
-            assert action in result['text'] and not result['helpOpen'], result
+            assert not result['helpOpen'], result
+            if action:
+                assert action in result['text'], result
+            else:
+                assert 'Open card' not in result['text'], result
 
         # Delivered evidence must be an actual named link, with its revision.
         await page.navigate_and_wait(f'{base}/work?card={cards["Delivered"].id}')

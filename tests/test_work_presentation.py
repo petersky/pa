@@ -567,3 +567,26 @@ def test_unscheduled_reconciliation_is_inspectable_without_automatic_claim(state
 def test_done_lane_does_not_hide_unresolved_typed_completion_failure(extra, code):
     result = present(card={**CARD, "lane": "done"}, dispatch_value=dispatch("completed", **extra))
     assert result["attention_code"] == code
+
+
+def test_stale_version_conflict_that_converged_is_not_attention():
+    """A Done card whose lane write lost a version race, but already holds that lane."""
+    card = {**CARD, "lane": "done"}
+    dispatch = {
+        "dispatch_id": "d1", "state": "completed", "effective_state": "completed",
+        "card_completion": {"status": "applied", "lane_after": "done"},
+        "card_reconciliation": {
+            "state": "conflict_requires_resolution", "condition": "stale_card_version",
+            "reason": "The ended turn supplied a valid disposition.",
+            "updated_at": (NOW - timedelta(days=20)).isoformat(),
+        },
+    }
+    result = present_work_item(card, dispatch=dispatch, now=NOW)
+    assert result["state"] == "completed" and not result["attention"]
+    assert result["historical_reconciliation"] is True
+    # The same conflict while the card is NOT where the dispatch meant to put it still needs a decision.
+    open_card = present_work_item({**CARD, "lane": "waiting"}, dispatch=dispatch, now=NOW)
+    assert open_card["state"] == "reconciliation_failed" and open_card["attention"]
+    # A different failure on a Done card is untouched.
+    other = {**dispatch, "card_reconciliation": {**dispatch["card_reconciliation"], "condition": "dependency_unavailable"}}
+    assert present_work_item(card, dispatch=other, now=NOW)["state"] == "reconciliation_failed"
