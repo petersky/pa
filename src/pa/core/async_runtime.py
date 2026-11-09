@@ -22,6 +22,7 @@ from typing import Any, Awaitable, Callable, TypeVar
 
 from starlette.exceptions import HTTPException
 
+from pa.http_transport import PeerEndpointUnavailable
 from pa.core.operation_budget import OperationBudget, OperationDeadline, current_operation
 from pa.core.sqlite_metrics import sqlite_connection_scope
 from pa.core.performance import (
@@ -81,6 +82,8 @@ def _failure_kind(error: BaseException) -> dict[str, Any]:
         )
         return {"category": category}
     if isinstance(error, TimeoutError):
+        if isinstance(error, PeerEndpointUnavailable):
+            return {"category": "timeout_error", "timeout_kind": "peer_endpoint_unavailable"}
         return {"category": "timeout_error"}
     if isinstance(error, OSError):
         return {"category": "os_error"}

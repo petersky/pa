@@ -61595,6 +61595,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sync.reconcile_head",
+        "summary": {
+          "submitted": 7,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 504.228,
+          "slow_calls": 1,
+          "runtime_ms": {
+            "samples": 7,
+            "max": 504.228,
+            "p50": 168.101,
+            "p95": 504.228,
+            "p99": 504.228
+          }
+        }
       }
     },
     {
@@ -61887,7 +61907,27 @@
         "source_stage": "candidate unmerged/uninstalled",
         "resolution": "open"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.card_write",
+        "summary": {
+          "submitted": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 26.877,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 26.877,
+            "p50": 26.877,
+            "p95": 26.877,
+            "p99": 26.877
+          }
+        }
+      }
     },
     {
       "id": "runtime:http.github_snapshot",
@@ -64164,6 +64204,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sync.peer_http",
+        "summary": {
+          "submitted": 21,
+          "failed": 14,
+          "timed_out": 0,
+          "max_runtime_ms": 3003.802,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 21,
+            "max": 3003.802,
+            "p50": 21.539,
+            "p95": 3003.446,
+            "p99": 3003.802
+          }
+        }
       }
     },
     {
@@ -65498,6 +65558,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.maintenance.run",
+        "summary": {
+          "submitted": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 5634.745,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 5634.745,
+            "p50": 5634.745,
+            "p95": 5634.745,
+            "p99": 5634.745
+          }
+        }
       }
     },
     {
@@ -66558,6 +66638,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.progress.heartbeat_write",
+        "summary": {
+          "submitted": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 8.56,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 2,
+            "max": 8.56,
+            "p50": 7.123,
+            "p95": 8.56,
+            "p99": 8.56
+          }
+        }
       }
     },
     {
@@ -67703,6 +67803,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.transcript_append",
+        "summary": {
+          "submitted": 42,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 39.255,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 41,
+            "max": 39.255,
+            "p50": 5.984,
+            "p95": 21.099,
+            "p99": 39.255
+          }
+        }
       }
     },
     {
@@ -68848,6 +68968,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.pr_supervisor_due_read",
+        "summary": {
+          "submitted": 236,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 16.449,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 236,
+            "max": 16.449,
+            "p50": 2.269,
+            "p95": 3.384,
+            "p99": 9.133
+          }
+        }
       }
     },
     {
@@ -69908,6 +70048,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.progress.dispatch_read",
+        "summary": {
+          "submitted": 25,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 19.069,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 25,
+            "max": 19.069,
+            "p50": 2.056,
+            "p95": 15.3,
+            "p99": 19.069
+          }
+        }
       }
     },
     {
@@ -71030,6 +71190,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.http.fleet_overview",
+        "summary": {
+          "submitted": 1337,
+          "failed": 357,
+          "timed_out": 357,
+          "max_runtime_ms": 4022.127,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 4010.854,
+            "p50": 14.816,
+            "p95": 28.875,
+            "p99": 4006.855
+          }
+        }
       }
     },
     {
@@ -72087,6 +72267,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.http.pr_supervisor_peer",
+        "summary": {
+          "submitted": 166,
+          "failed": 161,
+          "timed_out": 0,
+          "max_runtime_ms": 5083.606,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 166,
+            "max": 5083.606,
+            "p50": 404.721,
+            "p95": 5004.143,
+            "p99": 5027.011
+          }
+        }
       }
     },
     {
@@ -73147,6 +73347,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.workspace.lease_renew",
+        "summary": {
+          "submitted": 3,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 9.565,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 3,
+            "max": 9.565,
+            "p50": 6.014,
+            "p95": 9.565,
+            "p99": 9.565
+          }
+        }
       }
     },
     {
@@ -74215,6 +74435,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.agent_session_save",
+        "summary": {
+          "submitted": 80,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 23.092,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 80,
+            "max": 23.092,
+            "p50": 1.44,
+            "p95": 8.436,
+            "p99": 23.092
+          }
+        }
       }
     },
     {
@@ -75384,6 +75624,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.progress.sequence_allocate",
+        "summary": {
+          "submitted": 4,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 18.802,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 4,
+            "max": 18.802,
+            "p50": 8.503,
+            "p95": 18.802,
+            "p99": 18.802
+          }
+        }
       }
     },
     {
@@ -76545,6 +76805,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.acp.wire_append",
+        "summary": {
+          "submitted": 323,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 19.453,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 8.854,
+            "p50": 0.453,
+            "p95": 4.529,
+            "p99": 8.257
+          }
+        }
       }
     },
     {
@@ -77633,6 +77913,26 @@
         "stage": "source validated; pending integration/activation and actual selected outcomes",
         "resolution": "open",
         "paging_status": "deferred product code; historical source/evidence retained"
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.workspace.collect_garbage",
+        "summary": {
+          "submitted": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 778.362,
+          "slow_calls": 1,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 778.362,
+            "p50": 778.362,
+            "p95": 778.362,
+            "p99": 778.362
+          }
+        }
       }
     },
     {
@@ -78990,6 +79290,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.reconciliation.dispatch_read",
+        "summary": {
+          "submitted": 888,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 31.491,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 13.347,
+            "p50": 0.954,
+            "p95": 9.321,
+            "p99": 11.05
+          }
+        }
       }
     },
     {
@@ -80143,6 +80463,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.dispatch.completion_pending_read",
+        "summary": {
+          "submitted": 178,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 40.733,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 178,
+            "max": 40.733,
+            "p50": 1.447,
+            "p95": 4.264,
+            "p99": 5.083
+          }
+        }
       }
     },
     {
@@ -81200,6 +81540,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.http.github",
+        "summary": {
+          "submitted": 5,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 431.163,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 5,
+            "max": 431.163,
+            "p50": 302.005,
+            "p95": 431.163,
+            "p99": 431.163
+          }
+        }
       }
     },
     {
@@ -82286,6 +82646,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.agent.startup_state_read",
+        "summary": {
+          "submitted": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 381.923,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 381.923,
+            "p50": 381.923,
+            "p95": 381.923,
+            "p99": 381.923
+          }
+        }
       }
     },
     {
@@ -83455,6 +83835,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.progress.checkpoint_write",
+        "summary": {
+          "submitted": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 7.045,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 2,
+            "max": 7.045,
+            "p50": 5.126,
+            "p95": 7.045,
+            "p99": 7.045
+          }
+        }
       }
     },
     {
@@ -84600,6 +85000,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.progress.pending_read",
+        "summary": {
+          "submitted": 298,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 45.808,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 17.316,
+            "p50": 10.83,
+            "p95": 13.973,
+            "p99": 15.054
+          }
+        }
       }
     },
     {
@@ -85668,6 +86088,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.agent.recovery_sessions",
+        "summary": {
+          "submitted": 176,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 142.731,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 176,
+            "max": 142.731,
+            "p50": 38.486,
+            "p95": 59.95,
+            "p99": 137.525
+          }
+        }
       }
     },
     {
@@ -86813,6 +87253,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sync.ref_read",
+        "summary": {
+          "submitted": 338,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 28.593,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 28.593,
+            "p50": 0.669,
+            "p95": 1.515,
+            "p99": 3.951
+          }
+        }
       }
     },
     {
@@ -88064,6 +88524,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sync.json_decode",
+        "summary": {
+          "submitted": 7,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 12.801,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 7,
+            "max": 12.801,
+            "p50": 0.416,
+            "p95": 12.801,
+            "p99": 12.801
+          }
+        }
       }
     },
     {
@@ -89217,6 +89697,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.fleet.overview.sync",
+        "summary": {
+          "submitted": 329,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 33.557,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 29.803,
+            "p50": 6.829,
+            "p95": 8.687,
+            "p99": 18.6
+          }
+        }
       }
     },
     {
@@ -90465,6 +90965,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.workspace.project_provision",
+        "summary": {
+          "submitted": 16,
+          "failed": 11,
+          "timed_out": 0,
+          "max_runtime_ms": 1188.4,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 16,
+            "max": 1188.4,
+            "p50": 536.125,
+            "p95": 1188.4,
+            "p99": 1188.4
+          }
+        }
       }
     },
     {
@@ -91164,6 +91684,26 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.intake.web_prompt",
+        "summary": {
+          "submitted": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 17.584,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 2,
+            "max": 17.584,
+            "p50": 9.481,
+            "p95": 17.584,
+            "p99": 17.584
+          }
+        }
       }
     },
     {
@@ -92224,6 +92764,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.reconciliation.session_read",
+        "summary": {
+          "submitted": 531,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 141.423,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 4.599,
+            "p50": 0.868,
+            "p95": 2.397,
+            "p99": 2.781
+          }
+        }
       }
     },
     {
@@ -92488,7 +93048,27 @@
         "source_stage": "candidate unmerged/uninstalled",
         "resolution": "open"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.transcript_read",
+        "summary": {
+          "submitted": 104,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 95.58,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 104,
+            "max": 95.58,
+            "p50": 22.826,
+            "p95": 47.512,
+            "p99": 95.482
+          }
+        }
+      }
     },
     {
       "id": "runtime:fleet.overview.status",
@@ -93641,6 +94221,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.fleet.overview.status",
+        "summary": {
+          "submitted": 329,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 4.346,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 4.346,
+            "p50": 0.355,
+            "p95": 0.575,
+            "p99": 1.107
+          }
+        }
       }
     },
     {
@@ -95233,6 +95833,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.restart_handoffs_pending",
+        "summary": {
+          "submitted": 177,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 20.338,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 177,
+            "max": 20.338,
+            "p50": 2.433,
+            "p95": 3.89,
+            "p99": 11.678
+          }
+        }
       }
     },
     {
@@ -96290,6 +96910,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.preferences.agent_auto_approve_read",
+        "summary": {
+          "submitted": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 0.479,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 2,
+            "max": 0.479,
+            "p50": 0.4,
+            "p95": 0.479,
+            "p99": 0.479
+          }
+        }
       }
     },
     {
@@ -96749,6 +97389,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.pr_supervisor_metric",
+        "summary": {
+          "submitted": 80,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 33.165,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 80,
+            "max": 33.165,
+            "p50": 4.271,
+            "p95": 5.439,
+            "p99": 33.165
+          }
+        }
       }
     },
     {
@@ -97809,6 +98469,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.pr_supervisor_event_write",
+        "summary": {
+          "submitted": 83,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 4.481,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 83,
+            "max": 4.481,
+            "p50": 1.227,
+            "p95": 1.594,
+            "p99": 4.481
+          }
+        }
       }
     },
     {
@@ -98962,6 +99642,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.dispatch.followup_pending_read",
+        "summary": {
+          "submitted": 178,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 16.609,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 178,
+            "max": 16.609,
+            "p50": 1.819,
+            "p95": 2.675,
+            "p99": 13.668
+          }
+        }
       }
     },
     {
@@ -100022,6 +100722,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.pr_supervisor_watch_read",
+        "summary": {
+          "submitted": 84,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 33.249,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 84,
+            "max": 33.249,
+            "p50": 17.284,
+            "p95": 26.169,
+            "p99": 33.249
+          }
+        }
       }
     },
     {
@@ -101082,6 +101802,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.restart_handoffs_watchdog",
+        "summary": {
+          "submitted": 176,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 7.001,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 176,
+            "max": 7.001,
+            "p50": 2.181,
+            "p95": 3.779,
+            "p99": 6.372
+          }
+        }
       }
     },
     {
@@ -102142,6 +102882,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.pr_supervisor_watch_write",
+        "summary": {
+          "submitted": 83,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 11.092,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 83,
+            "max": 11.092,
+            "p50": 3.684,
+            "p95": 4.681,
+            "p99": 11.092
+          }
+        }
       }
     },
     {
@@ -103202,6 +103962,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.restart_handoff_completion",
+        "summary": {
+          "submitted": 177,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 9.45,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 177,
+            "max": 9.45,
+            "p50": 2.993,
+            "p95": 4.21,
+            "p99": 9.1
+          }
+        }
       }
     },
     {
@@ -104344,6 +105124,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.goal.dispatch_lifecycle_index",
+        "summary": {
+          "submitted": 31,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 23.008,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 31,
+            "max": 23.008,
+            "p50": 0.383,
+            "p95": 1.037,
+            "p99": 23.008
+          }
+        }
       }
     },
     {
@@ -105513,6 +106313,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.fleet.overview_cache_write",
+        "summary": {
+          "submitted": 2324,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 39.449,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 25.726,
+            "p50": 2.253,
+            "p95": 7.047,
+            "p99": 24.224
+          }
+        }
       }
     },
     {
@@ -106682,6 +107502,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.fleet.overview_cache_read",
+        "summary": {
+          "submitted": 17030,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 50.494,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 4.48,
+            "p50": 0.259,
+            "p95": 0.806,
+            "p99": 2.123
+          }
+        }
       }
     },
     {
@@ -107742,6 +108582,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.restart_handoff_session",
+        "summary": {
+          "submitted": 177,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 5.108,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 177,
+            "max": 5.108,
+            "p50": 2.447,
+            "p95": 3.524,
+            "p99": 4.76
+          }
+        }
       }
     },
     {
@@ -108336,7 +109196,27 @@
         "source_stage": "candidate unmerged/uninstalled",
         "resolution": "open"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.agent.history_payload",
+        "summary": {
+          "submitted": 7,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 21.082,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 7,
+            "max": 21.082,
+            "p50": 17.292,
+            "p95": 21.082,
+            "p99": 21.082
+          }
+        }
+      }
     },
     {
       "id": "runtime:sqlite.prompt_acceptance",
@@ -109748,6 +110628,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.card_read",
+        "summary": {
+          "submitted": 89,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 48.107,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 89,
+            "max": 48.107,
+            "p50": 3.233,
+            "p95": 32.019,
+            "p99": 48.107
+          }
+        }
       }
     },
     {
@@ -110816,6 +111716,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.reconciliation.completion_evidence_read",
+        "summary": {
+          "submitted": 531,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 27.051,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 9.93,
+            "p50": 2.02,
+            "p95": 3.292,
+            "p99": 4.113
+          }
+        }
       }
     },
     {
@@ -111876,6 +112796,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.project_read",
+        "summary": {
+          "submitted": 16,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 0.469,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 16,
+            "max": 0.469,
+            "p50": 0.184,
+            "p95": 0.469,
+            "p99": 0.469
+          }
+        }
       }
     },
     {
@@ -113996,6 +114936,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.pr_supervisor.github_response_json",
+        "summary": {
+          "submitted": 5,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 2.557,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 5,
+            "max": 2.557,
+            "p50": 0.586,
+            "p95": 2.557,
+            "p99": 2.557
+          }
+        }
       }
     },
     {
@@ -114260,7 +115220,27 @@
         "source_stage": "candidate unmerged/uninstalled",
         "resolution": "open"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.transcript_message_page",
+        "summary": {
+          "submitted": 7,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 54.327,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 7,
+            "max": 54.327,
+            "p50": 16.757,
+            "p95": 54.327,
+            "p99": 54.327
+          }
+        }
+      }
     },
     {
       "id": "runtime:selection.resolve",
@@ -115385,6 +116365,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.fleet.overview_response_json",
+        "summary": {
+          "submitted": 980,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 10.982,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 10.982,
+            "p50": 0.555,
+            "p95": 1.16,
+            "p99": 3.715
+          }
+        }
       }
     },
     {
@@ -116535,6 +117535,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.health.canonical_obligation",
+        "summary": {
+          "submitted": 165,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 127.575,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 165,
+            "max": 127.575,
+            "p50": 1.131,
+            "p95": 14.383,
+            "p99": 67.476
+          }
+        }
       }
     },
     {
@@ -117595,6 +118615,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.agent.project_recovery_availability",
+        "summary": {
+          "submitted": 708,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 34.438,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 18.155,
+            "p50": 0.284,
+            "p95": 0.796,
+            "p99": 1.802
+          }
+        }
       }
     },
     {
@@ -118756,6 +119796,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sync.commit_read",
+        "summary": {
+          "submitted": 7,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 4.165,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 7,
+            "max": 4.165,
+            "p50": 0.851,
+            "p95": 4.165,
+            "p99": 4.165
+          }
+        }
       }
     },
     {
@@ -119886,6 +120946,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.notifications.list_page",
+        "summary": {
+          "submitted": 95,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 19.344,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 95,
+            "max": 19.344,
+            "p50": 1.422,
+            "p95": 8.664,
+            "p99": 19.344
+          }
+        }
       }
     },
     {
@@ -121019,6 +122099,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.agent_session_read",
+        "summary": {
+          "submitted": 69,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 11.461,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 69,
+            "max": 11.461,
+            "p50": 0.722,
+            "p95": 6.579,
+            "p99": 11.461
+          }
+        }
       }
     },
     {
@@ -122164,6 +123264,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.pr_supervisor_completion_due_read",
+        "summary": {
+          "submitted": 240,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 47.276,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 240,
+            "max": 47.276,
+            "p50": 13.924,
+            "p95": 27.157,
+            "p99": 43.953
+          }
+        }
       }
     },
     {
@@ -123494,6 +124614,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.filesystem.github_credentials_read",
+        "summary": {
+          "submitted": 246,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 19.183,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 246,
+            "max": 19.183,
+            "p50": 1.163,
+            "p95": 2.325,
+            "p99": 7.43
+          }
+        }
       }
     },
     {
@@ -125808,6 +126948,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.fleet.overview.reachability",
+        "summary": {
+          "submitted": 329,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 4.331,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 4.331,
+            "p50": 0.338,
+            "p95": 0.655,
+            "p99": 1.113
+          }
+        }
       }
     },
     {
@@ -127229,6 +128389,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.agent.provider_resolve",
+        "summary": {
+          "submitted": 11,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 2.673,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 11,
+            "max": 2.673,
+            "p50": 0.488,
+            "p95": 2.673,
+            "p99": 2.673
+          }
+        }
       }
     },
     {
@@ -127611,7 +128791,27 @@
         }
       },
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.workspace.session_leases",
+        "summary": {
+          "submitted": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 2.545,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 2,
+            "max": 2.545,
+            "p50": 2.272,
+            "p95": 2.545,
+            "p99": 2.545
+          }
+        }
+      }
     },
     {
       "id": "runtime:selection.prompt_identity",
@@ -128668,6 +129868,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.selection.prompt_identity",
+        "summary": {
+          "submitted": 3,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 5.525,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 3,
+            "max": 5.525,
+            "p50": 4.578,
+            "p95": 5.525,
+            "p99": 5.525
+          }
+        }
       }
     },
     {
@@ -129370,6 +130590,26 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.prompt_acceptance_read",
+        "summary": {
+          "submitted": 4,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 32.061,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 4,
+            "max": 32.061,
+            "p50": 17.764,
+            "p95": 32.061,
+            "p99": 32.061
+          }
+        }
       }
     },
     {
@@ -130444,6 +131684,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.workspace.reconcile_terminal_state",
+        "summary": {
+          "submitted": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 108.176,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 108.176,
+            "p50": 108.176,
+            "p95": 108.176,
+            "p99": 108.176
+          }
+        }
       }
     },
     {
@@ -132894,6 +134154,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.agent.prompt_compose",
+        "summary": {
+          "submitted": 3,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 5.275,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 3,
+            "max": 5.275,
+            "p50": 4.894,
+            "p95": 5.275,
+            "p99": 5.275
+          }
+        }
       }
     },
     {
@@ -134354,6 +135634,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.notifications.present_page",
+        "summary": {
+          "submitted": 95,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 25.697,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 95,
+            "max": 25.697,
+            "p50": 1.098,
+            "p95": 8.855,
+            "p99": 25.697
+          }
+        }
       }
     },
     {
@@ -135428,6 +136728,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sync.startup_reconcile",
+        "summary": {
+          "submitted": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 89.438,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 89.438,
+            "p50": 89.438,
+            "p95": 89.438,
+            "p99": 89.438
+          }
+        }
       }
     },
     {
@@ -136744,7 +138064,27 @@
         }
       },
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.agent.snapshot_payload",
+        "summary": {
+          "submitted": 5,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 23.198,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 5,
+            "max": 23.198,
+            "p50": 14.312,
+            "p95": 23.198,
+            "p99": 23.198
+          }
+        }
+      }
     },
     {
       "id": "runtime:sqlite.pr_supervisor_effect_prepare",
@@ -137703,7 +139043,27 @@
         "scope": "macbook/PID92567/sourceb808, timestamped supportedGET snapshot,98operations/21prefixfamilies/34registered routegroups. Operation/route counters and explicit process maxima cover currentprocess; percentiles are reported bounded windows, not process percentiles. Some reads overlap disposable local test/benchmark CPU/disk use, no causal claim or controlledacceptance. Peer logs/builds remain uninspected. Historical report03runtime context is explicitly historical and differs from current status.",
         "resolution": "open"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.conversation.session",
+        "summary": {
+          "submitted": 419,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 120.34,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 17.696,
+            "p50": 4.333,
+            "p95": 10.923,
+            "p99": 16.929
+          }
+        }
+      }
     },
     {
       "id": "runtime:sqlite.agent_runtime_checkpoint",
@@ -138763,6 +140123,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.agent_runtime_checkpoint",
+        "summary": {
+          "submitted": 11,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 8.623,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 11,
+            "max": 8.623,
+            "p50": 3.177,
+            "p95": 8.623,
+            "p99": 8.623
+          }
+        }
       }
     },
     {
@@ -140076,6 +141456,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.selection.configuration_receipt",
+        "summary": {
+          "submitted": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 42.161,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 2,
+            "max": 42.161,
+            "p50": 4.616,
+            "p95": 42.161,
+            "p99": 42.161
+          }
+        }
       }
     },
     {
@@ -140520,7 +141920,27 @@
         }
       },
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.workspace.scratch_provision",
+        "summary": {
+          "submitted": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 1.692,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 1.692,
+            "p50": 1.692,
+            "p95": 1.692,
+            "p99": 1.692
+          }
+        }
+      }
     },
     {
       "id": "runtime:fleet.overview.repositories",
@@ -141798,6 +143218,26 @@
         "observed_at": "2026-10-18T06:04:51.959933+00:00",
         "operation": "selection.prompt_outcome",
         "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.selection.prompt_outcome",
+        "summary": {
+          "submitted": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 4.686,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 2,
+            "max": 4.686,
+            "p50": 4.077,
+            "p95": 4.686,
+            "p99": 4.686
+          }
+        }
       }
     },
     {
@@ -142943,6 +144383,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.pr_supervisor_capability_write",
+        "summary": {
+          "submitted": 13,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 20.028,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 13,
+            "max": 20.028,
+            "p50": 4.084,
+            "p95": 20.028,
+            "p99": 20.028
+          }
+        }
       }
     },
     {
@@ -145467,6 +146927,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.agent.recovery_snapshot",
+        "summary": {
+          "submitted": 11,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 20.567,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 11,
+            "max": 20.567,
+            "p50": 2.91,
+            "p95": 20.567,
+            "p99": 20.567
+          }
+        }
       }
     },
     {
@@ -146096,7 +147576,27 @@
         "scope": "macbook/PID92567/sourceb808, timestamped supportedGET snapshot,98operations/21prefixfamilies/34registered routegroups. Operation/route counters and explicit process maxima cover currentprocess; percentiles are reported bounded windows, not process percentiles. Some reads overlap disposable local test/benchmark CPU/disk use, no causal claim or controlledacceptance. Peer logs/builds remain uninspected. Historical report03runtime context is explicitly historical and differs from current status.",
         "resolution": "open"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.conversation.issues",
+        "summary": {
+          "submitted": 250,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 15.943,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 250,
+            "max": 15.943,
+            "p50": 4.4,
+            "p95": 10.423,
+            "p99": 12.777
+          }
+        }
+      }
     },
     {
       "id": "runtime:filesystem.workspace_completion",
@@ -148349,6 +149849,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.selection.attempt_authority",
+        "summary": {
+          "submitted": 11,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 2.767,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 11,
+            "max": 2.767,
+            "p50": 1.696,
+            "p95": 2.767,
+            "p99": 2.767
+          }
+        }
       }
     },
     {
@@ -152619,6 +154139,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.acp.wire_init",
+        "summary": {
+          "submitted": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 0.091,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 2,
+            "max": 0.091,
+            "p50": 0.085,
+            "p95": 0.091,
+            "p99": 0.091
+          }
+        }
       }
     },
     {
@@ -154395,6 +155935,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sync.gc_resume",
+        "summary": {
+          "submitted": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 3.616,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 3.616,
+            "p50": 3.616,
+            "p95": 3.616,
+            "p99": 3.616
+          }
+        }
       }
     },
     {
@@ -157019,7 +158579,27 @@
         }
       },
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.notification_list",
+        "summary": {
+          "submitted": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 0.287,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 2,
+            "max": 0.287,
+            "p50": 0.274,
+            "p95": 0.287,
+            "p99": 0.287
+          }
+        }
+      }
     },
     {
       "id": "runtime:goal.dispatch_assigned_service_identity_bind",
@@ -158267,6 +159847,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.acp.pa_mcp_owner_probe",
+        "summary": {
+          "submitted": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 5.18,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 2,
+            "max": 5.18,
+            "p50": 4.695,
+            "p95": 5.18,
+            "p99": 5.18
+          }
+        }
       }
     },
     {
@@ -160804,6 +162404,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.agent.session_mkdir",
+        "summary": {
+          "submitted": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 0.108,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 2,
+            "max": 0.108,
+            "p50": 0.073,
+            "p95": 0.108,
+            "p99": 0.108
+          }
+        }
       }
     },
     {
@@ -162240,6 +163860,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.transcript_sequence",
+        "summary": {
+          "submitted": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 0.593,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 2,
+            "max": 0.593,
+            "p50": 0.526,
+            "p95": 0.593,
+            "p99": 0.593
+          }
+        }
       }
     },
     {
@@ -164132,6 +165772,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.acp.provider_resolve",
+        "summary": {
+          "submitted": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 0.116,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 2,
+            "max": 0.116,
+            "p50": 0.085,
+            "p95": 0.116,
+            "p99": 0.116
+          }
+        }
       }
     },
     {
@@ -166573,6 +168233,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.dispatch.workspace_admission_read",
+        "summary": {
+          "submitted": 16,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 96.004,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 16,
+            "max": 96.004,
+            "p50": 1.394,
+            "p95": 96.004,
+            "p99": 96.004
+          }
+        }
       }
     },
     {
@@ -167968,6 +169648,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.fleet.update_recovery",
+        "summary": {
+          "submitted": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 1.104,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 1.104,
+            "p50": 1.104,
+            "p95": 1.104,
+            "p99": 1.104
+          }
+        }
       }
     },
     {
@@ -169169,6 +170869,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.startup.agent_manager",
+        "summary": {
+          "submitted": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 0.807,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 0.807,
+            "p50": 0.807,
+            "p95": 0.807,
+            "p99": 0.807
+          }
+        }
       }
     },
     {
@@ -171181,6 +172901,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.agent.quiesce_snapshot_clear",
+        "summary": {
+          "submitted": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 0.149,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 0.149,
+            "p50": 0.149,
+            "p95": 0.149,
+            "p99": 0.149
+          }
+        }
       }
     },
     {
@@ -171345,7 +173085,23 @@
         }
       },
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/agent/sessions/{session_id}/recover",
+        "summary": {
+          "count": 2,
+          "response_bytes": 1322,
+          "latency_ms": {
+            "samples": 2,
+            "max": 624.963,
+            "p50": 531.882,
+            "p95": 624.963,
+            "p99": 624.963
+          }
+        }
+      }
     },
     {
       "id": "route:/api/fleet/dispatch/{dispatch_id}/complete",
@@ -171895,6 +173651,22 @@
         "deployed": "No638/637 installed; exact635 remains active. Original635 authority/effects consumed once, fresh package/guards/scoped authority required.",
         "native_residual": "All5installed635 full10 responses2604696B/read2097153/status_and_encoded_bound/no decode/schemaunverified. Native payload composition and638 effect unverified.",
         "acceptance": "All718rows172concerns OPEN; exact17d independent_agent_v1 scheduler-owned/unaccepted; original accepted backup0331/DB89957 scopes CLOSED. FullrealKernel/provider/MCP/admission/startup/drain/concurrency/pageAPI/peer/logloss/FD/retention/unknownreceipt/missingobject/screenshot and shared-maintenance/offCPU/IO/GC gaps retained."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/agent/sessions",
+        "summary": {
+          "count": 220,
+          "response_bytes": 7161121,
+          "latency_ms": {
+            "samples": 220,
+            "max": 127.319,
+            "p50": 6.021,
+            "p95": 28.402,
+            "p99": 37.485
+          }
+        }
       }
     },
     {
@@ -172175,6 +173947,22 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/status",
+        "summary": {
+          "count": 320,
+          "response_bytes": 854455,
+          "latency_ms": {
+            "samples": 256,
+            "max": 124.378,
+            "p50": 40.174,
+            "p95": 47.254,
+            "p99": 56.457
+          }
+        }
       }
     },
     {
@@ -172315,7 +174103,23 @@
         }
       },
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/execution/catalog",
+        "summary": {
+          "count": 7,
+          "response_bytes": 376657,
+          "latency_ms": {
+            "samples": 7,
+            "max": 4546.567,
+            "p50": 18.485,
+            "p95": 4546.567,
+            "p99": 4546.567
+          }
+        }
+      }
     },
     {
       "id": "route:/api/notifications/{notification_id}/respond",
@@ -172354,7 +174158,23 @@
       "next_actor": "this card/session",
       "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/notifications/{notification_id}/respond",
+        "summary": {
+          "count": 1,
+          "response_bytes": 5026,
+          "latency_ms": {
+            "samples": 1,
+            "max": 2228.183,
+            "p50": 2228.183,
+            "p95": 2228.183,
+            "p99": 2228.183
+          }
+        }
+      }
     },
     {
       "id": "route:/api/fleet/dispatch-jobs/{dispatch_id}/prompt",
@@ -172627,6 +174447,22 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/fleet/overview/local",
+        "summary": {
+          "count": 323,
+          "response_bytes": 3815617,
+          "latency_ms": {
+            "samples": 256,
+            "max": 34.272,
+            "p50": 2.889,
+            "p95": 7.69,
+            "p99": 26.339
+          }
+        }
       }
     },
     {
@@ -172758,7 +174594,23 @@
         },
         "scope": "Registered-route process totals and bounded windows; explicit request samples retained separately"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./partials/home/sections",
+        "summary": {
+          "count": 3,
+          "response_bytes": 64888,
+          "latency_ms": {
+            "samples": 3,
+            "max": 1019.199,
+            "p50": 940.288,
+            "p95": 1019.199,
+            "p99": 1019.199
+          }
+        }
+      }
     },
     {
       "id": "route:/partials/cards",
@@ -173288,6 +175140,22 @@
         "resolution": "open",
         "next_actor": "this same systemic session/card",
         "next_action": "Collect correlation-specific bounded request/loop/CPU/wait/GC evidence; preserve first 603.818 ms client and separate 600.496 ms catch-all server observation. Do not infer a cause or repeat only to erase the failure."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./{page_path:path}",
+        "summary": {
+          "count": 7,
+          "response_bytes": 786429,
+          "latency_ms": {
+            "samples": 7,
+            "max": 59.232,
+            "p50": 41.716,
+            "p95": 59.232,
+            "p99": 59.232
+          }
+        }
       }
     },
     {
@@ -173550,6 +175418,22 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/notifications",
+        "summary": {
+          "count": 95,
+          "response_bytes": 528828,
+          "latency_ms": {
+            "samples": 95,
+            "max": 49.774,
+            "p50": 8.192,
+            "p95": 20.776,
+            "p99": 49.774
+          }
+        }
       }
     },
     {
@@ -174165,7 +176049,23 @@
         }
       },
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./partials/cards/{card_id}/progress",
+        "summary": {
+          "count": 1,
+          "response_bytes": 3114,
+          "latency_ms": {
+            "samples": 1,
+            "max": 44.039,
+            "p50": 44.039,
+            "p95": 44.039,
+            "p99": 44.039
+          }
+        }
+      }
     },
     {
       "id": "route:/api/agent/history/{session_id}",
@@ -174271,7 +176171,23 @@
         },
         "scope": "Registered-route process totals and bounded windows; explicit request samples retained separately"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/agent/history/{session_id}",
+        "summary": {
+          "count": 7,
+          "response_bytes": 6990536,
+          "latency_ms": {
+            "samples": 7,
+            "max": 138.215,
+            "p50": 58.141,
+            "p95": 138.215,
+            "p99": 138.215
+          }
+        }
+      }
     },
     {
       "id": "route:/api/agent/sessions/{session_id}/dispatch-prompts",
@@ -174873,7 +176789,23 @@
         }
       },
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes.__unmatched__",
+        "summary": {
+          "count": 60,
+          "response_bytes": 2294930,
+          "latency_ms": {
+            "samples": 60,
+            "max": 22.742,
+            "p50": 5.229,
+            "p95": 18.401,
+            "p99": 22.742
+          }
+        }
+      }
     },
     {
       "id": "route:/api/fleet/instances",
@@ -174935,7 +176867,23 @@
         }
       },
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/fleet/instances",
+        "summary": {
+          "count": 270,
+          "response_bytes": 739530,
+          "latency_ms": {
+            "samples": 256,
+            "max": 25.038,
+            "p50": 0.576,
+            "p95": 3.146,
+            "p99": 14.993
+          }
+        }
+      }
     },
     {
       "id": "route:/api/pr-supervisor/retirements",
@@ -175335,7 +177283,23 @@
         },
         "scope": "Registered-route process totals and bounded windows; explicit request samples retained separately"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/execution/defaults",
+        "summary": {
+          "count": 7,
+          "response_bytes": 42440,
+          "latency_ms": {
+            "samples": 7,
+            "max": 17.498,
+            "p50": 7.47,
+            "p95": 17.498,
+            "p99": 17.498
+          }
+        }
+      }
     },
     {
       "id": "route:/api/agent/sessions/{session_id}/issues/start",
@@ -175459,7 +177423,23 @@
         }
       },
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./partials/cards/{card_id}/detail",
+        "summary": {
+          "count": 3,
+          "response_bytes": 217197,
+          "latency_ms": {
+            "samples": 3,
+            "max": 83.359,
+            "p50": 32.054,
+            "p95": 83.359,
+            "p99": 83.359
+          }
+        }
+      }
     },
     {
       "id": "route:/api/cards/{card_id}/history",
@@ -175690,7 +177670,23 @@
         }
       },
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/agent/sessions/{session_id}/issues",
+        "summary": {
+          "count": 294,
+          "response_bytes": 5436529,
+          "latency_ms": {
+            "samples": 256,
+            "max": 38.539,
+            "p50": 6.58,
+            "p95": 19.373,
+            "p99": 23.564
+          }
+        }
+      }
     },
     {
       "id": "route:/api/configuration/validate",
@@ -176235,6 +178231,22 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/sync/refs",
+        "summary": {
+          "count": 3,
+          "response_bytes": 777,
+          "latency_ms": {
+            "samples": 3,
+            "max": 9.84,
+            "p50": 6.98,
+            "p95": 9.84,
+            "p99": 9.84
+          }
+        }
       }
     },
     {
@@ -176427,6 +178439,22 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/cards/{card_id}",
+        "summary": {
+          "count": 1,
+          "response_bytes": 7145,
+          "latency_ms": {
+            "samples": 1,
+            "max": 27.167,
+            "p50": 27.167,
+            "p95": 27.167,
+            "p99": 27.167
+          }
+        }
       }
     },
     {
@@ -176938,7 +178966,23 @@
         }
       },
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/agent/sessions/{session_id}/commands",
+        "summary": {
+          "count": 5,
+          "response_bytes": 239592,
+          "latency_ms": {
+            "samples": 5,
+            "max": 16.029,
+            "p50": 13.384,
+            "p95": 16.029,
+            "p99": 16.029
+          }
+        }
+      }
     },
     {
       "id": "route:/api/pr-supervisor/watches/{watch_id}",
@@ -177672,6 +179716,22 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/ui/assets",
+        "summary": {
+          "count": 32,
+          "response_bytes": 2528,
+          "latency_ms": {
+            "samples": 32,
+            "max": 10.93,
+            "p50": 4.298,
+            "p95": 10.138,
+            "p99": 10.93
+          }
+        }
       }
     },
     {
@@ -177945,6 +180005,22 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/agent/observability/v1/sessions/{session_id}",
+        "summary": {
+          "count": 2,
+          "response_bytes": 9034,
+          "latency_ms": {
+            "samples": 2,
+            "max": 30.43,
+            "p50": 23.482,
+            "p95": 30.43,
+            "p99": 30.43
+          }
+        }
       }
     },
     {
@@ -178207,6 +180283,22 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/workspaces",
+        "summary": {
+          "count": 1,
+          "response_bytes": 2455,
+          "latency_ms": {
+            "samples": 1,
+            "max": 2.002,
+            "p50": 2.002,
+            "p95": 2.002,
+            "p99": 2.002
+          }
+        }
       }
     },
     {
@@ -178269,7 +180361,23 @@
         }
       },
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/fleet/session-route/{session_id}",
+        "summary": {
+          "count": 5,
+          "response_bytes": 12906,
+          "latency_ms": {
+            "samples": 5,
+            "max": 6.931,
+            "p50": 4.649,
+            "p95": 6.931,
+            "p99": 6.931
+          }
+        }
+      }
     },
     {
       "id": "route:/api/fleet/dispatch-jobs/{dispatch_id}",
@@ -178480,6 +180588,22 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/fleet/dispatch-jobs/{dispatch_id}",
+        "summary": {
+          "count": 15,
+          "response_bytes": 2692440,
+          "latency_ms": {
+            "samples": 15,
+            "max": 10.113,
+            "p50": 2.802,
+            "p95": 10.113,
+            "p99": 10.113
+          }
+        }
       }
     },
     {
@@ -178723,6 +180847,22 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/sync/get",
+        "summary": {
+          "count": 7,
+          "response_bytes": 19599,
+          "latency_ms": {
+            "samples": 7,
+            "max": 4.162,
+            "p50": 2.785,
+            "p95": 4.162,
+            "p99": 4.162
+          }
+        }
       }
     },
     {
@@ -178987,7 +181127,23 @@
         }
       },
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/agent/sessions/{session_id}",
+        "summary": {
+          "count": 5,
+          "response_bytes": 1467518,
+          "latency_ms": {
+            "samples": 5,
+            "max": 25.151,
+            "p50": 16.655,
+            "p95": 25.151,
+            "p99": 25.151
+          }
+        }
+      }
     },
     {
       "id": "route:/api/health-journal/reports/{report_id}",
@@ -179102,6 +181258,22 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/health-journal/reports/{report_id}",
+        "summary": {
+          "count": 2,
+          "response_bytes": 296246,
+          "latency_ms": {
+            "samples": 2,
+            "max": 15.303,
+            "p50": 14.654,
+            "p95": 15.303,
+            "p99": 15.303
+          }
+        }
       }
     },
     {
@@ -179397,6 +181569,22 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./",
+        "summary": {
+          "count": 3,
+          "response_bytes": 30093,
+          "latency_ms": {
+            "samples": 3,
+            "max": 9.984,
+            "p50": 8.601,
+            "p95": 9.984,
+            "p99": 9.984
+          }
+        }
       }
     },
     {
@@ -180764,6 +182952,22 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/ready",
+        "summary": {
+          "count": 333,
+          "response_bytes": 44235,
+          "latency_ms": {
+            "samples": 256,
+            "max": 14.834,
+            "p50": 2.327,
+            "p95": 3.894,
+            "p99": 4.96
+          }
+        }
       }
     },
     {
@@ -180865,7 +183069,23 @@
         }
       },
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/telemetry/live",
+        "summary": {
+          "count": 433,
+          "response_bytes": 1664307,
+          "latency_ms": {
+            "samples": 256,
+            "max": 8.043,
+            "p50": 2.242,
+            "p95": 3.663,
+            "p99": 5.811
+          }
+        }
+      }
     },
     {
       "id": "route:/api/fleet/dispatch-jobs/{dispatch_id}/turn-end",
@@ -181868,7 +184088,23 @@
         }
       },
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/agent/sessions/{session_id}/execution-catalog",
+        "summary": {
+          "count": 7,
+          "response_bytes": 29802,
+          "latency_ms": {
+            "samples": 7,
+            "max": 4.899,
+            "p50": 1.559,
+            "p95": 4.899,
+            "p99": 4.899
+          }
+        }
+      }
     },
     {
       "id": "route:/api/projects/{project_id}",
@@ -182141,6 +184377,22 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/owner-ready",
+        "summary": {
+          "count": 2,
+          "response_bytes": 142,
+          "latency_ms": {
+            "samples": 2,
+            "max": 0.929,
+            "p50": 0.854,
+            "p95": 0.929,
+            "p99": 0.929
+          }
+        }
       }
     },
     {
@@ -182219,7 +184471,23 @@
       "next_actor": "this card/session",
       "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/agent/sessions/{session_id}/browser",
+        "summary": {
+          "count": 2,
+          "response_bytes": 36,
+          "latency_ms": {
+            "samples": 2,
+            "max": 2.068,
+            "p50": 0.907,
+            "p95": 2.068,
+            "p99": 2.068
+          }
+        }
+      }
     },
     {
       "id": "route:/api/browser/capabilities",
@@ -188335,7 +190603,27 @@
         "source_stage": "candidate unmerged/uninstalled",
         "resolution": "open"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.http.session_list",
+        "summary": {
+          "submitted": 220,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 124.976,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 220,
+            "max": 124.976,
+            "p50": 5.395,
+            "p95": 25.736,
+            "p99": 37.033
+          }
+        }
+      }
     },
     {
       "id": "runtime-followup:sqlite.card_summary_read",
@@ -188685,7 +190973,27 @@
         "source_stage": "candidate unmerged/uninstalled",
         "resolution": "open"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.card_summary_read",
+        "summary": {
+          "submitted": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 4.594,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 2,
+            "max": 4.594,
+            "p50": 0.692,
+            "p95": 4.594,
+            "p99": 4.594
+          }
+        }
+      }
     },
     {
       "id": "runtime-followup:sqlite.card_summary_write",
@@ -188950,7 +191258,27 @@
         "source_stage": "candidate unmerged/uninstalled",
         "resolution": "open"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.card_summary_write",
+        "summary": {
+          "submitted": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 30.038,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 2,
+            "max": 30.038,
+            "p50": 10.046,
+            "p95": 30.038,
+            "p99": 30.038
+          }
+        }
+      }
     },
     {
       "id": "route-followup:/fleet",
@@ -193027,7 +195355,23 @@
         "scope": "macbook/PID92567/sourceb808, timestamped supportedGET snapshot,98operations/21prefixfamilies/34registered routegroups. Operation/route counters and explicit process maxima cover currentprocess; percentiles are reported bounded windows, not process percentiles. Some reads overlap disposable local test/benchmark CPU/disk use, no causal claim or controlledacceptance. Peer logs/builds remain uninspected. Historical report03runtime context is explicitly historical and differs from current status.",
         "resolution": "open"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/agent/sessions/{session_id}/threads",
+        "summary": {
+          "count": 125,
+          "response_bytes": 488950,
+          "latency_ms": {
+            "samples": 125,
+            "max": 125.125,
+            "p50": 17.817,
+            "p95": 23.674,
+            "p99": 121.702
+          }
+        }
+      }
     },
     {
       "id": "route-live:/api/health-journal/verification-intents",
@@ -203117,6 +205461,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.startup.async_backend_prepare",
+        "summary": {
+          "submitted": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 1.617,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 1.617,
+            "p50": 1.617,
+            "p95": 1.617,
+            "p99": 1.617
+          }
+        }
       }
     },
     {
@@ -205215,6 +207579,26 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
+      },
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.startup.openapi",
+        "summary": {
+          "submitted": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 160.22,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 160.22,
+            "p50": 160.22,
+            "p95": 160.22,
+            "p99": 160.22
+          }
+        }
       }
     },
     {
@@ -218157,7 +220541,27 @@
       "implemented": "Grouped existing bounded worker observation for ordered canonical lookup/build or dispatch fallback.",
       "merged": [],
       "deployed": "Uninstalled source.",
-      "retested": "Three private native-worker submissions completed; deliberately delayed mock lookup. Not a registered HTTP route measurement or additional baseline-runtime coverage."
+      "retested": "Three private native-worker submissions completed; deliberately delayed mock lookup. Not a registered HTTP route measurement or additional baseline-runtime coverage.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.agent.session_observability",
+        "summary": {
+          "submitted": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 28.532,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 2,
+            "max": 28.532,
+            "p50": 22.169,
+            "p95": 28.532,
+            "p99": 28.532
+          }
+        }
+      }
     },
     {
       "family": "fleet",
@@ -222248,7 +224652,27 @@
       "retested": "Current native snapshot only plus scoped lifecycle/recovery contracts; not everybranch/fullPA acceptance",
       "resolution": "open",
       "next_actor": "same systemic session",
-      "next_action": "Measure connection/statement/delivery and call amplification without weakening pending-continuation guards."
+      "next_action": "Measure connection/statement/delivery and call amplification without weakening pending-continuation guards.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.restart_continuation_pending",
+        "summary": {
+          "submitted": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 28.807,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 100,
+            "max": 28.807,
+            "p50": 0.794,
+            "p95": 1.744,
+            "p99": 2.633
+          }
+        }
+      }
     },
     {
       "id": "runtime-current88:workspace.restart_context_leases",
@@ -239423,7 +241847,13 @@
       "retested": "Privateactualrequest_peer/observe withallopenfakechoices and0networkcalls; peerlogs/builds and nativecauses remainunverified.",
       "resolution": "open",
       "next_actor": "same systemic session/card",
-      "next_action": "Complete independent supervisor integration and exactfutureactivation/retests; separate nativeSQL/connection/decoder/busy/IO/circuit attribution while retaining all counts, durability, pendingcontext and fullacceptance."
+      "next_action": "Complete independent supervisor integration and exactfutureactivation/retests; separate nativeSQL/connection/decoder/busy/IO/circuit attribution while retaining all counts, durability, pendingcontext and fullacceptance.",
+      "source_peer_subtype_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "implemented": "Fixed diagnostic subtype only; retained all counters/categories/routing behavior. Unmerged/uninstalled at source stage.",
+        "native_subtype": "unverified; existing observations lack subtype",
+        "next_action": "Integrate with ready PR/supervisor; future exact authorized activation and passive evidence; do not relabel historical failures."
+      }
     },
     {
       "id": "concern:workspace-own-sql-observability",
@@ -254220,7 +256650,27 @@
       "resolution": "open",
       "next_actor": "Same systemic session; independent17d acceptance scheduler-owned.",
       "next_action": "Integrate source through supervised PR; no deployment or native acceptance inferred from private samples.",
-      "artifact": "docs/benchmarks/systemic-restart-failure-visibility-20261107.json"
+      "artifact": "docs/benchmarks/systemic-restart-failure-visibility-20261107.json",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.restart_handoff_notice_context",
+        "summary": {
+          "submitted": 4,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 1.597,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 4,
+            "max": 1.597,
+            "p50": 0.405,
+            "p95": 1.597,
+            "p99": 1.597
+          }
+        }
+      }
     },
     {
       "id": "runtime-followup:sqlite.restart_handoff_notice_create",
@@ -254820,7 +257270,27 @@
       "resolution": "open",
       "next_actor": "Same systemic session; independent17d acceptance scheduler-owned.",
       "next_action": "Integrate source through supervised PR; no deployment or native acceptance inferred from private samples.",
-      "artifact": "docs/benchmarks/systemic-restart-failure-visibility-20261107.json"
+      "artifact": "docs/benchmarks/systemic-restart-failure-visibility-20261107.json",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.restart_handoff_notice_read",
+        "summary": {
+          "submitted": 4,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 0.191,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 4,
+            "max": 0.191,
+            "p50": 0.122,
+            "p95": 0.191,
+            "p99": 0.191
+          }
+        }
+      }
     },
     {
       "id": "runtime-followup:sqlite.restart_handoff_notice_receipt",
@@ -255120,7 +257590,27 @@
       "resolution": "open",
       "next_actor": "Same systemic session; independent17d acceptance scheduler-owned.",
       "next_action": "Integrate source through supervised PR; no deployment or native acceptance inferred from private samples.",
-      "artifact": "docs/benchmarks/systemic-restart-failure-visibility-20261107.json"
+      "artifact": "docs/benchmarks/systemic-restart-failure-visibility-20261107.json",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.sqlite.restart_handoff_notice_receipt",
+        "summary": {
+          "submitted": 4,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 0.122,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 4,
+            "max": 0.122,
+            "p50": 0.1,
+            "p95": 0.122,
+            "p99": 0.122
+          }
+        }
+      }
     },
     {
       "id": "concern:failed-handoff-recovery-visibility",
@@ -261372,7 +263862,27 @@
       "resolution": "open",
       "next_actor": "This systemic session for broader performance coverage; existing scheduling owner for its accepted functional scope.",
       "next_action": "Exercise remaining normal scheduling/recipient/provider/external branches privately and obtain supported deployed measurements; preserve receipt/ownership/admission semantics.",
-      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json"
+      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.scheduling.UserDirectory",
+        "summary": {
+          "submitted": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 0.575,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 2,
+            "max": 0.575,
+            "p50": 0.413,
+            "p95": 0.575,
+            "p99": 0.575
+          }
+        }
+      }
     },
     {
       "id": "runtime-followup:scheduling.claim",
@@ -261410,7 +263920,27 @@
       "resolution": "open",
       "next_actor": "This systemic session for broader performance coverage; existing scheduling owner for its accepted functional scope.",
       "next_action": "Exercise remaining normal scheduling/recipient/provider/external branches privately and obtain supported deployed measurements; preserve receipt/ownership/admission semantics.",
-      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json"
+      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.scheduling.claim",
+        "summary": {
+          "submitted": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 3.454,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 2,
+            "max": 3.454,
+            "p50": 3.031,
+            "p95": 3.454,
+            "p99": 3.454
+          }
+        }
+      }
     },
     {
       "id": "runtime-followup:scheduling.finish",
@@ -261448,7 +263978,27 @@
       "resolution": "open",
       "next_actor": "This systemic session for broader performance coverage; existing scheduling owner for its accepted functional scope.",
       "next_action": "Exercise remaining normal scheduling/recipient/provider/external branches privately and obtain supported deployed measurements; preserve receipt/ownership/admission semantics.",
-      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json"
+      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.scheduling.finish",
+        "summary": {
+          "submitted": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 15.093,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 2,
+            "max": 15.093,
+            "p50": 0.844,
+            "p95": 15.093,
+            "p99": 15.093
+          }
+        }
+      }
     },
     {
       "id": "runtime-followup:scheduling.get_session",
@@ -261486,7 +264036,27 @@
       "resolution": "open",
       "next_actor": "This systemic session for broader performance coverage; existing scheduling owner for its accepted functional scope.",
       "next_action": "Exercise remaining normal scheduling/recipient/provider/external branches privately and obtain supported deployed measurements; preserve receipt/ownership/admission semantics.",
-      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json"
+      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.scheduling.get_session",
+        "summary": {
+          "submitted": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 3.06,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 2,
+            "max": 3.06,
+            "p50": 2.361,
+            "p95": 3.06,
+            "p99": 3.06
+          }
+        }
+      }
     },
     {
       "id": "runtime-followup:scheduling.open",
@@ -261524,7 +264094,27 @@
       "resolution": "open",
       "next_actor": "This systemic session for broader performance coverage; existing scheduling owner for its accepted functional scope.",
       "next_action": "Exercise remaining normal scheduling/recipient/provider/external branches privately and obtain supported deployed measurements; preserve receipt/ownership/admission semantics.",
-      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json"
+      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.scheduling.open",
+        "summary": {
+          "submitted": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 3.113,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 1,
+            "max": 3.113,
+            "p50": 3.113,
+            "p95": 3.113,
+            "p99": 3.113
+          }
+        }
+      }
     },
     {
       "id": "runtime-followup:scheduling.pending",
@@ -261562,7 +264152,27 @@
       "resolution": "open",
       "next_actor": "This systemic session for broader performance coverage; existing scheduling owner for its accepted functional scope.",
       "next_action": "Exercise remaining normal scheduling/recipient/provider/external branches privately and obtain supported deployed measurements; preserve receipt/ownership/admission semantics.",
-      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json"
+      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.scheduling.pending",
+        "summary": {
+          "submitted": 882,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 26.494,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 21.66,
+            "p50": 0.796,
+            "p95": 1.284,
+            "p99": 2.154
+          }
+        }
+      }
     },
     {
       "id": "runtime-followup:scheduling.poll_events",
@@ -261600,7 +264210,27 @@
       "resolution": "open",
       "next_actor": "This systemic session for broader performance coverage; existing scheduling owner for its accepted functional scope.",
       "next_action": "Exercise remaining normal scheduling/recipient/provider/external branches privately and obtain supported deployed measurements; preserve receipt/ownership/admission semantics.",
-      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json"
+      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.scheduling.poll_events",
+        "summary": {
+          "submitted": 882,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 13.421,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 13.421,
+            "p50": 1.938,
+            "p95": 3.035,
+            "p99": 9.847
+          }
+        }
+      }
     },
     {
       "id": "runtime-followup:scheduling.recover",
@@ -261638,7 +264268,27 @@
       "resolution": "open",
       "next_actor": "This systemic session for broader performance coverage; existing scheduling owner for its accepted functional scope.",
       "next_action": "Exercise remaining normal scheduling/recipient/provider/external branches privately and obtain supported deployed measurements; preserve receipt/ownership/admission semantics.",
-      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json"
+      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.scheduling.recover",
+        "summary": {
+          "submitted": 882,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 141.469,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 10.819,
+            "p50": 1.44,
+            "p95": 2.44,
+            "p99": 7.686
+          }
+        }
+      }
     },
     {
       "id": "runtime-followup:scheduling.tick",
@@ -261676,7 +264326,27 @@
       "resolution": "open",
       "next_actor": "This systemic session for broader performance coverage; existing scheduling owner for its accepted functional scope.",
       "next_action": "Exercise remaining normal scheduling/recipient/provider/external branches privately and obtain supported deployed measurements; preserve receipt/ownership/admission semantics.",
-      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json"
+      "artifact": "docs/benchmarks/systemic-workspace-lock-observations-20261108.json",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "observed_at": "2026-11-09T00:52:50.686Z",
+        "scope": "Passive owner snapshot; process totals/maxima versus bounded windows; not acceptance",
+        "numeric_archive_key": "operations.scheduling.tick",
+        "summary": {
+          "submitted": 882,
+          "failed": 0,
+          "timed_out": 0,
+          "max_runtime_ms": 17.472,
+          "slow_calls": 0,
+          "runtime_ms": {
+            "samples": 256,
+            "max": 17.472,
+            "p50": 0.828,
+            "p95": 1.364,
+            "p99": 5.257
+          }
+        }
+      }
     },
     {
       "id": "concern:workspace-repository-flock-timing",
@@ -261771,6 +264441,70 @@
         },
         "prior_tests": 84,
         "scope": "Productsource unchanged;firstCI and all earlierfailedruns retained."
+      }
+    },
+    {
+      "id": "route-external170:/api/cards/{card_id}/summary/regenerate",
+      "kind": "http_route_followup",
+      "finding": "/api/cards/{card_id}/summary/regenerate",
+      "family": "http",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "resolution": "open",
+      "cause_classification": "unattributed_current_route_observation",
+      "cause": "Measured passive route; no branch-complete or causal acceptance.",
+      "implemented": false,
+      "merged": [],
+      "deployed": "Current external1.7.0 observed; no operation-specific repair claimed",
+      "retested": "Passive owner snapshot only",
+      "next_actor": "this card/session",
+      "next_action": "Exercise representative valid branches and retain CPU/queue/SQL/response-size attribution.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./api/cards/{card_id}/summary/regenerate",
+        "summary": {
+          "count": 1,
+          "response_bytes": 615,
+          "latency_ms": {
+            "samples": 1,
+            "max": 8.554,
+            "p50": 8.554,
+            "p95": 8.554,
+            "p99": 8.554
+          }
+        }
+      }
+    },
+    {
+      "id": "route-external170:/partials/cards/{card_id}/agent",
+      "kind": "http_route_followup",
+      "finding": "/partials/cards/{card_id}/agent",
+      "family": "http",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "resolution": "open",
+      "cause_classification": "unattributed_current_route_observation",
+      "cause": "Measured passive route; no branch-complete or causal acceptance.",
+      "implemented": false,
+      "merged": [],
+      "deployed": "Current external1.7.0 observed; no operation-specific repair claimed",
+      "retested": "Passive owner snapshot only",
+      "next_actor": "this card/session",
+      "next_action": "Exercise representative valid branches and retain CPU/queue/SQL/response-size attribution.",
+      "external170_followup": {
+        "artifact": "docs/benchmarks/systemic-external170-peer-subtype-20261109.json",
+        "scope": "Registered route totals/maxima versus bounded windows; no user payloads",
+        "numeric_archive_key": "requests.routes./partials/cards/{card_id}/agent",
+        "summary": {
+          "count": 2,
+          "response_bytes": 190454,
+          "latency_ms": {
+            "samples": 2,
+            "max": 133.542,
+            "p50": 43.051,
+            "p95": 133.542,
+            "p99": 133.542
+          }
+        }
       }
     }
   ],
@@ -370101,5 +372835,75 @@
       "report": "76f5946b-e0db-4291-8130-7232dd9b2b68 revision1 hash5fa3d0812ea7656232de8a431b5443a86c89d7653bef3dcebe2086278bb16d97",
       "remaining": "Correctedhead fullnewCI/stablehead/mainCI and activation remainpending;originalmixed504cause remainsunverified."
     }
+  },
+  "external170_peer_subtype_20261109": {
+    "contract": "pa.external170-peer-subtype/v1",
+    "assembled_at": "2026-11-09T00:56:22.621010+00:00",
+    "source_base": "87b7fbd09c37918a1b11c44444cc742c7113dcea",
+    "instance": "macbook/0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "session": "d7689970-034c-4580-940c-a7667f49766d",
+    "lease_fence": 397,
+    "loaded": {
+      "loaded_module_version": "1.7.0",
+      "source_revision": null,
+      "package_identity": "sha256:62e119fbd7f718cbbe849ddd8cc69bccb0b6ef73c6fb767fa288550a54303431",
+      "pid": 98140,
+      "startup_id": "2e677574-4792-44b0-89d2-284337ff658b"
+    },
+    "sync_consistent": true,
+    "activation": "External1.7.0 observed, not installed/restarted by this session. Superseded675 candidate not activated. No activation authority reused.",
+    "source_matching": "Three installed675startup barrier files match reviewed675 hashes; not full loaded-module attestation or startup-order acceptance.",
+    "operation_count": 106,
+    "route_group_count": 36,
+    "local_snapshot": {
+      "bytes": 477145,
+      "sha256": "e5570bf05c9ee06571a7a7aaa8359bc30afc1f7cedeadc953752886558690b07",
+      "publication": "Raw native/status bytes remain LOCAL/hash-only"
+    },
+    "numeric_archive": {
+      "path": "systemic-external170-peer-subtype-20261109.numeric.json.gz",
+      "bytes": 35063,
+      "sha256": "7730410b8bf600896df6524c34e86814d3d54b1883a2053832c8b1d861f618de",
+      "decoded_bytes": 406466,
+      "decoded_sha256": "3473867adc218094b69cfb4779be7326c1235b335482fa6b97e2fea24c2deeaf"
+    },
+    "repair": "Add fixed timeout_kind=peer_endpoint_unavailable to typed peer denial failure observations. Keep category=timeout_error, failed/timed_out counters, inheritance, retry/circuit/deadline/warning behavior and failure ownership unchanged. No speedup claim.",
+    "private_validation": "33 runtime/failure/endpoint tests pass after constructor-guard fixture correction; final negative-control assertion validated separately. Real private open circuit sends zero requests and still increments failed/timed_out.",
+    "retained_failures": [
+      {
+        "path": "peer-classification-tests.log",
+        "sha256": "64d6dcbe5320ca7e40e8882da48052a086b728fd795b31fb1532bc97c434244d",
+        "bytes": 3689
+      },
+      {
+        "path": "peer-classification-tests.xml",
+        "sha256": "328cf47f521a0eb7e08cb9e2077b59dcb76d6d1b3652ff86f7bbfb671e39324b",
+        "bytes": 8246
+      },
+      {
+        "path": "peer-classification-final-tests.log",
+        "sha256": "4b3ebc8a5901a0aa0fc7d7f1235f284ea6d6013b003ba55b9e1f560d957acf94",
+        "bytes": 77
+      }
+    ],
+    "limits": [
+      "Process lifetime counters/maxima and bounded percentile windows are distinct; this is a passive owner snapshot, not a controlled fleet acceptance workload.",
+      "Maintenance5634.221ms includes projection4567.351ms/VACUUM3913.635ms CPU2774.947ms/checkpoint317.094ms. Projection436572160->428179456B/free225280->0/quick_checkok. One run, no causal startup-order proof.",
+      "Sync reconcile7calls/max504.228ms/1slow; workspace collection1call778.362ms. Current-native subtype of357Fleet failures remains unknown until instrumentation is loaded; cannot retroactively relabel native counts.",
+      "Fleet1337submitted/357failed+timed_out/max4022.127ms; PRpeer166/161failed/max5083.606ms; syncpeer21/14failed/max3003.802ms. Peer identity/build/log coverage remains incomplete.",
+      "Maintenance transcript health reports missing_objects1, integrityok and migrationrunning; no production integrity repair performed or health closure inferred.",
+      "21 earlier isolated startup-order/endpoint regressions pass; uv changed local project version in lock, exact self-generated one-line change reversed and clean verified. Tests now use frozen lock.",
+      "No live workload/fault injection, data mutation, cleanup, install/restart, threshold/budget change, independent acceptance or resolution claim."
+    ],
+    "source_hashes": {
+      "src/pa/http_transport.py": "85238f52b565315bdef5bd4c6c09ee45b7739eb0713f5be3f0d5c567af7b4144",
+      "src/pa/fleet/endpoints.py": "acd6cbc0d7279e533faa1d122d00b19f98d8ca3301f370859d9fa1651625aaf5",
+      "src/pa/core/async_runtime.py": "2ed93836db0774a7ac42994c43b4f95e73f24fe2d0b07a51320c0d4462ffc672",
+      "tests/test_runtime_failure_evidence.py": "6871f9871356d4e191ebd4ffc5ca5da6bac8a295828d5a842b743123302e60da",
+      "tests/test_fleet_endpoints.py": "626d4b5e45339c8def4b6865c4c7350ab5e0c15a01bdc7afe9d6769c8a570152"
+    },
+    "rows_after_update": 755,
+    "concerns_open": 185,
+    "prior_history_semantic_parity": true
   }
 }

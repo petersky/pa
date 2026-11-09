@@ -1,0 +1,70 @@
+{
+  "contract": "pa.external170-peer-subtype/v1",
+  "assembled_at": "2026-11-09T00:56:22.621010+00:00",
+  "source_base": "87b7fbd09c37918a1b11c44444cc742c7113dcea",
+  "instance": "macbook/0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+  "session": "d7689970-034c-4580-940c-a7667f49766d",
+  "lease_fence": 397,
+  "loaded": {
+    "loaded_module_version": "1.7.0",
+    "source_revision": null,
+    "package_identity": "sha256:62e119fbd7f718cbbe849ddd8cc69bccb0b6ef73c6fb767fa288550a54303431",
+    "pid": 98140,
+    "startup_id": "2e677574-4792-44b0-89d2-284337ff658b"
+  },
+  "sync_consistent": true,
+  "activation": "External1.7.0 observed, not installed/restarted by this session. Superseded675 candidate not activated. No activation authority reused.",
+  "source_matching": "Three installed675startup barrier files match reviewed675 hashes; not full loaded-module attestation or startup-order acceptance.",
+  "operation_count": 106,
+  "route_group_count": 36,
+  "local_snapshot": {
+    "bytes": 477145,
+    "sha256": "e5570bf05c9ee06571a7a7aaa8359bc30afc1f7cedeadc953752886558690b07",
+    "publication": "Raw native/status bytes remain LOCAL/hash-only"
+  },
+  "numeric_archive": {
+    "path": "systemic-external170-peer-subtype-20261109.numeric.json.gz",
+    "bytes": 35063,
+    "sha256": "7730410b8bf600896df6524c34e86814d3d54b1883a2053832c8b1d861f618de",
+    "decoded_bytes": 406466,
+    "decoded_sha256": "3473867adc218094b69cfb4779be7326c1235b335482fa6b97e2fea24c2deeaf"
+  },
+  "repair": "Add fixed timeout_kind=peer_endpoint_unavailable to typed peer denial failure observations. Keep category=timeout_error, failed/timed_out counters, inheritance, retry/circuit/deadline/warning behavior and failure ownership unchanged. No speedup claim.",
+  "private_validation": "33 runtime/failure/endpoint tests pass after constructor-guard fixture correction; final negative-control assertion validated separately. Real private open circuit sends zero requests and still increments failed/timed_out.",
+  "retained_failures": [
+    {
+      "path": "peer-classification-tests.log",
+      "sha256": "64d6dcbe5320ca7e40e8882da48052a086b728fd795b31fb1532bc97c434244d",
+      "bytes": 3689
+    },
+    {
+      "path": "peer-classification-tests.xml",
+      "sha256": "328cf47f521a0eb7e08cb9e2077b59dcb76d6d1b3652ff86f7bbfb671e39324b",
+      "bytes": 8246
+    },
+    {
+      "path": "peer-classification-final-tests.log",
+      "sha256": "4b3ebc8a5901a0aa0fc7d7f1235f284ea6d6013b003ba55b9e1f560d957acf94",
+      "bytes": 77
+    }
+  ],
+  "limits": [
+    "Process lifetime counters/maxima and bounded percentile windows are distinct; this is a passive owner snapshot, not a controlled fleet acceptance workload.",
+    "Maintenance5634.221ms includes projection4567.351ms/VACUUM3913.635ms CPU2774.947ms/checkpoint317.094ms. Projection436572160->428179456B/free225280->0/quick_checkok. One run, no causal startup-order proof.",
+    "Sync reconcile7calls/max504.228ms/1slow; workspace collection1call778.362ms. Current-native subtype of357Fleet failures remains unknown until instrumentation is loaded; cannot retroactively relabel native counts.",
+    "Fleet1337submitted/357failed+timed_out/max4022.127ms; PRpeer166/161failed/max5083.606ms; syncpeer21/14failed/max3003.802ms. Peer identity/build/log coverage remains incomplete.",
+    "Maintenance transcript health reports missing_objects1, integrityok and migrationrunning; no production integrity repair performed or health closure inferred.",
+    "21 earlier isolated startup-order/endpoint regressions pass; uv changed local project version in lock, exact self-generated one-line change reversed and clean verified. Tests now use frozen lock.",
+    "No live workload/fault injection, data mutation, cleanup, install/restart, threshold/budget change, independent acceptance or resolution claim."
+  ],
+  "source_hashes": {
+    "src/pa/http_transport.py": "85238f52b565315bdef5bd4c6c09ee45b7739eb0713f5be3f0d5c567af7b4144",
+    "src/pa/fleet/endpoints.py": "acd6cbc0d7279e533faa1d122d00b19f98d8ca3301f370859d9fa1651625aaf5",
+    "src/pa/core/async_runtime.py": "2ed93836db0774a7ac42994c43b4f95e73f24fe2d0b07a51320c0d4462ffc672",
+    "tests/test_runtime_failure_evidence.py": "6871f9871356d4e191ebd4ffc5ca5da6bac8a295828d5a842b743123302e60da",
+    "tests/test_fleet_endpoints.py": "626d4b5e45339c8def4b6865c4c7350ab5e0c15a01bdc7afe9d6769c8a570152"
+  },
+  "rows_after_update": 755,
+  "concerns_open": 185,
+  "prior_history_semantic_parity": true
+}
