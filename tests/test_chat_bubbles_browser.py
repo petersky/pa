@@ -159,8 +159,9 @@ async def test_session_links_open_the_chat_in_a_dialog_and_clean_up(operator_ser
             await page.command("Input.dispatchKeyEvent", {"type": kind, "key": "Escape", "code": "Escape",
                                                           "windowsVirtualKeyCode": 27, "nativeVirtualKeyCode": 27})
         await wait_for("!document.getElementById('chat-modal-dialog').open")
-        assert await page.evaluate("document.getElementById('chat-modal-dialog-content').childElementCount") == 0
-        assert await page.evaluate("document.activeElement && document.activeElement.id") == "go"
+        # Teardown and focus restore run from the dialog's asynchronous close event.
+        await wait_for("document.getElementById('chat-modal-dialog-content').childElementCount === 0")
+        await wait_for("document.activeElement && document.activeElement.id === 'go'")
     finally:
         await manager.close()
         await browser.close()
