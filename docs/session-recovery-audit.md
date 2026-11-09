@@ -1,5 +1,107 @@
 # Exact-session recovery audit
 
+## Reviewable sealed preparation (source only)
+
+This revision adds a durable **deny** fence, not a working passive provider
+restore. Nothing is applied to the original production session by integrating
+this source. There is no requested production install, restart or restoration.
+
+`POST /api/agent/sessions/{session_id}/restart-handoffs/{handoff_id}/recovery-fence`
+seals only an inactive, durably closed session with a dismissed handoff. It
+requires the owning authenticated principal, local authority/receipt owner,
+the exact receipt phase version, session updated_at, saved native ID,
+execution-binding hash, saved-settings hash and the exact saved lease IDs with
+their expected fencing tokens. The settings hash is the existing audit's
+`saved_settings_hash` (provider, model, mode and full saved config hashed as
+sorted JSON); the binding hash uses sorted compact JSON. This preserves saved
+requested defaults; it does not attest to effective provider settings.
+
+The request extends `SessionRecoveryAuditBody` with `expected_native_id`,
+`expected_settings_hash`, and `lease_expectations` containing
+`{"lease_id": "<saved lease ID>", "fencing_token": 403}` for every saved
+repository lease. These are placeholders, not approved values. Obtain fresh
+versions/hashes from the existing recovery audit and authority's lease inventory.
+All supplied values must describe the original snapshot; the server does not
+repair, renew, fetch, substitute or rematerialize a workspace. Unknown fields
+(including invented load/approval choices) are rejected. Normal REST CSRF and
+authentication requirements apply; `idempotency_key` is part of the body.
+
+The existing inactive-session admission reservation excludes local concurrent
+startup and rejects a live runtime. Lease reads require ready, unexpired exact
+session ownership, fence, path, branch, base and saved cwd. They are snapshot
+observations, not a distributed lease grant or proof of native process absence.
+Receipt/session/binding/settings are rechecked at the serialized durable commit.
+A lease change after its observation cannot authorize anything: this operation
+can only add a deny fence and never starts a provider. Later activation would
+need fresh independent lease and external-process ownership validation.
+
+The receipt is persisted in `session_recovery_fences` under the existing recovery
+owner, independent of session config and transcript retention. It reports
+`state=sealed_provider_load_unsupported`, `effect=unknown`, `restored=false`,
+`delivery_allowed=false`, and `close_disposition=required_not_granted`.
+Original session, handoff, native history, queues, model settings and leases are
+unchanged. A same-key, same-input retry returns the same receipt and repairs only
+its audit mirror after a lost acknowledgement. A different key or fingerprint
+conflicts. GET on that exact route reads the owned receipt; 404 or a failed read
+is not evidence of non-submission or permission to load. Never use a new key to
+retry an ambiguous mutation. There is deliberately no release/unseal API.
+
+The shared deny checks cover manager admission/recovery/publication, snapshot
+startup, runtime enqueue/prompt/drain/resume, final provider send, and low-level
+ACP connect/prompt. Manual, queued, dispatch, supervisor, reconciliation and
+restart sources all traverse these boundaries. They do not depend on source
+labels. Linked context replacement and native/copy branches also revalidate the
+PA source. Native-ID guards reject aliases of sealed histories and fail closed
+on an ambiguous ownership set (more than 64 PA identities).
+They do not depend on mutable queue/control modes. Reads fail closed, and any
+existing seal blocks even if its version is stale. Independently, a closed session with a
+dismissed restart is denied even when the preparation receipt is missing. Thus
+a failed/unknown prepare followed by restart cannot make receipt absence a load
+authorization. Restart retry still rejects dismissed receipts; reconciliation
+cannot release a seal or dispose a deliberate close.
+
+### Exact unsupported provider boundary
+
+`AgentConnection.connect` starts the ACP subprocess and then calls
+`resume_session` / `load_session` with native ID, cwd, MCP servers and optional
+additional directories. The installed SDK's resume/load request models and the
+provider capability checks used here expose no passive-load flag, durable
+no-execution token, or acknowledgement that pending provider-native work is
+inhibited. `PAClient` accepts session updates and permission requests during
+connection. Disabling host queue draining or denying new permissions cannot
+guarantee that the provider itself will not run saved work, write files, use its
+own tools, or resume a previously accepted request. This is a source capability
+limit, not a claim that the historical provider actually did those things.
+
+Accordingly a sealed session is rejected **before** provider resolution/spawn,
+initialization or native history loading. The implementation proves no new PA
+admission/load/send through its supported paths; it cannot certify an already
+running external/native process or private direct access to an SDK transport.
+It never claims that a fence reconciles historical UNKNOWN effects.
+
+### Concrete lifecycle choices for the coordinator
+
+1. **Keep closed.** Preserve dismissed receipt, UNKNOWN outcome and all evidence.
+   No new mutation is required. Runtime recovery acceptance remains open.
+2. **Approve sealed preparation only.** After source review and a separately
+   authorized deployment, an operator may authorize the exact POST above using
+   fresh versions, settings/binding hashes and lease fences. The result is a
+   durable admission prohibition, not restoration. This is restrictive and has
+   no release action in this revision; do not invoke it as an experiment.
+3. **Require passive restore capability before approval.** A future reviewed
+   adapter must provide a verified no-execution native load contract, bind it to
+   the original native identity and configuration, and independently validate
+   exclusive process/lease ownership. It must supply an audited deliberate-close
+   disposition and keep the historical continuation prohibited independently of
+   any future delivery decision. No current API grants that approval. A definitive
+   historical outcome additionally needs retained authoritative prompt/attempt
+   evidence; a passive restore cannot manufacture it.
+
+The source coordinator for this card has not approved production close reversal,
+sealing or provider loading. Do not reopen, rearm, replay, replace a prompt, load
+history or fabricate a capacity/permission answer to exercise these choices.
+The original runtime and cleanup acceptance gates remain open.
+
 `POST /api/agent/sessions/{session_id}/restart-handoffs/{handoff_id}/recovery-audit`
 records a fail-closed recovery assessment. It does not load a provider, reopen a
 session, reconcile receipt status, restart PA, enqueue or deliver any prompt.

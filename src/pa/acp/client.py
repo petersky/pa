@@ -1027,6 +1027,16 @@ class AgentConnection:
         card_id: str | None = None,
         project_id: str | None = None,
     ) -> AgentSession:
+        if resume_external_id:
+            await self._offload("sqlite.recovery_native_start_guard",
+                self.store.require_native_history_delivery_allowed, resume_external_id)
+        if existing_session is not None:
+            await self._offload("sqlite.recovery_provider_start_guard",
+                self.store.require_session_delivery_allowed, existing_session.id)
+            workflow = existing_session.initiating_workflow
+            if workflow.get('kind') == 'conversation_branch' and workflow.get('source_session_id'):
+                await self._offload("sqlite.recovery_branch_source_guard",
+                    self.store.require_session_delivery_allowed, workflow['source_session_id'])
         self._mcp_observer = None
         # Resolve intent before provider metadata can replace the saved aliases.
         if initial_configuration is None and existing_session is not None:
@@ -1620,6 +1630,12 @@ class AgentConnection:
         project_id: str | None = None,
         cwd: str | None = None,
     ) -> str:
+        if self.session is not None:
+            await self._offload("sqlite.recovery_provider_prompt_guard",
+                self.store.require_session_delivery_allowed, self.session.id)
+            if self.session.external_session_id:
+                await self._offload("sqlite.recovery_native_prompt_guard",
+                    self.store.require_native_history_delivery_allowed, self.session.external_session_id)
         if not self._conn or not self.session or not self.session.external_session_id:
             raise RuntimeError("Not connected to agent")
         configuration = dict(
@@ -1671,6 +1687,10 @@ class AgentConnection:
         if self._client:
             self._client.drain_updates()
         try:
+            await self._offload("sqlite.recovery_provider_send_guard",
+                self.store.require_session_delivery_allowed, self.session.id)
+            await self._offload("sqlite.recovery_native_send_guard",
+                self.store.require_native_history_delivery_allowed, self.session.external_session_id)
             response = await self._conn.prompt(
                 session_id=self.session.external_session_id,
                 prompt=prompt,

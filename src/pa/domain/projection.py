@@ -611,6 +611,12 @@ class CardProjection:
                     id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
                     request_fingerprint TEXT NOT NULL, result_json TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS session_recovery_fences (
+                    session_id TEXT PRIMARY KEY, native_id TEXT NOT NULL,
+                    receipt_json TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_recovery_fence_native ON session_recovery_fences(native_id);
+                CREATE INDEX IF NOT EXISTS idx_session_native_history ON agent_sessions(external_session_id);
 
                 CREATE TABLE IF NOT EXISTS agent_transcript_events (
                     id TEXT PRIMARY KEY,
@@ -5940,6 +5946,115 @@ class CardProjection:
                 id=audit_id, session_id=session_id, seq=self.next_transcript_seq(session_id),
                 event_type="session_recovery_audited", payload=result,
             )])
+            return result
+
+    def session_recovery_fence(self, session_id: str) -> dict | None:
+        """Independent of mutable session configuration and transcript retention."""
+        with self._conn() as conn:
+            row = conn.execute("SELECT receipt_json FROM session_recovery_fences WHERE session_id=?",
+                               (session_id,)).fetchone()
+        if not row:
+            return None
+        result = json.loads(row[0])
+        if not isinstance(result, dict):
+            raise ValueError("Recovery fence record is unavailable or invalid")
+        return result
+
+    def require_session_delivery_allowed(self, session_id: str) -> None:
+        # Any record (including a stale/unrecognized receipt) denies admission.
+        # A failed read propagates: an unavailable fence is never permission.
+        if self.session_recovery_fence(session_id) is not None:
+            raise ValueError("Session is sealed by durable recovery fence; provider load and all prompt delivery prohibited")
+        # Missing/failed preparation is not permission to undo an intentional
+        # close + dismissed restart. This protects even an unknown commit outcome
+        # followed by process loss, before a preparation receipt can be observed.
+        with self._conn() as conn:
+            cancelled = conn.execute("""SELECT 1 FROM agent_sessions s WHERE s.id=?
+                AND s.status='closed' AND EXISTS (SELECT 1 FROM agent_restart_handoffs h
+                    WHERE h.session_id=s.id AND (h.status='dismissed' OR EXISTS (
+                        SELECT 1 FROM json_each(h.transition_history_json) prior
+                        WHERE json_extract(prior.value, '$.status')='dismissed')))""", (session_id,)).fetchone()
+        if cancelled:
+            raise ValueError("Closed session has a dismissed restart; explicit audited close disposition is required")
+
+    def require_native_history_delivery_allowed(self, native_id: str) -> None:
+        """An alias PA identity must not bypass a sealed saved native history."""
+        with self._conn() as conn:
+            if conn.execute('SELECT 1 FROM session_recovery_fences WHERE native_id=? LIMIT 1',
+                            (native_id,)).fetchone():
+                raise ValueError("Native history is sealed by durable recovery fence")
+            rows = conn.execute('SELECT id FROM agent_sessions WHERE external_session_id=? LIMIT 65',
+                                (native_id,)).fetchall()
+        if len(rows) > 64:
+            raise ValueError("Native history ownership is ambiguous")
+        for row in rows:
+            self.require_session_delivery_allowed(row['id'])
+
+    def prepare_session_recovery_fence(
+        self, handoff_id: str, *, session_id: str, expected_version: int,
+        expected_session_version: datetime, expected_binding_hash: str,
+        expected_settings_hash: str, expected_native_id: str, expected_lease_hash: str,
+        owner_instance_id: str, principal_id: str, idempotency_key: str,
+        lease_evidence: dict,
+    ) -> dict:
+        """Seal an inactive closed session. No release, provider load or delivery.
+
+        The manager must exclude local admission and verify saved lease identity.
+        This receipt is not a lease renewal or proof of external native inactivity.
+        Deliberate close/dismissal is retained, never silently disposed here.
+        """
+        from pa.instance.restart_lifecycle import RestartTransitionConflict
+        with measured_lock(self._mutation_lock, name="projection.mutation"):
+            session = self.get_session(session_id)
+            receipt = self.get_restart_handoff(handoff_id)
+            if (not session or not receipt or receipt.session_id != session_id
+                    or not principal_id or session.principal_id != principal_id
+                    or not owner_instance_id or session.authority_instance_id != owner_instance_id
+                    or receipt.instance_id != owner_instance_id):
+                raise RestartTransitionConflict("Recovery fence principal/session/authority mismatch")
+            request = dict(handoff_id=handoff_id, expected_version=expected_version,
+                expected_session_version=expected_session_version.isoformat(),
+                expected_binding_hash=expected_binding_hash,
+                expected_settings_hash=expected_settings_hash, expected_native_id=expected_native_id,
+                expected_lease_hash=expected_lease_hash)
+            fingerprint = hashlib.sha256(json.dumps(request, sort_keys=True).encode()).hexdigest()
+            previous = self.session_recovery_fence(session_id)
+            if previous:
+                if previous['idempotency_key'] != idempotency_key or previous['request_fingerprint'] != fingerprint:
+                    raise RestartTransitionConflict("Recovery fence already exists; inspect its receipt")
+                result = previous
+            else:
+                binding_hash = hashlib.sha256(json.dumps(session.execution_binding,
+                    sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+                settings_hash = hashlib.sha256(json.dumps(
+                    [session.agent_name, session.model_id, session.mode_id, session.config_json],
+                    sort_keys=True).encode()).hexdigest()
+                if (not idempotency_key.strip() or session.status != 'closed'
+                        or receipt.status != 'dismissed' or receipt.phase_version != expected_version
+                        or session.updated_at != expected_session_version
+                        or not session.external_session_id or session.external_session_id != expected_native_id
+                        or not session.execution_binding or binding_hash != expected_binding_hash
+                        or settings_hash != expected_settings_hash or not lease_evidence
+                        or self.pending_restart_continuation(session_id=session_id)):
+                    raise RestartTransitionConflict("Recovery fence snapshot/close/receipt/settings/binding advanced or unavailable")
+                result = dict(fence_id=str(uuid5(NAMESPACE_URL, json.dumps(
+                    ['recovery-fence-v1',session_id,principal_id,owner_instance_id,idempotency_key]))),
+                    session_id=session_id,handoff_id=handoff_id,principal_id=principal_id,
+                    owner_instance_id=owner_instance_id,idempotency_key=idempotency_key,
+                    request_fingerprint=fingerprint,request=request,lease_evidence=lease_evidence,
+                    state='sealed_provider_load_unsupported',effect='unknown',restored=False,
+                    delivery_allowed=False,close_disposition='required_not_granted',
+                    native_ownership='unverified_no_provider_started',
+                    created_at=datetime.now(UTC).isoformat())
+                with self._conn() as conn:
+                    conn.execute('INSERT INTO session_recovery_fences VALUES (?,?,?)',
+                                 (session_id,session.external_session_id,json.dumps(result)))
+            # Lost acknowledgement/mirror failure retains the seal. Same-key retry
+            # repairs only this mirror, never replays a provider mutation.
+            if not self.transcripts.get_event(session_id, result['fence_id']):
+                self.append_transcript_events([TranscriptEvent(id=result['fence_id'],
+                    session_id=session_id,seq=self.next_transcript_seq(session_id),
+                    event_type='session_recovery_fenced',payload=result)])
             return result
 
     def retry_restart_handoff(
