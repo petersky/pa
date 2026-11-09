@@ -65,6 +65,18 @@ def _metadata(record, native_id):
         candidate = _identity(params.get(field, record.get(field, result.get(field))))
         if candidate:
             value[field] = candidate
+    update = params.get('update')
+    if method == 'session/update' and isinstance(update, dict):
+        turn = _identity(update.get('turnId', update.get('turn_id')))
+        if turn:
+            value['turn_id'] = turn
+        kind = update.get('sessionUpdate', update.get('session_update'))
+        if isinstance(kind, str) and kind in {
+            'tool_call', 'tool_call_update', 'agent_message_chunk',
+            'user_message_chunk', 'usage_update', 'available_commands_update',
+            'config_option_update', 'current_mode_update', 'plan',
+        }:
+            value['update_type'] = kind
     attempt = params.get('attempt', record.get('attempt'))
     if type(attempt) is int and 0 <= attempt <= 10000:
         value['attempt'] = attempt

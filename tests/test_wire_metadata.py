@@ -212,3 +212,14 @@ def test_authorized_route_observes_without_mutation_and_revalidates(tmp_path):
         with pytest.raises(HTTPException) as e:
             asyncio.run(session_wire_metadata(req,SID,'receipt',NATIVE,6,1))
         assert e.value.status_code==409
+
+
+def test_native_update_turn_identity_without_tool_content(tmp_path):
+    artifact(tmp_path,[{'method':'session/update','direction':'in',
+        'params':{'session_id':NATIVE,'update':{'sessionUpdate':'tool_call',
+        'turnId':'turn_abc123','rawInput':{'private':'SECRET'},'content':'SECRET'}}}])
+    result=inspect(tmp_path)
+    assert result['records'][0]['turn_id']=='turn_abc123'
+    assert result['records'][0]['update_type']=='tool_call'
+    assert 'SECRET' not in json.dumps(result)
+    assert result['effect']=='unknown'
