@@ -8,6 +8,7 @@ import httpx
 import pytest
 
 from pa.domain.models import FleetInstance
+from pa.core.async_runtime import AsyncRuntime
 from pa.fleet.endpoints import (
     EndpointHealthRegistry,
     EndpointUnavailable,
@@ -23,6 +24,34 @@ def _ctx(tmp_path, *, instance_id="local", port=8080):
         settings=settings,
         services={"endpoint_health_registry": registry},
     )
+
+
+@pytest.mark.asyncio
+async def test_open_peer_circuit_has_typed_evidence_without_network_attempt(tmp_path):
+    ctx = _ctx(tmp_path, instance_id="authority")
+    inst = FleetInstance(instance_id="private-peer", name="peer", url="http://private-peer")
+    registry = ctx.services["endpoint_health_registry"]
+    registry.failure(inst.url, TimeoutError("private-error"))
+    runtime = AsyncRuntime()
+    attempts = 0
+    async def handler(request):
+        nonlocal attempts
+        attempts += 1
+        raise AssertionError("Open circuit must not send a request")
+    try:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            with pytest.raises(EndpointUnavailable):
+                await runtime.observe("http.fleet_overview", request_peer(
+                    ctx, client, inst, "GET", "/api/ready", timeout=.1))
+        snapshot = runtime.snapshot()
+        assert attempts == 0
+        operation = snapshot["operations"]["http.fleet_overview"]
+        assert operation["failed"] == operation["timed_out"] == 1
+        item = snapshot["failed_operations"]["observations"][0]
+        assert item["category"] == "timeout_error"
+        assert item["timeout_kind"] == "peer_endpoint_unavailable"
+    finally:
+        await runtime.close()
 
 
 def test_local_instance_prefers_loopback_without_rewriting_advertised_url(tmp_path):

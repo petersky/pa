@@ -7308,3 +7308,14 @@ Paged product code is deferred and safely reversed by4226df2c; pushed11a5c7d8 an
 Original7938/0337/control9bb provenance remains. The14recorded blockers are8uncommitted-data,5integration-evidence and1missingbranch. Exact PR359/388 merged-head/ancestry evidence is attached to that original card, together with real PA linkage/inspection failures. No target is yet removed by this source stage. Full CI, supervisor integration, the one coordinated exact build activation including scheduling648/650 and actual per-target operations remain required. All740 findings/181 concerns stay open.
 
 Validation, every retained failure and private custody hashes: `docs/benchmarks/systemic-selected-cleanup-20261108.json` and adjacent retained-parent delta manifest. Both the prior126372039-byte full root and1671415-byte paging delta remain byte-exact in their tracked chunks.
+
+
+## External1.7.0 passive evidence and peer denial subtype — 2026-11-09
+
+The external release is preserved; this session did not install or restart it. All three installed PR675 startup-barrier files match the reviewed source, while full loaded-module and ordering acceptance remain unverified. Current source is based on main87b7fbd0 in the same leased d768 workspace/fence397.
+
+The [numeric evidence](benchmarks/systemic-external170-peer-subtype-20261109.json) links all106 runtime operations and36 registered route groups, with complete numeric values in the adjacent hash-verified compressed archive. Two previously unmapped route groups were added; all prior753 rows/failures remain, giving755 open findings/185 concerns. Runtime counters/maxima cover this process; percentiles are bounded windows. No fleet completeness or controlled acceptance is claimed.
+
+One natural full maintenance run took5634.221ms, including3913.635ms VACUUM/2774.947ms CPU and317.094ms post-checkpoint. Actual projection shrink436572160→428179456bytes and free pages225280→0 are retained. Sync reconciliation reached504.228ms and workspace collection778.362ms. Native peer failures and transcript health missing_objects1 remain open; integrityok does not erase the missing-object observation.
+
+The repair adds a fixed diagnostic subtype for typed peer endpoint denials while keeping the existing timeout category, failed/timed_out counts, deadlines, retry/circuit routing, warnings and error identity. The private open-circuit regression sends zero requests. Native historical failures cannot be classified retrospectively.33 focused runtime/failure/endpoint tests pass after fixing a hostile-access fixture that prevented exception construction; that first failure and a mistyped test-path collection error are retained. This instrumentation is not a latency improvement or deployed acceptance.

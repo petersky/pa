@@ -143,6 +143,7 @@ async def test_fixed_sqlite_and_timeout_categories_do_not_retain_sql_or_names():
         with pytest.raises(TimeoutError):
             await runtime.observe("fixture.timeout", fail(TimeoutError("private-timeout")))
         assert runtime.snapshot()["failed_operations"]["observations"][-1]["category"] == "timeout_error"
+        assert "timeout_kind" not in runtime.snapshot()["failed_operations"]["observations"][-1]
         assert runtime.snapshot()["operations"]["fixture.timeout"]["timed_out"] == 1
         assert "private-" not in json.dumps(runtime.snapshot())
     finally:
@@ -210,6 +211,49 @@ async def test_diagnostic_classification_failure_cannot_replace_original_excepti
         assert caught.value is error
         snapshot = runtime.snapshot()
         assert snapshot["failed_operations"]["observations"][0]["category"] == "unclassified"
+        assert "private-" not in json.dumps(snapshot)
+    finally:
+        await runtime.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("worker", [False, True])
+async def test_peer_denial_subtype_preserves_timeout_category_counters_and_privacy(worker):
+    from pa.fleet.endpoints import EndpointUnavailable
+
+    class UninspectablePeerDenial(EndpointUnavailable):
+        def __str__(self):
+            raise AssertionError("must not stringify")
+
+        def __getattribute__(self, name):
+            if (name in {"__dict__", "endpoints", "instance_id", "retry_after"}
+                    and object.__getattribute__(self, "__dict__").get("_sealed", False)):
+                raise AssertionError("must not inspect peer details")
+            return super().__getattribute__(name)
+
+    error = UninspectablePeerDenial("private-peer", ["https://private-endpoint"], 60)
+    error._sealed = True
+    runtime = AsyncRuntime()
+    def fail():
+        raise error
+    async def fail_async():
+        fail()
+    try:
+        with pytest.raises(EndpointUnavailable) as caught:
+            if worker:
+                await runtime.run_blocking("fixture.peer", fail)
+            else:
+                await runtime.observe("fixture.peer", fail_async())
+        assert caught.value is error and isinstance(error, TimeoutError)
+        await runtime.close()
+        snapshot = runtime.snapshot()
+        operation = snapshot["operations"]["fixture.peer"]
+        # Worker failures historically do not increment the caller timeout counter.
+        assert (operation["failed"], operation["timed_out"]) == (1, 0 if worker else 1)
+        assert operation["failed_runtime_ms"]["samples"] == 1
+        item = snapshot["failed_operations"]["observations"][0]
+        assert item["category"] == "timeout_error"
+        assert item["timeout_kind"] == "peer_endpoint_unavailable"
         assert "private-" not in json.dumps(snapshot)
     finally:
         await runtime.close()

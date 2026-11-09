@@ -15,7 +15,7 @@ import httpx
 
 from pa.core.io import atomic_write_json
 from pa.domain.models import FleetInstance
-from pa.http_transport import is_http2_cancel, stable_idempotency_key
+from pa.http_transport import PeerEndpointUnavailable, is_http2_cancel, stable_idempotency_key
 from pa.status.serving import loopback_base_url
 
 BASE_BACKOFF = 5.0
@@ -64,7 +64,7 @@ class FleetTransportError(httpx.TransportError):
         self.__cause__ = cause
 
 
-class EndpointUnavailable(TimeoutError):
+class EndpointUnavailable(PeerEndpointUnavailable):
     """All canonical endpoints are in an open circuit or failed transport."""
 
     def __init__(self, instance_id: str, endpoints: list[str], retry_after: float):

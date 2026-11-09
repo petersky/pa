@@ -5,6 +5,14 @@ from __future__ import annotations
 import re
 
 
+class PeerEndpointUnavailable(TimeoutError):
+    """Typed peer admission denial; retain existing TimeoutError behavior.
+
+    Shared here so runtime diagnostics can recognize it without importing
+    fleet state or inspecting endpoint details on the exception.
+    """
+
+
 _HTTP2_CANCEL = re.compile(
     r"(?:http/?2.*(?:cancel|0x0*8)|stream.*(?:cancel|0x0*8)|error code cancel)",
     re.IGNORECASE,
