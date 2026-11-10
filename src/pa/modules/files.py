@@ -153,8 +153,8 @@ def _git_root(path: Path) -> Path | None:
         return None
 
 
-def _default_diff_base(repo: Path) -> str:
-    for candidate in ("origin/main", "origin/master", "HEAD"):
+def _default_diff_base(repo: Path, *, candidates=("origin/main", "origin/master", "HEAD")) -> str:
+    for candidate in candidates:
         check = subprocess.run(
             ["git", "-C", str(repo), "rev-parse", "--verify", f"{candidate}^{{commit}}"],
             capture_output=True,
@@ -167,12 +167,47 @@ def _default_diff_base(repo: Path) -> str:
     return "HEAD"
 
 
+def _git_root_and_default_base(path: Path) -> tuple[Path | None, str | None]:
+    # Discover the root and verify the first candidate in the same process.
+    # Lower-priority refs are still inspected only after this candidate fails.
+    proc = subprocess.run(
+        ["git", "-C", str(path.parent), "rev-parse", "--show-toplevel",
+         "--verify", "origin/main^{commit}"],
+        capture_output=True, text=True, timeout=3, check=False,
+    )
+    output = proc.stdout.strip()
+    if not output and proc.returncode != 0:
+        return None, None
+    if proc.returncode == 0:
+        root_text, separator, oid = output.rpartition("\n")
+        valid = bool(separator and re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", oid))
+    else:
+        root_text, valid = output, True
+    try:
+        repo = Path(root_text.strip()).resolve(strict=True) if valid else None
+    except (FileNotFoundError, OSError):
+        repo = None
+    if repo is None:
+        # Preserve the original path on unusual Git output rather than guessing.
+        repo = _git_root(path)
+        if not repo or not path.is_relative_to(repo):
+            return None, None
+        return repo, _default_diff_base(repo)
+    if not path.is_relative_to(repo):
+        return None, None
+    return repo, ("origin/main" if proc.returncode == 0 else
+                  _default_diff_base(repo, candidates=("origin/master", "HEAD")))
+
+
 def _file_diff(path: Path, base: str | None) -> tuple[str, str | None]:
     path = path.resolve()
-    repo = _git_root(path)
+    if base:
+        repo, revision = _git_root(path), base
+    else:
+        repo, revision = _git_root_and_default_base(path)
     if not repo or not path.is_relative_to(repo):
         return "", None
-    revision = base or _default_diff_base(repo)
+    assert revision is not None
     if revision.startswith("-") or not REVISION_RE.fullmatch(revision):
         raise HTTPException(status_code=400, detail="Invalid Git revision")
     relative = str(path.relative_to(repo))
