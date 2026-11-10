@@ -53,7 +53,9 @@ async def test_slash_and_dollar_menus_complete_text_without_running_anything(ope
             pytest.fail("Browser condition timed out: " + expression)
 
         await wait_for("!!(document.querySelector('[data-agent-chat]')._acw && document.querySelector('[data-acw-input]'))")
-        # A real catalog refresh can land at any moment, so the fixed catalog is re-applied on every keystroke.
+        # Page load starts a real /commands fetch; let it land first so it cannot overwrite the fixed catalog mid-test.
+        await wait_for("(w => !!w.sessionId && !w.commandLoading && (w.commandCatalogSession === w.sessionId || !!w.commandError))(document.querySelector('[data-agent-chat]')._acw)")
+        # A real catalog refresh can still land at any moment, so the fixed catalog is re-applied on every keystroke.
         catalog = json.dumps(CATALOG)
         type_text = f"""(([text, caret]) => {{ const w = document.querySelector('[data-agent-chat]')._acw;
             w.commandCatalog = {catalog}; w.commandCatalogSession = w.sessionId;
