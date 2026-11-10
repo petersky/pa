@@ -78,7 +78,12 @@ from pa.goals.models import (
     TransitionGoalAction,
     WorkPackageState,
 )
-from pa.goals.service import GoalConflict, GoalService, goal_completion_findings
+from pa.goals.service import (
+    GoalConflict,
+    GoalService,
+    goal_completion_findings,
+    goal_transition_allowed,
+)
 from pa.notifications.stall import StallKind, notify_stall
 
 logger = logging.getLogger(__name__)
@@ -130,6 +135,9 @@ _OBSERVED_WORK = {
     WorkPackageState.RUNNING,
     WorkPackageState.BLOCKED,
 }
+_PLAN_RATIONALE = "ACTIVE unmet criteria require one bounded governed work package."
+# Authorization rejections that a fresh proposal cures by itself.
+_STALE_REASON_CODES = {"stale_policy_revision", "future_goal_version"}
 _MAX_PACKAGE_REPLACEMENTS = 20
 _MAX_GOAL_REPLACEMENTS = 100
 _MAX_GOAL_DISPATCH_IDS = 200
@@ -178,6 +186,7 @@ class GoalSupervisor:
         self.lease_ttl_seconds = lease_ttl_seconds
         self.failure_notify_after = max(1, failure_notify_after)
         self._conflict_streaks: dict[str, int] = {}
+        self._outbox: list[tuple[StallKind, str, str, str]] = []
         self._wakeup = threading.Event()
 
     def wake(self) -> None:
@@ -714,6 +723,7 @@ class GoalSupervisor:
     def _cycle(self, source: Goal) -> Goal:
         goal = source.model_copy(deep=True)
         now = self.now()
+        self._outbox = []
         durably_admitted_packages = {
             package.id
             for package in source.work_packages
@@ -741,6 +751,7 @@ class GoalSupervisor:
             meaningful = self._advance_ready_work(goal, now) or meaningful
             meaningful = self._ensure_dispatch_proposals(goal, now) or meaningful
         meaningful = self._detect_drift(goal, now) or meaningful
+        meaningful = self._park_dead_ends(goal) or meaningful
         meaningful = self._advance_goal_state(goal) or meaningful
 
         goal.supervision.consecutive_failures = 0
@@ -781,6 +792,9 @@ class GoalSupervisor:
             ),
         )
         self._release_rejected_dispatch_attempts(checkpointed)
+        outbox, self._outbox = self._outbox, []
+        for kind, dedupe_key, title, body in outbox:
+            self._notify(checkpointed, kind, dedupe_key, title, body)
         if consumed_wakeup:
             checkpointed = self.service.schedule_wakeup(
                 checkpointed.id,
@@ -800,10 +814,26 @@ class GoalSupervisor:
         criterion_ids = self._unplanned_criterion_ids(goal)
         if goal.state != GoalState.ACTIVE or not criterion_ids:
             return False
+        if goal.supervision.parked_reason:
+            # The supervisor stopped this goal for a human; do not re-plan until
+            # the operator resumes it (which clears the hold).
+            return False
+        # A plan that was rejected or failed is not re-created under the same id:
+        # each retry after a resume is its own generation.
+        generation = sum(
+            self._is_plan_proposal(item)
+            and item.status in {ProposalStatus.REJECTED, ProposalStatus.FAILED}
+            and set(item.action.criterion_ids) == set(criterion_ids)
+            for item in goal.proposals
+        )
         proposal_id = str(
             uuid5(
                 NAMESPACE_URL,
-                "pa-goal-plan:" + goal.id + ":" + ",".join(sorted(criterion_ids)),
+                "pa-goal-plan:"
+                + goal.id
+                + ":"
+                + ",".join(sorted(criterion_ids))
+                + (f":{generation}" if generation else ""),
             )
         )
         if any(item.id == proposal_id for item in goal.proposals):
@@ -823,7 +853,7 @@ class GoalSupervisor:
                     dispatch_when_ready=True,
                     max_attempts=min(20, goal.budget.retry_limit + 1),
                 ),
-                rationale="ACTIVE unmet criteria require one bounded governed work package.",
+                rationale=_PLAN_RATIONALE,
                 expected_goal_version=goal.version,
                 policy_revision=goal.policy.revision,
                 created_at=now,
@@ -831,6 +861,119 @@ class GoalSupervisor:
             )
         )
         return True
+
+    @staticmethod
+    def _is_plan_proposal(proposal: GoalProposal) -> bool:
+        return (
+            isinstance(proposal.action, CreateWorkPackageAction)
+            and proposal.rationale == _PLAN_RATIONALE
+        )
+
+    def _park(
+        self,
+        goal: Goal,
+        preferred: GoalState,
+        reason: str,
+        *,
+        notify: tuple[StallKind, str, str, str] | None = None,
+    ) -> None:
+        """Stop the goal for a human, with a durable reason and (optionally) a push."""
+
+        target = next(
+            (
+                candidate
+                for candidate in (preferred, GoalState.BLOCKED, GoalState.PAUSED)
+                if goal_transition_allowed(goal.state, candidate)
+            ),
+            None,
+        )
+        if target is None:
+            return
+        goal.state = target
+        goal.supervision.parked_reason = reason[:2000]
+        goal.progress_summary = reason[:2000]
+        if notify is not None:
+            kind, dedupe_key, title, body = notify
+            self._outbox.append((kind, dedupe_key, title, body))
+
+    def _park_dead_ends(self, goal: Goal) -> bool:
+        """Turn silent dead ends into a stopped goal and a notification (A2, A7)."""
+
+        if goal.state not in {GoalState.ACTIVE, GoalState.VERIFYING} and not (
+            goal.state == GoalState.WAITING_OPERATOR and self._may_act(goal)
+        ):
+            return False
+        if goal.supervision.parked_reason:
+            return False
+        previous = goal.state
+        plans = [item for item in goal.proposals if self._is_plan_proposal(item)]
+        latest = plans[-1] if plans else None
+        if (
+            latest is not None
+            and latest.status in {ProposalStatus.REJECTED, ProposalStatus.FAILED}
+            and self._unplanned_criterion_ids(goal)
+            and not (
+                latest.authorization is not None
+                and latest.authorization.reason_code in _STALE_REASON_CODES
+            )
+        ):
+            detail = (
+                (latest.authorization.explanation if latest.authorization else "")
+                if latest.status == ProposalStatus.REJECTED
+                else ""
+            ) or latest.error or "no detail"
+            if latest.error.startswith("operator "):
+                self._park(
+                    goal,
+                    GoalState.PAUSED,
+                    f"The plan was not approved ({latest.error}). Resume to re-plan.",
+                )
+            else:
+                reason = (
+                    f"The goal cannot be planned under its policy: {detail} "
+                    "Review the goal's autonomy level and permitted actions, then resume."
+                )
+                self._park(
+                    goal,
+                    GoalState.BLOCKED,
+                    reason,
+                    notify=(
+                        StallKind.MANUAL_REVIEW,
+                        f"goal-plan:{goal.id}:{latest.id}",
+                        f"Goal cannot be planned: {goal.objective[:120]}",
+                        reason,
+                    ),
+                )
+            return goal.state != previous
+        failed = [
+            item
+            for item in goal.work_packages
+            if item.state == WorkPackageState.FAILED
+            and item.attempts >= item.max_attempts
+            and item.role != GoalActorRole.CRITIC
+        ]
+        if failed:
+            package = failed[0]
+            reason = (
+                f"{package.role.value.capitalize()} work '{package.title}' failed "
+                f"after {package.attempts} attempt(s): "
+                f"{package.result_summary or 'no detail'}. Retry the work package "
+                "or take over."
+            )
+            self._park(
+                goal,
+                GoalState.BLOCKED,
+                reason,
+                notify=(
+                    StallKind.VERIFICATION_FAILED
+                    if package.role == GoalActorRole.VERIFIER
+                    else StallKind.DISPATCH_FAILED,
+                    f"goal-package-failed:{goal.id}:{package.id}:{package.attempts}",
+                    f"Goal work failed: {goal.objective[:120]}",
+                    reason,
+                ),
+            )
+        return goal.state != previous
 
     def _authorize_pending(self, goal: Goal, now: datetime) -> bool:
         changed = False
@@ -2773,6 +2916,12 @@ class GoalSupervisor:
                 if proposal and proposal.status == ProposalStatus.OPERATOR_REQUIRED:
                     proposal.status = ProposalStatus.REJECTED
                     proposal.error = f"operator interaction {interaction.state.value}"
+                    self._park(
+                        goal,
+                        GoalState.PAUSED,
+                        f"The operator input for {proposal.action.kind} was "
+                        f"{interaction.state.value}. Resume to try again.",
+                    )
                     if isinstance(proposal.action, DispatchWorkPackageAction):
                         self._record_dispatch_failure(
                             goal,
@@ -2797,6 +2946,12 @@ class GoalSupervisor:
                     )
                     if not approved:
                         proposal.error = "operator rejected the proposal"
+                        self._park(
+                            goal,
+                            GoalState.PAUSED,
+                            f"The operator rejected {proposal.action.kind}. "
+                            "Resume to try again.",
+                        )
                         if isinstance(proposal.action, DispatchWorkPackageAction):
                             self._record_dispatch_failure(
                                 goal,
@@ -2825,6 +2980,7 @@ class GoalSupervisor:
             goal.state = GoalState.BLOCKED
         elif (
             goal.state == GoalState.BLOCKED
+            and not goal.supervision.parked_reason
             and any(item.state in _ACTIVE_WORK for item in goal.work_packages)
             or goal.state == GoalState.READY
             and goal.work_packages

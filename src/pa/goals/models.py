@@ -910,6 +910,10 @@ class GoalSupervision(BaseModel):
     # Durable record of supervision cycles that raised. A goal whose cycle keeps
     # failing is retried with backoff and escalated to the owner instead of being
     # retried silently every poll forever.
+    # Set when the supervisor itself stopped the goal because a human has to act
+    # (plan rejected or unappliable, required work failed). The supervisor holds
+    # still until an operator resumes the goal, which clears it.
+    parked_reason: str = Field(default="", max_length=2000)
     consecutive_failures: int = Field(default=0, ge=0)
     last_failure_at: datetime | None = None
     last_failure_reason: str = Field(default="", max_length=2000)

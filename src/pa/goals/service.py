@@ -341,6 +341,9 @@ class GoalService:
                     )
             previous = goal.state
             goal.state = change.state
+            if change.state in {GoalState.ACTIVE, GoalState.READY}:
+                # An operator resuming the goal releases a supervisor hold.
+                goal.supervision.parked_reason = ""
             if change.progress_summary is not None:
                 goal.progress_summary = change.progress_summary
             return {

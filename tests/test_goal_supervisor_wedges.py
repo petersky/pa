@@ -37,6 +37,7 @@ from pa.goals.models import (
     GoalMutationContext,
     GoalPolicy,
     GoalProposalCreate,
+    GoalRevision,
     GoalState,
     GoalTransition,
     ProposalStatus,
@@ -522,6 +523,112 @@ class PauseIsEnforcedTests(unittest.TestCase):
             self.assertEqual(h.supervisor.run_once(), [])
 
             self.assertEqual(h.get(goal.id).version, before.version)
+
+
+class DeadEndsAreParkedTests(unittest.TestCase):
+    """A2/A7/A9: a goal that cannot proceed stops, says why, and tells the owner."""
+
+    def test_unappliable_plan_blocks_the_goal_with_a_notification(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(tmp)
+            # Autonomy 4 but no permitted action classes: the plan proposal is
+            # authorized, then refused by canonical governance when applied.
+            goal = h.create_goal(GoalPolicy(autonomy_level=4))
+
+            parked = h.run(goal.id)
+
+            self.assertEqual(parked.state, GoalState.BLOCKED)
+            self.assertIn("cannot be planned", parked.supervision.parked_reason)
+            self.assertIn("permitted", parked.supervision.parked_reason)
+            self.assertEqual(parked.proposals[0].status, ProposalStatus.FAILED)
+            stalls = h.notifications.stalls("manual_review")
+            self.assertEqual(len(stalls), 1)
+            self.assertIn("autonomy level and permitted actions", stalls[0].body)
+
+            # It stays put: no spinning, no new proposals, no checkpoint churn.
+            version = h.get(goal.id).version
+            for _ in range(3):
+                self.assertEqual(h.supervisor.run_once(), [])
+            self.assertEqual(h.get(goal.id).version, version)
+            self.assertEqual(len(h.get(goal.id).proposals), 1)
+
+            # Fixing the policy and resuming plans again.
+            current = h.get(goal.id)
+            h.service.revise(
+                goal.id,
+                GoalRevision(
+                    reason="grant the actions",
+                    policy=GoalPolicy(
+                        revision=2, autonomy_level=4, permitted_actions=FULL_ACTIONS
+                    ),
+                ),
+                h.ctx(current, "fix-policy"),
+            )
+            current = h.get(goal.id)
+            h.service.transition(
+                goal.id,
+                GoalTransition(state=GoalState.ACTIVE, reason="resume"),
+                h.ctx(current, "resume"),
+            )
+            resumed = h.run(goal.id)
+            self.assertEqual(len(resumed.work_packages), 1)
+            self.assertEqual(resumed.supervision.parked_reason, "")
+
+    def test_rejected_plan_pauses_the_goal_and_resume_asks_again(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(tmp)
+            goal = h.create_goal(GoalPolicy())
+            goal = h.run(goal.id)
+            self.assertEqual(len(goal.operator_interactions), 1)
+            h.answer(goal, approve=False)
+
+            paused = h.run(goal.id)
+
+            self.assertEqual(paused.state, GoalState.PAUSED)
+            self.assertIn("rejected", paused.supervision.parked_reason)
+            self.assertEqual(paused.proposals[0].status, ProposalStatus.REJECTED)
+            self.assertEqual(h.supervisor.run_once(), [])
+            self.assertEqual(len(h.get(goal.id).operator_interactions), 1)
+
+            h.service.transition(
+                goal.id,
+                GoalTransition(state=GoalState.ACTIVE, reason="resume"),
+                h.ctx(h.get(goal.id), "resume"),
+            )
+            asked_again = h.run(goal.id)
+            self.assertEqual(len(asked_again.operator_interactions), 2)
+            self.assertEqual(len(asked_again.proposals), 2)
+            self.assertEqual(asked_again.state, GoalState.WAITING_OPERATOR)
+
+    def test_terminally_failed_package_blocks_the_goal_and_notifies(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(tmp)
+            goal = h.create_goal(
+                GoalPolicy(autonomy_level=4, permitted_actions=FULL_ACTIONS)
+            )
+            for _ in range(60):
+                current = h.get(goal.id)
+                if current.state == GoalState.BLOCKED:
+                    break
+                for dispatch_id in current.linked_dispatch_ids:
+                    h.records.records[dispatch_id] = dispatch_record(
+                        dispatch_id, "failed", last_error="provider crashed"
+                    )
+                h.supervisor.run_once(goal.id)
+
+            blocked = h.get(goal.id)
+            package = blocked.work_packages[0]
+            self.assertEqual(package.state, WorkPackageState.FAILED)
+            self.assertEqual(blocked.state, GoalState.BLOCKED)
+            self.assertIn("failed after", blocked.supervision.parked_reason)
+            stalls = h.notifications.stalls("dispatch_failed")
+            self.assertEqual(len(stalls), 1)
+            self.assertIn(package.title, stalls[0].body)
+            # It is not retried silently.
+            count = len(h.dispatched)
+            for _ in range(3):
+                h.supervisor.run_once(goal.id)
+            self.assertEqual(len(h.dispatched), count)
 
 
 if __name__ == "__main__":
