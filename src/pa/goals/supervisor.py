@@ -146,8 +146,23 @@ _FAILURE_BACKOFF_CAP_SECONDS = 15 * 60
 _CONFLICT_STREAK_BEFORE_FAILURE = 5
 
 
+# A terminal Fleet record is acted on only while its package is still waiting on
+# it. Once the package has moved on (replacement READY, FAILED, VERIFIED) the old
+# record is history; re-handling it every cycle re-entered the completion branch.
+_TERMINAL_HANDLING_STATES = {
+    WorkPackageState.DISPATCHED,
+    WorkPackageState.RUNNING,
+    WorkPackageState.BLOCKED,
+    WorkPackageState.AWAITING_VERIFICATION,
+}
+
+
 class GoalSupervisor:
     """Runs recoverable, fenced supervision cycles over durable Goal projections."""
+
+    # "strict": a verifier needs a different session, target instance, provider and
+    # service principal. "single_user": a different session and service principal.
+    verifier_independence = "strict"
 
     def __init__(
         self,
@@ -165,7 +180,11 @@ class GoalSupervisor:
         lease_ttl_seconds: int = 90,
         default_provider: str | None = None,
         failure_notify_after: int = 3,
+        verifier_independence: str = "strict",
     ) -> None:
+        if verifier_independence not in {"strict", "single_user"}:
+            raise ValueError("verifier_independence must be strict or single_user")
+        self.verifier_independence = verifier_independence
         if stalled_cycles <= no_progress_cycles:
             raise ValueError("stalled_cycles must exceed no_progress_cycles")
         self.service = service
@@ -2409,6 +2428,11 @@ class GoalSupervisor:
                         package.executor_service_id = service_id
                         changed = True
             if (
+                record.state in {"completed", "failed", "cancelled"}
+                and package.state not in _TERMINAL_HANDLING_STATES
+            ):
+                continue
+            if (
                 package.dispatch_attempt is not None
                 and package.dispatch_attempt.state == GoalDispatchAttemptState.ADMITTED
                 and package.id not in durably_admitted_packages
@@ -2601,11 +2625,16 @@ class GoalSupervisor:
                         else "executor"
                     )
                     and verifier_binding.session_id != identity.session_id
-                    and verifier_binding.target_instance_id
-                    != identity.target_instance_id
-                    and verifier_binding.provider_id != identity.provider_id
                     and verifier_binding.assigned_service_principal
                     != identity.assigned_service_principal
+                    and (
+                        self.verifier_independence == "single_user"
+                        or (
+                            verifier_binding.target_instance_id
+                            != identity.target_instance_id
+                            and verifier_binding.provider_id != identity.provider_id
+                        )
+                    )
                     for dependency, identity in executor_bindings
                 )
             )

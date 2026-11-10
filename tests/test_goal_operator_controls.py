@@ -128,3 +128,19 @@ def test_pause_works_whatever_the_goal_policy_permits_or_prohibits() -> None:
 
         assert paused.status_code == 200, paused.text
         assert paused.json()["state"] == "paused"
+
+
+def test_verifier_independence_setting_reaches_the_supervisor() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        with TestClient(_app(Path(tmp))) as client:
+            supervisor = client.app.state.ctx.require_service("goal_supervisor")
+            assert supervisor.verifier_independence == "single_user"
+    reset_settings()
+    reset_store()
+    reset_instance_agent()
+    with tempfile.TemporaryDirectory() as tmp:
+        with TestClient(
+            _app(Path(tmp), goal_verifier_independence="strict")
+        ) as client:
+            supervisor = client.app.state.ctx.require_service("goal_supervisor")
+            assert supervisor.verifier_independence == "strict"

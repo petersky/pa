@@ -26,6 +26,7 @@ from pa.goals.advanced_models import (
     GovernanceMutationContext,
 )
 from pa.goals.governance import GoalGovernanceService
+from pa.goals.materialization import GoalExecutionIdentityV1
 from pa.goals.models import (
     CreateWorkPackageAction,
     DispatchWorkPackageAction,
@@ -99,6 +100,53 @@ def dispatch_record(
         latest_progress=None,
         progress_heartbeat=progress_heartbeat,
     )
+
+
+def passing_report(outcome: str = "Independent suite passed.") -> CompletionReportV1:
+    return CompletionReportV1(
+        outcome=outcome,
+        validations=[
+            ProgressValidationV1(
+                command="pytest focused", status="passed", summary="all passed"
+            )
+        ],
+    )
+
+
+def finish_dispatch(
+    h: "Harness",
+    package,
+    *,
+    role: str,
+    session: str,
+    principal: str,
+    provider: str = "codex",
+    target: str = INSTANCE,
+    state: str = "completed",
+    report: CompletionReportV1 | None = None,
+) -> None:
+    """Make Fleet report a terminal dispatch for the package's latest dispatch id."""
+
+    dispatch_id = package.dispatch_ids[-1]
+    record = dispatch_record(
+        dispatch_id, state, session_id=session, final_report=report
+    )
+    record.goal_provenance = SimpleNamespace(
+        action_reservation_id=package.action_reservation_id,
+        materialization_envelope=package.materialization_envelope,
+        materialization_receipt=None,
+        execution_identity=GoalExecutionIdentityV1(
+            work_package_id=package.id,
+            service_role=role,
+            assigned_service_principal=f"service:goal-{role}:{principal}",
+            provider_id=provider,
+            target_instance_id=target,
+            session_id=session,
+            fencing_token=1,
+            materialization_receipt_digest="a" * 64,
+        ),
+    )
+    h.records.records[dispatch_id] = record
 
 
 class RecordingNotifications:
@@ -629,6 +677,153 @@ class DeadEndsAreParkedTests(unittest.TestCase):
             for _ in range(3):
                 h.supervisor.run_once(goal.id)
             self.assertEqual(len(h.dispatched), count)
+
+
+class VerifierIndependenceTests(unittest.TestCase):
+    """A3: verification must be satisfiable and must never wedge the supervisor."""
+
+    @staticmethod
+    def _run_to_verifier_dispatch(h: Harness, goal: Goal) -> Goal:
+        for _ in range(4):
+            current = h.run(goal.id)
+            if current.work_packages and current.work_packages[0].dispatch_ids:
+                break
+        executor = h.get(goal.id).work_packages[0]
+        finish_dispatch(
+            h, executor, role="executor", session="exec-session", principal="exec"
+        )
+        for _ in range(12):
+            current = h.run(goal.id)
+            verifier = next(
+                (
+                    item
+                    for item in current.work_packages
+                    if item.role == GoalActorRole.VERIFIER
+                ),
+                None,
+            )
+            if verifier is not None and verifier.dispatch_ids:
+                return current
+        raise AssertionError("verifier was never dispatched")
+
+    def test_single_user_independence_accepts_the_same_provider_and_machine(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(tmp, verifier_independence="single_user")
+            goal = h.create_goal(
+                GoalPolicy(autonomy_level=4, permitted_actions=FULL_ACTIONS)
+            )
+            current = self._run_to_verifier_dispatch(h, goal)
+            verifier = next(
+                item
+                for item in current.work_packages
+                if item.role == GoalActorRole.VERIFIER
+            )
+            # Same provider, same machine; only the session and principal differ.
+            finish_dispatch(
+                h,
+                verifier,
+                role="verifier",
+                session="verifier-session",
+                principal="verify",
+                report=passing_report(),
+            )
+
+            verified = h.run(goal.id)
+
+            self.assertEqual(
+                verified.criteria[0].verdict.value, "satisfied", verified.work_packages
+            )
+            self.assertTrue(
+                all(
+                    item.state == WorkPackageState.VERIFIED
+                    for item in verified.work_packages
+                )
+            )
+            self.assertEqual(verified.state, GoalState.VERIFYING)
+
+    def test_single_user_independence_still_needs_a_different_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(tmp, verifier_independence="single_user")
+            goal = h.create_goal(
+                GoalPolicy(autonomy_level=4, permitted_actions=FULL_ACTIONS)
+            )
+            current = self._run_to_verifier_dispatch(h, goal)
+            verifier = next(
+                item
+                for item in current.work_packages
+                if item.role == GoalActorRole.VERIFIER
+            )
+            finish_dispatch(
+                h,
+                verifier,
+                role="verifier",
+                session="exec-session",  # the executor's own session
+                principal="verify",
+                report=passing_report(),
+            )
+
+            after = h.run(goal.id)
+
+            self.assertEqual(after.criteria[0].verdict.value, "pending")
+            self.assertIn(
+                "not independent",
+                next(
+                    item
+                    for item in after.work_packages
+                    if item.role == GoalActorRole.VERIFIER
+                ).result_summary,
+            )
+
+    def test_unsatisfiable_strict_independence_neither_wedges_nor_stays_silent(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(tmp)  # strict is the constructor default (the old rule)
+            goal = h.create_goal(
+                GoalPolicy(autonomy_level=4, permitted_actions=FULL_ACTIONS)
+            )
+            current = self._run_to_verifier_dispatch(h, goal)
+            for attempt in (1, 2):
+                verifier = next(
+                    item
+                    for item in h.get(goal.id).work_packages
+                    if item.role == GoalActorRole.VERIFIER
+                )
+                finish_dispatch(
+                    h,
+                    verifier,
+                    role="verifier",
+                    session=f"verifier-session-{attempt}",
+                    principal=f"verify{attempt}",
+                    report=passing_report(),
+                )
+                # Many cycles over the same completed record used to re-enter the
+                # completion branch and abort every cycle with an idempotency
+                # conflict after the first one.
+                for _ in range(6):
+                    h.supervisor.run_once(goal.id)
+                    self.assertEqual(
+                        h.get(goal.id).supervision.consecutive_failures,
+                        0,
+                        h.get(goal.id).supervision.last_failure_reason,
+                    )
+                if attempt == 1:
+                    # executor + verifier + the one replacement verifier attempt
+                    self.assertEqual(len(h.dispatched), 3)
+
+            final = h.get(goal.id)
+            verifier = next(
+                item
+                for item in final.work_packages
+                if item.role == GoalActorRole.VERIFIER
+            )
+            self.assertEqual(verifier.state, WorkPackageState.FAILED)
+            self.assertEqual(final.state, GoalState.BLOCKED)
+            stalls = h.notifications.stalls("verification_failed")
+            self.assertEqual(len(stalls), 1)
+            self.assertIn("not independent", stalls[0].body)
 
 
 if __name__ == "__main__":
