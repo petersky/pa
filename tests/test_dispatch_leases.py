@@ -162,6 +162,21 @@ def test_a_confirmed_probe_renews_the_lease(ledger):
     assert ledger.get("d1").lease_expires_at > datetime.now(UTC) + timedelta(seconds=290)
 
 
+def test_repeated_confirmations_of_a_leased_dispatch_do_not_flood_the_event_log(ledger):
+    start_running(ledger)
+    for _ in range(3):
+        ledger.mutate_current("d1", mutate=lambda r: setattr(r, "lease_expires_at", NOW))
+        ledger.note_target_confirmed("d1", "Target confirmed the dispatch is still running.")
+        assert ledger.get("d1").lease_expires_at > datetime.now(UTC)
+    probes = [e for e in ledger.get("d1").events if e.detail.get("liveness_probe")]
+    assert len(probes) == 1
+    # An unleased dispatch keeps one event per confirmation (stage 1: it is the activity stamp).
+    start_running(ledger, dispatch_id="old", mutation_id="m-old", lease_protocol=None)
+    for _ in range(2):
+        ledger.note_target_confirmed("old", "Target confirmed the dispatch is still running.")
+    assert len([e for e in ledger.get("old").events if e.detail.get("liveness_probe")]) == 2
+
+
 def test_renewal_never_shortens_and_never_revives_a_settled_dispatch(ledger):
     start_running(ledger)
     far = datetime.now(UTC) + timedelta(hours=3)

@@ -5668,11 +5668,16 @@ class DispatchStore:
         def mutate(current: DispatchRecord) -> bool:
             if current.state != "running" or current.acknowledged_at is not None:
                 return False
+            if self._renew_lease(current) and any(
+                event.detail.get("liveness_probe") for event in current.events[-1:]
+            ):
+                # A leased quiet turn is re-confirmed every TTL; the lease carries
+                # the evidence, so do not append an identical event each time.
+                return True
             current.events.append(DispatchEvent(
                 seq=current.events[-1].seq + 1 if current.events else 1,
                 state="running", message=message, detail={"liveness_probe": True},
             ))
-            self._renew_lease(current)
             return True
 
         return self.mutate_current(dispatch_id, mutate=mutate)
