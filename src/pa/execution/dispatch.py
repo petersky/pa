@@ -3823,8 +3823,14 @@ class DispatchStore:
         capacity: CapacityAdmission,
         *,
         idempotency_key: str,
+        retarget: dict[str, Any] | None = None,
     ) -> DispatchRecord:
-        """Atomically renew the same target reservation for a safe retry."""
+        """Atomically renew a reservation for a safe retry.
+
+        ``retarget`` re-places a dispatch whose target was lost: it replaces the
+        target, placement and every field bound to the old target (session,
+        resume request, materialization), keeping the dispatch id and card.
+        """
 
         with measured_lock(self._lock):
             self._require_writer()
@@ -3848,6 +3854,19 @@ class DispatchStore:
             # terminal. Reuse the same atomic gate as new admission on retry.
             self._check_card_concurrency_locked(current)
             now = datetime.now(UTC)
+            if retarget:
+                for field_name, value in retarget.items():
+                    setattr(current, field_name, copy.deepcopy(value))
+                current.session_id = None
+                current.resume_requested = False
+                current.resume_session_id = None
+                current.session_retry = None
+                current.materialization_plan = None
+                current.attachment_evidence = None
+                current.initial_prompt_operation = {}
+                current.prompt_ack = None
+                current.prompt_acknowledged_at = None
+                current.progress_protocol_version = None
             execution_full, queue_full, queue_count, reserved, queue_max = (
                 self._constraint_counts_locked(
                     current, capacity, exclude_dispatch_id=current.dispatch_id
@@ -5410,6 +5429,35 @@ class DispatchStore:
             ))
             return [self._snapshot(record) for record in queued]
 
+    def running_remote_records(self, authority_instance_id: str) -> list[DispatchRecord]:
+        """Unsettled ``running`` dispatches this instance sent to another instance."""
+        self._require_readable()
+        self._yield_to_index_writer()
+        with measured_lock(self._index_lock):
+            return [
+                self._snapshot(record)
+                for record in self._records.values()
+                if record.state == "running"
+                and record.authority_instance_id == authority_instance_id
+                and record.target_instance_id != authority_instance_id
+                and record.acknowledged_at is None
+                and not record.terminal_repair_reservation
+            ]
+
+    def note_target_confirmed(self, dispatch_id: str, message: str) -> DispatchRecord:
+        """Record that the target vouched for a running dispatch (counts as activity)."""
+
+        def mutate(current: DispatchRecord) -> bool:
+            if current.state != "running" or current.acknowledged_at is not None:
+                return False
+            current.events.append(DispatchEvent(
+                seq=current.events[-1].seq + 1 if current.events else 1,
+                state="running", message=message, detail={"liveness_probe": True},
+            ))
+            return True
+
+        return self.mutate_current(dispatch_id, mutate=mutate)
+
     def pending(self) -> list[DispatchRecord]:
         self._require_readable()
         self._yield_to_index_writer()
@@ -5995,6 +6043,23 @@ class DispatchWorker:
                 logger.exception(
                     "Dispatch %s failure notification failed", record.dispatch_id
                 )
+
+
+def completion_request_body(record: DispatchRecord) -> dict[str, Any]:
+    """The immutable ``/complete`` envelope a target sends for ``record``."""
+    return {
+        "mutation_id": record.mutation_id,
+        "card_id": record.card_id,
+        "realm_id": record.realm_id,
+        "card_version": record.card_version,
+        "source_instance_id": record.target_instance_id,
+        "session_id": record.session_id,
+        "result": record.completion_payload or {},
+        "disposition": (record.completion_payload or {}).get("card_disposition"),
+        "final_report": (
+            record.final_report.model_dump(mode="json") if record.final_report else None
+        ),
+    }
 
 
 class CompletionOutbox:

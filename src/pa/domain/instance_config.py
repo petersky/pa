@@ -59,6 +59,11 @@ class InstanceConfig(BaseModel):
     # full hour is failed. True restores the old behaviour: fail every
     # reservation that is not running after one hour.
     dispatch_capacity_reservation_hard_expiry: bool = False
+    # Re-place a lost remote dispatch automatically (False = leave it failed for manual retry).
+    dispatch_reoffer_lost_remote: bool = True
+    dispatch_lost_remote_seconds: int = Field(default=21600, ge=0, le=90 * 24 * 3600)
+    # Silence before an authority asks the target about a running remote dispatch (0 = never; old behaviour).
+    dispatch_stale_running_seconds: int = Field(default=1800, ge=0, le=30 * 24 * 3600)
     # Cap of the progress-delivery backoff (old behaviour: flat 3 s).
     progress_delivery_retry_max_seconds: int = Field(default=300, ge=1, le=86400)
     # Retry window for 404/401/unknown_dispatch (0 = permanent after one try, as before).

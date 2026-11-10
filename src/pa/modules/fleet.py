@@ -62,6 +62,7 @@ from pa.domain.models import (
 from pa.notifications.stall import (
     StallKind,
     notify_completion_undeliverable,
+    notify_dispatch_reoffered,
     notify_reconciliation_abandoned,
     notify_dispatch_failed,
     notify_stall,
@@ -95,6 +96,7 @@ from pa.execution.dispatch import (
     DispatchWorker,
     GoalDispatchProvenance,
     TERMINAL_DISPATCH_STATES,
+    completion_request_body,
     goal_admission_validation_proof,
     goal_dispatch_execution_identity_valid,
     goal_dispatch_materialization_binding_valid,
@@ -103,6 +105,7 @@ from pa.execution.dispatch import (
     goal_dispatch_placement_input_snapshot,
     goal_dispatch_record_placement_input_valid,
 )
+from pa.execution.liveness import RunningLivenessSweeper, TargetStatus
 from pa.execution.session_presentation import build_session_presentation
 from pa.execution.disposition import decide_card_disposition
 from pa.execution.post_turn import (
@@ -2270,6 +2273,44 @@ def _record_post_turn_evaluation(
     record.post_turn_evaluations.append(evaluation)
     record.post_turn_evaluations = record.post_turn_evaluations[-20:]
     return ledger.put(record)
+
+
+@router.get("/fleet/dispatch/{dispatch_id}/status")
+def dispatch_target_status(request: Request, dispatch_id: str) -> dict[str, Any]:
+    """What this target knows about a dispatch, for its authority's liveness sweep.
+
+    Read-only and idempotent. Only the dispatch's own authority may ask. An
+    unknown dispatch is a successful ``known: false`` answer (not a 404) so the
+    authority can tell "lost" from "unreachable".
+    """
+    _require_instance(request)
+    caller = request.headers.get("X-PA-Origin-Instance-ID", "").strip()
+    ledger = _dispatch_store(request)
+    record = ledger.get(dispatch_id)
+    if record is None:
+        return {"dispatch_id": dispatch_id, "known": False}
+    if caller != record.authority_instance_id:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "dispatch_authority_mismatch", "recoverable": False},
+        )
+    session_status = None
+    if record.session_id:
+        session = request.app.state.ctx.store.get_session(record.session_id)
+        session_status = getattr(session, "status", None)
+    return {
+        "dispatch_id": dispatch_id,
+        "known": True,
+        "state": record.state,
+        "session_id": record.session_id,
+        "session_status": session_status,
+        "acknowledged": record.acknowledged_at is not None,
+        "completion": (
+            completion_request_body(record)
+            if record.completion_payload is not None
+            else None
+        ),
+    }
 
 
 @router.post("/fleet/dispatch/{dispatch_id}/complete")
@@ -7654,6 +7695,186 @@ async def _process_remote_dispatch_stages(app, record: DispatchRecord) -> None:
         outcome="started",
         applied=True,
     )
+
+
+def _liveness_probe(ctx: AppContext):
+    async def probe(record: DispatchRecord) -> TargetStatus:
+        fleet = ctx.services.get("fleet_registry")
+        client = ctx.services.get("dispatch_http_client") or ctx.services.get(
+            "fleet_http_client"
+        )
+        inst = fleet.get_instance(record.target_instance_id) if fleet else None
+        if inst is None or client is None:
+            return TargetStatus(reachable=False, error="target is not a fleet member")
+        try:
+            response, _endpoint = await request_peer(
+                ctx, client, inst, "GET",
+                f"api/fleet/dispatch/{record.dispatch_id}/status",
+                timeout=10.0, headers=_peer_headers_ctx(ctx),
+            )
+        except (httpx.HTTPError, TimeoutError, OSError) as exc:
+            return TargetStatus(reachable=False, error=f"{type(exc).__name__}: {exc}"[:200])
+        if response.status_code != 200:
+            # An older peer without the endpoint (404) cannot vouch either way.
+            return TargetStatus(reachable=True, known=None, error=f"HTTP {response.status_code}")
+        try:
+            data = response.json()
+        except ValueError:
+            return TargetStatus(reachable=True, known=None, error="malformed status")
+        if not isinstance(data, dict) or not isinstance(data.get("known"), bool):
+            return TargetStatus(reachable=True, known=None, error="malformed status")
+        completion = data.get("completion")
+        return TargetStatus(
+            reachable=True, known=data["known"], state=data.get("state"),
+            session_status=data.get("session_status"),
+            completion=completion if isinstance(completion, dict) else None, raw=data,
+        )
+
+    return probe
+
+
+async def _liveness_adopt(app, record: DispatchRecord, completion: dict[str, Any]) -> None:
+    """Acknowledge the target's completion through the normal /complete handler."""
+    ctx = app.state.ctx
+    request = Request({
+        "type": "http", "app": app,
+        "headers": [(b"idempotency-key", str(record.mutation_id).encode())],
+    })
+    body = DispatchCompletionBody.model_validate(completion)
+    await _offload_ctx(ctx, "dispatch.liveness_adopt", complete_dispatch, request, record.dispatch_id, body)
+
+
+async def _liveness_fail(app, record: DispatchRecord, reason: str, code: str) -> DispatchRecord:
+    ctx = app.state.ctx
+    ledger: DispatchStore = ctx.require_service("dispatch_store")
+    failed = await _offload_ctx(
+        ctx, "dispatch.liveness_fail", ledger.fail, record, reason,
+        code=code, recoverable=True, detail={"liveness": True},
+    )
+    if failed.state == "failed":
+        await _release_goal_dispatch_reservation_async(
+            ctx, ledger, failed, outcome="failed", applied=_goal_dispatch_was_applied(failed),
+        )
+    return failed
+
+
+async def _reoffer_lost_dispatch(app, record: DispatchRecord) -> bool:
+    """Retry a lost remote dispatch through the retry admission, placing it again.
+
+    Same dispatch id and card; the lost target is excluded and every field bound
+    to it is cleared. Governed (goal) and repository-bound dispatches keep their
+    fixed target and are left failed for the owner (already notified).
+    """
+    ctx = app.state.ctx
+    ledger: DispatchStore = ctx.require_service("dispatch_store")
+    plan = record.materialization_plan or {}
+    if sum(1 for key in record.control_operations if key.startswith("reoffer-lost:")) >= 3:
+        return False  # bounded: stop re-placing a dispatch that keeps getting lost
+    if (
+        record.goal_provenance is not None
+        or plan.get("profile") == "repository"
+        or (plan.get("requirements") or {}).get("repositories")
+        or not record.retryable
+    ):
+        return False
+    request = _dispatch_request(app)
+    request.state.instance_authenticated = True
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    instances = [
+        item for item in fleet.list_instances()
+        if item.instance_id != record.target_instance_id
+    ]
+    if not instances:
+        return False
+    candidates = await _placement_candidates(request, instances)
+    _, enforcement, effective = await _offload_request(
+        request, "fleet.reoffer_policy_inputs", _placement_policy_inputs,
+        _policy_service(request), ctx.store, record.realm_id, candidates,
+    )
+    original = dict(record.placement_decision or {})
+    for candidate, (policy, explicit) in zip(candidates, effective):
+        candidate.participation_policy = policy
+        candidate.participation_policy_explicit = explicit
+        candidate.group_membership = "included"
+    provider = record.capacity_provider or record.request_payload.get("provider")
+    try:
+        decision = await _offload_request(
+            request, "fleet.reoffer_placement_resolve",
+            ctx.require_service("placement_service").resolve,
+            PlacementRequest(
+                realm_id=record.realm_id,
+                fleet_id=ctx.settings.fleet_id,
+                policy=PlacementPolicy.BEST_MATCH,
+                card_id=record.card_id,
+                provider=provider,
+                model_id=record.request_payload.get("model_id"),
+                workload_profile=str(
+                    original.get("workload_profile") or plan.get("profile") or "research"
+                ),
+                project_id=record.project_id,
+                dispatch_intent=DispatchIntent.AUTOMATIC,
+                default_source="lost_remote_reoffer",
+                principal_id=record.principal_id,
+                policy_enforcement_active=enforcement,
+                allow_concurrent=True,
+            ),
+            candidates,
+        )
+    except PlacementError as exc:
+        logger.warning("Lost dispatch %s could not be placed again: %s", record.dispatch_id, exc)
+        return False
+    capacity = _capacity_admission_from_decision(
+        decision.model_dump(mode="json"), provider=provider,
+        override=False, override_reason=None,
+    )
+    if capacity is None:
+        return False
+    revalidation = decision.model_dump(mode="json")
+    revalidation["reoffered_from_instance_id"] = record.target_instance_id
+    revalidation["reoffered_at"] = datetime.now(UTC).isoformat()
+    try:
+        await _offload_ctx(
+            ctx, "dispatch.reoffer_admission", ledger.retry_with_capacity, record, capacity,
+            idempotency_key=f"reoffer-lost:{record.dispatch_id}:{record.target_instance_id}",
+            retarget={
+                "target_instance_id": decision.chosen_instance_id,
+                "target_instance_name": decision.chosen_instance_name,
+                "placement_policy": decision.policy,
+                "placement_decision": revalidation,
+                "placement_resolved_at": decision.resolved_at,
+            },
+        )
+    except (DispatchQueueFull, DispatchCapacityExhausted, ConcurrentCardDispatch, ValueError) as exc:
+        logger.warning("Lost dispatch %s could not be re-admitted: %s", record.dispatch_id, exc)
+        return False
+    worker = ctx.services.get("dispatch_worker")
+    if worker:
+        worker.wake()
+    await _offload_ctx(
+        ctx, "dispatch.reoffer_notify", notify_dispatch_reoffered, ctx, record,
+        decision.chosen_instance_name,
+    )
+    return True
+
+
+async def _dispatch_terminal(app, record: DispatchRecord, outcome: str) -> None:
+    """Worker terminal hook: release the goal hold; re-offer an expired remote dispatch."""
+    ctx = app.state.ctx
+    await _release_goal_dispatch_reservation_async(
+        ctx,
+        ctx.require_service("dispatch_store"),
+        record,
+        outcome=outcome,
+        applied=_goal_dispatch_was_applied(record),
+    )
+    if (
+        outcome == "capacity-expired"
+        and record.target_instance_id != ctx.settings.instance_id
+        and record.authority_instance_id == ctx.settings.instance_id
+        and ctx.settings.dispatch_reoffer_lost_remote
+    ):
+        await _offload_ctx(ctx, "dispatch.expiry_notify", notify_dispatch_failed, ctx, record)
+        await _reoffer_lost_dispatch(app, record)
 
 
 def _authority_peer_post(ctx: AppContext):
@@ -15475,13 +15696,7 @@ class FleetModule(Module):
             lambda record: _process_remote_dispatch(app, record),
             async_runtime=async_runtime,
             readiness=lambda record: _refresh_queued_dispatch_readiness(app, record),
-            terminal=lambda record, outcome: _release_goal_dispatch_reservation_async(
-                ctx,
-                ctx.require_service("dispatch_store"),
-                record,
-                outcome=outcome,
-                applied=_goal_dispatch_was_applied(record),
-            ),
+            terminal=lambda record, outcome: _dispatch_terminal(app, record, outcome),
             lifecycle_recovery=lambda: _reconcile_goal_dispatch_reservations(ctx),
             stall_notifier=lambda record: notify_dispatch_failed(ctx, record),
             instance_id=ctx.settings.instance_id,
@@ -15531,6 +15746,23 @@ class FleetModule(Module):
         ctx.register_service("session_lifecycle", lifecycle)
         if ctx.settings.agent_enabled:
             lifecycle.start()
+        liveness = RunningLivenessSweeper(
+            ctx.require_service("dispatch_store"),
+            instance_id=ctx.settings.instance_id,
+            probe=_liveness_probe(ctx),
+            adopt=lambda record, completion: _liveness_adopt(app, record, completion),
+            fail_lost=lambda record, reason, code: _liveness_fail(app, record, reason, code),
+            reoffer=lambda record: _reoffer_lost_dispatch(app, record),
+            notify=lambda record: notify_dispatch_failed(ctx, record),
+            stale_seconds=lambda: ctx.settings.dispatch_stale_running_seconds,
+            lost_seconds=lambda: ctx.settings.dispatch_lost_remote_seconds,
+            reoffer_enabled=lambda: ctx.settings.dispatch_reoffer_lost_remote,
+            offload=lambda operation, call, *args, **kwargs: _offload_ctx(
+                ctx, operation, call, *args, **kwargs
+            ),
+        )
+        liveness.start()
+        ctx.register_service("dispatch_liveness", liveness)
         progress_service = ProgressService(
             ctx.require_service("dispatch_store"),
             instance_id=ctx.settings.instance_id,
@@ -15570,6 +15802,9 @@ class FleetModule(Module):
         reconciler = ctx.services.get("completion_reconciler")
         if reconciler:
             await reconciler.close()
+        liveness = ctx.services.get("dispatch_liveness")
+        if liveness:
+            await liveness.close()
         progress_service = ctx.services.get("progress_service")
         if progress_service:
             await progress_service.close()
