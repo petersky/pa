@@ -1427,3 +1427,196 @@ def workshop_semantic_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
         return deepcopy(value)
 
     return normalize(snapshot)
+
+
+# ---------------------------------------------------------------------------
+# Slim "floor" projection
+# ---------------------------------------------------------------------------
+
+WORKSHOP_VIEWS = ("full", "floor")
+_FAILING_CONCLUSIONS = frozenset(
+    {"failure", "cancelled", "timed_out", "action_required", "startup_failure", "stale"}
+)
+_SLIM_CARD_KEYS = (
+    "id",
+    "title",
+    "realm_id",
+    "lane",
+    "project",
+    "preferred_instance",
+    "updated_at",
+    "dispatch_id",
+    "session_id",
+    "target_instance_id",
+    "can_dispatch",
+    "dispatch_unavailable_reason",
+    "branch",
+    "blockers",
+    "historical_dispatch_count",
+    "href",
+)
+_SLIM_RECONCILIATION_KEYS = (
+    "state",
+    "reason",
+    "condition",
+    "recovery_action",
+    "recoverable",
+    "attempts",
+    "next_retry_at",
+)
+_SLIM_PRESENTATION_KEYS = (
+    "group",
+    "state",
+    "state_label",
+    "reason",
+    "tone",
+    "attention",
+    "attention_code",
+    "in_motion",
+    "terminal",
+    "priority",
+    "signal_label",
+    "checkpoint_state",
+    "occurred_at",
+    "action",
+)
+_SLIM_WORKER_KEYS = (
+    "id",
+    "purpose",
+    "title",
+    "state",
+    "state_label",
+    "provider",
+    "connected",
+    "dispatch_id",
+    "elapsed_from",
+    "latest_progress",
+    "queue_reason",
+    "queue_position",
+    "progress_freshness",
+    "progress_freshness_label",
+    "progress_last_activity_at",
+    "progress_age_seconds",
+    "href",
+    "relationship_kind",
+    "live",
+    "freshness",
+    "freshness_label",
+)
+
+
+def pull_request_gate(watch: dict[str, Any]) -> dict[str, Any]:
+    """Compact merge-gate summary replacing the multi-KB supervisor state blob."""
+    state = watch.get("state") if isinstance(watch.get("state"), dict) else {}
+    checks = [item for item in state.get("checks") or [] if isinstance(item, dict)]
+    failing = sum(
+        str(item.get("conclusion") or "").lower() in _FAILING_CONCLUSIONS
+        for item in checks
+    )
+    pending = sum(str(item.get("status") or "").lower() != "completed" for item in checks)
+    evidence = state.get("stable_green_evidence")
+    return {
+        "id": watch.get("id"),
+        "repository": watch.get("repository"),
+        "pr_number": watch.get("pr_number"),
+        "status": watch.get("status"),
+        "head_sha": watch.get("head_sha"),
+        "url": watch.get("url") or watch.get("pr_url"),
+        "last_error": watch.get("last_error"),
+        "retired_at": watch.get("retired_at"),
+        "gate": {
+            "pr_state": state.get("state"),
+            "draft": state.get("draft"),
+            "mergeable_state": state.get("mergeable_state"),
+            "review_decision": state.get("review_decision"),
+            "checks": {"total": len(checks), "failing": failing, "pending": pending},
+            "stable_green": (
+                evidence.get("green") if isinstance(evidence, dict) else None
+            ),
+        },
+    }
+
+
+def _pick(source: Any, keys: tuple[str, ...]) -> dict[str, Any] | None:
+    if not isinstance(source, dict):
+        return None
+    return {key: source[key] for key in keys if key in source}
+
+
+def _slim_card(card: Any) -> Any:
+    if not isinstance(card, dict):
+        return card
+    slim = _pick(card, _SLIM_CARD_KEYS) or {}
+    slim["pull_requests"] = [
+        pull_request_gate(watch) for watch in card.get("pull_requests") or []
+    ]
+    return slim
+
+
+def _slim_worker(worker: dict[str, Any]) -> dict[str, Any]:
+    slim = _pick(worker, _SLIM_WORKER_KEYS) or {}
+    card = worker.get("card")
+    slim["card_id"] = card.get("id") if isinstance(card, dict) else None
+    return slim
+
+
+def _slim_order(order: dict[str, Any]) -> dict[str, Any]:
+    slim = {
+        key: value
+        for key, value in order.items()
+        if key not in {"card", "presentation", "card_reconciliation"}
+    }
+    slim["card"] = _slim_card(order.get("card"))
+    slim["card_reconciliation"] = _pick(
+        order.get("card_reconciliation"), _SLIM_RECONCILIATION_KEYS
+    )
+    slim["presentation"] = _pick(order.get("presentation"), _SLIM_PRESENTATION_KEYS)
+    return slim
+
+
+def _slim_bay(bay: dict[str, Any]) -> dict[str, Any]:
+    slim = {
+        key: value
+        for key, value in bay.items()
+        if key not in {"providers", "workers", "capacity", "url"}
+    }
+    capacity = bay.get("capacity") or {}
+    slim["capacity"] = {
+        key: capacity.get(key)
+        for key in ("consumed", "limit", "source", "queued_prompts")
+    }
+    slim["workers"] = [_slim_worker(worker) for worker in bay.get("workers") or []]
+    return slim
+
+
+def workshop_floor_view(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Project the canonical snapshot to what the Workshop floor actually renders.
+
+    Drops the per-lane ``areas`` duplicate of every card payload, worker-embedded
+    full cards, provider inventories, counts, authority and the multi-KB pull
+    request supervisor state. Orphan sessions (agents with no card) are kept in a
+    compact form because the floor shows them.
+    """
+    sync = snapshot.get("sync") or {}
+    return {
+        "schema": snapshot.get("schema"),
+        "view": "floor",
+        "generated_at": snapshot.get("generated_at"),
+        "realm_id": snapshot.get("realm_id"),
+        "bays": [_slim_bay(bay) for bay in snapshot.get("bays") or []],
+        "work_orders": [_slim_order(order) for order in snapshot.get("work_orders") or []],
+        "orphan_sessions": [
+            {
+                "bay_id": (item.get("bay") or {}).get("id"),
+                "bay_name": (item.get("bay") or {}).get("name"),
+                **_slim_worker(item.get("worker") or {}),
+            }
+            for item in snapshot.get("orphan_sessions") or []
+        ],
+        "inventory": snapshot.get("inventory"),
+        "sync": {key: value for key, value in sync.items() if key != "edges"},
+    }
+
+
+def workshop_view(snapshot: dict[str, Any], view: str) -> dict[str, Any]:
+    return workshop_floor_view(snapshot) if view == "floor" else snapshot
