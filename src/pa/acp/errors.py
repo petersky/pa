@@ -18,8 +18,12 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str], str], ...] = (
     (
         "auth_missing",
         re.compile(
-            r"(api[_ -]?key|auth(entication|orization)?|credential|unauthorized|401|"
-            r"missing.*(key|token)|not configured)",
+            # Anchored: a bare "auth" substring also matches "authority",
+            # "author" and "authoritative", which are never credential failures.
+            r"(api[_ -]?key|\bauth\b|\bauthenticat(ion|e|ed)\b|\bauthori[sz]ation\b|"
+            r"\bnot\s+authori[sz]ed\b|credential|\bunauthori[sz]ed\b|\b401\b|"
+            r"missing.*(key|token)|"
+            r"\b(credentials?|api[_ -]?key|token|login|provider)\b[^.\n]{0,40}not configured)",
             re.IGNORECASE,
         ),
         "Provider authentication failed or a required API credential is missing.",
@@ -63,6 +67,47 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str], str], ...] = (
         "ACP session configuration could not be applied or verified.",
     ),
 )
+
+
+# Failures that retrying cannot fix. Recovery must block on the first attempt
+# with a precise code instead of backing off as if the provider were flaky.
+# Each entry: (code, lowercase marker substrings, operator remedy).
+_DETERMINISTIC_BLOCKS: tuple[tuple[str, tuple[str, ...], str], ...] = (
+    (
+        "workspace_lease_conflict",
+        ("already has a live worktree lease",),
+        "Another live session holds this card's worktree lease. Resume or close "
+        "that session, or explicitly allow a concurrent dispatch, then retry.",
+    ),
+    (
+        "dispatch_binding_mismatch",
+        ("does not match its durable assigned dispatch binding",),
+        "The session no longer matches its durable dispatch (the dispatch is "
+        "terminal or was reassigned). Close the session or start a new dispatch "
+        "for the card.",
+    ),
+    (
+        "empty_index_checkout",
+        ("empty-index checkout retained",),
+        "The retained checkout has an empty index. Use targeted materialization "
+        "preservation or repair before admission; PA will not reset it.",
+    ),
+    (
+        "interrupted_checkout_retained",
+        ("interrupted checkout has retained changes",),
+        "An interrupted checkout holds uncommitted changes. Repair it explicitly "
+        "before the session is admitted again.",
+    ),
+)
+
+
+def deterministic_recovery_block(value: BaseException | str) -> dict[str, str] | None:
+    """Return ``{code, remedy}`` when a failure can never succeed on retry."""
+    text = (value if isinstance(value, str) else format_acp_error(value)).casefold()
+    for code, markers, remedy in _DETERMINISTIC_BLOCKS:
+        if any(marker in text for marker in markers):
+            return {"code": code, "remedy": remedy}
+    return None
 
 
 def format_acp_error(exc: BaseException) -> str:
@@ -121,7 +166,11 @@ def classify_acp_failure(
     missing_executable = isinstance(exc, FileNotFoundError) or (
         isinstance(exc, OSError) and getattr(exc, "errno", None) == errno.ENOENT
     )
-    if missing_executable:
+    deterministic = deterministic_recovery_block(text)
+    if deterministic is not None:
+        code = deterministic["code"]
+        message = f"{deterministic['remedy']} Detail: {text}"
+    elif missing_executable:
         missing = getattr(exc, "filename", None) or text
         code = "provider_not_installed"
         message = (
@@ -193,4 +242,8 @@ def classify_acp_failure(
         "provider": provider_id,
         "error_type": type(exc).__name__,
     }
+    if deterministic is not None:
+        detail["recoverable"] = True  # an operator can fix it; a retry cannot
+        detail["deterministic"] = True
+        detail["action"] = deterministic["remedy"]
     return detail
