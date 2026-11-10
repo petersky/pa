@@ -42,7 +42,7 @@ from pa.goals.models import (
     ProposalStatus,
     WorkPackageState,
 )
-from pa.goals.service import GoalService
+from pa.goals.service import GoalConflict, GoalService
 from pa.goals.supervisor import GoalSupervisor
 from pa.sync.event_log import EventLog
 from pa.sync.object_store import ObjectStore
@@ -419,6 +419,109 @@ class CycleFailureEscalationTests(unittest.TestCase):
             self.assertTrue(h.supervisor._backing_off(h.get(goal.id)))
             h.supervisor._ensure_plan_proposal = real
             self.assertEqual(len(h.supervisor.run_once(goal.id)), 1)
+
+
+class PauseIsEnforcedTests(unittest.TestCase):
+    """A4: a deliberately stopped goal takes no side effects."""
+
+    @staticmethod
+    def _policy() -> GoalPolicy:
+        return GoalPolicy(autonomy_level=4, permitted_actions=FULL_ACTIONS)
+
+    def test_pause_between_proposal_and_dispatch_prevents_the_dispatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(tmp)
+            goal = h.create_goal(self._policy())
+            h.run(goal.id)  # plan applied, dispatch proposal pending
+            staged = h.run(goal.id)  # dispatch authorized and staged
+            self.assertEqual(
+                staged.work_packages[0].dispatch_attempt.state.value, "staged"
+            )
+            self.assertEqual(h.dispatched, [])
+
+            paused = h.operator_transition(h.get(goal.id), GoalState.PAUSED, "pause")
+            self.assertEqual(paused.state, GoalState.PAUSED)
+
+            for _ in range(3):
+                h.supervisor.run_once(goal.id)
+                h.supervisor.run_once()
+            self.assertEqual(h.dispatched, [])
+            self.assertEqual(h.get(goal.id).state, GoalState.PAUSED)
+
+            resumed = h.operator_transition(h.get(goal.id), GoalState.ACTIVE, "resume")
+            self.assertEqual(resumed.state, GoalState.ACTIVE)
+            h.run(goal.id)
+            self.assertEqual(len(h.dispatched), 1)
+
+    def test_pause_before_an_authorized_plan_is_applied_creates_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(tmp)
+            goal = h.create_goal(self._policy())
+            goal = h.service.submit_proposal(
+                goal.id,
+                GoalProposalCreate(
+                    proposer_principal=OPERATOR,
+                    proposer_role=GoalActorRole.COORDINATOR,
+                    action=CreateWorkPackageAction(
+                        title="Operator package",
+                        objective="Should wait for the resume",
+                        criterion_ids=[goal.criteria[0].id],
+                        dispatch_when_ready=False,
+                    ),
+                    rationale="operator",
+                    expected_goal_version=goal.version,
+                    policy_revision=goal.policy.revision,
+                ),
+                h.ctx(goal, "operator-proposal"),
+            )
+            h.operator_transition(h.get(goal.id), GoalState.PAUSED, "pause")
+
+            h.supervisor.run_once(goal.id)
+
+            paused = h.get(goal.id)
+            self.assertEqual(paused.work_packages, [])
+            self.assertEqual(paused.linked_card_ids, [])
+            self.assertEqual(paused.proposals[0].status, ProposalStatus.PENDING)
+
+    def test_a_stale_copy_of_a_paused_goal_cannot_dispatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(tmp)
+            goal = h.create_goal(self._policy())
+            h.run(goal.id)
+            h.run(goal.id)  # dispatch staged, not yet sent
+            stale = h.get(goal.id)
+            leased = h.supervisor._claim(stale)
+            h.operator_transition(h.get(goal.id), GoalState.PAUSED, "pause")
+
+            # The cycle still holds the pre-pause copy (the operator paused while
+            # it was running): its side effect must re-read the goal and refuse.
+            with self.assertRaises(GoalConflict):
+                h.supervisor._cycle(leased)  # its checkpoint loses to the pause
+
+            self.assertEqual(h.dispatched, [])
+            self.assertEqual(h.get(goal.id).state, GoalState.PAUSED)
+
+    def test_operator_pause_is_not_blocked_by_the_supervisor_lease(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(tmp)
+            goal = h.run(h.create_goal(self._policy()).id)
+            self.assertTrue(goal.lease.active(h.clock[0]))
+
+            paused = h.operator_transition(goal, GoalState.PAUSED, "pause-with-lease")
+
+            self.assertEqual(paused.state, GoalState.PAUSED)
+
+    def test_paused_goal_does_not_spin_the_supervisor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(tmp)
+            goal = h.create_goal(self._policy())
+            h.run(goal.id)  # leaves a pending dispatch proposal
+            h.operator_transition(h.get(goal.id), GoalState.PAUSED, "pause")
+            before = h.get(goal.id)
+
+            self.assertEqual(h.supervisor.run_once(), [])
+
+            self.assertEqual(h.get(goal.id).version, before.version)
 
 
 if __name__ == "__main__":

@@ -874,7 +874,11 @@ class GoalService:
             raise GoalConflict(
                 "goal mutation must execute on the durable control authority instance"
             )
-        if require_fence and goal.lease.active(self._clock()):
+        if (
+            require_fence
+            and goal.lease.active(self._clock())
+            and not self._operator_on_lease_holder(goal, context)
+        ):
             self._check_fence(goal, context)
         if require_fence and context.actor_principal.startswith("service:"):
             if not goal.lease.active(self._clock()):
@@ -916,6 +920,24 @@ class GoalService:
             raise GoalConflict(
                 "idempotency key already belongs to a different goal operation"
             )
+
+    def _operator_on_lease_holder(
+        self, goal: Goal, context: GoalMutationContext
+    ) -> bool:
+        """A signed-in operator acting on the controlling instance needs no fence.
+
+        The fence orders competing controllers. An operator control (Pause, edit,
+        retry) cannot carry the supervisor's fencing token, and requiring it made
+        every control fail while a supervisor lease was held. The optimistic
+        ``expected_version`` still serializes the operator against the supervisor,
+        whose own checkpoint then loses and whose side effects re-check the goal.
+        """
+
+        return bool(
+            context.actor_principal.startswith(("user:", "role:admin"))
+            and goal.lease.holder_instance_id == context.authority_instance_id
+            and context.authority_instance_id == self.instance_id
+        )
 
     @staticmethod
     def _check_fence(goal: Goal, context: GoalMutationContext) -> None:

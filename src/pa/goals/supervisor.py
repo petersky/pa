@@ -114,6 +114,22 @@ _TERMINAL_INTERACTIONS = {
     InteractionState.SUPERSEDED,
     InteractionState.DELIVERED,
 }
+# Deliberate stop (or finished) states: the supervisor may observe the world but
+# must not materialize cards, dispatch, create notifications or otherwise act.
+# DRAFT/SHAPING/READY are pre-activation states that already accept operator
+# proposals and are deliberately left as they were.
+_STOPPED_GOAL_STATES = {
+    GoalState.PAUSED,
+    GoalState.BLOCKED,
+    GoalState.WAITING_EXTERNAL,
+    GoalState.ABANDONED,
+    GoalState.ACHIEVED,
+}
+_OBSERVED_WORK = {
+    WorkPackageState.DISPATCHED,
+    WorkPackageState.RUNNING,
+    WorkPackageState.BLOCKED,
+}
 _MAX_PACKAGE_REPLACEMENTS = 20
 _MAX_GOAL_REPLACEMENTS = 100
 _MAX_GOAL_DISPATCH_IDS = 200
@@ -297,9 +313,48 @@ class GoalSupervisor:
             reopen_resolved=True,
         )
 
+    def _may_act(self, goal: Goal) -> bool:
+        """True when the goal's state lets the supervisor take side effects."""
+
+        if goal.state in _STOPPED_GOAL_STATES:
+            return False
+        if goal.state == GoalState.WAITING_OPERATOR:
+            return not any(
+                item.state == GoalInteractionState.PENDING
+                for item in goal.operator_interactions
+            )
+        return True
+
+    def _interaction_resolved(self, goal: Goal) -> bool:
+        for link in goal.operator_interactions:
+            if link.state != GoalInteractionState.PENDING:
+                continue
+            notification = self.store.get_notification(
+                link.notification_id, realm_id=goal.realm_id
+            )
+            if (
+                notification
+                and notification.interaction
+                and notification.interaction.state in _TERMINAL_INTERACTIONS
+            ):
+                return True
+        return False
+
     def _needs_cycle(self, goal: Goal) -> bool:
         if any(package.dispatch_attempt is not None for package in goal.work_packages):
             return True
+        if not self._may_act(goal):
+            # Parked: a paused/blocked/waiting goal only needs a cycle to observe
+            # in-flight Fleet work, to ingest a resolved operator interaction, or
+            # when an explicit timer fires.
+            return bool(
+                any(
+                    item.state in _OBSERVED_WORK and item.dispatch_ids
+                    for item in goal.work_packages
+                )
+                or self._interaction_resolved(goal)
+                or (goal.wakeup and goal.wakeup.wake_at <= self.now())
+            )
         if any(item.status not in _TERMINAL_PROPOSALS for item in goal.proposals):
             return True
         if any(
@@ -609,6 +664,13 @@ class GoalSupervisor:
         current = self.service.get(goal.id)
         if current is None:
             raise GoalConflict("goal disappeared before its side effect")
+        if current.state in _STOPPED_GOAL_STATES:
+            # The operator may have paused (or the goal may have been stopped by
+            # another controller) after this cycle began: never act on a stale
+            # copy of a goal that is deliberately stopped.
+            raise GoalConflict(
+                f"goal is {current.state.value}; refusing to take a side effect"
+            )
         if not current.lease.active(self.now()):
             raise GoalConflict("goal controller lease expired before its side effect")
         if (
@@ -662,8 +724,11 @@ class GoalSupervisor:
         meaningful = self._reconcile_dispatch_attempts(goal, now)
         meaningful = self._ensure_plan_proposal(goal, now) or meaningful
         meaningful = self._ingest_interactions(goal, now) or meaningful
-        meaningful = self._authorize_pending(goal, now) or meaningful
-        meaningful = self._apply_authorized(goal, now) or meaningful
+        # Pause (and every other deliberate stop) is enforced here: observation
+        # continues, but nothing authorizes, applies, plans or dispatches.
+        if self._may_act(goal):
+            meaningful = self._authorize_pending(goal, now) or meaningful
+            meaningful = self._apply_authorized(goal, now) or meaningful
         meaningful = (
             self._reconcile_dispatches(
                 goal,
@@ -672,8 +737,9 @@ class GoalSupervisor:
             )
             or meaningful
         )
-        meaningful = self._advance_ready_work(goal, now) or meaningful
-        meaningful = self._ensure_dispatch_proposals(goal, now) or meaningful
+        if self._may_act(goal):
+            meaningful = self._advance_ready_work(goal, now) or meaningful
+            meaningful = self._ensure_dispatch_proposals(goal, now) or meaningful
         meaningful = self._detect_drift(goal, now) or meaningful
         meaningful = self._advance_goal_state(goal) or meaningful
 
