@@ -95,6 +95,7 @@ class InstanceConfig(BaseModel):
     agent_enabled: bool = True
     agent_github_token_enabled: bool = False
     agent_recovery_concurrency: int = Field(default=2, ge=1, le=16)
+    agent_reclaim_dead_session_leases: bool = True
     agent_session_idle_retention_hours: float = Field(default=24.0, ge=0.01, le=8760)
     agent_session_sweep_seconds: float = Field(default=30.0, ge=1.0, le=3600)
     maintenance_interval_seconds: int = Field(

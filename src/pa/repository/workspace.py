@@ -16,6 +16,7 @@ import shlex
 import shutil
 import sqlite3
 import subprocess
+import logging
 import tempfile
 from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime, timedelta
@@ -30,6 +31,8 @@ from pa.core.operation_budget import measured_lock
 from pa.core.performance import observe_git_subprocess
 from pa.core.sqlite_metrics import ObservedConnection, derived_connection
 from pa.domain.models import Repository
+
+logger = logging.getLogger(__name__)
 
 
 class _RepositoryFileLock:
@@ -71,6 +74,16 @@ def workspace_blocks_admission(
 
 class WorkspaceProvisioningError(RuntimeError):
     """A visible, retryable failure while preparing an execution workspace."""
+
+
+class WorkspaceLeaseConflict(WorkspaceProvisioningError):
+    """Another live owner holds this card's worktree lease."""
+
+
+RESCUE_REF_PREFIX = "refs/pa/rescue"
+# Untracked files are folded into a rescue commit only while that stays cheap.
+RESCUE_UNTRACKED_MAX_FILES = 2000
+RESCUE_UNTRACKED_MAX_BYTES = 64 * 1024 * 1024
 
 
 def provider_execution_policy(provider_id: str, mode_id: str | None) -> dict[str, str]:
@@ -307,6 +320,8 @@ class WorkspaceManager:
         self.lock_root = self.root / ".locks"
         self.db_path = self.root / "workspace_leases.db"
         self.live_runtime: Callable[[str], bool | None] = lambda session_id: None
+        # Called after a dead owner's lease is reclaimed; must never raise.
+        self.reclaim_observer: Callable[[dict[str, Any]], None] | None = None
         self._pr_watch_provider: Callable[..., list[Any]] | None = None
         for path in (
             self.cache_root,
@@ -319,16 +334,54 @@ class WorkspaceManager:
             self._assert_managed_path(path)
         self._init_db()
 
+    def _admission_item(
+        self, lease: WorkspaceLease, statuses: dict[str, str]
+    ) -> dict[str, Any]:
+        item = {
+            **lease.model_dump(mode="json"),
+            "session_status": statuses.get(lease.session_id),
+            "live_runtime": self.live_runtime(lease.session_id),
+        }
+        item["reclaimable"] = self._reclaim_reason(item)
+        return item
+
     def admission_workspaces(self, *, card_id: str | None = None) -> list[dict[str, Any]]:
         statuses = self.store.list_session_statuses()
         return [
-            {
-                **lease.model_dump(mode="json"),
-                "session_status": statuses.get(lease.session_id),
-                "live_runtime": self.live_runtime(lease.session_id),
-            }
+            self._admission_item(lease, statuses)
             for lease in self.list(card_id=card_id)
         ]
+
+    def _reclaim_reason(self, workspace: dict[str, Any]) -> str | None:
+        """Why a blocking lease may be taken over, or None when it must be kept.
+
+        Only an owner that provably cannot run again qualifies: recovery gave up
+        on its session (blocked or exhausted), it has no live or admitting runtime
+        and no pending restart continuation. A closed session's unexpired lease
+        is deliberate retention (an explicit renewal) and is never taken over.
+        """
+        if not getattr(self.settings, "agent_reclaim_dead_session_leases", True):
+            return None
+        if workspace.get("state") not in {"ready", "provisioning"}:
+            return None
+        if workspace.get("live_runtime") is not False:
+            return None
+        if workspace.get("session_status") != "recovery_blocked":
+            return None
+        if not workspace_blocks_admission(workspace):
+            return None
+        session_id = str(workspace.get("session_id") or "")
+        try:
+            if self.store.pending_restart_continuation(session_id=session_id):
+                return None
+            recovery = dict(self.store.get_session(session_id).recovery_json or {})
+        except Exception:
+            return None
+        if recovery.get("exhausted"):
+            return "recovery_exhausted"
+        if recovery.get("blocked"):
+            return "recovery_blocked"
+        return None
 
     def _check_admission(self, *, card_id: str | None, session_id: str | None) -> None:
         if not card_id:
@@ -338,9 +391,171 @@ class WorkspaceManager:
                 workspace["session_id"] != session_id
                 and workspace_blocks_admission(workspace)
             ):
-                raise WorkspaceProvisioningError(
+                if workspace.get("reclaimable") and self.reclaim_dead_owner_lease(
+                    workspace["id"], requested_by=session_id
+                ):
+                    continue
+                raise WorkspaceLeaseConflict(
                     "Card already has a live worktree lease; resume its owner or explicitly allow concurrent dispatch"
                 )
+
+    def reclaim_dead_owner_lease(
+        self, lease_id: str, *, requested_by: str | None = None
+    ) -> dict[str, Any] | None:
+        """Take over a dead owner's lease after saving its work to a rescue ref.
+
+        Re-evaluates ownership just before acting. The worktree stays on disk and
+        the lease is kept as a fenced, failed record, so nothing is deleted: the
+        rescue ref only adds a durable pointer to uncommitted and unpushed work.
+        """
+        lease = self.get_by_id(lease_id)
+        if lease is None:
+            return None
+        item = self._admission_item(lease, self.store.list_session_statuses())
+        reason = item["reclaimable"]
+        if not reason:
+            return None
+        rescue = self._preserve_worktree(lease)
+        current = self.get_by_id(lease_id)
+        if current is None or (current.state, current.updated_at) != (
+            lease.state, lease.updated_at,
+        ):
+            return None  # ownership moved while preserving; leave it alone
+        now = datetime.now(UTC)
+        record = {
+            "reason": reason,
+            "requested_by": requested_by,
+            "reclaimed_at": now.isoformat(),
+            "previous_state": lease.state,
+            "previous_fencing_token": lease.fencing_token,
+            "rescue": rescue,
+        }
+        lease.fencing_token = self._next_fence(lease.repository_id)
+        lease.state = "failed"
+        lease.stage = "reclaimed_dead_owner"
+        lease.error = (
+            f"Lease reclaimed from {reason.replace('_', ' ')} session {lease.session_id}"
+            + (f"; work saved at {rescue['ref']}" if rescue.get("ref") else "")
+        )[:1000]
+        lease.cleanup_evidence = {**lease.cleanup_evidence, "reclaim": record}
+        lease.updated_at = now
+        lease.expires_at = now + self.LEASE_TTL
+        self._save(lease)
+        self._increment_metric("reclaimed_dead_owner_leases")
+        result = {
+            "lease_id": lease.id,
+            "session_id": lease.session_id,
+            "card_id": lease.card_id,
+            "repository_id": lease.repository_id,
+            "worktree_path": lease.worktree_path,
+            **record,
+        }
+        self._record_reclaim(result)
+        return result
+
+    def _record_reclaim(self, result: dict[str, Any]) -> None:
+        try:
+            from pa.domain.models import TranscriptEvent
+
+            self.store.append_transcript_events([
+                TranscriptEvent(
+                    session_id=result["session_id"],
+                    seq=self.store.next_transcript_seq(result["session_id"]),
+                    event_type="workspace_lease_reclaimed",
+                    payload={
+                        "lease_id": result["lease_id"],
+                        "reason": result["reason"],
+                        "requested_by": result["requested_by"],
+                        "rescue_ref": (result["rescue"] or {}).get("ref"),
+                        "rescue_sha": (result["rescue"] or {}).get("sha"),
+                        "worktree_path": result["worktree_path"],
+                    },
+                )
+            ])
+        except Exception:
+            logger.exception("Could not record lease reclaim in the transcript")
+        observer = self.reclaim_observer
+        if observer is not None:
+            try:
+                observer(result)
+            except Exception:
+                logger.exception("Lease reclaim observer failed")
+
+    def _preserve_worktree(self, lease: WorkspaceLease) -> dict[str, Any]:
+        """Point a rescue ref at the worktree's HEAD plus uncommitted work.
+
+        Uses a throwaway index so the worktree, its real index and its branch
+        are untouched. Never raises: a failure is recorded and the lease is still
+        retained, because reclaiming does not delete anything.
+        """
+        now = datetime.now(UTC)
+        result: dict[str, Any] = {
+            "preserved": False, "ref": None, "sha": None,
+            "created_at": now.isoformat(), "dirty": False, "untracked": 0,
+            "untracked_included": False,
+        }
+        tree = Path(lease.worktree_path)
+        scratch: Path | None = None
+        try:
+            self._assert_managed_path(tree)
+            if tree.is_symlink() or not tree.is_dir():
+                result["reason"] = "worktree_missing"
+                return result
+            git = ("-c", "core.fsmonitor=false", "-C", str(tree))
+            head = self._git(*git, "rev-parse", "--verify", "HEAD").stdout.strip()
+            dirty, untracked = self._status(tree)
+            result.update(dirty=dirty, untracked=untracked, head=head)
+            sha = head
+            if dirty or untracked:
+                include_untracked = False
+                if untracked:
+                    names = [
+                        n for n in self._git(
+                            *git, "ls-files", "-o", "--exclude-standard", "-z"
+                        ).stdout.split("\0") if n
+                    ]
+                    size = 0
+                    for name in names[: RESCUE_UNTRACKED_MAX_FILES + 1]:
+                        try:
+                            size += (tree / name).lstat().st_size
+                        except OSError:
+                            pass
+                    include_untracked = (
+                        len(names) <= RESCUE_UNTRACKED_MAX_FILES
+                        and size <= RESCUE_UNTRACKED_MAX_BYTES
+                    )
+                index = Path(self._git(
+                    *git, "rev-parse", "--path-format=absolute", "--git-path", "index"
+                ).stdout.strip())
+                scratch = index.with_name(f"{index.name}.pa-rescue-{os.getpid()}")
+                if index.is_file():
+                    shutil.copyfile(index, scratch)
+                env = {"GIT_INDEX_FILE": str(scratch)}
+                self._git(*git, "add", "-A" if include_untracked else "-u", env_extra=env)
+                tree_sha = self._git(*git, "write-tree", env_extra=env).stdout.strip()
+                identity = {
+                    "GIT_AUTHOR_NAME": "PA", "GIT_AUTHOR_EMAIL": "pa@localhost",
+                    "GIT_COMMITTER_NAME": "PA", "GIT_COMMITTER_EMAIL": "pa@localhost",
+                }
+                sha = self._git(
+                    "-c", "commit.gpgsign=false", "-C", str(tree), "commit-tree",
+                    tree_sha, "-p", head, "-m",
+                    f"PA rescue snapshot of session {lease.session_id}",
+                    env_extra={**env, **identity},
+                ).stdout.strip()
+                result["untracked_included"] = include_untracked
+            owner = re.sub(r"[^A-Za-z0-9._-]+", "-", lease.session_id).strip("-._") or "session"
+            stamp = now.strftime("%Y%m%dT%H%M%SZ") + "-" + lease.id[:8]
+            ref = f"{RESCUE_REF_PREFIX}/{owner[:64]}/{stamp}"
+            self._git(*git, "update-ref", ref, sha)
+            self._git(*git, "cat-file", "-e", f"{sha}^{{commit}}")
+            result.update(preserved=True, ref=ref, sha=sha)
+        except Exception as exc:
+            result["error"] = self._redact_error(str(exc))[:500]
+        finally:
+            if scratch is not None:
+                scratch.unlink(missing_ok=True)
+        return result
 
     @contextmanager
     def admission_guard(
