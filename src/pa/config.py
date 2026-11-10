@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     fleet_owner_url: str = ""
     # Single fenced PR-supervisor lease authority. Empty follows fleet_owner_url.
     pr_supervisor_authority_url: str = ""
+    # Wall-clock budget for one merged-card reconcile pass inside the PR
+    # supervisor loop. The pre-budget behaviour was unbounded (up to 100 watches).
+    pr_supervisor_reconcile_budget_seconds: float = Field(default=5.0, ge=0.5, le=60)
+    # Missing-card completion attempts before a merged watch is marked orphaned
+    # and no longer retried. The pre-limit behaviour retried hourly forever.
+    pr_supervisor_orphan_card_max_attempts: int = Field(default=8, ge=1, le=100)
     instance_url: str = ""
     subscribed_realms: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["default"]

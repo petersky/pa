@@ -1205,8 +1205,11 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         self.domain.get_project.return_value = None
         self.store = PRSupervisorStore(Path(self.tmp.name) / "supervisor.db")
         self.dispatcher = _DedupeDispatcher()
+        self.services: list[PRSupervisor] = []
 
     async def asyncTearDown(self) -> None:
+        for service in self.services:
+            await service.stop_replication()
         self.tmp.cleanup()
 
     def policy(self) -> PRPolicy:
@@ -1226,6 +1229,7 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
             dispatcher=self.dispatcher,
             rng=random.Random(0),
         )
+        self.services.append(service)
         await service.refresh_capability(force=True)
         await service.register_watch(watch(policy=self.policy()), replicate=False)
         return service
@@ -2474,6 +2478,165 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.store.get_watch("watch-1").state["card_lane"], "done")
         self.assertNotIn("card_completion_retry", self.store.get_watch("watch-1").state)
         self.assertEqual(reopened.list_card_completion_due(now=utcnow() + timedelta(days=1)), [])
+
+    def _merged_siblings(self, count: int, *, card_id: str = "card-1", first: int = 17) -> list[str]:
+        ids = []
+        for offset in range(count):
+            number = first + offset
+            sibling = watch(policy=self.policy()).model_copy(
+                update={
+                    "id": f"{card_id}-watch-{number}",
+                    "card_id": card_id,
+                    "pr_number": number,
+                    "pr_url": f"https://github.com/owner/repo/pull/{number}",
+                    "originating_session_id": None,
+                }
+            )
+            self.store.upsert_watch(sibling, preserve_lease=False)
+            self.store.set_terminal(sibling.id, PRWatchStatus.MERGED)
+            ids.append(sibling.id)
+        return ids
+
+    async def test_dead_peer_replication_does_not_block_card_reconcile(self) -> None:
+        service = await self.make_service([])
+        self.store.set_terminal("watch-1", PRWatchStatus.MERGED)
+        self._merged_siblings(3, card_id="card-2", first=30)
+        self._merged_siblings(3, card_id="card-3", first=40)
+        self.domain.get_card.return_value = Card(id="card-x", title="x", lane=CardLane.DONE)
+        self.settings.peers = ["http://dead-peer"]
+
+        async def hang(*_args, **_kwargs):
+            await asyncio.sleep(60)  # a peer that never answers (ConnectTimeout)
+
+        service._post_json = AsyncMock(side_effect=hang)
+        beats = MagicMock()
+        service._worker_heartbeat = beats
+
+        await asyncio.wait_for(service._reconcile_merged_cards(), timeout=3)
+
+        self.assertGreaterEqual(beats.call_count, 3)  # a heartbeat per card, not per pass
+        for card_id in ("card-1", "card-2", "card-3"):
+            states = [w.state.get("card_lane") for w in self.store.list_watches(card_id=card_id, include_retired=True)]
+            self.assertEqual(set(states), {"done"}, card_id)
+
+    async def test_failed_peer_opens_circuit_and_is_retried_best_effort(self) -> None:
+        service = await self.make_service([])
+        self.settings.peers = ["http://dead-peer"]
+        calls: list[str] = []
+        online = {"up": False}
+
+        async def post(url, payload):
+            calls.append(payload["watch"]["id"])
+            if not online["up"]:
+                raise httpx.ConnectTimeout("down")
+            return {}
+
+        service._post_json = AsyncMock(side_effect=post)
+        now = {"t": 1000.0}
+        service._monotonic = lambda: now["t"]
+        for _ in range(3):
+            await service._replicate(self.store.get_watch("watch-1"))
+        other = self.store.get_watch("watch-1").model_copy(update={"id": "w-b"})
+        await service._replicate(other)
+        await service._replicate(other.model_copy(update={"id": "w-c"}))
+        await asyncio.sleep(0.2)
+
+        # One timeout is paid for the whole queue, not one per watch; the
+        # failure is counted once and the peer is then skipped.
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(self.store.metrics()["replication_errors"], 1)
+        self.assertTrue(service._peer_circuit_open("http://dead-peer"))
+        self.assertEqual(len(service._replication_pending), 3)  # coalesced per watch
+
+        online["up"] = True
+        now["t"] += 31
+        service._replication_wake.set()
+        await asyncio.sleep(0.3)
+        self.assertEqual(service._replication_pending, {})
+        self.assertFalse(service._peer_circuit_open("http://dead-peer"))
+
+    async def test_peer_known_down_by_fleet_health_is_not_dialed(self) -> None:
+        from pa.fleet.endpoints import EndpointHealthRegistry
+
+        registry = EndpointHealthRegistry(Path(self.tmp.name))
+        registry.failure("http://dead-peer", httpx.ConnectTimeout("down"))
+        service = await self.make_service([])
+        service._endpoint_health = lambda: registry
+        self.settings.peers = ["http://dead-peer"]
+        service._post_json = AsyncMock(return_value={})
+
+        await service._replicate(self.store.get_watch("watch-1"))
+        await asyncio.sleep(0.1)
+        service._post_json.assert_not_awaited()
+        self.assertEqual(len(service._replication_pending), 1)
+
+        registry.success("http://dead-peer", 5.0)
+        service._replication_wake.set()
+        await asyncio.sleep(0.2)
+        service._post_json.assert_awaited_once()
+        self.assertEqual(service._replication_pending, {})
+
+    async def test_reconcile_pass_is_time_bounded(self) -> None:
+        service = await self.make_service([])
+        self.store.set_terminal("watch-1", PRWatchStatus.MERGED)
+        for card in ("card-2", "card-3", "card-4", "card-5"):
+            self._merged_siblings(1, card_id=card, first=50 + int(card[-1]))
+        self.settings.pr_supervisor_reconcile_budget_seconds = 5.0
+        clock = {"t": 0.0}
+        service._monotonic = lambda: clock["t"]
+        processed: list[str] = []
+
+        async def slow_complete(item):
+            processed.append(item.id)
+            clock["t"] += 3.0
+
+        service._complete_merged_card = slow_complete
+
+        await service._reconcile_merged_cards()
+
+        self.assertEqual(len(processed), 2)  # 3s + 3s crosses the 5s budget
+
+    async def test_many_merged_watches_of_one_card_are_evaluated_once(self) -> None:
+        service = await self.make_service([])
+        self.store.set_terminal("watch-1", PRWatchStatus.MERGED)
+        self._merged_siblings(4, first=60)
+        self._merged_siblings(1, card_id="card-2", first=70)
+        self.domain.get_card.return_value = Card(id="card-1", title="legacy", lane=CardLane.DONE)
+        due = self.store.list_card_completion_due()
+        self.assertEqual(sorted(w.card_id for w in due), ["card-1", "card-2"])
+
+        await service._reconcile_merged_cards()
+
+        self.assertEqual(self.domain.get_card.call_count, 2)  # one per card
+        for item in self.store.list_watches(include_retired=True):
+            self.assertEqual(item.state.get("card_lane"), "done", item.id)
+            self.assertEqual(item.state["card_disposition"]["status"], "preserved_done")
+        self.assertEqual(self.store.list_card_completion_due(now=utcnow() + timedelta(days=1)), [])
+
+    async def test_missing_card_becomes_terminal_orphan_after_bounded_attempts(self) -> None:
+        service = await self.make_service([])
+        self.domain.get_card.return_value = None
+        self.settings.pr_supervisor_orphan_card_max_attempts = 3
+        self.store.set_terminal("watch-1", PRWatchStatus.MERGED)
+        sibling = self._merged_siblings(1, first=80)[0]
+
+        for _ in range(3):
+            await service._complete_merged_card(self.store.get_watch("watch-1"))
+        errors = self.store.metrics()["card_completion_errors"]
+
+        current = self.store.get_watch("watch-1")
+        self.assertEqual(errors, 2)  # the terminal attempt is not another error
+        self.assertNotIn("card_completion_retry", current.state)
+        self.assertEqual(current.state["card_completion_orphan"]["attempts"], 3)
+        self.store.propagate_card_completion("watch-1")  # what reconcile does per card
+        self.assertIn("card_completion_orphan", self.store.get_watch(sibling).state)
+        far = utcnow() + timedelta(days=30)
+        self.assertEqual(self.store.list_card_completion_due(now=far), [])
+        calls = self.domain.get_card.call_count
+        await service._reconcile_merged_cards()
+        self.assertEqual(self.domain.get_card.call_count, calls)
+        events = {e.event_type for e in self.store.list_events("watch-1")}
+        self.assertIn("card_completion_orphaned", events)
 
     async def test_legacy_done_card_is_not_reopened_when_merge_evidence_is_old(
         self,
