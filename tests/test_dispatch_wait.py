@@ -202,3 +202,36 @@ def test_keep_awake_fails_explicitly_off_macos() -> None:
         MacOSKeepAwake(),
     ):
         pass
+
+
+@pytest.mark.parametrize(
+    ("stop_reason", "outcome"),
+    [
+        ("cancelled", "cancelled"),
+        ("refusal", "refused"),
+        ("max_tokens", "incomplete"),
+        ("max_turn_requests", "incomplete"),
+        ("end_turn", "succeeded"),
+        (None, "succeeded"),
+    ],
+)
+def test_completed_dispatch_outcome_follows_stop_reason(stop_reason, outcome) -> None:
+    payload = {
+        "state": "completed",
+        "agent_turn": {"ended": True, "stop_reason": stop_reason},
+        "card_completion": {"status": "applied", "lane_after": "waiting"},
+    }
+
+    result = wait_for_dispatches(
+        ["dispatch-1"],
+        fetch=lambda _dispatch_id: payload,
+        timeout_seconds=10,
+        poll_interval_seconds=0.1,
+        keep_awake=False,
+        emit=None,
+    )
+
+    item = result["dispatches"][0]
+    assert item["outcome"] == outcome
+    assert item["card_lane"] == "waiting"
+    assert result["exit_code"] == (0 if outcome == "succeeded" else 1)

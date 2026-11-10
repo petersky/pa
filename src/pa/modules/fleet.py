@@ -15,6 +15,7 @@ import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Annotated, Any, Literal
 from urllib.parse import quote
 from uuid import UUID, uuid4
@@ -63,6 +64,7 @@ from pa.notifications.stall import (
     StallKind,
     notify_completion_undeliverable,
     notify_dispatch_failed,
+    notify_manual_review,
     notify_stall,
 )
 from pa.domain.notifications import (
@@ -103,6 +105,7 @@ from pa.execution.dispatch import (
 )
 from pa.execution.session_presentation import build_session_presentation
 from pa.execution.disposition import decide_card_disposition
+from pa.execution.post_turn_worker import PostTurnHooks, PostTurnWorker
 from pa.execution.post_turn import (
     ActionApprovalV1,
     ActionReceiptStatus,
@@ -117,6 +120,7 @@ from pa.execution.post_turn import (
     action_catalog,
     automatic_followup_budget_exhausted,
     automatic_followups_used,
+    continuation_context,
     is_authorized_same_session_continuation,
     mark_record_only_actions,
 )
@@ -298,7 +302,7 @@ def control_plane_status(request: Request) -> dict[str, Any]:
     service = request.app.state.ctx.services.get("pr_supervisor")
     health = service.authority_health() if service is not None else None
     workers = {}
-    for name in ("completion_outbox", "completion_reconciler"):
+    for name in ("completion_outbox", "completion_reconciler", "post_turn_worker"):
         worker = request.app.state.ctx.services.get(name)
         if worker is not None:
             workers[name] = worker.worker_health()
@@ -2179,8 +2183,21 @@ def _record_post_turn_evaluation(
             ),
             "attempts": record.attempts,
         },
-        disposition=record.card_disposition_payload,
-        disposition_status=record.card_disposition_status,
+        # A follow-up turn carries its own disposition; the dispatch-level one
+        # belongs to the original completion and would make the evaluator
+        # re-judge a stale claim on every continuation.
+        disposition=(
+            (
+                result.get("card_disposition")
+                if isinstance(result.get("card_disposition"), dict)
+                else None
+            )
+            if result_override is not None
+            else record.card_disposition_payload
+        ),
+        disposition_status=(
+            None if result_override is not None else record.card_disposition_status
+        ),
         disposition_parse_error=result.get("card_disposition_error"),
         final_outcome_text=(
             str(result.get("final_outcome_text") or "")
@@ -12067,6 +12084,11 @@ async def execute_post_turn_action(
         if action.human_approval_required
         else action.status
     )
+    # The claim below re-reads the durable action; carry the authorization
+    # audit across or the automatic follow-up budget would never be consumed.
+    authorization_audit = [
+        event for event in action.audit if event.get("event") == "authorized"
+    ]
     receipt = ActionReceiptV1(
         action_id=action.action_id,
         action_digest=action.binding_digest,
@@ -12109,6 +12131,9 @@ async def execute_post_turn_action(
     action = next(
         item for item in evaluation.recommended_actions if item.action_id == action_id
     )
+    action.audit.extend(
+        event for event in authorization_audit if event not in action.audit
+    )
     result: Any = None
     try:
         if action.name in {
@@ -12132,11 +12157,27 @@ async def execute_post_turn_action(
             )
             result = {"card": _model_json(updated)}
         elif action.name == FollowupActionName.PROMPT_SAME_SESSION:
+            message = action.parameters["prompt"]
+            if any(event.get("automatic") for event in action.audit):
+                # The stored prompt is the exact text PA pre-authorized; the
+                # recorded reason is appended so the agent knows why it is
+                # being asked to continue.
+                message += "\n\n" + continuation_context(
+                    evaluation,
+                    next(
+                        (
+                            item
+                            for item in record.turn_end_snapshots
+                            if item.snapshot_id == evaluation.snapshot_id
+                        ),
+                        None,
+                    ),
+                )
             result = await prompt_dispatch_session(
                 request,
                 dispatch_id,
                 DispatchFollowupBody(
-                    message=action.parameters["prompt"],
+                    message=message,
                     idempotency_key=body.idempotency_key,
                 ),
             )
@@ -12311,6 +12352,68 @@ async def execute_post_turn_action(
         "result": result,
         "receipt": receipt.model_dump(mode="json"),
     }
+
+
+def _internal_post_turn_request(app: Any, record: DispatchRecord) -> Request:
+    """A request-shaped handle so PA's own worker uses the same guarded endpoints.
+
+    Execution still goes through ``execute_post_turn_action`` and
+    ``prompt_dispatch_session``: the same validation, approval gate, claims,
+    fencing tokens and receipts as an operator click.  It carries no approval.
+    """
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/internal/post-turn",
+            "headers": [],
+            "query_string": b"",
+            "app": app,
+        }
+    )
+    request.state.user = SimpleNamespace(id="system:post-turn", role="admin")
+    request.state.principal_id = record.principal_id or "system:post-turn"
+    request.state.instance_authenticated = True
+    return request
+
+
+def _build_post_turn_worker(
+    app: Any, ctx: AppContext, async_runtime: Any
+) -> PostTurnWorker:
+    async def execute(
+        record: DispatchRecord,
+        evaluation: PostTurnEvaluationV1,
+        action: Any,
+        key: str,
+    ) -> Any:
+        return await execute_post_turn_action(
+            _internal_post_turn_request(app, record),
+            record.dispatch_id,
+            action.action_id,
+            FollowupActionExecutionBody(
+                evaluation_id=evaluation.evaluation_id,
+                action_id=action.action_id,
+                expected_authority_version=evaluation.observed_authority_version,
+                idempotency_key=key,
+            ),
+        )
+
+    async def prompt(record: DispatchRecord, message: str, key: str) -> Any:
+        return await prompt_dispatch_session(
+            _internal_post_turn_request(app, record),
+            record.dispatch_id,
+            DispatchFollowupBody(message=message, idempotency_key=key),
+        )
+
+    def escalate(record: DispatchRecord, **kwargs: Any) -> Any:
+        return notify_manual_review(ctx, record, **kwargs)
+
+    return PostTurnWorker(
+        ctx.require_service("dispatch_store"),
+        PostTurnHooks(execute=execute, prompt=prompt, escalate=escalate),
+        lambda: ctx.settings,
+        async_runtime=async_runtime,
+    )
 
 
 _TERMINAL_REPAIR_EVIDENCE_MAX_AGE = timedelta(seconds=10)
@@ -15438,6 +15541,16 @@ class FleetModule(Module):
             outbox,
             ctx.store,
             lambda: ctx.services.get("pr_supervisor"),
+            escalate_missing_disposition=lambda: (
+                ctx.settings.completion_missing_disposition_escalates
+            ),
+            stall_notifier=lambda record, reason: notify_manual_review(
+                ctx,
+                record,
+                title="Finished work has no card disposition",
+                body=reason,
+                dedupe_key=f"{record.dispatch_id}:missing_disposition",
+            ),
         )
         await reconciler.recover()
         reconciler.start()
@@ -15460,6 +15573,9 @@ class FleetModule(Module):
         agent.progress_handler = progress_service.observe
         progress_service.start()
         outbox.start()
+        post_turn_worker = _build_post_turn_worker(app, ctx, async_runtime)
+        ctx.register_service("post_turn_worker", post_turn_worker)
+        post_turn_worker.start()
 
     async def on_shutdown(self, app, ctx: AppContext) -> None:
         bootstrap_store: BootstrapJobStore | None = ctx.services.get(
@@ -15483,6 +15599,9 @@ class FleetModule(Module):
         dispatch_worker = ctx.services.get("dispatch_worker")
         if dispatch_worker:
             await dispatch_worker.close()
+        post_turn_worker = ctx.services.get("post_turn_worker")
+        if post_turn_worker:
+            await post_turn_worker.close()
         reconciler = ctx.services.get("completion_reconciler")
         if reconciler:
             await reconciler.close()

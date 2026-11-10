@@ -145,6 +145,9 @@ class InstanceConfig(BaseModel):
     post_turn_evaluation_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
     post_turn_retry_seconds: float = Field(default=15.0, gt=0, le=3600)
     post_turn_escalation_threshold: int = Field(default=2, ge=1, le=10)
+    post_turn_worker_enabled: bool = True
+    post_turn_downgrade_feedback_max: int = Field(default=2, ge=0, le=20)
+    completion_missing_disposition_escalates: bool = True
     debug: bool = False
     dev_tools: bool = False
     log_level: str = "INFO"

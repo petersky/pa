@@ -327,6 +327,33 @@ def notify_completion_undeliverable(target: Any, record: Any) -> Notification | 
     )
 
 
+def notify_manual_review(
+    target: Any,
+    record: Any,
+    *,
+    title: str,
+    body: str,
+    dedupe_key: str,
+    severity: str = "error",
+) -> Notification | None:
+    """A dispatch needs a person: automation ran out of road or needs approval."""
+    return notify_stall(
+        target,
+        kind=StallKind.MANUAL_REVIEW,
+        subject_ids={
+            "realm_id": getattr(record, "realm_id", None),
+            "card_id": getattr(record, "card_id", None),
+            "session_id": getattr(record, "session_id", None),
+            "dispatch_id": record.dispatch_id,
+            "project_id": getattr(record, "project_id", None),
+        },
+        title=title,
+        body=body,
+        severity=severity,
+        dedupe_key=dedupe_key,
+    )
+
+
 def notify_schedule_failed(
     target: Any, *, occurrence: dict[str, Any], owner: str | None, error: str | None
 ) -> Notification | None:

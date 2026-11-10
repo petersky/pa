@@ -269,7 +269,20 @@ _APPROVAL_REQUIRED = {
 }
 
 
+# ACP stop reasons that mean the agent was cut off, not that it finished.
+INCOMPLETE_STOP_REASONS = frozenset({"max_tokens", "max_turn_requests"})
+# Stop reasons where a person should look before more work is spent.
+REVIEW_STOP_REASONS = frozenset({"refusal", "cancelled"})
+
+STOPPED_EARLY_CONTINUATION = (
+    "Resume the turn that stopped early.",
+    "Your previous turn stopped before it finished because a model or session "
+    "limit was reached. Continue from where you left off and complete the "
+    "remaining requested outcome.",
+)
+
 _AUTHORIZED_CONTINUATION_PROMPTS = {
+    STOPPED_EARLY_CONTINUATION,
     (
         "Address recorded validation failures.",
         "Continue from the recorded turn and address the failed validations. "
@@ -301,6 +314,35 @@ def is_authorized_same_session_continuation(
         )
         in _AUTHORIZED_CONTINUATION_PROMPTS
     )
+
+
+def continuation_context(
+    evaluation: "PostTurnEvaluationV1", snapshot: "TurnEndSnapshotV1 | None"
+) -> str:
+    """PA's own explanation, appended when an authorized continuation is sent.
+
+    The stored action prompt stays exactly the bounded text PA pre-authorized;
+    this recorded evidence is added at send time so the agent learns why it is
+    being asked to continue.
+    """
+    lines = [f"PA post-turn evaluation: {evaluation.rationale}"]
+    if snapshot is not None:
+        if snapshot.stop_reason:
+            lines.append(f"Previous turn stop reason: {snapshot.stop_reason}")
+        if snapshot.blockers:
+            lines.append("Recorded blockers: " + "; ".join(snapshot.blockers[:5]))
+        failed = [
+            str(item.get("name") or item.get("command") or item.get("summary") or "")
+            for item in snapshot.validations
+            if str(item.get("status") or "").casefold()
+            in {"failed", "error", "cancelled"}
+        ]
+        if any(failed):
+            lines.append(
+                "Failed validations: " + "; ".join(item for item in failed[:5] if item)
+            )
+    text = "\n".join(lines)
+    return text[:2_000]
 
 
 def automatic_followups_used(evaluations: Any) -> int:
@@ -721,6 +763,7 @@ class PostTurnEvaluator:
                 "changed_files",
             )
         )
+        stop_reason = str(snapshot.stop_reason or "").casefold()
         disposition_lane = str(disposition.get("lane") or "")
         integration_required = (
             (disposition.get("evidence") or {}).get("integration_required")
@@ -736,9 +779,15 @@ class PostTurnEvaluator:
             and not failed_validations
         ) or (
             disposition_lane == "done"
-            and integration_required is False
+            and (integration_required is False or report.get("merge_commit_sha"))
             and snapshot.final_outcome_text
             and not failed_validations
+        ) or (
+            lane == "done"
+            and snapshot.card_lane_after == "done"
+            and stop_reason not in INCOMPLETE_STOP_REASONS | REVIEW_STOP_REASONS
+            and not failed_validations
+            and not operator_request
         ):
             decision = PostTurnDecision.OUTCOME_ACHIEVED
             rationale = (
@@ -755,6 +804,66 @@ class PostTurnEvaluator:
             status = "Attempt succeeded; the requested outcome is evidenced."
             lane_ok = lane == "done"
             confidence = 0.97 if merged_watch else 0.9
+        elif stop_reason in INCOMPLETE_STOP_REASONS:
+            decision = PostTurnDecision.FURTHER_AGENT_WORK_NEEDED
+            rationale = (
+                f"The turn stopped early (stop_reason={stop_reason}); the "
+                "requested work was cut off rather than finished."
+            )
+            actions = [
+                _action(
+                    FollowupActionName.RECORD_TURN_OUTCOME,
+                    {"reason": rationale},
+                    snapshot,
+                )
+            ]
+            if snapshot.session_id:
+                purpose, prompt = STOPPED_EARLY_CONTINUATION
+                actions.append(
+                    _action(
+                        FollowupActionName.PROMPT_SAME_SESSION,
+                        {
+                            "purpose": purpose,
+                            "prompt": prompt,
+                            "session_id": snapshot.session_id,
+                        },
+                        snapshot,
+                        safety=SafetyClassification.EXTERNAL_WRITE,
+                        approval=False,
+                    )
+                )
+            else:
+                actions.append(
+                    _action(
+                        FollowupActionName.ESCALATE_FOR_MANUAL_REVIEW,
+                        {"reason": "No linked session is available to continue."},
+                        snapshot,
+                    )
+                )
+            status = "Turn cut off before finishing; continuing the same session."
+            lane_ok = lane in {"active", "waiting"}
+            confidence = 0.9
+        elif stop_reason in REVIEW_STOP_REASONS:
+            decision = PostTurnDecision.OPERATOR_INPUT_REQUIRED
+            rationale = (
+                f"The agent turn ended with stop_reason={stop_reason}; that is "
+                "not a finished outcome and needs review."
+            )
+            actions = [
+                _action(
+                    FollowupActionName.RECORD_TURN_OUTCOME,
+                    {"reason": rationale},
+                    snapshot,
+                ),
+                _action(
+                    FollowupActionName.ESCALATE_FOR_MANUAL_REVIEW,
+                    {"reason": rationale},
+                    snapshot,
+                ),
+            ]
+            status = f"Turn ended ({stop_reason}); review needed before continuing."
+            lane_ok = lane != "done"
+            confidence = 0.9
         elif operator_request:
             decision = PostTurnDecision.OPERATOR_INPUT_REQUIRED
             question = (
@@ -899,6 +1008,24 @@ class PostTurnEvaluator:
             status = "Attempt ended; waiting on an external integration condition."
             lane_ok = lane == "waiting"
             confidence = 0.86
+        elif disposition_lane == "waiting" and not snapshot.blockers:
+            # The agent itself parked the card. Prompting it again would only
+            # burn the follow-up budget; the waiting condition owns the wake-up.
+            decision = PostTurnDecision.WAITING_ON_EXTERNAL_CONDITION
+            rationale = (
+                "The agent declared the card Waiting with no recorded blocker; "
+                "no automatic continuation is warranted."
+            )
+            actions = [
+                _action(
+                    FollowupActionName.RECORD_TURN_OUTCOME,
+                    {"reason": rationale},
+                    snapshot,
+                )
+            ]
+            status = "Attempt ended; the agent parked the card as Waiting."
+            lane_ok = lane == "waiting"
+            confidence = 0.8
         elif snapshot.blockers or disposition_lane in {"active", "ready", "waiting"}:
             decision = PostTurnDecision.FURTHER_AGENT_WORK_NEEDED
             rationale = "The recorded disposition or blockers show that requested work remains."

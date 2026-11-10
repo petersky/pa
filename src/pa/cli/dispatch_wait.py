@@ -23,6 +23,23 @@ WAIT_INTERRUPTED_EXIT = 130
 
 SUCCESS_STATES = {"completed", "acknowledged"}
 
+# A completed dispatch only means the agent turn ended. How it ended decides
+# whether that is a success: these stop reasons are not.
+STOP_REASON_OUTCOMES = {
+    "cancelled": "cancelled",
+    "refusal": "refused",
+    "max_tokens": "incomplete",
+    "max_turn_requests": "incomplete",
+}
+
+
+def _stop_reason(payload: dict[str, Any]) -> str | None:
+    for container in ("agent_turn", "turn_end"):
+        value = payload.get(container)
+        if isinstance(value, dict) and value.get("stop_reason"):
+            return str(value["stop_reason"])
+    return None
+
 
 class DispatchFetchError(RuntimeError):
     """A classified read failure from PA's public dispatch API."""
@@ -53,6 +70,9 @@ class WatchedDispatch:
     target: str | None = None
     message: str | None = None
     terminal: bool = False
+    stop_reason: str | None = None
+    disposition: str | None = None
+    card_lane: str | None = None
     transitions: list[dict[str, str]] = field(default_factory=list)
 
 
@@ -239,8 +259,20 @@ def wait_for_dispatches(
                         if isinstance(latest, dict) and latest.get("message"):
                             message = str(latest["message"])
                     if state in SUCCESS_STATES:
-                        item.outcome = "succeeded"
+                        item.stop_reason = _stop_reason(payload)
+                        completion = payload.get("card_completion")
+                        if isinstance(completion, dict):
+                            item.disposition = completion.get("status")
+                            item.card_lane = completion.get("lane_after")
+                        item.outcome = STOP_REASON_OUTCOMES.get(
+                            (item.stop_reason or "").casefold(), "succeeded"
+                        )
                         item.terminal = True
+                        if item.outcome != "succeeded":
+                            message = (
+                                f"agent turn ended with stop_reason="
+                                f"{item.stop_reason}; not a finished outcome"
+                            )
                     elif state == "failed":
                         item.outcome = "failed"
                         item.terminal = True
