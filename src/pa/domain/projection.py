@@ -6543,6 +6543,7 @@ class CardProjection:
         """Return the newest events before a cursor, ordered chronologically."""
         return self.transcripts.list_before(session_id, before_seq=before_seq, limit=limit)
 
+    @maintenance_writer
     def add_knowledge(self, entry: KnowledgeEntry) -> KnowledgeEntry:
         if not entry.content_hash:
             entry.content_hash = hashlib.sha256(
@@ -6679,6 +6680,7 @@ class CardProjection:
             ).fetchone()
         return self._row_to_knowledge(row) if row else None
 
+    @maintenance_writer
     def update_knowledge(self, entry_id: str, update) -> KnowledgeEntry | None:
         current = self.get_knowledge(entry_id)
         if not current:
@@ -6722,6 +6724,7 @@ class CardProjection:
             )
         return current
 
+    @maintenance_writer
     def add_knowledge_audit(self, event: KnowledgeAuditEvent) -> KnowledgeAuditEvent:
         with self._conn() as conn:
             conn.execute(

@@ -505,7 +505,7 @@ class InstanceMaintenanceService:
             key for key in ("sqlite", "transcript_sqlite")
             if isinstance(report := result.get(key), dict)
             and report.get("status") == "deferred"
-            and (report.get("reason") == "foreground_write" or
+            and (report.get("reason") in {"foreground_write", "busy"} or
                  key in self._pending_compactions)
         }
         self.last_finished_at = datetime.now(UTC)
