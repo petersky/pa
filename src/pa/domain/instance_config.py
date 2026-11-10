@@ -113,6 +113,29 @@ class InstanceConfig(BaseModel):
     agent_reclaim_dead_session_leases: bool = True
     agent_session_idle_retention_hours: float = Field(default=24.0, ge=0.01, le=8760)
     agent_session_sweep_seconds: float = Field(default=30.0, ge=1.0, le=3600)
+    # --- Turn liveness and provider-error resilience -------------------------
+    # A turn may run for as long as it needs. Only INACTIVITY (no real ACP
+    # output: message/thought chunks, tool calls, plans, usage, permission
+    # requests) is bounded. Time spent waiting on a pending human permission or
+    # elicitation never counts. 0 disables the inactivity deadline.
+    agent_turn_inactivity_timeout_seconds: float = Field(default=1800.0, ge=0, le=604800)
+    # After the inactivity deadline PA sends session/cancel and waits this long
+    # for the provider to end the turn before killing the provider process.
+    agent_turn_cancel_grace_seconds: float = Field(default=60.0, ge=0, le=3600)
+    # Bound on ACP initialize / session/new / session/load. 0 disables.
+    agent_connect_timeout_seconds: float = Field(default=180.0, ge=0, le=3600)
+    # A provider error that retrying can cure (rate limit, quota, overload,
+    # transient 5xx) re-drains the queue after an exponentially growing delay.
+    agent_retry_base_seconds: float = Field(default=30.0, ge=1, le=3600)
+    agent_retry_cap_seconds: float = Field(default=900.0, ge=1, le=86400)
+    # Attempt cap for retryable errors other than rate limits / quota (those keep
+    # waiting with no cap). After the cap the owner is notified.
+    agent_retry_max_attempts: int = Field(default=5, ge=1, le=100)
+    # Notify the owner once when a rate limit / quota wait outlasts this. 0 = never.
+    agent_rate_limit_notify_after_seconds: float = Field(default=1800.0, ge=0, le=604800)
+    # The "Agent active." progress heartbeat only counts while the provider
+    # produced real output within this window. 0 keeps the heartbeat unconditional.
+    agent_heartbeat_activity_window_seconds: float = Field(default=300.0, ge=0, le=86400)
     maintenance_interval_seconds: int = Field(
         default=24 * 60 * 60, ge=60, le=7 * 24 * 60 * 60
     )
