@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import inspect
 import json
+import logging
 import threading
 import time
 from pathlib import Path
@@ -33,6 +34,8 @@ from pa.domain.notifications import (
 )
 from pa.execution.dispatch import TERMINAL_DISPATCH_STATES
 from pa.execution.progress import sanitize_text
+
+logger = logging.getLogger(__name__)
 
 DeliveryHandler = Callable[[InteractionResponse], Awaitable[None] | None]
 
@@ -253,7 +256,21 @@ class NotificationService:
             notification, principal_id=principal_id, instance_id=instance_id, expected_version=0
         )
         self._publish(notification)
+        self._push_created(notification)
         return notification
+
+    def _push_created(self, notification: Notification) -> None:
+        """Offer a brand-new notification to the Telegram push channel.
+
+        The push service queues the send on its own thread, so creation neither
+        waits for nor fails because of Telegram.
+        """
+        try:
+            push = self.ctx.services.get("telegram_push")
+            if push is not None:
+                push.submit(notification)
+        except Exception:  # noqa: BLE001 - never let a push channel break creation
+            logger.exception("Telegram push hand-off failed")
 
     def get_authorized(
         self, notification_id: str, *, principal_id: str, realms: set[str]

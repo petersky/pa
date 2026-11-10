@@ -120,6 +120,16 @@ class Settings(BaseSettings):
     telegram_allowed_conversation_ids: Annotated[list[str], NoDecode] = Field(
         default_factory=list
     )
+    # Outbound Telegram push for high-priority notifications, and the owner-only
+    # reply path that answers them. Off until the owner opts in and names the chat.
+    telegram_push_enabled: bool = False
+    telegram_owner_chat_id: str = ""
+    telegram_owner_user_id: str = ""
+    telegram_owner_principal: str = "user:local"
+    telegram_push_min_priority: Literal["low", "normal", "high", "urgent"] = "high"
+    telegram_renotify_hours: float = Field(default=4.0, ge=0, le=720)
+    telegram_renotify_max: int = Field(default=3, ge=0, le=20)
+    telegram_push_rate_limit_per_hour: int = Field(default=20, ge=1, le=1000)
     discord_bot_token: str = ""
     discord_application_public_key: str = ""
     discord_allowed_user_ids: Annotated[list[str], NoDecode] = Field(
@@ -324,6 +334,12 @@ class Settings(BaseSettings):
                     pass
             return [part.strip() for part in text.split(",") if part.strip()]
         return value
+
+    @field_validator("telegram_owner_chat_id", "telegram_owner_user_id", mode="before")
+    @classmethod
+    def _telegram_ids_as_text(cls, value: object) -> object:
+        # Provider IDs are numbers in JSON config files but identifiers in PA.
+        return str(value).strip() if isinstance(value, int) else value
 
     @model_validator(mode="after")
     def _normalize_legacy_settings(self) -> Settings:

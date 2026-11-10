@@ -87,6 +87,14 @@ class InstanceConfig(BaseModel):
     telegram_webhook_url: str = ""
     telegram_allowed_user_ids: list[str] = Field(default_factory=list)
     telegram_allowed_conversation_ids: list[str] = Field(default_factory=list)
+    telegram_push_enabled: bool = False
+    telegram_owner_chat_id: str = ""
+    telegram_owner_user_id: str = ""
+    telegram_owner_principal: str = "user:local"
+    telegram_push_min_priority: Literal["low", "normal", "high", "urgent"] = "high"
+    telegram_renotify_hours: float = Field(default=4.0, ge=0, le=720)
+    telegram_renotify_max: int = Field(default=3, ge=0, le=20)
+    telegram_push_rate_limit_per_hour: int = Field(default=20, ge=1, le=1000)
     discord_bot_token: str = ""
     discord_application_public_key: str = ""
     discord_allowed_user_ids: list[str] = Field(default_factory=list)

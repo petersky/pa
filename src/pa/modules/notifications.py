@@ -27,6 +27,8 @@ from pa.domain.notifications import (
     OperatorInputWithdrawalRequest,
 )
 from pa.notifications import NotificationConflict, NotificationService
+from pa.notifications.telegram_push import TelegramNotificationPush
+from pa.notifications.telegram_reply import TelegramReplyRouter
 from pa.notifications.service import LINKED_RUN_ENDED_ACTION, SUPERSEDED_SOURCE_ACTION
 
 router = APIRouter()
@@ -687,6 +689,11 @@ class NotificationsModule(Module):
 
     def on_load(self, ctx: AppContext) -> None:
         ctx.register_service("notifications", NotificationService(ctx))
+        # Owner Telegram channel: outbound push of high-priority notices and the
+        # inbound reply router the intake webhook consults. Both are inert until
+        # telegram_push_enabled, a bot token and an owner chat are configured.
+        ctx.register_service("telegram_push", TelegramNotificationPush(ctx))
+        ctx.register_service("telegram_replies", TelegramReplyRouter(ctx))
         self._maintenance_task: asyncio.Task[None] | None = None
         self._maintenance_stop: asyncio.Event | None = None
 
@@ -707,6 +714,12 @@ class NotificationsModule(Module):
                             "Notification maintenance failed for realm %s", realm_id
                         )
                 iteration += 1
+                push = ctx.services.get("telegram_push")
+                if push is not None:
+                    try:
+                        await asyncio.to_thread(push.sweep)
+                    except Exception:
+                        logger.exception("Telegram push sweep failed")
                 try:
                     await asyncio.wait_for(self._maintenance_stop.wait(), timeout=30)
                 except TimeoutError:
@@ -717,6 +730,9 @@ class NotificationsModule(Module):
         )
 
     async def on_shutdown(self, app, ctx: AppContext) -> None:
+        push = ctx.services.get("telegram_push")
+        if push is not None:
+            await asyncio.to_thread(push.close)
         if self._maintenance_stop:
             self._maintenance_stop.set()
         if self._maintenance_task:
