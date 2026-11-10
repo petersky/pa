@@ -3298,6 +3298,7 @@ class AgentSessionManager:
         self._recovery_wake = asyncio.Event()
         self._recovery_tasks: dict[str, asyncio.Task[None]] = {}
         self._logged_recovery_blocks: dict[str, str] = {}
+        self._blocked_sessions_signalled = False
         self._admitting_sessions: set[str] = set()
         self._recovery_metrics: dict[str, int] = {
             "attempted": 0,
@@ -3311,6 +3312,7 @@ class AgentSessionManager:
         self.async_runtime: AsyncRuntime | None = None
         self.browser = BrowserManager(settings.data_dir)
         self.workspace_manager = WorkspaceManager(settings, store)
+        self.workspace_manager.reclaim_observer = self._on_lease_reclaimed
         self.workspace_manager.live_runtime = lambda session_id: (
             session_id in self._admitting_sessions
             or ((runtime := self.get(session_id)) is not None and not runtime._closed)
@@ -3592,6 +3594,24 @@ class AgentSessionManager:
             "agent.recovery_sessions", self.store.list_sessions,
             exclude_statuses=("closed",), include_archived=False, timeout=30.0
         )
+        if not self._blocked_sessions_signalled:
+            # Sessions blocked before this process started never passed through
+            # the transition that announces a block. Announce them once per boot.
+            self._blocked_sessions_signalled = True
+            for blocked_session in sessions:
+                if (
+                    blocked_session.status == RECOVERY_BLOCKED_STATUS
+                    and (blocked_session.recovery_json or {}).get("blocked")
+                ):
+                    try:
+                        await self._offload(
+                            "agent.recovery_block_signal",
+                            self._signal_recovery_block, blocked_session.id,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Could not signal recovery block for %s", blocked_session.id
+                        )
         due: list[AgentSession] = []
         for session in sessions:
             if session.id in self._admitting_sessions:
@@ -3679,6 +3699,7 @@ class AgentSessionManager:
             return
         recovered.session.recovery_json = {}
         await recovered._save_session_preserving_external_browser_async()
+        await self._settle_dispatch_after_recovery_async(session_id)
         self._recovery_metrics["succeeded"] += 1
 
     def require_startup_complete(self) -> None:
@@ -4838,6 +4859,9 @@ class AgentSessionManager:
                     if recovered is not None and recovered.session.recovery_json:
                         recovered.session.recovery_json = {}
                         await recovered._save_session_preserving_external_browser_async()
+                        await self._settle_dispatch_after_recovery_async(
+                            recovered.session.id
+                        )
                     self._startup_recovered += 1
                     self._startup_decisions.append(
                         {
@@ -5443,6 +5467,227 @@ class AgentSessionManager:
             ),
         )
 
+    def _create_attention_notice(
+        self,
+        *,
+        session: AgentSession,
+        key: str,
+        title: str,
+        summary: str,
+        body: str,
+        severity: str = "error",
+    ) -> bool:
+        """Create one deduplicated HIGH notice about a session (sync, worker-thread safe).
+
+        This is the only place recovery creates a notification, so the shared
+        stall-notification helper can replace it in one step.
+        """
+        service = getattr(self, "notification_service", None)
+        if service is None:
+            return False
+        from urllib.parse import urlencode
+
+        from pa.domain.notifications import (
+            SESSION_ATTENTION_NOTICE_CAPABILITY,
+            NotificationAction,
+            NotificationCreate,
+            concise_notification_summary,
+        )
+
+        destination = "/agent?" + urlencode({"session": session.id})
+        try:
+            finder = getattr(getattr(service, "store", None), "find_notification_by_dedup", None)
+            # One notice per cause: skip when it exists, open or dismissed, so a
+            # restart sweep does not bump its coalesced count every boot.
+            if callable(finder) and finder(session.realm_id, key) is not None:
+                return False
+            service.create(
+                NotificationCreate(
+                    realm_id=session.realm_id,
+                    principal_id=session.principal_id,
+                    visibility="principal" if session.principal_id else "realm",
+                    type="service_health", severity=severity, priority="high",
+                    capability=SESSION_ATTENTION_NOTICE_CAPABILITY,
+                    title=title[:300],
+                    summary=concise_notification_summary(summary),
+                    body=body,
+                    session_id=session.id,
+                    card_id=session.card_id,
+                    project_id=session.project_id,
+                    dispatch_id=session.dispatch_id,
+                    destination_url=destination,
+                    actions=[NotificationAction(
+                        id="retry", kind="navigate", label="Open session and retry",
+                        href=destination,
+                    )],
+                    deduplication_key=key,
+                ),
+                principal_id=f"instance:{self.settings.instance_id}",
+            )
+            return True
+        except Exception:
+            logger.exception("Could not create session attention notice %s", key)
+            return False
+
+    def _card_title(self, card_id: str | None) -> str:
+        if not card_id:
+            return "(no card)"
+        try:
+            card = self.store.get_card(card_id)
+            return f"{card.title} ({card_id})" if card else card_id
+        except Exception:
+            return card_id
+
+    def _signal_recovery_block(self, session_id: str) -> None:
+        """Tell a person a session is blocked and stop its dispatch waiting on it."""
+        session = self.store.get_session(session_id)
+        if session is None or session.status != RECOVERY_BLOCKED_STATUS:
+            return
+        recovery = dict(session.recovery_json or {})
+        code = str(recovery.get("code") or "recovery_blocked")
+        exhausted = bool(recovery.get("exhausted"))
+        remedy = str(recovery.get("remedy") or self._recovery_action(session))
+        self._create_attention_notice(
+            session=session,
+            key=f"session-recovery-blocked:{session.id}:{code}",
+            title=(
+                "Agent session gave up recovering"
+                if exhausted else "Agent session cannot recover on its own"
+            ),
+            summary=f"{self._card_title(session.card_id)}: {code}. {remedy}",
+            body=(
+                f"Card: {self._card_title(session.card_id)}\n"
+                f"Session: {session.id}\n"
+                f"Reason: {code}"
+                + (f" (after {recovery.get('attempts')} attempts)" if exhausted else "")
+                + f"\nLast error: {recovery.get('last_error') or 'unknown'}\n"
+                f"What to do: {remedy}\n"
+                "PA will not retry this session by itself until the cause changes. "
+                "Open the session to retry it, or close it if it is no longer needed."
+            ),
+        )
+        ledger = self.dispatch_store
+        if ledger is None or not session.dispatch_id:
+            return
+        from pa.execution.dispatch import DispatchEvent
+
+        message = f"Agent session is recovery-blocked ({code}); {remedy}"
+
+        def mutate(record) -> bool:
+            if record.state != "running" or record.session_id != session.id:
+                return False
+            record.last_error = message[:1000]
+            record.error_code = "session_recovery_blocked"
+            record.recoverable = True
+            record.state = "failed"
+            record.events.append(DispatchEvent(
+                seq=(record.events[-1].seq + 1 if record.events else 1),
+                state="failed", message=message[:1000],
+                detail={"session_id": session.id, "recovery_code": code,
+                        "exhausted": exhausted},
+            ))
+            return True
+
+        try:
+            ledger.mutate_current(session.dispatch_id, mutate=mutate)
+        except ValueError:
+            pass  # No such dispatch on this instance.
+
+    async def _settle_dispatch_after_recovery_async(self, session_id: str) -> None:
+        if self.dispatch_store is None:
+            return
+        try:
+            await self._offload(
+                "dispatch.recovery_settle",
+                self._settle_dispatch_after_recovery, session_id,
+            )
+        except Exception:
+            logger.exception("Could not settle dispatch for recovered session %s", session_id)
+
+    def _settle_dispatch_after_recovery(self, session_id: str) -> None:
+        """Undo the recoverable failure recorded when this session was blocked."""
+        ledger = self.dispatch_store
+        session = self.store.get_session(session_id)
+        if ledger is None or session is None or not session.dispatch_id:
+            return
+        from pa.execution.dispatch import DispatchEvent
+
+        def mutate(record) -> bool:
+            if (
+                record.state != "failed" or record.session_id != session_id
+                or record.error_code != "session_recovery_blocked"
+                or record.completion_payload is not None
+                or record.acknowledged_at is not None
+            ):
+                return False
+            record.last_error = None
+            record.error_code = None
+            record.recoverable = True
+            record.state = "running"
+            record.events.append(DispatchEvent(
+                seq=(record.events[-1].seq + 1 if record.events else 1),
+                state="running", message="Agent session recovered; dispatch resumed.",
+                detail={"session_id": session_id},
+            ))
+            return True
+
+        try:
+            ledger.mutate_current(session.dispatch_id, mutate=mutate)
+        except ValueError:
+            pass
+
+    def _on_lease_reclaimed(self, result: dict[str, Any]) -> None:
+        """Record and announce a worktree lease taken from a dead session (worker thread)."""
+        session = self.store.get_session(result["session_id"])
+        if session is None:
+            return
+        rescue = result.get("rescue") or {}
+        ref = rescue.get("ref")
+        where = (
+            f"Uncommitted and unpushed work was saved to {ref} in the repository "
+            f"cache ({result.get('worktree_path')})."
+            if ref else
+            "The work could not be copied to a rescue ref"
+            f" ({rescue.get('error') or rescue.get('reason') or 'unknown'}); the worktree "
+            f"was left untouched at {result.get('worktree_path')}."
+        )
+        ledger = self.dispatch_store
+        if ledger is not None and session.dispatch_id:
+            from pa.execution.dispatch import DispatchEvent
+
+            def mutate(record) -> bool:
+                record.events.append(DispatchEvent(
+                    seq=(record.events[-1].seq + 1 if record.events else 1),
+                    state=record.state,
+                    message="Worktree lease reclaimed from this dead session.",
+                    detail={"lease_id": result.get("lease_id"),
+                            "rescue_ref": ref, "rescue_sha": rescue.get("sha"),
+                            "reason": result.get("reason"),
+                            "requested_by": result.get("requested_by")},
+                ))
+                return True
+
+            try:
+                ledger.mutate_current(session.dispatch_id, mutate=mutate)
+            except ValueError:
+                pass
+        self._create_attention_notice(
+            session=session,
+            key=f"workspace-lease-reclaimed:{result.get('lease_id')}:{result.get('previous_fencing_token')}",
+            title="Worktree lease reclaimed from a dead session",
+            summary=f"{self._card_title(result.get('card_id'))}: {where}",
+            body=(
+                f"Card: {self._card_title(result.get('card_id'))}\n"
+                f"Dead session: {session.id} ({result.get('reason')})\n"
+                f"Taken over for: {result.get('requested_by') or 'a new dispatch'}\n"
+                f"{where}\n"
+                "The old worktree was not deleted. PA reclaims a dead session's lease "
+                "automatically so the card can continue; turn this off with the "
+                "agent_reclaim_dead_session_leases setting."
+            ),
+            severity="warning",
+        )
+
     def _log_recovery_block(self, session_id: str, reason: str) -> None:
         """Warn once per process for an unchanged block; later passes are debug."""
         seen = self._logged_recovery_blocks
@@ -5585,6 +5830,14 @@ class AgentSessionManager:
             await self._offload(
                 "sqlite.agent_session_save", self.store.save_session, session
             )
+        if blocked and not repeat_block:
+            try:
+                await self._offload(
+                    "agent.recovery_block_signal",
+                    self._signal_recovery_block, session.id,
+                )
+            except Exception:
+                logger.exception("Could not signal recovery block for %s", session.id)
         return recovery_state
 
     async def retry_session(self, session_id: str) -> AgentSessionRuntime:
@@ -5635,6 +5888,7 @@ class AgentSessionManager:
             if recovered is None:
                 raise RuntimeError("Session recovery did not create a runtime")
             self._last_error = None
+            await self._settle_dispatch_after_recovery_async(session_id)
             return recovered
 
     @staticmethod

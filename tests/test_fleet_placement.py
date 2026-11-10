@@ -1958,3 +1958,23 @@ def test_retained_workspace_requires_closed_expired_owner_evidence(tmp_path, cha
         with pytest.raises(PlacementError) as error:
             service.resolve(request, [candidate])
         assert "workspace_unavailable" in error.value.rejected_candidates[0]["rejection_codes"]
+
+
+@pytest.mark.parametrize("reclaimable, admitted", [("recovery_blocked", True), (None, False)])
+def test_dead_owner_lease_that_will_be_reclaimed_does_not_reject_placement(
+    tmp_path, reclaimable, admitted
+):
+    candidate = _candidate("local", local=True, repositories=["repo-1"])
+    candidate.repositories["value"]["workspaces"] = [{
+        "card_id": "card-1", "session_id": "dead-owner", "repository_id": "repo-1",
+        "state": "ready", "session_status": "recovery_blocked", "live_runtime": False,
+        "expires_at": "2999-01-01T00:00:00+00:00", "reclaimable": reclaimable,
+    }]
+    service = PlacementService(RoundRobinCursorStore(tmp_path))
+    request = _request(PlacementPolicy.BEST_MATCH, repository_ids=["repo-1"])
+    if admitted:
+        assert service.resolve(request, [candidate]).chosen_instance_id == "local"
+    else:
+        with pytest.raises(PlacementError) as error:
+            service.resolve(request, [candidate])
+        assert "workspace_unavailable" in error.value.rejected_candidates[0]["rejection_codes"]

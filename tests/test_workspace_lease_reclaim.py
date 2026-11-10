@@ -186,3 +186,18 @@ def test_admission_view_marks_only_dead_owners_reclaimable(lab):
     assert lab.wm.admission_workspaces()[0]["reclaimable"] == "recovery_blocked"
     lab.manager._admitting_sessions.add("dead-owner")
     assert lab.wm.admission_workspaces()[0]["reclaimable"] is None
+
+
+def test_manager_announces_the_reclaim_with_the_rescue_ref(lab):
+    created = []
+    lab.manager.notification_service = SimpleNamespace(
+        create=lambda data, *, principal_id, instance_id=None: created.append(data)
+    )
+    (lab.tree / "notes.txt").write_text("untracked work\n")
+    successor(lab)
+    ref = lab.wm.get(lab.lease.repository_id, "dead-owner").cleanup_evidence[
+        "reclaim"]["rescue"]["ref"]
+    assert len(created) == 1
+    assert created[0].priority == "high"
+    assert ref in created[0].body
+    assert "dead-owner" in created[0].body and "Blocked behind a dead session" in created[0].body

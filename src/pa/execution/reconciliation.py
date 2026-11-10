@@ -448,6 +448,9 @@ class CompletionReconciler:
             "closed",
             "configuration_failed",
             "provisioning_failed",
+            # Recovery gave up: nothing will run the reconciliation prompt, so
+            # deliver what the dispatch has instead of waiting forever.
+            "recovery_blocked",
         }:
             await self._skip_and_deliver(
                 current,
