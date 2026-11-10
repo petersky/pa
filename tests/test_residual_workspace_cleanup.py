@@ -65,10 +65,12 @@ def test_legacy_closed_owner_removes_only_empty_directories_without_claiming_idl
     manager, lease, other, root = prepared(tmp_path, monkeypatch)
     owner = manager.store.get_session.return_value
     owner.config_json = {}
+    # Empty directories consume blocks on ext4 even when APFS reports zero.
+    allocated_before = sum(p.lstat().st_blocks * 512 for p in [root, *root.rglob('*')])
     result = manager.collect_garbage(targets=[target(lease,
         residual_inventory_sha256=snapshot(root)[1])])
     assert result['targets'][0]['state'] == 'residual_cleaned'
-    assert result['targets'][0]['reclaimed_bytes'] == 0
+    assert result['targets'][0]['reclaimed_bytes'] == allocated_before
     assert not root.exists() and Path(other.worktree_path).exists()
     assert owner.status == 'closed' and owner.config_json == {}
     receipt = manager.get_by_id(lease.id).cleanup_evidence['residual_cleanup']
