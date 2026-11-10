@@ -17,6 +17,48 @@ from tests.test_dispatch_notification_binding import admitted, _reset_singletons
 from tests.test_dispatch_queue import capacity
 
 
+def test_clone_failure_before_provider_publication_retries_reserved_workspace(admitted):
+    from unittest.mock import patch
+    from pa.acp.providers.base import AgentProviderSpec
+    from pa.domain.models import CardCreate
+    from pa.instance.agent_session import AgentSessionRuntime
+    from pa.repository.workspace import WorkspaceProvisioningError
+
+    r = admitted
+    card = r.store.create_card(CardCreate(title="Clone retry", project_id=r.record.project_id), via_log=False)
+    ledger = r.manager.dispatch_store
+    record = ledger.put(r.record.model_copy(update={
+        "dispatch_id": "clone-failure", "mutation_id": "clone-request", "card_id": card.id,
+        "session_id": None, "state": "provisioning", "initial_prompt_operation": {},
+        "request_payload": {"provider": "codex"},
+    }, deep=True))
+    body = CreateSessionBody(dispatch_id=record.dispatch_id, card_id=card.id,
+        project_id=record.project_id, provider="codex",
+        label=f"card:{card.id}:dispatch:{record.dispatch_id}")
+    spec = AgentProviderSpec(id="codex", display_name="Codex", command="unused")
+    async def started(runtime, **kwargs):
+        runtime.session.status = "connected"
+        r.store.save_session(runtime.session)
+    with (
+        patch("pa.instance.agent_session.resolve_agent_provider", return_value=SimpleNamespace(provider_id="codex", spec=spec, source="override")),
+        patch("pa.acp.providers.resolve.resolve_provider_id", return_value=("codex", "instance")),
+        patch.object(AgentSessionRuntime, "start", started),
+    ):
+        with patch.object(r.manager.workspace_manager, "_ensure_cache", side_effect=WorkspaceProvisioningError("clone failed")):
+            with pytest.raises(HTTPException) as failure:
+                asyncio.run(create_session(r.request, body))
+            assert "clone failed" in str(failure.value.detail), failure.value.detail
+        reserved_id = ledger.get(record.dispatch_id).session_id
+        assert reserved_id and r.store.get_session(reserved_id).status == "provisioning_failed"
+        stored = r.store.get_session(reserved_id)
+        asyncio.run(r.manager._prepare_workspace(stored, requested_cwd=stored.cwd, provider_id="codex"))
+    assert ledger.get(record.dispatch_id).session_id == reserved_id
+    assert r.store.get_session(reserved_id).config_json["provisioning"]["state"] == "ready"
+    assert len([s for s in r.store.list_sessions() if s.dispatch_id == record.dispatch_id]) == 1
+    leases = r.manager.workspace_manager.list(card_id=card.id)
+    assert len(leases) == 1 and leases[0].session_id == reserved_id
+
+
 def test_retry_restores_original_provider_session_workspace_and_prompt(admitted):
     r = admitted
     ledger = r.manager.dispatch_store
