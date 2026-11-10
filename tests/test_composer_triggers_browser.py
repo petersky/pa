@@ -200,3 +200,91 @@ async def test_at_mentions_search_the_server_and_complete_or_attach(operator_ser
     finally:
         await manager.close()
         await browser.close()
+
+
+@pytest.mark.skipif(not _browser_executable(), reason="managed Chromium is not installed")
+@pytest.mark.asyncio
+async def test_bang_runs_a_command_and_shares_or_keeps_the_output(operator_server, tmp_path):  # noqa: F811
+    app, base = operator_server
+    browser = BrowserManager(tmp_path / "browser")
+    manager = BrowserSessionManager(browser, instance_id="composer-shell-test")
+    scope = BrowserScope("user:test", "composer-shell", "composer-shell-test")
+    async with httpx.AsyncClient(base_url=base, follow_redirects=False) as client:
+        await client.get("/fixture")
+    try:
+        await manager.attach(scope, url=base + "/agent?session=viz-session", width=1280, height=900)
+        page = manager.resolve(scope).page
+
+        async def wait_for(expression):
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                if await page.evaluate(expression):
+                    return
+                await asyncio.sleep(.05)
+            pytest.fail("Browser condition timed out: " + expression)
+
+        await wait_for("!!(document.querySelector('[data-agent-chat]')._acw && document.querySelector('[data-acw-input]'))")
+        # The server side is covered elsewhere: stub the two requests so this proves the composer's behaviour.
+        await page.evaluate("""(() => {
+            const w = document.querySelector('[data-agent-chat]')._acw;
+            window.__calls = [];
+            w.sessionId = 'viz-session'; w.sessionClosed = false;
+            w.api = (path, opts) => { window.__calls.push(['api', path, JSON.parse(opts.body || 'null')]);
+              const body = JSON.parse(opts.body);
+              const result = {id: 'run-' + window.__calls.length, command: body.command, cwd: '/w', exit_code: 0, signal: null,
+                timed_out: false, cancelled: false, output: 'hello\\n', truncated: false, omitted_chars: 0, duration_ms: 40,
+                sent_to_agent: body.send_to_agent};
+              if (body.send_to_agent) result.prompt = 'I ran this in the terminal:\\n\\n$ ' + body.command;
+              return Promise.resolve(result); };
+            w.apiWithTimeout = (path, ms, opts) => { window.__calls.push(['prompt', path, JSON.parse(opts.body)]);
+              const error = new Error('stubbed'); error.status = 400; return Promise.reject(error); };
+        })()""")
+        type_text = """(text => { const i = document.querySelector('[data-acw-input]'); i.disabled = false;
+            i.value = text; i.setSelectionRange(text.length, text.length); i.dispatchEvent(new Event('input', {bubbles: true})); })"""
+        enter = "document.querySelector('[data-acw-input]').dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true, cancelable: true}))"
+        calls = "window.__calls.map(c => [c[0], c[2].command || c[2].message, c[2].send_to_agent])"
+        menu_text = "document.querySelector('[data-acw-command-state]').textContent"
+
+        # The menu explains what Enter will do, and says how the choice flips.
+        await page.evaluate(f"{type_text}('!git status')")
+        assert await page.evaluate("!document.querySelector('[data-acw-command-menu]').hidden")
+        hint = await page.evaluate(menu_text)
+        assert "shared with the agent" in hint and "!! keeps it here" in hint
+
+        # `!cmd` shares by default: the command runs, then the agent gets the output as an ordinary prompt.
+        await page.evaluate(enter)
+        await wait_for("window.__calls.length === 2")
+        assert await page.evaluate(calls) == [["api", "git status", True], ["prompt", "I ran this in the terminal:\n\n$ git status", None]]
+
+        # `!!cmd` keeps the output local and renders it as a result bubble; nothing goes to the agent.
+        await page.evaluate("window.__calls.length = 0; document.querySelector('[data-agent-chat]')._acw.submissionPending = false")
+        await page.evaluate(f"{type_text}('!!echo hello')")
+        assert "keeps it here" not in await page.evaluate(menu_text) and "shares it with the agent" in await page.evaluate(menu_text)
+        await page.evaluate(enter)
+        await wait_for("!!document.querySelector('.acw-msg-shell')")
+        assert await page.evaluate(calls) == [["api", "echo hello", False]]
+        bubble = await page.evaluate("document.querySelector('.acw-msg-shell .acw-bubble-shell').textContent")
+        assert "$ echo hello" in bubble and "hello" in bubble and "exit 0" in bubble
+        assert await page.evaluate("document.querySelector('.acw-msg-shell').dataset.shellStatus") == "ok"
+        assert await page.evaluate("document.querySelector('[data-acw-input]').value") == ""
+
+        # The backslash escape sends literal text; with the feature off, `!` is ordinary text too.
+        for text, sent in (("\\!important", "!important"), ("!ls", "!ls")):
+            if text == "!ls":
+                await page.evaluate("document.querySelector('[data-agent-chat]').dataset.shell = 'off'")
+            await page.evaluate("window.__calls.length = 0; document.querySelector('[data-agent-chat]')._acw.submissionPending = false")
+            await page.evaluate(f"{type_text}({text!r})")
+            await page.evaluate(enter)
+            await wait_for("window.__calls.length === 1")
+            assert await page.evaluate(calls) == [["prompt", sent, None]]
+
+        # A recorded result replays from the transcript (once, even if it is delivered twice).
+        await page.evaluate("""(() => { const w = document.querySelector('[data-agent-chat]')._acw;
+            const event = {seq: 0, type: 'shell_result', payload: {id: 'replayed', command: 'make test', cwd: '/w', exit_code: 2,
+              signal: null, timed_out: false, cancelled: false, output: 'boom\\n', truncated: false, duration_ms: 1200}};
+            w.handleEvent(event, true); w.handleEvent(event, true); })()""")
+        assert await page.evaluate("document.querySelectorAll('.acw-msg-shell').length") == 2  # the earlier `!!echo hello` plus this one
+        assert await page.evaluate("[...document.querySelectorAll('.acw-msg-shell')].pop().dataset.shellStatus") == "failed"
+    finally:
+        await manager.close()
+        await browser.close()

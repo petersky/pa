@@ -900,6 +900,33 @@ _DEFINITIONS = (
         apply="live", validator="range:100:100000",
     ),
     _s(
+        "chat_shell_access", "str", "anyone",
+        "Who may run !commands from the chat composer.", "Conversation", 11,
+        "`!ls` in the composer runs an OS command in the conversation's working directory as the PA "
+        "server user. anyone: no gate beyond the instance's own login setting; signed_in: needs a real "
+        "login; disabled: `!` is plain text.",
+        apply="live", allowed=("anyone", "signed_in", "disabled"),
+    ),
+    _s(
+        "chat_shell_output_to_agent", "bool", True,
+        "Send !command output to the agent by default.", "Conversation", 12,
+        "When on, `!cmd` shares the command and its output with the agent and `!!cmd` keeps it local; "
+        "when off the two swap.",
+        apply="live",
+    ),
+    _s(
+        "chat_shell_timeout_seconds", "int", 60,
+        "Seconds before a !command is stopped.", "Conversation", 13,
+        "The whole process group is killed when this elapses.",
+        apply="live", validator="range:1:3600",
+    ),
+    _s(
+        "chat_shell_output_char_limit", "int", 20000,
+        "Characters of !command output kept.", "Conversation", 14,
+        "Longer output keeps its beginning and its end, with the middle marked as omitted.",
+        apply="live", validator="range:1000:1000000",
+    ),
+    _s(
         "transcript_retention_days",
         "int",
         14,

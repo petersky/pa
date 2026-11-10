@@ -48,6 +48,8 @@
      data-agent-chat
      data-new-chat="{{ '1' if new_chat | default(false) else '0' }}"
      data-terminal-output-limit="{{ terminal_output_char_limit | default(1000) }}"
+     data-shell="{{ 'on' if shell_enabled | default(false) else 'off' }}"
+     data-shell-to-agent="{{ '1' if shell_to_agent | default(true) else '0' }}"
      data-session-id="{{ sid }}"
      data-owner-instance-id="{{ owner_id }}"
      data-current-instance-id="{{ current_id }}"
@@ -276,7 +278,7 @@
     </div>
     <label class="sr-only" for="acw-input-{{ label | replace(':', '-') }}">Message</label>
     <textarea id="acw-input-{{ label | replace(':', '-') }}" data-acw-input rows="1"
-              placeholder="Message the agent, type / for commands, $ for skills, @ to mention, or drop images here…"
+              placeholder="Message the agent, type / for commands, $ for skills, @ to mention, {% if shell_enabled | default(false) %}! to run a command, {% endif %}or drop images here…"
               aria-autocomplete="list" aria-controls="acw-command-menu-{{ label | replace(':', '-') }}"
               aria-expanded="false"></textarea>
     <div id="acw-command-menu-{{ label | replace(':', '-') }}"

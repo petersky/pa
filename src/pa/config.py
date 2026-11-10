@@ -150,6 +150,13 @@ class Settings(BaseSettings):
         default=24 * 60 * 60, ge=60, le=7 * 24 * 60 * 60
     )
     terminal_output_char_limit: int = Field(default=1000, ge=100, le=100000)
+    # `!command` in the chat composer runs an OS command in the session's working directory.
+    # "anyone" matches the rest of the instance (no extra gate beyond auth_required);
+    # "signed_in" additionally needs a real login; "disabled" turns `!` off.
+    chat_shell_access: Literal["disabled", "signed_in", "anyone"] = "anyone"
+    chat_shell_output_to_agent: bool = True
+    chat_shell_timeout_seconds: int = Field(default=60, ge=1, le=3600)
+    chat_shell_output_char_limit: int = Field(default=20000, ge=1000, le=1000000)
     transcript_retention_days: int = Field(default=14, ge=1, le=3650)
     mutation_operation_retention_days: int = Field(default=14, ge=1, le=3650)
     # Optional ACP final-fact candidates. Disabled by default; when enabled,

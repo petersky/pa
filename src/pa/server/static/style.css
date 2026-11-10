@@ -2677,6 +2677,17 @@ code {
 .acw-msg-thought strong,
 .acw-bubble-thought strong { font-weight: 400; }
 
+.acw-bubble-shell {
+  background: var(--pa-surface);
+  border: 1px solid var(--pa-border);
+  border-inline-start: 0.3rem solid var(--pa-border);
+  max-width: min(48rem, 96%);
+  font-size: 0.85rem;
+}
+.acw-msg-shell[data-shell-status="ok"] .acw-bubble-shell { border-inline-start-color: var(--pa-success, #2f855a); }
+.acw-msg-shell[data-shell-status="failed"] .acw-bubble-shell { border-inline-start-color: var(--pa-danger); }
+.acw-bubble-shell pre { margin: 0 0 0.4rem; max-height: 24rem; overflow: auto; }
+
 .acw-bubble-system {
   background: var(--pa-surface);
   border: 1px solid var(--pa-border);

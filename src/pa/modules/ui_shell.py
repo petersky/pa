@@ -17,6 +17,7 @@ from pa.core.contracts import Module
 from pa.core.preferences import get_preferences_store
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.modules.agent_lifecycle import startup_state
+from pa.modules.chat_shell import shell_template_context
 from pa.modules.theme import get_theme_catalog
 from pa.prompts import PROMPTS
 
@@ -102,6 +103,7 @@ def _shell_context(request: Request) -> dict:
         "telemetry_ui_refresh_seconds": settings.telemetry_ui_refresh_seconds,
         "telemetry_session_header": prefs.telemetry_session_header,
         "terminal_output_char_limit": settings.terminal_output_char_limit,
+        **shell_template_context(request),
         "pa_version": __import__("pa").__version__,
         "build_id": f"{__import__('pa').__version__}+{assets.version}",
         "agent_providers": provider_catalog(),
@@ -542,6 +544,7 @@ def chat_modal_partial(
             "modal_title": title or "Conversation",
             "instance_id": ctx.settings.instance_id,
             "terminal_output_char_limit": ctx.settings.terminal_output_char_limit,
+            **shell_template_context(request),
         },
     )
 

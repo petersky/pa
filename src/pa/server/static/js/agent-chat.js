@@ -3302,6 +3302,9 @@
       case "available_commands_update":
         if (!replay) this.refreshCommandCatalog(true);
         break;
+      case "shell_result":
+        this.renderShellResult(payload, created);
+        break;
       case "command_result":
         this.addBubble("system", payload.reason || "Command finished.", created, { system: true, forceVisible: true });
         break;
@@ -3429,7 +3432,7 @@
       bubble.appendChild(gallery);
     }
     const content = text || imageSummary(images);
-    if (role === "user" || role === "agent" || role === "thought") {
+    if (role === "user" || role === "agent" || role === "thought" || role === "shell") {
       bubble.dataset.markdown = content;
       this.renderMarkdownBubble(bubble);
     } else {
@@ -4578,7 +4581,7 @@
     this._syncSubmissionControls();
     if (this.els.input) {
       this.els.input.placeholder = enabled
-        ? "Message the agent, type / for commands, or drop images here…"
+        ? "Message the agent, type / for commands, $ for skills, @ to mention, " + (this.shellEnabled() ? "! to run a command, " : "") + "or drop images here…"
         : disabledMessage || "Preparing conversation…";
     }
   };
@@ -4867,6 +4870,18 @@
   AgentChatWidget.prototype.updateCommandMenu = function () {
     if (!this.els.input || !this.els.commandMenu || !this.els.commandOptions) return;
     const triggers = window.PAComposerTriggers;
+    const shell = this.shellRequest(this.els.input.value || "");
+    if (shell) {
+      // A leading "!" makes the whole message a command; the menu only explains what Enter does.
+      this.cancelMentionSearch();
+      this.commandTrigger = null;
+      this.commandMatches = [];
+      const toAgent = this.shellToAgent(shell.flip);
+      this.renderMenu("!", [], (shell.command ? "Enter runs it in this conversation's working directory" : "Type a command to run")
+        + (toAgent ? " · output is shared with the agent" : " · output stays here")
+        + " · !! " + (toAgent ? "keeps it here" : "shares it with the agent") + " · \\! for a literal !");
+      return;
+    }
     const found = triggers
       ? triggers.find(this.els.input.value || "", this.els.input.selectionStart, ["/", "$", "@"])
       : null;
@@ -5116,6 +5131,111 @@
     return command ? { command: command, arguments: match[2] || "" } : null;
   };
 
+  AgentChatWidget.prototype.shellEnabled = function () {
+    return !!(this.root && this.root.dataset.shell === "on" && window.PAComposerTriggers);
+  };
+
+  // Whether a command's output goes to the agent: the instance default, flipped by "!!".
+  AgentChatWidget.prototype.shellToAgent = function (flip) {
+    const standard = !this.root || this.root.dataset.shellToAgent !== "0";
+    return flip ? !standard : standard;
+  };
+
+  AgentChatWidget.prototype.shellRequest = function (rawText) {
+    if (!this.shellEnabled() || (this.pendingImages && this.pendingImages.length)) return null;
+    return window.PAComposerTriggers.shell(rawText);
+  };
+
+  function shellMarkdown(result) {
+    const body = String(result.output || "").replace(/\n+$/, "");
+    const longest = ((result.command + "\n" + body).match(/`+/g) || []).reduce(function (most, run) {
+      return Math.max(most, run.length);
+    }, 0);
+    const fence = "`".repeat(Math.max(3, longest + 1));
+    const seconds = (result.duration_ms || 0) / 1000;
+    let status = result.timed_out ? "timed out after " + seconds.toFixed(0) + "s and was stopped"
+      : result.cancelled ? "stopped"
+        : result.signal ? "killed by " + result.signal
+          : "exit " + result.exit_code;
+    status += " · " + seconds.toFixed(1) + "s";
+    if (result.truncated) status += " · output shortened";
+    return fence + "console\n$ " + result.command + "\n" + (body ? body + "\n" : "") + fence + "\n\n*" + status + "*";
+  }
+
+  AgentChatWidget.prototype.renderShellResult = function (result, ts) {
+    if (!result || !result.command) return;
+    this.shellSeen = this.shellSeen || {};
+    if (result.id) {
+      if (this.shellSeen[result.id]) return;
+      this.shellSeen[result.id] = true;
+    }
+    const made = this.addBubble("shell", shellMarkdown(result), ts, {});
+    const failed = result.timed_out || result.cancelled || !!result.signal || result.exit_code !== 0;
+    made.row.dataset.shellStatus = failed ? "failed" : "ok";
+  };
+
+  AgentChatWidget.prototype.runShell = function (rawText, shell) {
+    if (this.submissionPending) return;
+    const self = this;
+    if (!this.sessionId) {
+      this.addBubble("system", "Open a conversation first: commands run in its working directory.", new Date().toISOString(), { system: true, forceVisible: true });
+      return;
+    }
+    const sessionId = this.sessionId;
+    const base = "/sessions/" + encodeURIComponent(sessionId) + "/shell";
+    this.submissionPending = true;
+    if (this.els.send) this.els.send.disabled = true;
+    const running = this.addBubble("system", "", new Date().toISOString(), { system: true, forceVisible: true });
+    running.bubble.textContent = "Running: " + shell.command + " ";
+    const stop = document.createElement("button");
+    stop.type = "button";
+    stop.className = "ghost small";
+    stop.textContent = "Stop";
+    stop.addEventListener("click", function () {
+      stop.disabled = true;
+      self.api(base, { method: "DELETE" }).catch(function () { stop.disabled = false; });
+    });
+    running.bubble.appendChild(stop);
+    let handedOff = false;
+    this.api(base, {
+      method: "POST",
+      body: JSON.stringify({
+        command: shell.command,
+        send_to_agent: this.shellToAgent(shell.flip),
+        client_id: window.PAAgentDrafts ? window.PAAgentDrafts.randomId() : String(Date.now()),
+      }),
+    }).then(function (result) {
+      running.row.remove();
+      if (self.sessionId !== sessionId) return;
+      if (result.prompt) {
+        // The agent gets the command and its output as an ordinary prompt, so queueing,
+        // durable acceptance and retries all behave exactly as for typed messages.
+        handedOff = true;
+        self.submissionPending = false;
+        if (self.els.send) self.els.send.disabled = false;
+        self.els.input.value = result.prompt;
+        self.els.input.dispatchEvent(new Event("input", { bubbles: true }));
+        self.send("append");
+        return;
+      }
+      self.renderShellResult(result, new Date().toISOString());
+      if (self.els.input && self.els.input.value === rawText) {
+        self.els.input.value = "";
+        self.els.input.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      if (self.drafts) self.drafts.submissionAccepted({ rawText: rawText, images: [] });
+    }).catch(function (err) {
+      running.row.remove();
+      self.addBubble("system", "Command not run: " + (err && err.message || "request failed"), new Date().toISOString(), { system: true, forceVisible: true });
+      if (self.drafts) self.drafts.submissionFailed({ rawText: rawText, images: [], conflict: false });
+    }).finally(function () {
+      if (handedOff) return;
+      self.submissionPending = false;
+      if (self.els.send) self.els.send.disabled = false;
+      if (self.els.input) self.els.input.focus();
+    });
+  };
+
   AgentChatWidget.prototype.executeCommand = function (command, argumentsText, rawText) {
     if (!command || this.submissionPending || !this.sessionId) return;
     const self = this;
@@ -5177,6 +5297,12 @@
       this.executeCommand(invocation.command, invocation.arguments, rawText);
       return;
     }
+    const shell = this.shellRequest(rawText);
+    if (shell) {
+      if (shell.command) this.runShell(rawText, shell);
+      return;
+    }
+    if (this.shellEnabled()) rawText = window.PAComposerTriggers.unescapeShell(rawText);
     const literalLeadingSlash = rawText.indexOf("//") === 0;
     if (literalLeadingSlash) rawText = rawText.slice(1);
     const text = rawText.trim();
