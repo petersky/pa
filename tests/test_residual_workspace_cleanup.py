@@ -59,3 +59,42 @@ def test_residual_guards_retain_every_file(tmp_path, monkeypatch, guard):
                                      active_session_ids=active)
     assert result['targets'][0]['state'] == 'blocked'
     assert valuable.exists() and Path(other.worktree_path).exists()
+
+
+def test_legacy_closed_owner_removes_only_empty_directories_without_claiming_idle(tmp_path, monkeypatch):
+    manager, lease, other, root = prepared(tmp_path, monkeypatch)
+    owner = manager.store.get_session.return_value
+    owner.config_json = {}
+    result = manager.collect_garbage(targets=[target(lease,
+        residual_inventory_sha256=snapshot(root)[1])])
+    assert result['targets'][0]['state'] == 'residual_cleaned'
+    assert result['targets'][0]['reclaimed_bytes'] == 0
+    assert not root.exists() and Path(other.worktree_path).exists()
+    assert owner.status == 'closed' and owner.config_json == {}
+    receipt = manager.get_by_id(lease.id).cleanup_evidence['residual_cleanup']
+    assert receipt['owner_evidence_basis'] == 'closed_owner_empty_directories_only'
+    assert receipt['missing_runtime_checkpoint_owners'] == [lease.session_id]
+
+
+@pytest.mark.parametrize('guard', ['file', 'queue', 'inflight', 'open_owner', 'active', 'restart', 'race'])
+def test_legacy_empty_cleanup_preserves_owner_and_content_guards(tmp_path, monkeypatch, guard):
+    manager, lease, other, root = prepared(tmp_path, monkeypatch)
+    owner = manager.store.get_session.return_value
+    owner.config_json = {}
+    active = set()
+    if guard == 'file': (Path(lease.worktree_path) / 'workspace_leases.db').write_bytes(b'fixture')
+    if guard in {'queue', 'inflight'}:
+        owner.config_json = {'durable_runtime': {'in_flight': None, 'queued_prompts': []}}
+        owner.config_json['durable_runtime']['queued_prompts' if guard == 'queue' else 'in_flight'] = ['retained']
+    if guard == 'open_owner': owner.status = 'idle'
+    if guard == 'active': active.add(lease.session_id)
+    if guard == 'restart': manager.store.pending_restart_continuation.return_value = True
+    digest = snapshot(root)[1]
+    if guard == 'race':
+        def recreate(p): (Path(lease.worktree_path) / 'new.txt').write_text('retain')
+        monkeypatch.setattr('pa.repository.residual_cleanup._no_open_files', recreate)
+    result = manager.collect_garbage(targets=[target(lease, residual_inventory_sha256=digest)],
+                                     active_session_ids=active)
+    assert result['targets'][0]['state'] == 'blocked'
+    assert root.exists() and Path(other.worktree_path).exists()
+    if guard == 'race': assert (Path(lease.worktree_path) / 'new.txt').read_text() == 'retain'
