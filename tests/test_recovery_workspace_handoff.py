@@ -34,6 +34,14 @@ def reserved(recovery):
                           "worktree_path": lease.worktree_path, "branch": lease.branch,
                           "base_sha": lease.base_sha, "fencing_token": lease.fencing_token}],
     }
+    r.source.execution_binding = {
+        "version": 1, "execution_card_id": r.card.id,
+        "execution_project_id": r.origin.project_id,
+        "origin_instance_id": r.origin.target_instance_id,
+        "repository_ids": [lease.repository_id], "lease_ids": [lease.id],
+        "worktree_paths": [lease.worktree_path], "branch": lease.branch,
+        "base_sha": lease.base_sha,
+    }
     r.store.save_session(r.source)
     r.origin.session_id = None
     r.origin.materialization_plan = {"repositories": [
@@ -59,8 +67,8 @@ async def test_reserved_before_dispatch_publication_can_retire_and_replay(reserv
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("invalid", ["authority", "origin", "realm", "principal", "card", "project",
-    "label", "context", "lease_fence", "lease_path", "duplicate", "runtime", "admission", "queue", "prompt"])
-async def test_lost_link_retirement_rejects_ambiguous_or_busy_source(reserved, invalid):
+    "label", "context", "lease_fence", "lease_path", "binding", "duplicate", "runtime", "admission", "queue", "prompt"])
+async def test_lost_link_retirement_rejects_ambiguous_or_busy_source(reserved, invalid, monkeypatch):
     r = reserved
     if invalid in {"authority", "origin", "realm", "principal", "card", "project"}:
         field = {"authority": "authority_instance_id", "origin": "origin_instance_id",
@@ -71,6 +79,8 @@ async def test_lost_link_retirement_rejects_ambiguous_or_busy_source(reserved, i
         r.source.label = "same-card-is-not-proof"
     elif invalid == "context":
         r.source.config_json["execution_context"]["dispatch_id"] = "another"
+    elif invalid == "binding":
+        r.source.execution_binding["execution_card_id"] = "different"
     elif invalid.startswith("lease"):
         repository = r.source.config_json["execution_context"]["repositories"][0]
         repository["fencing_token" if invalid == "lease_fence" else "worktree_path"] = "different"
@@ -86,6 +96,9 @@ async def test_lost_link_retirement_rejects_ambiguous_or_busy_source(reserved, i
         r.origin.initial_prompt_operation = {"id": "delivery-unknown"}
         r.ledger.put(r.origin)
     r.store.save_session(r.source)
+    if invalid == "binding":
+        read = r.store.get_session
+        monkeypatch.setattr(r.store, "get_session", lambda key: r.source if key == r.source.id else read(key))
     before = r.ledger.get(r.origin.dispatch_id).model_dump()
     with pytest.raises(HTTPException):
         await session_close(r.request, r.source.id, preserve_workspace=True)

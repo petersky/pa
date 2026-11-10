@@ -4659,6 +4659,21 @@ def _reconcile_reserved_recovery_source(mgr, ledger, origin, source):
         != {(r.get("repository_id"), r.get("url")) for r in planned}
     ):
         reject()
+    binding = source.execution_binding or {}
+    immutable = {
+        "version": 1, "execution_card_id": source.card_id,
+        "execution_project_id": source.project_id,
+        "origin_instance_id": origin.target_instance_id,
+        "repository_ids": [r.get("repository_id") for r in repositories],
+        "lease_ids": [r.get("lease_id") for r in repositories],
+        "worktree_paths": [r.get("worktree_path") for r in repositories],
+        "branch": repositories[0].get("branch"),
+        "base_sha": repositories[0].get("base_sha"),
+    }
+    if any(binding.get(k) != v for k, v in immutable.items()):
+        reject()
+    if any(k in binding and binding[k] != v for k, v in expected.items()):
+        reject()
     proof = []
     for repository in repositories:
         lease = next((l for l in leases if l.id == repository.get("lease_id")), None)
