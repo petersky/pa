@@ -270,7 +270,12 @@ _APPROVAL_REQUIRED = {
 
 
 # ACP stop reasons that mean the agent was cut off, not that it finished.
-INCOMPLETE_STOP_REASONS = frozenset({"max_tokens", "max_turn_requests"})
+INCOMPLETE_STOP_REASONS = frozenset(
+    # inactivity_timeout: PA cancelled a silent provider turn (the session
+    # records stop_reason cancelled with reason inactivity_timeout); the work
+    # is unfinished, so continue rather than escalate.
+    {"max_tokens", "max_turn_requests", "inactivity_timeout"}
+)
 # Stop reasons where a person should look before more work is spent.
 REVIEW_STOP_REASONS = frozenset({"refusal", "cancelled"})
 

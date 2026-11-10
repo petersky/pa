@@ -175,8 +175,10 @@ class GoalSupervisor:
     """Runs recoverable, fenced supervision cycles over durable Goal projections."""
 
     # "strict": a verifier needs a different session, target instance, provider and
-    # service principal. "single_user": a different session and service principal.
-    verifier_independence = "strict"
+    # service principal. "relaxed": a different session and service principal. Wired
+    # by the goals module from completion_verifier_independence; a bare supervisor
+    # stays strict.
+    verifier_independence: Callable[[], str] | str | None = "strict"
     # Whether the Goals page lets the signed-in owner record the completion audit
     # (only used to word the notification that the goal is awaiting its audit).
     owner_may_audit = False
@@ -197,20 +199,20 @@ class GoalSupervisor:
         lease_ttl_seconds: int = 90,
         default_provider: str | None = None,
         failure_notify_after: int = 3,
-        verifier_independence: str = "strict",
+        verifier_independence: Callable[[], str] | str | None = None,
         no_progress_seconds: int = 0,
         stalled_seconds: int = 0,
         owner_may_audit: bool = False,
     ) -> None:
         self.owner_may_audit = owner_may_audit
-        if verifier_independence not in {"strict", "single_user"}:
-            raise ValueError("verifier_independence must be strict or single_user")
-        self.verifier_independence = verifier_independence
         if stalled_cycles <= no_progress_cycles:
             raise ValueError("stalled_cycles must exceed no_progress_cycles")
         self.service = service
         self.store = store
         self.instance_id = instance_id
+        # "strict" (the default when unwired) also demands a different instance and provider;
+        # "relaxed" accepts a different session and service principal (single-user instances).
+        self.verifier_independence = verifier_independence
         self.notifications = notification_service
         self.dispatch_store = dispatch_store
         self.dispatch = dispatch
@@ -2777,6 +2779,8 @@ class GoalSupervisor:
                 if verifier_binding is not None
                 else None
             )
+            mode = getattr(self, "verifier_independence", None)
+            relaxed = (mode() if callable(mode) else mode) == "relaxed"
             independent = bool(
                 verifier_binding is not None
                 and verifier_binding.work_package_id == package.id
@@ -2793,16 +2797,16 @@ class GoalSupervisor:
                         else "executor"
                     )
                     and verifier_binding.session_id != identity.session_id
-                    and verifier_binding.assigned_service_principal
-                    != identity.assigned_service_principal
                     and (
-                        self.verifier_independence == "single_user"
+                        relaxed
                         or (
                             verifier_binding.target_instance_id
                             != identity.target_instance_id
                             and verifier_binding.provider_id != identity.provider_id
                         )
                     )
+                    and verifier_binding.assigned_service_principal
+                    != identity.assigned_service_principal
                     for dependency, identity in executor_bindings
                 )
             )

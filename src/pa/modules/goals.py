@@ -1739,7 +1739,7 @@ class GoalsModule(Module):
             dispatch=dispatch,
             governance=governance,
             default_provider=ctx.settings.agent_provider,
-            verifier_independence=ctx.settings.goal_verifier_independence,
+            verifier_independence=lambda: ctx.settings.completion_verifier_independence,
             no_progress_seconds=ctx.settings.goal_drifting_after_seconds,
             stalled_seconds=ctx.settings.goal_stalled_after_seconds,
             owner_may_audit=ctx.settings.goal_owner_may_audit,

@@ -720,3 +720,110 @@ def test_webhook_routes_owner_reply_and_still_ingests_ordinary_messages(tmp_path
     intake = kernel.ctx.require_service("intake_service")
     texts = [item.text for item in intake.list()]
     assert texts == ["please build a thing"]  # the answer was not ingested as a goal
+
+
+# ------------------------------------------------------------ owner acceptance by reply
+
+
+def _merged_card_awaiting_acceptance(kernel, title="Ship the importer"):
+    from pa.domain.models import CardCreate, CardUpdate, CompletionEvidence
+
+    store = kernel.ctx.store
+    card = store.create_card(
+        CardCreate(
+            title=title,
+            lane="waiting",
+            completion_requirement={
+                "mode": "explicit_acceptance",
+                "criteria": "Importer handles the sample file",
+                "milestones": ["integrated"],
+                "acceptance_principals": ["user:local"],
+            },
+        )
+    )
+    return store.update_card(
+        card.id,
+        CardUpdate(expected_version=card.updated_at),
+        principal_id="instance:pr-supervisor",
+        integration_evidence=CompletionEvidence(
+            requirement_revision=card.completion_requirement.revision,
+            subject_revision="a" * 40,
+            outcome="integrated",
+        ),
+        idempotency_key="integrated",
+    )
+
+
+def _announce(kernel, card):
+    """Run the verification scheduler's cycle step that raises the acceptance notice."""
+    verification = kernel.ctx.require_service("verification")
+    asyncio.run(verification.process(card))
+    kernel.ctx.require_service("telegram_push").drain()
+
+
+def test_telegram_accept_completes_the_card_as_the_owner_with_channel_provenance(tmp_path):
+    kernel, fake = boot(tmp_path)
+    with TestClient(kernel.build_app()):
+        card = _merged_card_awaiting_acceptance(kernel)
+        assert card.completion_status["reason_code"] == "acceptance_pending"
+        _announce(kernel, card)
+        [push] = fake.pushes
+        assert "acceptance" in push["text"].lower() or "accept" in push["text"].lower()
+        outcome = reply(kernel, update("accept", reply_to=push["message_id"], update_id=6001))
+        assert outcome.code == "accepted", outcome.reply
+        done = kernel.ctx.store.get_card(card.id)
+        assert done.lane == "done" and done.completion_status["accepted"]
+        receipt = done.completion_evidence[-1]
+        assert receipt.outcome == "human_override" and receipt.actor == "user:local" and receipt.actor_kind == "human"
+        assert "channel:telegram" in receipt.references and "telegram-update:telegram:6001" in receipt.references
+        assert any(r.startswith("notification:") for r in receipt.references)
+        notice = kernel.ctx.store.list_notifications(realm_id="default")[0]
+        assert notice.resolved_at is not None
+        # A replayed delivery of the same update is a no-op.
+        assert reply(kernel, update("accept", reply_to=push["message_id"], update_id=6001)).code == "replayed"
+        assert len(kernel.ctx.store.get_card(card.id).completion_evidence) == len(done.completion_evidence)
+
+
+def test_telegram_accept_refuses_a_stale_requirement_revision_and_other_senders(tmp_path):
+    from pa.domain.models import CardUpdate
+
+    kernel, fake = boot(tmp_path)
+    with TestClient(kernel.build_app()):
+        card = _merged_card_awaiting_acceptance(kernel)
+        _announce(kernel, card)
+        mid = fake.pushes[-1]["message_id"]
+        # A stranger replying never reaches the card.
+        assert reply(kernel, update("accept", reply_to=mid, user="9999")).code == "not_owner"
+        assert kernel.ctx.store.get_card(card.id).lane == "waiting"
+        # The owner changes what "done" means after the notice went out.
+        kernel.ctx.store.update_card(
+            card.id,
+            CardUpdate(
+                expected_version=card.updated_at,
+                field_intent=["completion_requirement"],
+                completion_requirement=card.completion_requirement.model_copy(
+                    update={"criteria": "Importer handles two files"}
+                ),
+            ),
+        )
+        outcome = reply(kernel, update("accept", reply_to=mid, update_id=6002))
+        assert outcome.code == "accept_stale" and "out of date" in outcome.reply
+        assert kernel.ctx.store.get_card(card.id).lane == "waiting"
+
+
+def test_telegram_accept_only_acts_on_acceptance_notifications(tmp_path):
+    kernel, fake = boot(tmp_path)
+    with TestClient(kernel.build_app()):
+        card = _merged_card_awaiting_acceptance(kernel)
+        # An offered-by-hand accept action on some other kind of notice must not complete the card.
+        notice = stall(
+            kernel,
+            StallKind.PR_CLOSED,
+            subject_ids={"card_id": card.id},
+            actions=["accept", "dismiss"],
+        )
+        kernel.ctx.require_service("telegram_push").drain()
+        outcome = reply(kernel, update("accept", reply_to=fake.pushes[-1]["message_id"], update_id=6003))
+        assert outcome.code == "accept_unavailable"
+        assert kernel.ctx.store.get_card(card.id).lane == "waiting"
+        assert state(kernel, notice).resolved_at is None

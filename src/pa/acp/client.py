@@ -44,6 +44,7 @@ from pa.acp.configuration import (
     state_current_value,
     validate_option_value,
 )
+from pa.acp.errors import ACPConnectTimeout, TurnInactivityTimeout
 from pa.acp.environment import (
     ASSIGNED_SERVICE_MODE_ENV,
     inject_agent_github_environment,
@@ -99,6 +100,66 @@ _TOLERATED_CLIENT_METHOD_PREFIXES = ("cursor/", "elicitation/")
 _DELEGATED_PA_MCP_STDIO_PROBE_PROVIDERS = frozenset(
     {"codex", "cursor", "openinterpreter"}
 )
+
+
+# Updates that are bookkeeping rather than proof the agent is working. A hung
+# provider can keep re-announcing commands or config without ever progressing.
+_NON_PROGRESS_UPDATE_TYPES = frozenset(
+    {
+        "available_commands_update",
+        "current_mode_update",
+        "config_option_update",
+        "config_options_update",
+        "session_info_update",
+    }
+)
+
+_PERMISSION_RETRY_DELAYS = (0.25, 1.0, 3.0)
+_PERMISSION_UNAVAILABLE_POLL_SECONDS = 30.0
+
+
+class TurnActivity:
+    """When did the provider last do something real during a turn?
+
+    Real activity is any ACP session update except pure bookkeeping, a client
+    file request, or the start/end of a human wait. Time spent waiting for a
+    human permission or elicitation answer is not provider silence.
+    """
+
+    def __init__(self) -> None:
+        self.last = time.monotonic()
+        self.human_waits = 0
+
+    def touch(self) -> None:
+        self.last = time.monotonic()
+
+    def human_wait(self):
+        activity = self
+
+        class _Wait:
+            def __enter__(self_inner):
+                activity.human_waits += 1
+                activity.touch()
+
+            def __exit__(self_inner, *exc):
+                activity.human_waits = max(0, activity.human_waits - 1)
+                activity.touch()
+
+        return _Wait()
+
+    def quiet_seconds(self) -> float:
+        """Seconds of provider silence; 0 while a human answer is awaited."""
+        if self.human_waits:
+            return 0.0
+        return max(0.0, time.monotonic() - self.last)
+
+
+def _setting_seconds(settings: Any, name: str, default: float) -> float:
+    """A numeric setting, tolerating test doubles that return non-numbers."""
+    value = getattr(settings, name, default)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return float(default)
+    return max(0.0, float(value))
 
 
 def _tolerated_client_method(method: str) -> bool:
@@ -367,8 +428,14 @@ class PAClient(Client):
         wire_logger: WireLogger | None = None,
         auto_approve: bool = False,
         async_runtime: AsyncRuntime | None = None,
+        activity: TurnActivity | None = None,
+        on_permission_unavailable: Callable[[str, dict[str, Any], BaseException], Any]
+        | None = None,
     ) -> None:
         self.store = store
+        self.activity = activity or TurnActivity()
+        self.transport_alive: Callable[[], bool] | None = None
+        self.on_permission_unavailable = on_permission_unavailable
         self.on_update = on_update
         self.on_permission = on_permission
         self.on_elicitation = on_elicitation
@@ -454,23 +521,17 @@ class PAClient(Client):
                 return response
 
         if self.on_permission:
-            try:
-                response = await self.on_permission(session_id, request)
-                if response:
-                    if isinstance(response, RequestPermissionResponse):
-                        model = response
-                    else:
-                        model = RequestPermissionResponse.model_validate(response)
-                    self._wire(
-                        "out",
-                        {
-                            "method": "session/request_permission",
-                            "result": model.model_dump(mode="json", by_alias=True),
-                        },
-                    )
-                    return model
-            except Exception:
-                logger.exception("Permission handler failed")
+            with self.activity.human_wait():
+                response = await self._ask_permission_handler(session_id, request)
+            if response is not None:
+                self._wire(
+                    "out",
+                    {
+                        "method": "session/request_permission",
+                        "result": response.model_dump(mode="json", by_alias=True),
+                    },
+                )
+                return response
 
         # Default: cancel if no UI response / auto-approve option.
         response = permission_cancelled()
@@ -483,6 +544,55 @@ class PAClient(Client):
         )
         return response
 
+    async def _ask_permission_handler(
+        self, session_id: str, request: dict[str, Any]
+    ) -> RequestPermissionResponse | None:
+        """Run the permission handler; a handler failure is never a silent deny.
+
+        A transient failure (a slow preference read, a notification write that
+        timed out) is retried briefly. If it keeps failing the request stays
+        pending for a human: the owner is told once, and the handler is retried
+        periodically for as long as the provider is still waiting.
+        """
+        attempt = 0
+        reported = False
+        while True:
+            try:
+                response = await self.on_permission(session_id, request)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.exception("Permission handler failed (attempt %d)", attempt + 1)
+                if attempt < len(_PERMISSION_RETRY_DELAYS):
+                    await asyncio.sleep(_PERMISSION_RETRY_DELAYS[attempt])
+                else:
+                    if not reported and self.on_permission_unavailable:
+                        reported = True
+                        try:
+                            result = self.on_permission_unavailable(
+                                session_id, request, exc
+                            )
+                            if inspect.isawaitable(result):
+                                await result
+                        except Exception:
+                            logger.exception(
+                                "Could not report unavailable permission handler"
+                            )
+                    await asyncio.sleep(_PERMISSION_UNAVAILABLE_POLL_SECONDS)
+                    if self.transport_alive is not None and not self.transport_alive():
+                        return None  # the provider is gone: nothing left to answer
+                attempt += 1
+                continue
+            if not response:
+                return None
+            if isinstance(response, RequestPermissionResponse):
+                return response
+            try:
+                return RequestPermissionResponse.model_validate(response)
+            except Exception:
+                logger.exception("Permission handler returned an invalid response")
+                return None
+
     def begin_live_mcp_session(self, session_id: str) -> None:
         """Open evidence collection only after session/new or session/load returns."""
         self._mcp_live_session = str(session_id)
@@ -494,6 +604,8 @@ class PAClient(Client):
     async def session_update(self, session_id, update, **kwargs: Any) -> None:
         self._updates.append(update)
         normalized = normalize_session_update(update)
+        if normalized.get("type") not in _NON_PROGRESS_UPDATE_TYPES:
+            self.activity.touch()
         key = str(session_id)
         if normalized.get("type") == "session_info_update" and normalized.get("title"):
             self.session_titles[key] = normalized
@@ -653,6 +765,7 @@ class PAClient(Client):
         **kwargs: Any,
     ) -> ReadTextFileResponse:
         """Serve ACP client-side file reads advertised during initialization."""
+        self.activity.touch()
         target = Path(path)
         if not target.is_absolute():
             raise ValueError("ACP file paths must be absolute")
@@ -686,6 +799,7 @@ class PAClient(Client):
         **kwargs: Any,
     ) -> WriteTextFileResponse:
         """Serve ACP client-side file writes advertised during initialization."""
+        self.activity.touch()
         target = Path(path)
         if not target.is_absolute():
             raise ValueError("ACP file paths must be absolute")
@@ -724,7 +838,8 @@ class PAClient(Client):
                 "method": name,
             }
             self._wire("in", {"method": name, "params": request})
-            response = await self.on_elicitation(session_id, request)
+            with self.activity.human_wait():
+                response = await self.on_elicitation(session_id, request)
             self._wire("out", {"method": name, "result": response})
             return response
         self._wire(
@@ -812,6 +927,10 @@ class AgentConnection:
         self.extra_env = dict(extra_env or {})
         self.mcp_private_env = dict(mcp_private_env or {})
         self.startup_trace = startup_trace
+        self.activity = TurnActivity()
+        # Set when the inactivity deadline interrupted the most recent turn.
+        self.last_interruption: dict[str, Any] | None = None
+        self.on_permission_unavailable: Callable[..., Any] | None = None
         self._ctx = None
         self._conn: Any = None
         self._proc: Any = None
@@ -913,6 +1032,36 @@ class AgentConnection:
     @property
     def prompting(self) -> bool:
         return bool(self.session and self.session.status == "prompting")
+
+    def _permission_unavailable(
+        self, session_id: str, request: dict[str, Any], exc: BaseException
+    ) -> Any:
+        hook = self.on_permission_unavailable
+        return hook(session_id, request, exc) if hook else None
+
+    async def _connect_step(self, stage: str, awaitable: Awaitable[Any]) -> Any:
+        """Bound one ACP connect step; a hung provider becomes a retryable failure."""
+        timeout = _setting_seconds(self.settings, "agent_connect_timeout_seconds", 180.0)
+        if timeout <= 0:
+            return await awaitable
+        expired = False
+        try:
+            # asyncio.timeout (not wait_for) so a TimeoutError raised BY the
+            # provider call is not mistaken for our own deadline.
+            async with asyncio.timeout(timeout) as scope:
+                try:
+                    return await awaitable
+                finally:
+                    expired = scope.expired()
+        except TimeoutError:
+            if not expired:
+                raise
+        logger.error("ACP %s timed out after %.0fs; stopping the provider", stage, timeout)
+        try:
+            await self.disconnect(timeout=2.0, force=True)
+        except Exception:
+            logger.debug("Provider cleanup after connect timeout failed", exc_info=True)
+        raise ACPConnectTimeout(stage, timeout, self.agent_name)
 
     def _transport_alive(self) -> bool:
         """True when the ACP JSON-RPC transport has not closed/disconnected."""
@@ -1209,7 +1358,10 @@ class AgentConnection:
             wire_logger=self._wire_log,
             auto_approve=self.auto_approve,
             async_runtime=self.async_runtime,
+            activity=self.activity,
+            on_permission_unavailable=self._permission_unavailable,
         )
+        self._client.transport_alive = self._transport_alive
         startup_client = self._client
         startup_client.on_mcp_startup = lambda session_id: self._publish_mcp_startup(
             startup_client, session_id
@@ -1292,13 +1444,16 @@ class AgentConnection:
             else nullcontext()
         )
         with initialize_phase:
-            self._init_response = await self._conn.initialize(
-                protocol_version=PROTOCOL_VERSION,
-                client_capabilities=ClientCapabilities(
-                    fs=FileSystemCapabilities(
-                        read_text_file=True,
-                        write_text_file=True,
-                    )
+            self._init_response = await self._connect_step(
+                "initialize",
+                self._conn.initialize(
+                    protocol_version=PROTOCOL_VERSION,
+                    client_capabilities=ClientCapabilities(
+                        fs=FileSystemCapabilities(
+                            read_text_file=True,
+                            write_text_file=True,
+                        )
+                    ),
                 ),
             )
         await self._abort_connect_if_shutting_down(stage="post-initialize")
@@ -1383,11 +1538,17 @@ class AgentConnection:
                             restore_kwargs["additional_directories"] = (
                                 mcp_additional_directories
                             )
-                        restore_resp = await restore(**restore_kwargs)
+                        restore_resp = await self._connect_step(
+                            restore_method, restore(**restore_kwargs)
+                        )
                         session_meta = extract_models_modes_config(restore_resp)
                         record_restore_attempt(self.restore_attempts, restore_method, restore_started, 'ok')
                         restored = True
                         break
+                    except ACPConnectTimeout:
+                        # A provider that never answers restore is wedged. Falling
+                        # back to session/new would silently drop the conversation.
+                        raise
                     except Exception as exc:
                         record_restore_attempt(self.restore_attempts, restore_method, restore_started, 'failed', exc)
                         logger.warning(
@@ -1434,8 +1595,12 @@ class AgentConnection:
                 native_branch = workflow.get("kind") == "conversation_branch" and workflow.get("strategy") == "native"
                 method = "session/fork" if native_branch else "session/new"
                 stopping, acp_session = await wait_for_shutdown_or(
-                    self._fork_conversation(existing_session, new_session_kwargs)
-                    if native_branch else self._conn.new_session(**new_session_kwargs)
+                    self._connect_step(
+                        method,
+                        self._fork_conversation(existing_session, new_session_kwargs)
+                        if native_branch
+                        else self._conn.new_session(**new_session_kwargs),
+                    )
                 )
                 if stopping:
                     await self._abort_connect_if_shutting_down(
@@ -1662,6 +1827,8 @@ class AgentConnection:
                 "Retry session admission after resolving the provider compatibility error."
             )
         self.last_usage = None
+        self.last_interruption = None
+        self.activity.touch()
 
         if item_id:
             self.session.item_id = item_id
@@ -1706,10 +1873,12 @@ class AgentConnection:
                 self.store.require_session_delivery_allowed, self.session.id)
             await self._offload("sqlite.recovery_native_send_guard",
                 self.store.require_native_history_delivery_allowed, self.session.external_session_id)
-            response = await self._conn.prompt(
-                session_id=self.session.external_session_id,
-                prompt=prompt,
-                message_id=message_id,
+            response = await self._await_turn(
+                self._conn.prompt(
+                    session_id=self.session.external_session_id,
+                    prompt=prompt,
+                    message_id=message_id,
+                )
             )
         except ConnectionError:
             await self._mark_transport_dead()
@@ -1717,6 +1886,8 @@ class AgentConnection:
         except Exception:
             if not self._transport_alive():
                 await self._mark_transport_dead()
+            else:
+                await self._settle_after_failed_prompt()
             raise
 
         # Session updates remain durable audit history. Memory creation is a
@@ -1736,6 +1907,10 @@ class AgentConnection:
             self.session.metrics_json = metrics
 
         stop_reason = str(getattr(response, "stop_reason", "end_turn"))
+        if self.last_interruption is not None:
+            # The inactivity deadline cancelled this turn. Whatever the provider
+            # reports, the caller must be able to tell why it ended.
+            self.last_interruption["provider_stop_reason"] = stop_reason
         self._wire_log(
             "in",
             {
@@ -1775,6 +1950,87 @@ class AgentConnection:
             "sqlite.agent_session_save", self.store.save_session, self.session
         )
         return stop_reason
+
+    async def _settle_after_failed_prompt(self) -> None:
+        """A failed prompt on a live transport leaves the session idle, not "prompting"."""
+        session = self.session
+        if session is None or session.status != "prompting":
+            return
+        session.status = "idle"
+        session.updated_at = datetime.now(UTC)
+        try:
+            await self._offload(
+                "sqlite.agent_session_save", self.store.save_session, session
+            )
+        except Exception:
+            logger.exception("Could not persist session status after a failed prompt")
+
+    async def _await_turn(self, call: Awaitable[Any]) -> Any:
+        """Await ``session/prompt``, bounding INACTIVITY (never total length).
+
+        The deadline only counts silence: any real ACP output, client file
+        request or human answer resets it, and time spent waiting for a human
+        permission is not silence. On expiry PA sends ``session/cancel`` and
+        waits a grace period; a provider that still does not end the turn is
+        killed (``TurnInactivityTimeout``) so recovery can requeue the prompt.
+        """
+        timeout = _setting_seconds(
+            self.settings, "agent_turn_inactivity_timeout_seconds", 1800.0
+        )
+        if timeout <= 0:
+            return await call
+        grace = _setting_seconds(self.settings, "agent_turn_cancel_grace_seconds", 60.0)
+        task = asyncio.ensure_future(call)
+        try:
+            while True:
+                remaining = timeout - self.activity.quiet_seconds()
+                if remaining <= 0:
+                    break
+                done, _ = await asyncio.wait({task}, timeout=min(remaining, 30.0))
+                if done:
+                    return task.result()
+            idle = self.activity.quiet_seconds()
+            self.last_interruption = {
+                "reason": "inactivity_timeout",
+                "idle_seconds": round(idle, 1),
+                "grace_seconds": grace,
+                "outcome": "cancelling",
+            }
+            logger.warning(
+                "ACP turn for session %s produced no output for %.0fs; cancelling",
+                self.session.id if self.session else None,
+                idle,
+            )
+            try:
+                await asyncio.wait_for(self.cancel(), timeout=10.0)
+            except Exception:
+                logger.debug("Cancel after inactivity failed", exc_info=True)
+            done, _ = await asyncio.wait({task}, timeout=grace)
+            if done:
+                self.last_interruption["outcome"] = "cancelled"
+                return task.result()
+            self.last_interruption["outcome"] = "killed"
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            await self._kill_provider()
+            raise TurnInactivityTimeout(idle, grace)
+        finally:
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+    async def _kill_provider(self) -> None:
+        proc = self._proc
+        if proc is None:
+            return
+        for method in ("kill", "terminate"):
+            try:
+                getattr(proc, method)()
+                return
+            except ProcessLookupError:
+                return
+            except Exception:
+                logger.debug("Provider %s failed", method, exc_info=True)
 
     async def _mark_transport_dead(self) -> None:
         """Drop a dead ACP transport without blocking on a hung subprocess exit."""

@@ -726,7 +726,7 @@ class VerifierIndependenceTests(unittest.TestCase):
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            h = Harness(tmp, verifier_independence="single_user")
+            h = Harness(tmp, verifier_independence="relaxed")
             goal = h.create_goal(
                 GoalPolicy(autonomy_level=4, permitted_actions=FULL_ACTIONS)
             )
@@ -761,7 +761,7 @@ class VerifierIndependenceTests(unittest.TestCase):
 
     def test_single_user_independence_still_needs_a_different_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            h = Harness(tmp, verifier_independence="single_user")
+            h = Harness(tmp, verifier_independence="relaxed")
             goal = h.create_goal(
                 GoalPolicy(autonomy_level=4, permitted_actions=FULL_ACTIONS)
             )
@@ -1040,7 +1040,7 @@ class CompletionAuditTests(unittest.TestCase):
 
     def test_assigned_verifier_audit_achieves_the_goal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            h = Harness(tmp, verifier_independence="single_user")
+            h = Harness(tmp, verifier_independence="relaxed")
             goal = h.create_goal(self.POLICY)
             self._to_verifier(h, goal, verifier_state="running")
             h.run(goal.id)  # binds the verifier's service identity
@@ -1120,7 +1120,7 @@ class CompletionAuditTests(unittest.TestCase):
         self.assertIn("record_assigned_goal_evidence", prompt)
 
     def _verified_goal(self, tmp: str, **kwargs):
-        h = Harness(tmp, verifier_independence="single_user", **kwargs)
+        h = Harness(tmp, verifier_independence="relaxed", **kwargs)
         goal = h.create_goal(self.POLICY)
         self._to_verifier(h, goal, verifier_state="completed")
         verifying = h.run(goal.id)

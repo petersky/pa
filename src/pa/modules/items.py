@@ -192,6 +192,9 @@ def _completion_conflict_detail(request: Request, code: str) -> dict:
     detail = {"code": code, "message": code.replace("_", " ").capitalize() + "."}
     if code == 'verification_pending':
         detail['message'] = 'Done was not saved: PA is arranging independent verification of this card’s declared requirements.'
+    if code == 'verification_newer_head_pending':
+        detail['message'] = ('A newer integrated change arrived while you were verifying. Stop: do not retry. '
+                             'PA verifies the latest head by itself when this run ends.')
     if code in {"acceptance_pending", "completion_owner_unconfigured"}:
         detail["message"] = "Done was not saved: this card still requires completion acceptance."
         if not _direct_human_card_action(request):
@@ -2174,6 +2177,10 @@ def create_card_api(
 ) -> dict:
     store = get_store()
     settings = request.app.state.ctx.settings
+    if data.completion_requirement is not None:
+        from pa.domain.completion import declared_requirement
+        data = data.model_copy(update={"completion_requirement": declared_requirement(
+            data.completion_requirement, keep_active_default=settings.completion_active_milestone_default)})
     payload = data.model_dump(mode="json") | {
         "auto_enrich": data.auto_enrich,
         "enrichment_protected_fields": sorted(explicit_enrichment_fields(data)),
@@ -2743,6 +2750,12 @@ def update_card_api(
         actor_principal = record.principal_id
     settings = request.app.state.ctx.settings
     realm_id = realm or settings.primary_realm
+    if data.completion_requirement is not None:
+        from pa.domain.completion import declared_requirement
+        existing = get_store().get_card(card_id, realm_id=realm_id)
+        if existing is None or existing.completion_requirement != data.completion_requirement:
+            data = data.model_copy(update={"completion_requirement": declared_requirement(
+                data.completion_requirement, keep_active_default=settings.completion_active_milestone_default)})
     payload = {
         "card_id": card_id,
         **data.model_dump(mode="json", exclude_unset=True),

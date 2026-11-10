@@ -633,3 +633,22 @@ def test_stale_whole_record_put_keeps_evaluator_evidence(tmp_path):
     assert kept.attempts == stale.attempts
     assert len(kept.turn_end_snapshots) == 1
     assert len(kept.post_turn_evaluations) == 1
+
+
+def test_inactivity_cancelled_turn_is_continued_not_escalated():
+    """A turn PA cancelled because the provider went silent is unfinished work.
+
+    The session layer records it as stop_reason cancelled with reason
+    inactivity_timeout; the snapshot maps that to ``inactivity_timeout`` so the
+    evaluator continues the same session instead of asking for manual review.
+    """
+    from pa.modules.fleet import _snapshot_stop_reason
+
+    assert _snapshot_stop_reason({"stop_reason": "cancelled", "reason": "inactivity_timeout"}) == "inactivity_timeout"
+    assert _snapshot_stop_reason({"stop_reason": "cancelled"}) == "cancelled"
+    assert _snapshot_stop_reason({"stop_reason": "end_turn", "reason": "inactivity_timeout"}) == "end_turn"
+    evaluation = _evaluate(_snapshot(stop_reason="inactivity_timeout"))
+    assert evaluation.decision == PostTurnDecision.FURTHER_AGENT_WORK_NEEDED
+    names = {a.name for a in evaluation.recommended_actions}
+    assert FollowupActionName.PROMPT_SAME_SESSION in names
+    assert FollowupActionName.ESCALATE_FOR_MANUAL_REVIEW not in names

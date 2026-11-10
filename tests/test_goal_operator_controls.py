@@ -134,16 +134,16 @@ def test_verifier_independence_setting_reaches_the_supervisor() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         with TestClient(_app(Path(tmp))) as client:
             supervisor = client.app.state.ctx.require_service("goal_supervisor")
-            assert supervisor.verifier_independence == "single_user"
+            assert supervisor.verifier_independence() == "relaxed"
     reset_settings()
     reset_store()
     reset_instance_agent()
     with tempfile.TemporaryDirectory() as tmp:
         with TestClient(
-            _app(Path(tmp), goal_verifier_independence="strict")
+            _app(Path(tmp), completion_verifier_independence="strict")
         ) as client:
             supervisor = client.app.state.ctx.require_service("goal_supervisor")
-            assert supervisor.verifier_independence == "strict"
+            assert supervisor.verifier_independence() == "strict"
 
 
 def test_stall_thresholds_are_generous_time_based_settings() -> None:

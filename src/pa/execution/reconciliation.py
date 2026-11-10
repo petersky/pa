@@ -7,6 +7,7 @@ import copy
 import inspect
 import logging
 import random
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -64,11 +65,16 @@ class CompletionReconciler:
         rng: random.Random | None = None,
         escalate_missing_disposition: Callable[[], bool] | None = None,
         stall_notifier: Callable[[DispatchRecord, str], Any] | None = None,
+        sweep_seconds: float = 60.0,
+        sweep_min_age_seconds: float = 30.0,
     ) -> None:
         # Both default to the old quiet behaviour so bare constructions (tests,
         # tools) are unchanged; the fleet module wires the settings-driven pair.
         self.escalate_missing_disposition = escalate_missing_disposition
         self.stall_notifier = stall_notifier
+        self.sweep_seconds = max(0.0, sweep_seconds)
+        self.sweep_min_age_seconds = max(0.0, sweep_min_age_seconds)
+        self._last_sweep = 0.0
         self.dispatch_store = dispatch_store
         self.agent = agent
         self.completion_outbox = completion_outbox
@@ -422,6 +428,10 @@ class CompletionReconciler:
         while not self._closing:
             if heartbeat:
                 heartbeat()
+            try:
+                await self._sweep_lost_completions()
+            except Exception:
+                logger.exception("Lost-completion sweep failed")
             records = await self._offload(
                 "reconciliation.dispatch_read",
                 self.dispatch_store.reconciliation_candidates,
@@ -465,6 +475,75 @@ class CompletionReconciler:
                 await asyncio.wait_for(self._wake.wait(), self.retry_seconds)
             except TimeoutError:
                 pass
+
+    async def _sweep_lost_completions(self) -> int:
+        """Replay completions whose turn finished but whose callback was lost.
+
+        The session layer retries a failing completion callback a few times and
+        then only logs. A dispatch whose initial turn ended (``turn_completed`` in
+        the transcript) yet never received a completion payload would otherwise
+        stay ``running`` forever, so find it and hand the completion over again.
+        Returns the number of completions replayed.
+        """
+        if self.sweep_seconds <= 0:
+            return 0
+        now = time.monotonic()
+        if self._last_sweep and now - self._last_sweep < self.sweep_seconds:
+            return 0
+        self._last_sweep = now
+        # Legacy dynamic adapters must not fabricate an optional new reader.
+        declared = inspect.getattr_static(
+            self.dispatch_store, "lost_completion_candidates", None
+        )
+        reader = (
+            getattr(self.dispatch_store, "lost_completion_candidates", None)
+            if declared is not None
+            else None
+        )
+        completion_reader = getattr(self.agent.store, "find_prompt_completion", None)
+        if not callable(reader) or not completion_reader:
+            return 0
+        candidates = await self._offload(
+            "reconciliation.dispatch_read", reader, limit=1000
+        )
+        replayed = 0
+        for dispatch_id, session_id, prompt_id in candidates:
+            completion = await self._offload(
+                "reconciliation.completion_evidence_read",
+                completion_reader,
+                session_id,
+                prompt_id,
+            )
+            if completion is None:
+                continue
+            age = (datetime.now(UTC) - completion.created_at).total_seconds()
+            if age < self.sweep_min_age_seconds:
+                continue  # the normal callback may still be in flight
+            record = await self._offload(
+                "reconciliation.dispatch_read", self.dispatch_store.get, dispatch_id
+            )
+            if (
+                not record
+                or record.state != "running"
+                or record.completion_payload is not None
+                or record.reconciliation_state != "not_requested"
+            ):
+                continue
+            payload = await self._recover_transcript_completion(
+                record, prompt_id=prompt_id, source=None
+            )
+            if not payload:
+                continue
+            logger.warning(
+                "Replaying lost card completion for dispatch %s (session %s, prompt %s)",
+                dispatch_id,
+                session_id,
+                prompt_id,
+            )
+            async with self._lock:
+                await self._handle_completion(session_id, payload)
+            replayed += 1
+        return replayed
 
     def worker_health(self) -> dict[str, Any]:
         return self._supervisor.health()
