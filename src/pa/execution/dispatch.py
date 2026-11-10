@@ -1031,9 +1031,15 @@ class DispatchStore:
         fault_injector: Callable[[str], None] | None = None,
         read_only: bool = False,
         deferred_read_only: bool = False,
+        reservation_hard_expiry: bool = False,
     ) -> None:
         if deferred_read_only and not read_only:
             raise ValueError("deferred dispatch storage must be read-only")
+        # False (default): a pre-start reservation that outlives its TTL is
+        # renewed while it is queued or still making stage transitions, and only
+        # failed when a stage has been hung for a full TTL. True restores the
+        # unconditional timeout.
+        self.reservation_hard_expiry = bool(reservation_hard_expiry)
         self.path = data_dir / "dispatch_mutations.json"
         self.db_path = data_dir / "dispatch_mutations.db"
         self.backup_path = self.path.with_name(
@@ -4590,10 +4596,18 @@ class DispatchStore:
         now: datetime | None = None,
         target_instance_id: str | None = None,
     ) -> list[DispatchRecord]:
-        """Fail timed-out pre-start work and durably release its slot."""
+        """Fail timed-out pre-start work and durably release its slot.
+
+        Unless ``reservation_hard_expiry`` is set, an overdue reservation is
+        renewed only while the dispatch is genuinely waiting (``queued`` for a
+        worker) or progressing (its last stage transition is within the TTL).
+        A pre-start stage that made no transition for a full TTL is hung and is
+        failed whether or not anyone is waiting for the slot.
+        """
 
         checked_at = now or datetime.now(UTC)
         expired: list[DispatchRecord] = []
+        renewed: list[DispatchRecord] = []
         with measured_lock(self._lock):
             self._require_writer()
             candidates = (
@@ -4611,6 +4625,19 @@ class DispatchStore:
                     or stored.capacity_reservation_expires_at is None
                     or stored.capacity_reservation_expires_at > checked_at
                 ):
+                    continue
+                if not self.reservation_hard_expiry and (
+                    stored.state == "queued"
+                    or (
+                        stored.events[-1].created_at if stored.events else stored.updated_at
+                    )
+                    > checked_at - CAPACITY_RESERVATION_TTL
+                ):
+                    record = self._snapshot(stored)
+                    record.capacity_reservation_expires_at = (
+                        checked_at + CAPACITY_RESERVATION_TTL
+                    )
+                    renewed.append(record)
                     continue
                 record = self._snapshot(stored)
                 previous_state = record.state
@@ -4634,6 +4661,8 @@ class DispatchStore:
                 )
                 record.updated_at = checked_at
                 expired.append(record)
+            if renewed:
+                self._save(renewed)
             if expired:
                 self._save(expired, durability="full")
                 logger.warning(

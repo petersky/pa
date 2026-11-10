@@ -303,6 +303,24 @@ def is_authorized_same_session_continuation(
     )
 
 
+def automatic_followups_used(evaluations: Any) -> int:
+    """Count same-session prompts PA already authorized automatically."""
+    return sum(
+        1
+        for evaluation in evaluations
+        for action in evaluation.recommended_actions
+        if action.name == FollowupActionName.PROMPT_SAME_SESSION
+        and any(event.get("automatic") for event in action.audit)
+    )
+
+
+def automatic_followup_budget_exhausted(
+    evaluations: Any, budget: int
+) -> bool:
+    """Whether the per-dispatch automatic follow-up budget has been spent."""
+    return automatic_followups_used(evaluations) >= budget
+
+
 def context_digest(value: dict[str, Any]) -> str:
     encoded = json.dumps(
         value, sort_keys=True, separators=(",", ":"), default=str
