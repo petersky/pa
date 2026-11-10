@@ -52,7 +52,15 @@ def collect_residual(manager, lease, target, active: set[str]) -> dict:
     with manager.admission_guard(card_id=lease.card_id, session_id=lease.session_id,
                                  allow_concurrent=True):
         with manager._repository_lock(Path(lease.cache_path).name):
+            manager._assert_managed_path(root)
+            rows, digest = snapshot(root) if root.exists() else ([], None)
+            # A missing legacy checkpoint cannot establish idle. Empty directory
+            # disposal needs no such inference: rmdir cannot remove queued data,
+            # files or a concurrently recreated checkout. All owner/lease fences
+            # still apply, and known queued work always blocks.
+            directories_only = bool(rows) and all(r['kind'] == 'directory' for r in rows)
             def guard():
+                legacy_owners = []
                 manager.selected_cleanup_leases([target])
                 siblings = [l for l in manager.list(card_id=lease.card_id)
                             if Path(l.worktree_path).parent.parent == root]
@@ -66,16 +74,18 @@ def collect_residual(manager, lease, target, active: set[str]) -> dict:
                     durable = (owner.config_json or {}).get('durable_runtime') if owner else None
                     if (sibling.state != 'cleaned' or sibling.session_id in active
                             or not owner or owner.status != 'closed'
-                            or not isinstance(durable, dict)
-                            or durable.get('in_flight', 'unknown') is not None
-                            or durable.get('queued_prompts') != []
                             or manager.store.pending_restart_continuation(session_id=sibling.session_id)):
                         raise WorkspaceProvisioningError('Residual owner is not confirmed closed and idle')
-            guard()
-            manager._assert_managed_path(root)
+                    if durable is None and directories_only:
+                        legacy_owners.append(sibling.session_id)
+                    elif (not isinstance(durable, dict)
+                          or durable.get('in_flight', 'unknown') is not None
+                          or durable.get('queued_prompts') != []):
+                        raise WorkspaceProvisioningError('Residual owner is not confirmed closed and idle')
+                return legacy_owners
+            legacy_owners = guard()
             if not root.exists():
                 return dict(state='residual_absent', container_removed=True)
-            rows, digest = snapshot(root)
             if digest != target.residual_inventory_sha256:
                 raise WorkspaceProvisioningError('Residual inventory changed')
             # Only explicitly inventoried pytest/automation fixtures are disposable.
@@ -90,14 +100,17 @@ def collect_residual(manager, lease, target, active: set[str]) -> dict:
             for row in rows:
                 if row['kind'] == 'directory':
                     _no_open_files(root / row['path'])
-            guard()
+            legacy_owners = guard()
             if snapshot(root)[1] != digest:
                 raise WorkspaceProvisioningError('Residual changed before disposal')
             allocated = sum((root / r['path']).lstat().st_blocks * 512 for r in rows)
             free_before = shutil.disk_usage(root).free
             receipt = dict(inventory_sha256=digest, phase='disposing',
                            container_path=str(root), allocated_bytes_before=allocated,
-                           filesystem_free_bytes_before=free_before)
+                           filesystem_free_bytes_before=free_before,
+                           owner_evidence_basis=('closed_owner_empty_directories_only'
+                               if legacy_owners else 'closed_idle_runtime_checkpoint'),
+                           missing_runtime_checkpoint_owners=legacy_owners)
             lease.cleanup_evidence = {**lease.cleanup_evidence, 'residual_cleanup': receipt}
             manager._save(lease)
             for row in sorted(rows, key=lambda r: len(Path(r['path']).parts), reverse=True):
