@@ -192,6 +192,45 @@ def compact_database(settings: Any) -> dict[str, Any]:
         lock.release()
 
 
+STALE_UPLOAD_SECONDS = 3600
+
+
+def prune_chat_images(settings: Any, store: Any, *, cutoff: datetime) -> dict[str, int]:
+    """Delete retained chat images that no transcript can show any more.
+
+    Images live in ``chat-images/<session id>/``. They follow the transcript's own retention:
+    a closed conversation past the cutoff, or a directory whose conversation no longer exists
+    and has sat untouched past the cutoff. Half-written uploads are removed after an hour.
+    """
+    root = Path(settings.data_dir) / "chat-images"
+    removed = {"directories": 0, "files": 0}
+    if store is None or not hasattr(store, "get_session") or not root.is_dir():
+        return removed
+    now = time.time()
+    limit = cutoff.timestamp()
+    for directory in root.iterdir():
+        try:
+            if directory.is_symlink() or not directory.is_dir():
+                continue
+            session = store.get_session(directory.name)
+            expired = (
+                directory.stat().st_mtime < limit if session is None
+                else session.status == "closed" and session.updated_at.timestamp() < limit
+            )
+            if expired:
+                removed["files"] += sum(1 for item in directory.rglob("*") if item.is_file())
+                shutil.rmtree(directory)
+                removed["directories"] += 1
+                continue
+            for partial in directory.glob(".tmp-*"):
+                if now - partial.stat().st_mtime > STALE_UPLOAD_SECONDS:
+                    partial.unlink(missing_ok=True)
+                    removed["files"] += 1
+        except OSError:
+            logger.warning("Could not prune chat images in %s", directory, exc_info=True)
+    return removed
+
+
 def run_maintenance(
     settings: Any,
     store: Any,
@@ -219,10 +258,13 @@ def _run_maintenance_measured(
     )
     with capture_retention_phases(phases), _maintenance_phase(phases, "transcript_retention"):
         transcript_deleted = store.prune_closed_session_transcripts(before=transcript_cutoff)
+        # Retained images follow their transcript's retention, so they share its phase.
+        chat_images_deleted = prune_chat_images(settings, store, cutoff=transcript_cutoff)
     with _maintenance_phase(phases, "mutation_retention"):
         mutation_deleted = store.prune_mutation_operations(before=mutation_cutoff)
     result: dict[str, Any] = {
         "ran_at": now.isoformat(),
+        "chat_images_deleted": chat_images_deleted,
         "transcript_cutoff": transcript_cutoff.isoformat(),
         "mutation_cutoff": mutation_cutoff.isoformat(),
         "transcript_events_deleted": transcript_deleted,

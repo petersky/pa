@@ -3751,6 +3751,15 @@ async def _submit_dispatch_followup(
 async def session_prompt(request: Request, session_id: str, body: PromptBody) -> dict:
     # Own the whole intake -> admission -> publication chain. Retrying an exact
     # prompt uses its durable identity; a disconnected HTTP caller is only a waiter.
+    response = await _session_prompt_admitted(request, session_id, body)
+    if isinstance(response, dict) and response.get("accepted") and not response.get("duplicate"):
+        from pa.modules.chat_mentions import record_prompt_mentions
+
+        await record_prompt_mentions(request, session_id, response.get("prompt_id"), body.message)
+    return response
+
+
+async def _session_prompt_admitted(request: Request, session_id: str, body: PromptBody) -> dict:
     executor = request.app.state.ctx.services.get("async_runtime")
     if not isinstance(executor, AsyncRuntime):
         return await _session_prompt_owned(request, session_id, body)

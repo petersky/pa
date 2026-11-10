@@ -933,7 +933,7 @@ _DEFINITIONS = (
         "Days to keep closed-session transcript events.",
         "Retention",
         40,
-        "Deletes transcript payloads for closed sessions older than this; session rows remain.",
+        "Deletes transcript payloads and retained chat images for closed sessions older than this; session rows remain.",
         apply="live",
         validator="range:1:3650",
     ),

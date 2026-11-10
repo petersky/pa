@@ -198,3 +198,26 @@ async def test_one_command_at_a_time_and_it_can_be_stopped(world):
     result = await asyncio.wait_for(slow, 10)
     assert result["cancelled"] and result["exit_code"] is None
     assert (await stop_shell(world.request(), "discussion")) == {"stopped": False}
+
+
+def test_the_shell_settings_are_on_the_configuration_page_and_editable_live(tmp_path):
+    from starlette.testclient import TestClient
+
+    from pa.config import Settings
+    from pa.core.kernel import Kernel
+    from pa.domain.instance_config import InstanceConfig, save_instance_config
+
+    save_instance_config(tmp_path, InstanceConfig(
+        instance_id="shell-config", instance_name="shell-config", data_dir=str(tmp_path), zone="local",
+        subscribed_realms=["default"], session_secret="test-secret",
+    ))
+    settings = Settings(data_dir=tmp_path, instance_id="shell-config", instance_name="shell-config", zone="local",
+                        subscribed_realms=["default"], session_secret="test-secret", agent_enabled=False, peers=[])
+    with TestClient(Kernel.boot(settings=settings).build_app()) as client:
+        page = client.get("/settings?section=configuration").text
+        rows = {row["key"]: row for row in client.get("/api/configuration").json()["settings"]
+                if row["key"].startswith("chat_shell")}
+    assert set(rows) == {"chat_shell_access", "chat_shell_output_to_agent", "chat_shell_timeout_seconds", "chat_shell_output_char_limit"}
+    assert all(key in page for key in rows)
+    assert all(row["exposure"] == "editable" and row["apply"] == "live" for row in rows.values())
+    assert rows["chat_shell_access"]["allowed"] == ["anyone", "signed_in", "disabled"]
