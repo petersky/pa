@@ -234,6 +234,9 @@ class InstanceConfig(BaseModel):
     telemetry_per_session_enabled: bool = True
     telemetry_ui_refresh_seconds: float = Field(default=5.0, ge=2.0, le=300)
     telemetry_default_report_range: str = "1h"
+    workshop_default_view: Literal["floor", "list"] = "floor"
+    workshop_floor_chat_agents: bool = True
+    workshop_floor_motion: Literal["auto", "off"] = "auto"
     default_theme_id: str = "pa"
     update_repo: str = "petersky/pa"
     install_method: str = "uv-tool"

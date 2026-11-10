@@ -1080,6 +1080,13 @@ class DispatchStore:
         self._history_counts: dict[tuple[str, str], int] = {}
         self._capacity_records_by_target: dict[str, tuple[DispatchRecord, ...]] = {}
         self._goal_lifecycle_records: dict[str, DispatchRecord] = {}
+        # Optional ``callable(previous, record)`` told after a dispatch's state
+        # (or session) changes, so the Workshop floor can move reservation
+        # tokens without refetching. Called with the writer lock held: it must
+        # not block.
+        self.transition_observer: Callable[
+            [DispatchRecord | None, DispatchRecord], None
+        ] | None = None
         self._lock = RLock()
         # Database writers are serialized by ``_lock``. Indexed readers only
         # need to exclude the very short post-commit publication window, not a
@@ -1853,11 +1860,18 @@ class DispatchStore:
 
     def _publish_records_locked(self, records: list[DispatchRecord]) -> None:
         self._index_writer_waiting = True
+        transitions: list[tuple[DispatchRecord | None, DispatchRecord]] = []
         try:
             with measured_lock(self._index_lock):
                 for source in records:
                     candidate = self._snapshot(source)
                     previous = self._records.get(candidate.dispatch_id)
+                    if (
+                        previous is None
+                        or previous.state != candidate.state
+                        or previous.session_id != candidate.session_id
+                    ):
+                        transitions.append((previous, candidate))
                     self._update_operation_records_locked(candidate, previous)
                     self._records[candidate.dispatch_id] = candidate
                     self._update_history_count_locked(candidate, previous)
@@ -1868,6 +1882,16 @@ class DispatchStore:
                 self._refresh_queue_positions_locked()
         finally:
             self._index_writer_waiting = False
+        observer = self.transition_observer
+        if observer is not None:
+            for previous, candidate in transitions:
+                try:
+                    observer(previous, candidate)
+                except Exception:  # Observation must never fail a durable write.
+                    logger.exception(
+                        "dispatch transition observer failed dispatch=%s",
+                        candidate.dispatch_id,
+                    )
 
     def _yield_to_index_writer(self) -> None:
         # CPython locks do not promise waiter fairness. A hot polling reader can

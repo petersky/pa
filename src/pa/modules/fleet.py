@@ -3660,6 +3660,9 @@ def _workshop_context(request: Request) -> dict:
         # The page embeds the same slim projection the live client consumes.
         "workshop": workshop_floor_view(build_workshop_snapshot(ctx, overview)),
         "primary_realm": ctx.settings.primary_realm,
+        "workshop_default_view": ctx.settings.workshop_default_view,
+        "workshop_floor_chat_agents": ctx.settings.workshop_floor_chat_agents,
+        "workshop_floor_motion": ctx.settings.workshop_floor_motion,
     }
 
 
@@ -15730,6 +15733,11 @@ class FleetModule(Module):
             reservation_hard_expiry=settings.dispatch_capacity_reservation_hard_expiry,
         )
         ctx.register_service("dispatch_store", dispatch_store)
+        from pa.fleet.workshop_transitions import workshop_transition_publisher
+
+        dispatch_store.transition_observer = workshop_transition_publisher(
+            ctx
+        ).dispatch_changed
         ctx.register_service(
             "assigned_mcp_environment_resolver",
             lambda session: _assigned_mcp_environment_for_session(
