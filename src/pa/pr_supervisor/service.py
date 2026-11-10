@@ -2241,33 +2241,35 @@ class PRSupervisor:
         service = provider() if callable(provider) else provider
         if service is None:
             return
-        from pa.domain.notifications import (
-            NotificationCreate,
-            NotificationSeverity,
-            NotificationType,
-        )
+        from pa.domain.notifications import NotificationPriority
+        from pa.notifications.stall import StallKind, notify_stall
 
-        service.create(
-            NotificationCreate(
-                realm_id=watch.realm_id,
-                type=NotificationType.PR_EVENT,
-                severity=NotificationSeverity.WARNING,
-                title=f"PR #{watch.pr_number} was closed without merging",
-                body=(
-                    f"{watch.repository}#{watch.pr_number} was closed on GitHub "
-                    "without being merged. The linked card was not completed."
-                ),
-                summary="Pull request closed without merge.",
-                card_id=watch.card_id,
-                session_id=watch.originating_session_id,
-                project_id=watch.project_id,
-                pr_number=watch.pr_number,
-                watch_id=watch.id,
-                source_url=watch.pr_url,
-                deduplication_key=f"pr-supervisor:{watch.id}:closed-unmerged",
+        # Keeps this notification's own dedupe key and PR_EVENT type; the shared
+        # helper supplies the stall capability, severity profile and reply verbs.
+        notify_stall(
+            service,
+            kind=StallKind.PR_CLOSED,
+            subject_ids={
+                "realm_id": watch.realm_id,
+                "card_id": watch.card_id,
+                "session_id": watch.originating_session_id,
+                "project_id": watch.project_id,
+                "pr_number": watch.pr_number,
+                "watch_id": watch.id,
+            },
+            title=f"PR #{watch.pr_number} was closed without merging",
+            body=(
+                f"{watch.repository}#{watch.pr_number} was closed on GitHub "
+                "without being merged. The linked card was not completed."
             ),
+            summary="Pull request closed without merge.",
+            severity="warning",
+            priority=NotificationPriority.NORMAL,
+            dedupe_key=f"{watch.id}:closed-unmerged",
+            deduplication_key=f"pr-supervisor:{watch.id}:closed-unmerged",
+            extra_fields={"source_url": watch.pr_url},
             principal_id="instance:pr-supervisor",
-            instance_id=self.settings.instance_id,
+            create_kwargs={"instance_id": self.settings.instance_id},
         )
 
     async def _notify(

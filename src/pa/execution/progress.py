@@ -1181,8 +1181,21 @@ class ProgressService:
     async def _queue_periodic_heartbeats(self) -> None:
         if not self.session_manager:
             return
+        window = getattr(
+            getattr(self.session_manager, "settings", None),
+            "agent_heartbeat_activity_window_seconds",
+            0,
+        )
+        window = float(window) if isinstance(window, (int, float)) and not isinstance(window, bool) else 0.0
         for runtime in self.session_manager.list_runtimes():
             if not runtime.prompting:
+                continue
+            quiet_reader = getattr(runtime, "provider_quiet_seconds", None)
+            quiet = quiet_reader() if callable(quiet_reader) else None
+            if window > 0 and isinstance(quiet, (int, float)) and quiet > window:
+                # "Agent active." is only true while the provider is producing
+                # output. A silent (possibly hung) provider must let dispatch
+                # freshness decay to stale instead of reading live forever.
                 continue
             record = await self._offload(
                 "progress.dispatch_read", self.store.by_session, runtime.session_id

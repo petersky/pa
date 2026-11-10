@@ -212,8 +212,25 @@ def notify_stall(
     reopen_resolved: bool = False,
     expires_at: datetime | None = None,
     private_to: str | None = None,
+    priority: str | NotificationPriority | None = None,
+    capability: str | None = None,
+    deduplication_key: str | None = None,
+    notification_type: NotificationType | str | None = None,
+    extra_fields: dict[str, Any] | None = None,
+    create_kwargs: dict[str, Any] | None = None,
+    summary: str | None = None,
 ) -> Notification | None:
-    """Create (or re-raise) one deduplicated stall notification. Never raises."""
+    """Create (or re-raise) one deduplicated stall notification. Never raises.
+
+    The last seven keywords exist so sites that already shipped notifications can
+    move onto this helper without changing what the owner (or an existing client)
+    sees: ``priority`` overrides the severity's priority, ``capability`` replaces
+    the ``stall:<kind>`` marker, ``deduplication_key`` is used verbatim instead of
+    ``stall:<kind>:<dedupe_key>``, ``notification_type`` replaces the kind's
+    default type, ``extra_fields`` adds ``NotificationCreate`` fields
+    (``source_url``, ``destination_url``, ``visibility`` ...) and
+    ``create_kwargs`` are passed to ``service.create`` (``instance_id`` ...).
+    """
     try:
         stall = StallKind(kind)
         service = _resolve_service(target)
@@ -233,16 +250,17 @@ def notify_stall(
             if value not in (None, ""):
                 fields[name] = int(value) if name == "pr_number" else str(value)[:200]
         extras = {key: value for key, value in subjects.items() if value not in (None, "")}
-        severity_value, priority = severity_profile(severity)
+        severity_value, default_priority = severity_profile(severity)
+        priority_override = priority
         text = sanitize_text(body, limit=4000) if body else ""
         if extras:
             text += ("\n\n" if text else "") + "Reference: " + ", ".join(
                 f"{key}={sanitize_text(value, limit=100)}" for key, value in sorted(extras.items())
             )
-        base_key = f"stall:{stall.value}:{dedupe_key}"[:480]
-        store = service.store
+        base_key = deduplication_key or f"stall:{stall.value}:{dedupe_key}"[:480]
+        store = getattr(service, "store", None)
         key = base_key
-        if reopen_resolved:
+        if reopen_resolved and store is not None:
             for generation in range(1, MAX_STALL_GENERATIONS + 1):
                 existing = store.find_notification_by_dedup(realm_id, key)
                 if existing is None or existing.resolved_at is None:
@@ -250,13 +268,13 @@ def notify_stall(
                 key = f"{base_key}#{generation}"
         create = NotificationCreate(
             realm_id=realm_id,
-            type=_TYPES.get(stall, NotificationType.GENERAL),
+            type=notification_type or _TYPES.get(stall, NotificationType.GENERAL),
             severity=severity_value,
-            priority=priority,
+            priority=priority_override or default_priority,
             title=sanitize_text(title, limit=300) or stall.value.replace("_", " "),
             body=text,
-            summary=sanitize_text(body or title, limit=1000),
-            capability=STALL_CAPABILITY_PREFIX + stall.value,
+            summary=summary or sanitize_text(body or title, limit=1000),
+            capability=capability or STALL_CAPABILITY_PREFIX + stall.value,
             actions=_build_actions(actions, stall),
             deduplication_key=key,
             expires_at=expires_at,
@@ -265,11 +283,12 @@ def notify_stall(
                 if private_to
                 else {}
             ),
-            **fields,
+            **{**fields, **(extra_fields or {})},
         )
         return service.create(
             create,
             principal_id=principal_id or "system:stall",
+            **(create_kwargs or {}),
         )
     except Exception:  # noqa: BLE001 - alerting must never worsen the stall
         logger.exception("notify_stall failed for kind=%s key=%s", kind, dedupe_key)
