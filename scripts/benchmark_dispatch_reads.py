@@ -82,8 +82,9 @@ def seed(folder, population, members, payload_bytes):
     return store, registry, records, names
 
 
-async def profile(folder, *, population, members, payload_bytes, iterations, progress):
+async def profile(folder, *, population, members, payload_bytes, iterations, progress, detailed=True):
     progress['phase']='setup'; folder.mkdir(); start=time.perf_counter(); store, registry, records, names=seed(folder,population,members,payload_bytes)
+    assert store.db_path.parent.resolve()==folder.resolve() and registry.instances_path.parent.resolve()==folder.resolve()
     setup_ms=(time.perf_counter()-start)*1000; runtime=AsyncRuntime()
     ctx=SimpleNamespace(settings=SimpleNamespace(data_dir=folder), services={'dispatch_store':store,'fleet_registry':registry,'async_runtime':runtime})
     app=FastAPI();app.state.ctx=ctx;app.include_router(fleet.router,prefix='/api')
@@ -100,7 +101,6 @@ async def profile(folder, *, population, members, payload_bytes, iterations, pro
     def observed(name,call):
         @wraps(call)
         def run(*args,**kwargs):
-            assert store.db_path.parent.resolve()==folder.resolve() and registry.instances_path.parent.resolve()==folder.resolve()
             wall,cpu=time.perf_counter(),time.thread_time()
             try:return call(*args,**kwargs)
             finally:
@@ -135,11 +135,11 @@ async def profile(folder, *, population, members, payload_bytes, iterations, pro
     try:
         await runtime.start();store._conn.set_trace_callback(trace)
         with ExitStack() as stack:
-            for name in ('public_statuses','list','_refresh_queue_positions_locked','_snapshot'):
+            for name in (('public_statuses','list','_refresh_queue_positions_locked','_snapshot') if detailed else ()):
                 stack.enter_context(patch.object(store,name,observed(name,getattr(store,name))))
-            stack.enter_context(patch.object(registry,'list_instances',observed('membership_list',registry.list_instances)))
-            stack.enter_context(patch.object(DispatchRecord,'public_dict',observed('public_dict',DispatchRecord.public_dict)))
-            stack.enter_context(patch.object(fleet,'canonicalize_dispatch_public',observed('canonicalize',fleet.canonicalize_dispatch_public)))
+            if detailed: stack.enter_context(patch.object(registry,'list_instances',observed('membership_list',registry.list_instances)))
+            if detailed: stack.enter_context(patch.object(DispatchRecord,'public_dict',observed('public_dict',DispatchRecord.public_dict)))
+            if detailed: stack.enter_context(patch.object(fleet,'canonicalize_dispatch_public',observed('canonicalize',fleet.canonicalize_dispatch_public)))
             progress['phase']='requests'
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://fixture') as client:
                 for _ in range(iterations):
@@ -169,7 +169,7 @@ async def profile(folder, *, population, members, payload_bytes, iterations, pro
     finally:
         progress['phase']='shutdown';await runtime.close();logger.removeHandler(handler);store.close()
     extra_phases=('python_lock_wait_ms','python_lock_hold_ms','sqlite_statement_ms','sqlite_commit_ms','sqlite_busy_failures','sqlite_rows')
-    return {'population':population,'members':members,'payload_bytes':payload_bytes,'iterations':iterations,'setup_ms':round(setup_ms,3),
+    return {'detailed':detailed,'population':population,'members':members,'payload_bytes':payload_bytes,'iterations':iterations,'setup_ms':round(setup_ms,3),
         'request_ms':{k:distribution(v) for k,v in samples.items()},'response_bytes':{k:distribution(v) for k,v in sizes.items()},
         'response_byte_totals':{k:sum(v) for k,v in sizes.items()},'response_sha256':hashes,'status_counts':dict(statuses),
         'counts':dict(counts),'phase_ms':{k:distribution(v) for k,v in phases.items()},'oracle_ms':distribution(oracle_wall),'oracle_thread_cpu_ms':distribution(oracle_cpu),
@@ -179,7 +179,7 @@ async def profile(folder, *, population, members, payload_bytes, iterations, pro
         'measured_durable_changes':store._commits-setup_commits,'durable_model_sha256':before_durable,'durable_full_model_parity':True}
 
 
-def benchmark(*, population=520, iterations=6, profiles=((4,1024),(16,4096))):
+def benchmark(*, population=520, iterations=6, profiles=((4,1024),(16,4096)), detailed=True):
     if not 24<=population<=520 or not 1<=iterations<=6 or not 1<=len(profiles)<=2 or any(not 1<=m<=16 or not 1<=b<=4096 for m,b in profiles):raise ValueError('bounded population/iterations/membership/input')
     result={'contract':'pa.dispatch-read-api-inventory/v1','distribution_columns':COLUMNS,'profiles':[]}
     with tempfile.TemporaryDirectory(prefix='pa-dispatch-read-api-') as temporary:
@@ -187,7 +187,7 @@ def benchmark(*, population=520, iterations=6, profiles=((4,1024),(16,4096))):
         if shutil.disk_usage(root).free<4*1024**3:raise RuntimeError('At least4GiB free required')
         progress={}
         try:
-            for i,(members,payload) in enumerate(profiles):result['profiles'].append(asyncio.run(profile(root/str(i),population=population,members=members,payload_bytes=payload,iterations=iterations,progress=progress)))
+            for i,(members,payload) in enumerate(profiles):result['profiles'].append(asyncio.run(profile(root/str(i),population=population,members=members,payload_bytes=payload,iterations=iterations,progress=progress,detailed=detailed)))
         except Exception as exc:
             result.update(failed=True,**support.minimum_failure(exc),failed_phase=progress.get('phase'),partial_status_counts=dict(progress.get('statuses',{})),partial_counts=dict(progress.get('counts',{})),partial_request_ms={k:distribution(v) for k,v in progress.get('samples',{}).items()},partial_warning_counts=dict(progress.get('warning_counts',{})),partial_warnings=progress.get('warnings',[]))
         result['fixture_storage']=support.fixture_bytes(root)
