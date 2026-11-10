@@ -12,6 +12,13 @@
   var viewPreference = "floor";
   var VIEW_STORAGE_KEY = "pa.workshop.view.v1";
   var PAGE_SIZE = 20;
+  // The page renders from the slim "floor" projection; the full snapshot stays
+  // available at the same URLs without the view parameter.
+  var WORKSHOP_VIEW = "floor";
+  var CARD_REFRESH_DEBOUNCE_MS = 500;
+  var streamHealthy = false;
+  var lastStreamSnapshotMs = 0;
+  var cardRefresh = null;
   var query = { filter: "operational", search: "", group: "attention", page: 1 };
 
   function escapeHtml(value) {
@@ -564,7 +571,7 @@
     var status = root.querySelector("[data-workshop-live]");
     if (announced) status.textContent = "Refreshing canonical state…";
     try {
-      var response = await fetch("/api/fleet/workshop" + (announced ? "?refresh=true" : ""), {
+      var response = await fetch("/api/fleet/workshop?view=" + WORKSHOP_VIEW + (announced ? "&refresh=true" : ""), {
         credentials: "same-origin", headers: { Accept: "application/json" }
       });
       if (!response.ok) throw new Error("Workshop refresh failed (" + response.status + ")");
@@ -615,8 +622,34 @@
     }
   }
 
+  // Coalesce bursts of card changes into one trailing refresh, and skip it when
+  // the live snapshot stream already delivered a snapshot after the last change.
+  function createRefreshScheduler(options) {
+    var timer = null;
+    var lastChangeAt = 0;
+    return {
+      notify: function () {
+        lastChangeAt = options.now();
+        if (timer !== null) options.clear(timer);
+        timer = options.set(function () {
+          timer = null;
+          if (options.deliveredSince(lastChangeAt)) return;
+          options.refresh();
+        }, options.delay);
+      },
+      cancel: function () {
+        if (timer !== null) options.clear(timer);
+        timer = null;
+      }
+    };
+  }
+
   function stop() {
     refreshGeneration += 1;
+    if (cardRefresh) cardRefresh.cancel();
+    cardRefresh = null;
+    streamHealthy = false;
+    lastStreamSnapshotMs = 0;
     if (pollTimer) window.clearInterval(pollTimer);
     pollTimer = null;
     if (ageTimer) window.clearInterval(ageTimer);
@@ -664,26 +697,39 @@
     refresh(root, false);
     ageTimer = window.setInterval(function () { updateRelativeAges(root); }, 30000);
     if (window.EventSource) {
-      activitySource = new EventSource("/api/fleet/workshop/events");
+      cardRefresh = createRefreshScheduler({
+        delay: CARD_REFRESH_DEBOUNCE_MS,
+        now: Date.now,
+        set: function (callback, delay) { return window.setTimeout(callback, delay); },
+        clear: function (handle) { window.clearTimeout(handle); },
+        deliveredSince: function (changedAt) {
+          return streamHealthy && lastStreamSnapshotMs >= changedAt;
+        },
+        refresh: function () { refresh(root, false); }
+      });
+      activitySource = new EventSource("/api/fleet/workshop/events?view=" + WORKSHOP_VIEW);
       activitySource.onopen = function () {
+        streamHealthy = true;
         stopFallback();
         root.querySelector("[data-workshop-live]").textContent = "Live activity connected";
       };
       activitySource.addEventListener("snapshot", function (event) {
         var data;
         try { data = JSON.parse(event.data || "{}"); } catch (error) { return; }
+        lastStreamSnapshotMs = Date.now();
         if (!acceptSnapshot(root, data)) return;
         root.querySelector("[data-workshop-live]").textContent =
           "Live · updated " + new Date(data.generated_at).toLocaleTimeString();
       });
       activitySource.onerror = function () {
+        streamHealthy = false;
         root.querySelector("[data-workshop-live]").textContent =
           "Activity reconnecting · showing last-known state";
         startFallback(root);
       };
       cardSource = new EventSource("/api/cards/events?realm=" +
         encodeURIComponent(root.dataset.realm));
-      cardSource.addEventListener("cards-changed", function () { refresh(root, false); });
+      cardSource.addEventListener("cards-changed", function () { cardRefresh.notify(); });
     } else {
       startFallback(root);
     }
@@ -773,6 +819,9 @@
     getView: function () { return viewPreference; },
     setView: setView,
     updateRelativeAges: updateRelativeAges,
+    createRefreshScheduler: createRefreshScheduler,
+    debounceMs: CARD_REFRESH_DEBOUNCE_MS,
+    view: WORKSHOP_VIEW,
     storageKey: VIEW_STORAGE_KEY,
     pageSize: PAGE_SIZE
   };

@@ -297,3 +297,71 @@ def test_floor_view_endpoint_and_page_are_slim_and_full_stays_available():
         finally:
             reset_instance_agent()
             reset_store()
+
+
+_SCHEDULER_HARNESS = """
+const fs = require("fs");
+global.window = { PA_TEST: true };
+global.document = { addEventListener() {} };
+eval(fs.readFileSync(process.argv[1], "utf8"));
+const api = window.PAWorkshopTest;
+function rig(deliveredSince) {
+  let clock = 1000, nextId = 1, timers = new Map(), refreshes = 0;
+  const scheduler = api.createRefreshScheduler({
+    delay: api.debounceMs,
+    now: () => clock,
+    set: (callback, delay) => { const id = nextId++; timers.set(id, { callback, at: clock + delay }); return id; },
+    clear: (id) => timers.delete(id),
+    deliveredSince: (changedAt) => deliveredSince(changedAt),
+    refresh: () => { refreshes += 1; },
+  });
+  const advance = (ms) => {
+    clock += ms;
+    for (const [id, timer] of [...timers]) {
+      if (timer.at <= clock) { timers.delete(id); timer.callback(); }
+    }
+  };
+  return { scheduler, advance, count: () => refreshes, pending: () => timers.size };
+}
+const out = {};
+// A burst of changes collapses into one trailing refresh.
+let r = rig(() => false);
+for (let i = 0; i < 6; i++) { r.scheduler.notify(); r.advance(100); }
+if (r.count() !== 0) { console.error("refreshed before the burst settled"); process.exit(2); }
+r.advance(api.debounceMs);
+if (r.count() !== 1) { console.error("expected one trailing refresh, got " + r.count()); process.exit(3); }
+// A healthy stream that already delivered a newer snapshot suppresses the fetch.
+r = rig(() => true);
+r.scheduler.notify(); r.advance(api.debounceMs + 1);
+if (r.count() !== 0) { console.error("refetched despite a newer stream snapshot"); process.exit(4); }
+// cancel() drops a pending refresh.
+r = rig(() => false);
+r.scheduler.notify(); r.scheduler.cancel(); r.advance(api.debounceMs * 2);
+if (r.count() !== 0 || r.pending() !== 0) process.exit(5);
+if (api.view !== "floor") process.exit(6);
+"""
+
+
+def test_workshop_client_debounces_card_changes_and_skips_when_stream_delivered():
+    import subprocess
+
+    script = Path(__file__).parents[1] / "src/pa/server/static/js/workshop.js"
+    result = subprocess.run(
+        ["node", "-e", _SCHEDULER_HARNESS, str(script)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_workshop_client_requests_the_slim_view_and_never_refetches_inline():
+    source = (
+        Path(__file__).parents[1] / "src/pa/server/static/js/workshop.js"
+    ).read_text()
+    assert '"/api/fleet/workshop?view=" + WORKSHOP_VIEW' in source
+    assert '"/api/fleet/workshop/events?view=" + WORKSHOP_VIEW' in source
+    assert 'WORKSHOP_VIEW = "floor"' in source
+    listener = source.split('addEventListener("cards-changed"', 1)[1].split(")", 2)[0:2]
+    assert "refresh(root" not in "".join(listener)
+    assert "cardRefresh.notify()" in source
