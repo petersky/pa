@@ -75,6 +75,7 @@
       <span class="acw-title" data-acw-title>Agent</span>
     </div>
     <div class="acw-toolbar-right">
+      {% include "partials/agent/reminders.html" %}
       {% if not compact %}{{ activity_rail }}{% endif %}
       <details class="acw-menu acw-settings-menu">
         <summary title="Agent settings…"><span class="acw-effective-settings" data-acw-effective-settings aria-label="Effective agent settings">Settings unavailable</span></summary>

@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import html
-import json
 import time
 from typing import Literal
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -21,7 +19,7 @@ ui = APIRouter()
 
 class Command(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    action: Literal['create','update','pause','resume','delete','fire','retry','webhook']
+    action: Literal['create','update','pause','resume','delete','cancel','fire','retry','webhook']
     idempotency_key: str = Field(min_length=1, max_length=300)
     schedule_id: str | None = None
     occurrence_id: str | None = None
@@ -55,15 +53,29 @@ async def call(function, *args, **kwargs):
 
 @router.get('')
 async def list_schedules(request: Request, cursor: str | None = Query(default=None, max_length=36),
-                         limit: int = Query(default=50, ge=1, le=200)):
+                         limit: int = Query(default=50, ge=1, le=200),
+                         session_id: str | None = Query(default=None, min_length=1, max_length=200),
+                         pending_only: bool = False):
     principal = owner(request)
     current = scheduler(request)
-    page = await call(current.ledger.list_page, principal, cursor=cursor, limit=limit)
+    page = await call(current.ledger.list_page, principal, cursor=cursor, limit=limit, session_id=session_id, pending_only=pending_only)
     health = current.health()
     delivery = await call(current.ledger.delivery_health, principal, time.time())
     health.update(delivery)
     health['overdue'] = health['worker_overdue'] or delivery['overdue_delivery_count'] > 0
-    return {**page, 'health':health}
+    return {**page, 'health':health, 'provider_discovery':{'status':'unsupported', 'reason':'Integrated ACP providers expose no automation discovery/control capability'}}
+
+
+@router.get('/{schedule_id}')
+async def schedule_detail(request: Request, schedule_id: str):
+    principal = owner(request)
+    ledger = scheduler(request).ledger
+    def detail():
+        record = ledger.get(principal, schedule_id)
+        record.update(ledger.status(principal, schedule_id))
+        record['state'] = ledger.lifecycle(record)
+        return record
+    return await call(detail)
 
 
 @router.get('/{schedule_id}/history')
@@ -109,40 +121,20 @@ async def command(request: Request, body: Command):
         spec = spec.model_copy(update={'enabled':body.action=='resume'})
     if body.version is None:
         raise HTTPException(422, 'version required for update/pause/resume/delete')
+    command_args = body.model_dump(mode='json')
+    if command_args.get('schedule') and not command_args['schedule'].get('additional_destinations'):
+        command_args['schedule'].pop('additional_destinations', None)
     return await call(ledger.update, principal, body.schedule_id, body.idempotency_key, spec,
-                      body.version, now, delete=body.action=='delete', command_args=body.model_dump(mode='json'))
+                      body.version, now, delete=body.action=='delete', cancel=body.action=='cancel', command_args=command_args)
 
 
+@ui.get('/loops', response_class=HTMLResponse)
 @ui.get('/schedules', response_class=HTMLResponse)
 async def scheduling_page(request: Request):
     owner(request)
-    csrf = html.escape(str(getattr(request.state, 'csrf_token', '')), quote=True)
-    return f'''<!doctype html><html lang="en"><meta charset="utf-8"><title>Schedules</title>
-    <body><main><h1>Schedules</h1><p>PA delivers notifications. Recipients choose actions, reporting and completion.</p>
-    <form id="editor"><input id="csrf" type="hidden" value="{csrf}">
-    <p><label>Name <input id="name" required maxlength="200"></label></p>
-    <p><label>Trigger <select id="kind"><option>interval</option><option>once</option><option>cron</option><option>event</option><option>webhook</option><option>manual</option></select></label>
-    <label>Time, seconds, cron expression or event name <input id="trigger-value" value="600"></label>
-    <label>Timezone <input id="timezone" value="UTC"></label></p>
-    <p><label>Destination <select id="destination"><option value="inbox">PA inbox</option><option value="agent_session">Agent session</option><option value="messaging">Configured messaging conversation</option><option value="webhook">HTTPS webhook</option></select></label>
-    <label>Recipient ID or URL <input id="target" required value="{html.escape(owner(request),quote=True)}"></label>
-    <label><input id="interrupt" type="checkbox">Interrupt agent</label></p>
-    <p><label>Payload format <select id="payload-format"><option value="text">Text</option><option value="json">JSON</option></select></label></p>
-    <p><label>Message or payload<br><textarea id="payload" required rows="5" cols="70"></textarea></label></p>
-    <p><label>Missed deliveries <select id="missed"><option value="catch_up">One catch-up</option><option value="skip">Skip missed</option><option value="replay">Bounded replay</option></select></label>
-    <label>Replay limit <input id="replay" type="number" min="1" max="100" value="10"></label>
-    <label><input id="coalesce" type="checkbox">Coalesce undelivered notifications</label></p>
-    <p><label>Expiry <input id="expiry" type="datetime-local"></label>
-    <label>Maximum occurrences <input id="maximum" type="number" min="1"></label></p>
-    <details><summary>Context and event filters</summary>
-    <p>Optional key/value objects. Event filter keys: card, session, state, repo.</p>
-    <label>Context references <textarea id="refs">{{}}</textarea></label>
-    <label>Event filters <textarea id="filters">{{}}</textarea></label></details>
-    <p><button type="submit" id="save">Create schedule</button><button type="button" id="new">New schedule</button>
-    <button type="button" id="preview">Preview times</button><button type="button" id="refresh">Refresh</button></p></form>
-    <p>Delivered means accepted by the destination. An in-flight delivery may finish after pause or deletion.</p>
-    <pre id="result" aria-live="polite"></pre><div id="records"></div></main>
-    <script src="/schedules-controls.js" defer></script></body></html>'''
+    from pa.modules.ui_shell import render_page
+    page = request.app.state.ctx.require_service('pages').get_by_path('/loops')
+    return render_page(request, page)
 
 
 @ui.get('/schedules-controls.js')
@@ -156,6 +148,12 @@ class SchedulingModule(Module):
     @property
     def name(self):
         return 'scheduling'
+
+    def on_load(self, ctx):
+        from pa.core.ui.pages import PageDefinition
+        ctx.require_service('pages').register(PageDefinition(
+            id='loops', path='/loops', label='Loops', icon='loops',
+            template='pages/loops.html', nav_order=19))
 
     async def on_startup(self, app, ctx):
         runtime = ctx.require_service('async_runtime')

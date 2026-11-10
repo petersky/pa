@@ -64,9 +64,21 @@ def test_pause_receipt_replays_after_intervening_update(client):
     assert client.post('/api/schedules',headers={'test-user':'owner'},json=body).json()==first.json()
 
 
-def test_control_page_and_script(client):
+def test_control_page_and_script(client, monkeypatch):
     from pa.modules.scheduling import ui
     client.app.include_router(ui)
+    from pa.core.ui.pages import PageRegistry
+    from pa.modules.scheduling import SchedulingModule
+    from jinja2 import Environment, FileSystemLoader, select_autoescape
+    from fastapi.responses import HTMLResponse
+    pages=PageRegistry()
+    client.app.state.ctx.require_service=lambda name: pages
+    SchedulingModule().on_load(client.app.state.ctx)
+    env=Environment(loader=FileSystemLoader('src/pa/server/templates'), autoescape=select_autoescape())
+    monkeypatch.setattr('pa.modules.ui_shell.render_page', lambda request,page: HTMLResponse(
+        env.get_template(page.template).render(csrf_token='test',principal_id='owner')))
+    assert pages.get_by_path('/loops').label=='Loops'
+    assert client.get('/loops',headers={'test-user':'owner'}).status_code==200
     page=client.get('/schedules',headers={'test-user':'owner'})
     assert page.status_code==200
     assert 'Recipients choose actions, reporting and completion' in page.text
