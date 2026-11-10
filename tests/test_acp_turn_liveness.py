@@ -204,7 +204,7 @@ async def test_connect_steps_time_out_into_a_classified_retryable_failure(tmp_pa
 
     acp, context = connect_double(**{stage: hang})
     c = AgentConnection(
-        Settings(data_dir=tmp_path, agent_connect_timeout_seconds=0.2),
+        Settings(data_dir=tmp_path, agent_enabled=True, agent_connect_timeout_seconds=0.2),
         MagicMock(),
         provider_spec=spec(),
     )
@@ -228,7 +228,7 @@ async def test_connect_timeout_zero_leaves_connect_unbounded(tmp_path):
 
     acp, context = connect_double(initialize=slow_init)
     c = AgentConnection(
-        Settings(data_dir=tmp_path, agent_connect_timeout_seconds=0),
+        Settings(data_dir=tmp_path, agent_enabled=True, agent_connect_timeout_seconds=0),
         MagicMock(),
         provider_spec=spec(),
     )
