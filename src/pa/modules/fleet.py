@@ -2060,6 +2060,19 @@ def _model_json(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
 
+def _snapshot_stop_reason(result: dict[str, Any]) -> str | None:
+    """Stop reason for the turn-end snapshot.
+
+    A turn PA cancelled because the provider went silent is recorded by the
+    session as stop_reason ``cancelled`` with reason ``inactivity_timeout``; the
+    evaluator must treat that as unfinished work, not an operator cancel.
+    """
+    stop_reason = result.get("stop_reason")
+    if stop_reason == "cancelled" and result.get("reason") == "inactivity_timeout":
+        return "inactivity_timeout"
+    return stop_reason
+
+
 def _record_post_turn_evaluation(
     request: Request,
     ledger: DispatchStore,
@@ -2161,7 +2174,7 @@ def _record_post_turn_evaluation(
         authority_instance_id=record.authority_instance_id,
         authority_version=authority_version,
         originating_instance_id=record.target_instance_id,
-        stop_reason=result.get("stop_reason"),
+        stop_reason=_snapshot_stop_reason(result),
         provider_status=result.get("provider_status"),
         session_status=result.get("session_status") or "idle",
         card_lane_before=(
