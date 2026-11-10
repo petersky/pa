@@ -719,3 +719,130 @@ async def test_reoffer_bumps_the_fence_so_the_lost_holder_is_fenced_out(local_le
     assert again.lease_expires_at is None and again.lease_protocol is None
     with pytest.raises(StaleLeaseFence):
         local_ledger.ingest_progress(checkpoint(1, dispatch_id="l1"), delivered=True, lease_fence=1)
+
+
+# --- transcript note --------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_superseded_mirror_leaves_a_transcript_note_in_its_session(pair):
+    from pa.modules.fleet import _announce_superseded
+    pair.target.mutate_current(DISPATCH, mutate=lambda r: setattr(r, "lease_fence", 1))
+    ctx = pair.target_request.app.state.ctx
+    ctx.services["instance_agent"] = pair.runtime.manager
+    await _announce_superseded(ctx)(DISPATCH, {"code": "stale_lease_fence", "current_fence": 2})
+    store = pair.runtime.manager.store
+    events = [e for e in store.list_transcript_events(SESSION) if e.event_type == "dispatch_superseded"]
+    assert len(events) == 1
+    assert events[0].payload["dispatch_id"] == DISPATCH
+    assert events[0].payload["current_fence"] == 2 and events[0].payload["held_fence"] == 1
+    assert "no longer reporting" in events[0].payload["message"]
+
+
+@pytest.mark.asyncio
+async def test_superseded_note_is_persisted_even_without_a_live_runtime(pair):
+    pair.runtime.manager._runtimes.clear()
+    await pair.runtime.manager.record_dispatch_superseded(SESSION, {"dispatch_id": DISPATCH, "message": "m"})
+    events = pair.runtime.manager.store.list_transcript_events(SESSION)
+    assert [e.event_type for e in events if e.event_type == "dispatch_superseded"] == ["dispatch_superseded"]
+
+
+# --- authority worker handshake ---------------------------------------------------------
+
+class _Worker:
+    """The authority worker driven exactly as the existing durable-job tests do."""
+
+    @staticmethod
+    def app(root):
+        settings = Settings(data_dir=root, instance_id="authority", instance_name="authority",
+                            instance_url="http://authority:8080", sync_token="secret")
+        ledger = DispatchStore(root)
+        fleet = MagicMock()
+        fleet.list_instances.return_value = [MagicMock(instance_id="target", name="target", url="http://t")]
+        ctx = MagicMock(settings=settings, store=MagicMock())
+        ctx.services = {"dispatch_store": ledger, "fleet_registry": fleet}
+        ctx.require_service.side_effect = lambda name: ctx.services[name]
+        app = MagicMock()
+        app.state.ctx = ctx
+        return app, ledger
+
+    @staticmethod
+    def record(ledger):
+        from pa.execution.followup import dispatch_prompt_identity
+        record = DispatchRecord(
+            dispatch_id="dispatch-1", mutation_id="mutation-1", idempotency_key="browser-1",
+            request_fingerprint="fp-1", request_payload={"message": "Do the work"},
+            authority_instance_id="authority", authority_url="http://authority:8080",
+            target_instance_id="target",
+        )
+        ledger.transition(record, "queued", "admitted")
+        ack = {
+            "accepted": True, "accepted_event": "queue_enqueued", "session_id": "session-new",
+            "dispatch_id": record.dispatch_id,
+            "prompt_id": dispatch_prompt_identity(record.model_copy(update={"session_id": "session-new"}), None),
+        }
+        return record, ack
+
+    @staticmethod
+    async def run(app, record, ack, materialized):
+        from pa.execution.followup import PROMPT_IDENTITY_PROTOCOL
+        from pa.modules.fleet import _process_remote_dispatch
+        peer_agent = AsyncMock(side_effect=[
+            {"session": {"id": "session-new"}}, {"protocols": [PROMPT_IDENTITY_PROTOCOL]}, ack,
+        ])
+        materialize = AsyncMock(return_value=materialized)
+        with patch("pa.modules.fleet._peer_dispatch_json", materialize), patch(
+            "pa.modules.fleet._peer_agent_json", peer_agent,
+        ):
+            await _process_remote_dispatch(app, record)
+        return materialize.await_args.args[2]
+
+
+@pytest.mark.asyncio
+async def test_worker_offers_the_lease_and_grants_it_when_the_target_negotiates(tmp_path):
+    app, ledger = _Worker.app(tmp_path)
+    try:
+        record, ack = _Worker.record(ledger)
+        offered = await _Worker.run(app, record, ack, {"resolvable": True, "lease_protocol": LEASE_PROTOCOL,
+                                                       "lease_fence": 1})
+        assert offered["lease_protocols"] == [LEASE_PROTOCOL]
+        assert offered["lease_fence"] == 1 and offered["lease_id"] == "dispatch-1:1"
+        assert record.state == "running"
+        assert record.lease_protocol == LEASE_PROTOCOL
+        assert record.lease_expires_at is not None and record.lease_holder_instance_id == "target"
+        assert ledger.get("dispatch-1").lease_expires_at == record.lease_expires_at
+    finally:
+        ledger.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("answer", [
+    {"resolvable": True},                                                  # older target: no lease fields
+    {"resolvable": True, "lease_protocol": LEASE_PROTOCOL, "lease_fence": 7},   # echoes a different fence
+    {"resolvable": True, "lease_protocol": "dispatch-lease/v9", "lease_fence": 1},
+])
+async def test_worker_leaves_the_dispatch_unleased_unless_the_exact_handshake_matches(tmp_path, answer):
+    app, ledger = _Worker.app(tmp_path)
+    try:
+        record, ack = _Worker.record(ledger)
+        await _Worker.run(app, record, ack, answer)
+        assert record.state == "running"
+        assert record.lease_protocol is None and record.lease_expires_at is None
+        assert record.lease_is_fresh() is None    # stage-1 liveness applies
+    finally:
+        ledger.close()
+
+
+def test_status_endpoint_reports_the_lease_fence(pair):
+    from pa.modules.fleet import dispatch_target_status
+    pair.target_request.headers = {"X-PA-Origin-Instance-ID": AUTHORITY}
+    pair.target_request.app.state.ctx.store.get_session.return_value = SimpleNamespace(status="idle")
+    assert dispatch_target_status(pair.target_request, DISPATCH)["lease"] == {
+        "protocol": None, "fence": 1, "superseded": False,
+    }
+    pair.target.mutate_current(DISPATCH, mutate=lambda r: (
+        setattr(r, "lease_protocol", LEASE_PROTOCOL), setattr(r, "lease_fence", 3),
+        setattr(r, "lease_superseded_at", NOW),
+    ))
+    assert dispatch_target_status(pair.target_request, DISPATCH)["lease"] == {
+        "protocol": LEASE_PROTOCOL, "fence": 3, "superseded": True,
+    }
