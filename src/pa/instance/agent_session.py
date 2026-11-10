@@ -26,6 +26,7 @@ from pa.acp.configuration import (
     SessionConfigurationRequest,
     normalized_session_config_json,
 )
+from pa.acp.errors import deterministic_recovery_block
 from pa.acp.environment import (
     COMPLETION_DISPATCH_ENV,
     COMPLETION_SESSION_ENV,
@@ -3296,6 +3297,7 @@ class AgentSessionManager:
         self._recovery_coordinator_task: asyncio.Task[None] | None = None
         self._recovery_wake = asyncio.Event()
         self._recovery_tasks: dict[str, asyncio.Task[None]] = {}
+        self._logged_recovery_blocks: dict[str, str] = {}
         self._admitting_sessions: set[str] = set()
         self._recovery_metrics: dict[str, int] = {
             "attempted": 0,
@@ -4062,6 +4064,7 @@ class AgentSessionManager:
         except Exception as exc:
             binding_blocked = isinstance(exc, WorkspaceBindingMismatch)
             project_blocked = bool(execution_project_id and _project_recovery_block(exc))
+            deterministic = deterministic_recovery_block(exc)
             workspace_blocked = project_blocked or binding_blocked
             session.status = (
                 RECOVERY_BLOCKED_STATUS if workspace_blocked else "provisioning_failed"
@@ -4080,11 +4083,13 @@ class AgentSessionManager:
                 "state": "blocked" if workspace_blocked else "failed",
                 "stage": "workspace",
                 "retryable": not workspace_blocked,
-                "manual_retry": workspace_blocked,
-                "automatic_retry": not workspace_blocked,
+                "manual_retry": workspace_blocked or deterministic is not None,
+                "automatic_retry": not (workspace_blocked or deterministic),
                 "error_code": (
                     "workspace_binding_mismatch"
                     if binding_blocked
+                    else deterministic["code"]
+                    if deterministic
                     else "project_unavailable_on_instance"
                     if project_blocked
                     else "workspace_provisioning_failed"
@@ -4096,6 +4101,8 @@ class AgentSessionManager:
                     "link its checkout; then retry this session. Close the session "
                     "if it is no longer needed."
                     if project_blocked
+                    else deterministic["remedy"]
+                    if deterministic
                     else "Correct the workspace configuration, then retry"
                 ),
                 "error": str(exc)[:1000],
@@ -4856,9 +4863,8 @@ class AgentSessionManager:
                     recovery_state = await self._mark_recovery_interrupted(sess, exc)
                     if recovery_state == RECOVERY_BLOCKED_STATUS:
                         session = persisted_by_id.get(sess.session_id or "")
-                        logger.warning(
-                            "ACP recovery blocked for session %s: %s",
-                            sess.session_id,
+                        self._log_recovery_block(
+                            sess.session_id or "",
                             self._recovery_action(session) if session else str(exc),
                         )
                     else:
@@ -5437,6 +5443,17 @@ class AgentSessionManager:
             ),
         )
 
+    def _log_recovery_block(self, session_id: str, reason: str) -> None:
+        """Warn once per process for an unchanged block; later passes are debug."""
+        seen = self._logged_recovery_blocks
+        if seen.get(session_id) == reason:
+            logger.debug(
+                "ACP recovery still blocked for session %s: %s", session_id, reason
+            )
+            return
+        seen[session_id] = reason
+        logger.warning("ACP recovery blocked for session %s: %s", session_id, reason)
+
     async def _mark_recovery_interrupted(
         self, snapshot: SessionSnapshot, exc: BaseException
     ) -> str | None:
@@ -5450,25 +5467,41 @@ class AgentSessionManager:
         config = dict(session.config_json or {})
         # Classify the current failure, not a stale blocked marker. The project
         # may have arrived since the last boot and exposed a different failure.
-        from pa.acp.errors import classify_acp_failure
+        from pa.acp.errors import classify_acp_failure, deterministic_recovery_block
 
         classified = classify_acp_failure(
             exc, provider_id=session.agent_name, stage="session_recovery"
         )
         previous_recovery = dict(session.recovery_json or {})
-        attempts = int(previous_recovery.get("attempts") or 0) + 1
         code = str(classified.get("code") or "recovery_failed")
         binding_blocked = isinstance(exc, WorkspaceBindingMismatch)
         if binding_blocked:
             code = "workspace_binding_mismatch"
+        # Lease conflicts, dispatch-binding mismatches and retained checkouts
+        # cannot succeed on retry: block on the first attempt with a precise code.
+        deterministic = deterministic_recovery_block(exc)
+        if deterministic and not binding_blocked:
+            code = deterministic["code"]
+        # An already-blocked session that fails the same way again is a re-check,
+        # not another attempt: keep the counter and the original timestamps.
+        repeat_block = bool(
+            previous_recovery.get("blocked")
+            and previous_recovery.get("code") == code
+            and previous_recovery.get("last_error") == str(exc)[:1000]
+        )
+        attempts = int(previous_recovery.get("attempts") or 0) + (0 if repeat_block else 1)
         actionable = (
             binding_blocked
+            or deterministic is not None
             or not bool(classified.get("recoverable", True))
-            or "auth" in code
+            or code.startswith("auth_")
             or "credential" in code
             or "config" in code
         )
-        exhausted = attempts >= _RECOVERY_MAX_ATTEMPTS
+        exhausted = (
+            bool(previous_recovery.get("exhausted")) if repeat_block
+            else attempts >= _RECOVERY_MAX_ATTEMPTS
+        )
         lowered_error = str(exc).casefold()
         context_lost = any(
             marker in lowered_error
@@ -5505,6 +5538,8 @@ class AgentSessionManager:
         )
         if binding_blocked:
             remedy = WorkspaceBindingMismatch.remedy
+        elif deterministic is not None:
+            remedy = deterministic["remedy"]
         elif session.project_id and _project_recovery_block(exc):
             remedy = self._recovery_action(session)
         elif context_lost:
@@ -5520,10 +5555,14 @@ class AgentSessionManager:
             )
         else:
             remedy = None
+        previous_recovery_json = dict(session.recovery_json or {})
         session.recovery_json = {
             "version": 1,
             "attempts": attempts,
-            "last_attempt_at": datetime.now(UTC).isoformat(),
+            "last_attempt_at": (
+                previous_recovery.get("last_attempt_at") or datetime.now(UTC).isoformat()
+                if repeat_block else datetime.now(UTC).isoformat()
+            ),
             "last_error": str(exc)[:1000],
             "code": code,
             "blocked": blocked,
@@ -5536,11 +5575,16 @@ class AgentSessionManager:
             ),
             "remedy": remedy,
         }
-        session.status = recovery_state
-        session.updated_at = datetime.now(UTC)
-        await self._offload(
-            "sqlite.agent_session_save", self.store.save_session, session
-        )
+        if not (
+            repeat_block
+            and session.status == recovery_state
+            and session.recovery_json == previous_recovery_json
+        ):
+            session.status = recovery_state
+            session.updated_at = datetime.now(UTC)
+            await self._offload(
+                "sqlite.agent_session_save", self.store.save_session, session
+            )
         return recovery_state
 
     async def retry_session(self, session_id: str) -> AgentSessionRuntime:
