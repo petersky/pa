@@ -675,30 +675,7 @@
       button.addEventListener("click", function () { self.closeFlyouts(); });
     });
     if (this.els.input) {
-      this.els.input.addEventListener("keydown", function (e) {
-        if (self.commandMenuOpen()) {
-          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-            e.preventDefault();
-            self.moveCommandSelection(e.key === "ArrowDown" ? 1 : -1);
-            return;
-          }
-          if (e.key === "Escape") {
-            e.preventDefault();
-            self.closeCommandMenu();
-            return;
-          }
-          if ((e.key === "Enter" || (e.key === "Tab" && !e.ctrlKey && !e.metaKey && !e.altKey)) &&
-              !e.shiftKey && !e.isComposing && e.keyCode !== 229 && self.commandMatches.length) {
-            e.preventDefault();
-            self.selectMenuItem(self.commandMatches[self.commandSelectedIndex]);
-            return;
-          }
-        }
-        if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
-          e.preventDefault();
-          self.send(self.prompting ? "append" : "append");
-        }
-      });
+      this.els.input.addEventListener("keydown", function (e) { self.onComposerKeydown(e); });
       this.els.input.addEventListener("input", function () {
         self.updateCommandMenu();
         self.autosizeInput();
@@ -5113,7 +5090,41 @@
     else this.selectCommand(item);
   };
 
+  AgentChatWidget.prototype.onComposerKeydown = function (e) {
+    const self = this;
+    if (self.commandMenuOpen()) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        self.moveCommandSelection(e.key === "ArrowDown" ? 1 : -1);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        self.closeCommandMenu();
+        return;
+      }
+      const completes = (e.key === "Enter" || (e.key === "Tab" && !e.ctrlKey && !e.metaKey && !e.altKey)) &&
+        !e.shiftKey && !e.isComposing && e.keyCode !== 229;
+      if (completes && self.commandMatches.length) {
+        e.preventDefault();
+        self.selectMenuItem(self.commandMatches[self.commandSelectedIndex]);
+        return;
+      }
+      // The menu is still waiting for the current "@" query. Its old items were
+      // dropped, and sending half a mention is not what Enter meant either.
+      if (completes && self._mentionPending) {
+        e.preventDefault();
+        return;
+      }
+    }
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+      e.preventDefault();
+      self.send(self.prompting ? "append" : "append");
+    }
+  };
+
   AgentChatWidget.prototype.cancelMentionSearch = function () {
+    this._mentionPending = false;
     this._mentionQuery = null;
     this._mentionSeq = (this._mentionSeq || 0) + 1;
     if (this._mentionTimer) clearTimeout(this._mentionTimer);
@@ -5123,6 +5134,11 @@
     const self = this;
     this.cancelMentionSearch();
     this._mentionQuery = query;
+    this._mentionPending = true;
+    // Results on screen belong to the previous query: they must not be offered
+    // (or completed with Enter) until this query's results replace them.
+    this.commandMatches = [];
+    if (this.commandMenuOpen()) this.renderMenu("@", [], "Searching…");
     const seq = this._mentionSeq;
     this._mentionTimer = setTimeout(function () { self.runMentionSearch(query, seq); }, 120);
   };
@@ -5134,6 +5150,7 @@
     this.api("/sessions/" + encodeURIComponent(sessionId) + "/mentions?q=" + encodeURIComponent(query))
       .then(function (result) {
         if (seq !== self._mentionSeq || sessionId !== self.sessionId) return;
+        self._mentionPending = false;
         const items = result && result.items || [];
         // "@" is as often plain text as a mention, so nothing found means no menu.
         if (!items.length) {
@@ -5145,7 +5162,9 @@
         self.renderMenu("@", items, items.length + (items.length === 1 ? " match" : " matches"));
       })
       .catch(function () {
-        if (seq === self._mentionSeq) self.closeCommandMenu();
+        if (seq !== self._mentionSeq) return;
+        self._mentionPending = false;
+        self.closeCommandMenu();
       });
   };
 
