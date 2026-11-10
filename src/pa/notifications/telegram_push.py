@@ -29,7 +29,7 @@ from pa.domain.notifications import (
 from pa.execution.progress import sanitize_text
 from pa.intake import telegram_push_store as push_store
 from pa.intake.security import SlidingWindowLimiter
-from pa.notifications.stall import VERBS, stall_kind_of, stall_verbs
+from pa.notifications.stall import stall_kind_of, stall_verbs
 
 logger = logging.getLogger(__name__)
 
@@ -368,5 +368,3 @@ class TelegramNotificationPush:
             return f"{base}/agent?session={notification.session_id}"
         return base
 
-
-__all__ = ["TelegramNotificationPush", "needs_attention", "VERBS"]
