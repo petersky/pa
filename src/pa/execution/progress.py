@@ -6,7 +6,10 @@ import asyncio
 import hashlib
 import json
 import logging
+import random
 import re
+import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -713,15 +716,24 @@ class ProgressService:
         store: Any,
         *,
         instance_id: str,
-        token: str,
+        token: str | Callable[[], str],
         async_runtime: AsyncRuntime | None = None,
         session_manager: Any = None,
         retry_seconds: float = PROGRESS_RETRY_SECONDS,
         heartbeat_seconds: float = PROGRESS_HEARTBEAT_SECONDS,
+        peer_post: Callable[..., Awaitable[httpx.Response | None]] | None = None,
+        retry_max_seconds: float | Callable[[], float] | None = None,
     ) -> None:
         self.store = store
         self.instance_id = instance_id
-        self.token = token
+        # A callable is read at send time so a rotated fleet token is picked up.
+        self._token_source = token
+        # Reaches the authority through its current endpoints (with failover).
+        self.peer_post = peer_post
+        # Longest pause after repeated delivery failures to one authority. None
+        # keeps the legacy flat ``retry_seconds`` cadence.
+        self._retry_max_source = retry_max_seconds
+        self._authority_backoff: dict[str, tuple[int, float]] = {}
         self.async_runtime = async_runtime
         self.session_manager = session_manager
         self.retry_seconds = retry_seconds
@@ -751,6 +763,31 @@ class ProgressService:
                 operation, call, *args, **kwargs
             )
         return await asyncio.to_thread(call, *args, **kwargs)
+
+    @property
+    def token(self) -> str:
+        source = self._token_source
+        return str((source() if callable(source) else source) or "")
+
+    def _backing_off(self, authority_instance_id: str) -> bool:
+        state = self._authority_backoff.get(authority_instance_id)
+        return bool(state and state[1] > time.monotonic())
+
+    def _note_delivery(self, authority_instance_id: str, ok: bool) -> None:
+        """Back off per authority; one failing peer must not be retried per-event."""
+        if ok:
+            self._authority_backoff.pop(authority_instance_id, None)
+            return
+        source = self._retry_max_source
+        cap = source() if callable(source) else source
+        if cap is None:
+            return
+        failures = (self._authority_backoff.get(authority_instance_id) or (0, 0.0))[0] + 1
+        ceiling = min(float(cap), self.retry_seconds * (2 ** min(failures, 20)))
+        delay = random.uniform(ceiling / 2, ceiling)
+        self._authority_backoff[authority_instance_id] = (
+            failures, time.monotonic() + max(delay, self.retry_seconds),
+        )
 
     def _http_client(self) -> httpx.AsyncClient:
         if self._client is None:
@@ -1234,6 +1271,11 @@ class ProgressService:
                     self.instance_id,
                 )
                 for record, payload in pending:
+                    # Custom readers may yield opaque targets; only a known
+                    # authority can be backed off.
+                    authority = getattr(record, "authority_instance_id", None)
+                    if authority and self._backing_off(authority):
+                        continue
                     await self._send(record, payload)
             except asyncio.CancelledError:
                 raise
@@ -1244,6 +1286,25 @@ class ProgressService:
                 await asyncio.wait_for(self._wake.wait(), timeout=self.retry_seconds)
             except TimeoutError:
                 pass
+
+    async def _post(
+        self,
+        record: Any,
+        payload: DispatchProgressEventV1 | DispatchProgressHeartbeatV1,
+        headers: dict[str, str],
+    ) -> httpx.Response:
+        path = f"api/fleet/dispatch/{record.dispatch_id}/progress"
+        if self.peer_post is not None:
+            routed = await self.peer_post(
+                record, path, json=payload.transport_dict(), headers=headers
+            )
+            if routed is not None:
+                return routed
+        return await self._http_client().post(
+            f"{record.authority_url.rstrip('/')}/{path}",
+            json=payload.transport_dict(),
+            headers=headers,
+        )
 
     async def _send(
         self,
@@ -1265,12 +1326,7 @@ class ProgressService:
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
         try:
-            request = self._http_client().post(
-                f"{record.authority_url.rstrip('/')}/api/fleet/dispatch/"
-                f"{record.dispatch_id}/progress",
-                json=payload.transport_dict(),
-                headers=headers,
-            )
+            request = self._post(record, payload, headers)
             response = (
                 await self.async_runtime.observe(
                     "http.dispatch_progress", request, timeout=15.0
@@ -1279,6 +1335,7 @@ class ProgressService:
                 else await request
             )
             if response.status_code in {200, 208}:
+                self._note_delivery(record.authority_instance_id, True)
                 await self._offload(
                     "progress.delivery_ack",
                     self.store.mark_progress_delivered,
@@ -1289,6 +1346,7 @@ class ProgressService:
             error = f"HTTP {response.status_code}: {response.text[:200]}"
         except Exception as exc:  # noqa: BLE001 - delivery failures remain retryable
             error = f"{type(exc).__name__}: {exc}"
+        self._note_delivery(record.authority_instance_id, False)
         await self._offload(
             "progress.delivery_fail",
             self.store.mark_progress_delivery_failed,

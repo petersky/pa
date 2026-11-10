@@ -373,6 +373,46 @@ def notify_manual_review(
     )
 
 
+def notify_dispatch_reoffered(target: Any, record: Any, new_target_name: str | None) -> Notification | None:
+    """A lost remote dispatch was queued again on another instance."""
+    return notify_stall(
+        target,
+        kind=StallKind.OTHER,
+        subject_ids={
+            "realm_id": getattr(record, "realm_id", None),
+            "card_id": getattr(record, "card_id", None),
+            "dispatch_id": record.dispatch_id,
+            "project_id": getattr(record, "project_id", None),
+        },
+        title="Lost dispatch re-offered",
+        body=(
+            f"The remote dispatch was lost ({getattr(record, 'error_code', None) or 'unknown'}); "
+            f"it was queued again on {new_target_name or 'another instance'}."
+        ),
+        severity="info",
+        dedupe_key=f"reoffer:{record.dispatch_id}:{getattr(record, 'target_instance_id', '')}",
+    )
+
+
+def notify_reconciliation_abandoned(target: Any, record: Any, reason: str) -> Notification | None:
+    """Card reconciliation could not run, so the completion was delivered without it."""
+    return notify_stall(
+        target,
+        kind=StallKind.RECOVERY_BLOCKED,
+        subject_ids={
+            "realm_id": getattr(record, "realm_id", None),
+            "card_id": getattr(record, "card_id", None),
+            "session_id": getattr(record, "session_id", None),
+            "dispatch_id": record.dispatch_id,
+            "project_id": getattr(record, "project_id", None),
+        },
+        title="Card reconciliation skipped",
+        body=reason,
+        severity="warning",
+        dedupe_key=f"reconcile:{record.dispatch_id}",
+    )
+
+
 def notify_schedule_failed(
     target: Any, *, occurrence: dict[str, Any], owner: str | None, error: str | None
 ) -> Notification | None:

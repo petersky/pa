@@ -3670,6 +3670,7 @@ async def _submit_dispatch_followup(
     from pa.modules.fleet import _merge_dispatch_followup_operation
 
     key = body.idempotency_key
+    target_instance_id = request.app.state.ctx.settings.instance_id
     if body.dispatch_prompt_protocol != PROMPT_IDENTITY_PROTOCOL:
         raise HTTPException(409, detail={
             "code": "dispatch_prompt_protocol_required", "recoverable": True,
@@ -3745,6 +3746,21 @@ async def _submit_dispatch_followup(
                 current.prompt_ack = {**response, "event_type": accepted.event_type,
                                       "event_id": accepted.id, "event_seq": accepted.seq}
                 current.prompt_acknowledged_at = accepted.created_at
+                # On a target that is not the authority this is the only place
+                # its mirror record can learn the work started: the authority
+                # drives its own record to ``running`` but never the target's.
+                # Without this the mirror stays ``starting_session``, so the
+                # completion path (running/completion_pending only) never
+                # queues a /complete and the authority waits forever.
+                if (current.authority_instance_id != target_instance_id
+                        and current.state in {"queued", "materializing", "provisioning",
+                                             "starting_session", "delivering_prompt"}):
+                    ledger.apply_transition(
+                        current, "running", "Prompt accepted by the intended session.",
+                        detail={"session_id": session_id, "event_id": accepted.id,
+                                "event_seq": accepted.seq, "event_type": accepted.event_type,
+                                "followup": False, "target_mirror": True},
+                    )
             await _runtime_offload(
                 runtime, "dispatch.initial_prompt_ack", ledger.mutate_current,
                 record.dispatch_id, mutate=acknowledge, wait_for_completion=True,
