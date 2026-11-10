@@ -4062,9 +4062,17 @@ class GoalGovernanceService:
             raise GoalGovernanceConflict(
                 "authority instance is not eligible to govern this goal"
             )
-        if goal.lease.active(self._clock()) and (
-            goal.lease.holder_instance_id != context.authority_instance_id
-            or goal.lease.fencing_token != context.fencing_token
+        operator_on_holder = (
+            _is_operator(context.actor_principal)
+            and goal.lease.holder_instance_id == context.authority_instance_id
+        )
+        if (
+            goal.lease.active(self._clock())
+            and not operator_on_holder
+            and (
+                goal.lease.holder_instance_id != context.authority_instance_id
+                or goal.lease.fencing_token != context.fencing_token
+            )
         ):
             raise GoalGovernanceConflict(
                 "stale or unauthorized goal controller fencing token"

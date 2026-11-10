@@ -29,6 +29,14 @@
         <label>Verification method<input name="verification" required placeholder="How an independent reviewer checks it"></label>
       </div>
       <label>Evidence requirement<input name="requirement" required placeholder="The artifact, observation, or record required"></label>
+      <fieldset class="goal-policy-fields" data-goal-policy-fields>
+        <legend>How much may the supervisor do on its own?</legend>
+        <label>Autonomy
+          <select name="autonomy_level">{% for level, label in autonomy_choices %}<option value="{{ level }}"{% if level == 3 %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+        </label>
+        <p class="muted">Asking you for approval is always allowed, and so is editing the goal yourself. Untick an action to forbid it for this goal; a goal that permits nothing can only ask you.</p>
+        <div class="goal-action-choices">{% for name, label in action_choices %}<label><input type="checkbox" name="permitted_action" value="{{ name }}" checked> {{ label }}</label>{% endfor %}</div>
+      </fieldset>
       <div class="form-actions">
         <button type="submit" class="primary">Create draft</button>
         <p role="alert" data-goal-form-status></p>
@@ -87,12 +95,12 @@
         <p class="goal-progress-summary">{{ goal.progress_summary or goal.motivation or 'No progress summary yet.' }}</p>
         <div class="notice goal-next-action">
           <strong>Next safe action:</strong>
-          <span>{% if goal.state.value in ['draft','shaping','ready'] %}Activate after reviewing policy and criteria.{% elif goal.state.value == 'paused' %}Resume when the pause reason is resolved.{% elif goal.criteria | selectattr('verdict.value', 'equalto', 'pending') | list %}Record evidence, then request an independent review.{% else %}Review lifecycle history and transition when governance gates permit.{% endif %}</span>
+          <span>{% if goal.supervision.parked_reason %}{{ goal.supervision.parked_reason }}{% elif goal.state.value in ['draft','shaping','ready'] %}Activate after reviewing policy and criteria.{% elif goal.state.value == 'paused' %}Resume when the pause reason is resolved.{% elif goal.state.value == 'blocked' %}Work is blocked. Retry the blocked work package, or resume once the cause is fixed.{% elif goal.state.value == 'waiting_operator' %}The supervisor is waiting for your answer in Notifications.{% elif goal.state.value == 'verifying' %}Every work package is verified; the goal is achieved once the completion audit is recorded.{% elif goal.criteria | selectattr('verdict.value', 'equalto', 'pending') | list %}Record evidence, then request an independent review.{% else %}Review lifecycle history and transition when governance gates permit.{% endif %}</span>
         </div>
         <div class="goal-actions" role="group" aria-label="Goal lifecycle actions">
-          {% if goal.state.value in ['draft','shaping','ready'] %}<button type="button" class="primary" data-goal-transition="active">Activate</button>
-          {% elif goal.state.value == 'paused' %}<button type="button" class="primary" data-goal-transition="active">Resume</button>
-          {% elif goal.state.value not in ['achieved','abandoned'] %}<button type="button" data-goal-transition="paused">Pause</button>{% endif %}
+          {% if goal.state.value in ['draft','shaping','ready'] %}<button type="button" class="primary" data-goal-transition="active"{% if goal.state.value != 'ready' %} data-goal-via="ready"{% endif %} data-goal-reason="Activated by operator">Activate</button>
+          {% elif goal.state.value == 'paused' %}<button type="button" class="primary" data-goal-transition="active" data-goal-reason="Resumed by operator">Resume</button>
+          {% elif goal.state.value not in ['achieved','abandoned'] %}{% if goal.state.value == 'blocked' %}<button type="button" class="primary" data-goal-transition="active" data-goal-reason="Resumed by operator">Resume</button>{% endif %}<button type="button" data-goal-transition="paused" data-goal-reason="Paused by operator">Pause</button>{% endif %}
           <button type="button" class="ghost" data-goal-edit-toggle aria-expanded="false">Edit</button>
         </div>
         <form class="goal-inline-form" data-goal-edit-form hidden>
@@ -111,11 +119,24 @@
         <details>
           <summary><span>Policy and budget</span></summary>
           <p>Policy revision {{ goal.policy.revision }} · autonomy {{ goal.policy.autonomy_level }} · maximum risk {{ goal.policy.max_action_risk }} · ${{ '%.2f' | format(autonomy[goal.id].usage.cost_usd) }} used.</p>
+          {% if not goal.policy.permitted_actions %}<p class="notice">This goal's policy permits no actions, so the supervisor can only ask you. Choose what it may do below.</p>{% endif %}
+          <form class="goal-inline-form" data-goal-policy-form data-policy='{{ goal.policy.model_dump(mode="json") | tojson }}'>
+      <fieldset class="goal-policy-fields" data-goal-policy-fields>
+        <legend>How much may the supervisor do on its own?</legend>
+        <label>Autonomy
+          <select name="autonomy_level">{% for level, label in autonomy_choices %}<option value="{{ level }}"{% if level == goal.policy.autonomy_level %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+        </label>
+        <p class="muted">Asking you for approval is always allowed, and so is editing the goal yourself. Untick an action to forbid it for this goal; a goal that permits nothing can only ask you.</p>
+        <div class="goal-action-choices">{% for name, label in action_choices %}<label><input type="checkbox" name="permitted_action" value="{{ name }}"{% if name in goal.policy.permitted_actions %} checked{% endif %}> {{ label }}</label>{% endfor %}</div>
+      </fieldset>
+            <label>Reason<input name="reason" required value="Operator changed the goal's autonomy"></label>
+            <button type="submit">Save policy</button>
+          </form>
         </details>
 
         <details>
           <summary><span>Authorized work and proposals</span></summary>
-          <ul>{% for package in goal.work_packages %}<li>{{ package.state.value }} · {{ package.role.value }} — {{ package.title }}{% if package.state.value in ['ready','planned'] %} <button type="button" class="ghost small" data-goal-dispatch="{{ package.id }}">Propose dispatch</button>{% endif %}</li>{% else %}<li>No authorized work packages. Propose one against a success criterion.</li>{% endfor %}</ul>
+          <ul>{% for package in goal.work_packages %}<li>{{ package.state.value }} · {{ package.role.value }} — {{ package.title }}{% if package.state.value in ['blocked','failed'] and package.result_summary %} <span class="muted">({{ package.result_summary }})</span>{% endif %}{% if package.state.value in ['ready','planned'] %} <button type="button" class="ghost small" data-goal-dispatch="{{ package.id }}">Propose dispatch</button>{% endif %}{% if package.state.value in ['blocked','failed'] %} <button type="button" class="ghost small" data-goal-retry="{{ package.id }}">Retry</button>{% endif %}</li>{% else %}<li>No authorized work packages. Propose one against a success criterion.</li>{% endfor %}</ul>
           <form class="goal-inline-form" data-goal-work-form>
             <label>Criterion<select name="criterion_id">{% for criterion in goal.criteria %}<option value="{{ criterion.id }}">{{ criterion.description }}</option>{% endfor %}</select></label>
             <label>Work package title<input name="title" required></label>
@@ -134,9 +155,12 @@
             <label>Artifact URI<input name="uri" type="url" placeholder="https://…"></label>
             <button type="submit">Record evidence</button>
           </form>
-          {% if goal.evidence %}
+          {% if goal.evidence and not owner_may_audit %}
+          <p class="muted">The completion audit is recorded by the independent verifier service. To record your own review of the evidence on a single-user instance, enable the <code>goal_owner_may_audit</code> setting.</p>
+          {% elif goal.evidence %}
           <form class="goal-inline-form" data-goal-audit-form>
             {% for evidence in goal.evidence %}<input type="hidden" name="evidence_id" value="{{ evidence.id }}">{% endfor %}
+            {% for criterion in goal.criteria %}<input type="hidden" name="criterion_id" value="{{ criterion.id }}">{% endfor %}
             <label>Review explanation<input name="explanation" required></label>
             <label>Verdict<select name="verdict"><option value="satisfied">Accept evidence</option><option value="unsatisfied">Reject evidence</option><option value="inconclusive">Inconclusive</option></select></label>
             <button type="submit">Record independent review</button>

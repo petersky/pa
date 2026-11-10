@@ -40,6 +40,9 @@ from pa.goals.governance import (
     GoalGovernanceService,
 )
 from pa.goals.models import (
+    GOAL_ACTION_CHOICES,
+    GOAL_ALWAYS_PERMITTED_ACTIONS,
+    GOAL_AUTONOMY_CHOICES,
     AssignedServiceGoalAuditCreate,
     AssignedServiceGoalEvidenceCreate,
     AssignedServiceGoalProposalCreate,
@@ -61,6 +64,7 @@ from pa.goals.models import (
     RequestOperatorAction,
     ReviseStrategyAction,
     TransitionGoalAction,
+    default_goal_policy,
 )
 from pa.goals.projection import find_goal_event_by_idempotency
 from pa.goals.providers import list_goal_adapter_capabilities
@@ -1029,6 +1033,10 @@ def create_goal_explicit(
         expected_version=expected_version,
         policy_revision=policy_revision,
     )
+    if "policy" not in body.model_fields_set:
+        # No policy supplied: use the plan-and-ask-before-dispatch default rather
+        # than the observe-only model default, which can never advance a goal.
+        body.policy = default_goal_policy()
     result = _run(lambda: _service(request).create(body, ctx))
     _wake_supervisor(request)
     return result.model_dump(mode="json")
@@ -1670,6 +1678,10 @@ def _goals_context(request: Request) -> dict:
     realm_id = request.app.state.ctx.settings.primary_realm
     return {
         "goals": goals,
+        "owner_may_audit": request.app.state.ctx.settings.goal_owner_may_audit,
+        "autonomy_choices": GOAL_AUTONOMY_CHOICES,
+        "action_choices": GOAL_ACTION_CHOICES,
+        "always_permitted_actions": GOAL_ALWAYS_PERMITTED_ACTIONS,
         "autonomy": {item.id: governance.get_state(item.id) for item in goals},
         "governance_policy": governance.effective_policy(realm_id),
         "portfolio_review": governance.get_latest_review(realm_id),
