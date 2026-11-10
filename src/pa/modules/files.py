@@ -74,13 +74,22 @@ def _trusted_roots(request: Request) -> list[Path]:
             candidates.extend(Path(repo.path) for repo in project.repos if repo.path)
     except (AttributeError, TypeError):
         pass
+    return _resolved_trusted_roots(candidates)
+
+
+def _resolved_trusted_roots(candidates: list[Path]) -> list[Path]:
+    """Preserve fresh ordered resolution, with constant-time root membership."""
     roots: list[Path] = []
+    seen: set[Path] = set()
     for candidate in candidates:
         try:
             resolved = candidate.expanduser().resolve()
         except OSError:
             continue
-        if resolved not in roots:
+        # Resolve every occurrence: a symlink may change between candidates.
+        # Only membership of already-resolved roots is deduplicated.
+        if resolved not in seen:
+            seen.add(resolved)
             roots.append(resolved)
     return roots
 
