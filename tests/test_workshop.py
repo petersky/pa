@@ -1418,3 +1418,81 @@ def test_retired_watch_preserves_history_without_driving_attention(tmp_path):
     assert row["presentation"]["group"] == "quiet"
     assert row["presentation"]["attention"] is False
     assert row["card"]["pull_requests"][0]["retired_at"] == retired_at.isoformat()
+
+
+def _bump_relative_clocks(value):
+    """Advance every relative-clock field the way a second of wall time would."""
+    bumped = []
+
+    def walk(item):
+        if isinstance(item, dict):
+            for key, child in list(item.items()):
+                if key.endswith("age_seconds") and isinstance(child, int | float):
+                    item[key] = child + 1
+                    bumped.append(key)
+                elif key in {"relative_time", "accessible_label"} and isinstance(
+                    child, str
+                ):
+                    item[key] = child + " (later)"
+                    bumped.append(key)
+                else:
+                    walk(child)
+        elif isinstance(item, list):
+            for child in item:
+                walk(child)
+
+    walk(value)
+    return bumped
+
+
+def test_stream_heartbeats_when_only_relative_ages_tick():
+    ctx = _ctx()
+    ctx.services["dispatch_store"] = SimpleNamespace(
+        list=lambda *, limit: [
+            _Dispatch(
+                progress={
+                    "schema_version": 1,
+                    "freshness": {
+                        "state": "fresh",
+                        "last_activity_at": "2026-07-28T20:00:59+00:00",
+                        "age_seconds": 41,
+                    },
+                    "latest": {"phase": "testing", "summary": "Tests", "blockers": []},
+                }
+            )
+        ]
+    )
+    first = build_workshop_snapshot(ctx, _overview())
+    order = next(item for item in first["work_orders"] if item["id"] == "active")
+    assert order["progress_age_seconds"] == 41
+    event, digest, sequence = _workshop_stream_iteration(first, "", 0)
+    assert "event: snapshot" in event
+
+    second = deepcopy(first)
+    bumped = _bump_relative_clocks(second)
+    assert {"progress_age_seconds", "relative_time"} <= set(bumped)
+    assert second != first
+
+    event, next_digest, next_sequence = _workshop_stream_iteration(
+        second, digest, sequence
+    )
+
+    assert event == ": workshop heartbeat\n\n"
+    assert next_digest == digest
+    assert next_sequence == sequence
+
+
+def test_stream_still_emits_snapshot_when_progress_content_changes():
+    first = build_workshop_snapshot(_ctx(), _overview())
+    _, digest, sequence = _workshop_stream_iteration(first, "", 0)
+    second = deepcopy(first)
+    _bump_relative_clocks(second)
+    second["work_orders"][0]["progress_freshness"] = "stalled"
+
+    event, next_digest, next_sequence = _workshop_stream_iteration(
+        second, digest, sequence
+    )
+
+    assert "event: snapshot" in event
+    assert next_digest != digest
+    assert next_sequence == sequence + 1

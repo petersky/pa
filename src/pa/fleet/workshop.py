@@ -1390,22 +1390,37 @@ def build_workshop_snapshot(
     }
 
 
-def workshop_semantic_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
-    """Remove observation clocks that must not turn an SSE heartbeat into a rebuild."""
-    volatile = {
+# Absolute observation clocks and server-rendered relative-time text. They advance
+# every second even when nothing happened, so they never count as a change.
+VOLATILE_CLOCK_KEYS = frozenset(
+    {
         "generated_at",
         "observed_at",
-        "age_seconds",
         "activity_observed_at",
-        "activity_age_seconds",
+        "relative_time",
+        # Composed from title, state, outcome and the relative time; the
+        # non-clock parts are already carried by their own fields.
+        "accessible_label",
     }
+)
+
+
+def is_volatile_clock_key(key: str) -> bool:
+    """Whether a snapshot key is a pure, continuously ticking clock."""
+    return key in VOLATILE_CLOCK_KEYS or key == "age_seconds" or key.endswith(
+        "_age_seconds"
+    )
+
+
+def workshop_semantic_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Remove observation clocks that must not turn an SSE heartbeat into a rebuild."""
 
     def normalize(value: Any) -> Any:
         if isinstance(value, dict):
             return {
                 key: normalize(item)
                 for key, item in value.items()
-                if key not in volatile
+                if not (isinstance(key, str) and is_volatile_clock_key(key))
             }
         if isinstance(value, list):
             return [normalize(item) for item in value]
