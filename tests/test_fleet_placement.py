@@ -1621,7 +1621,9 @@ def test_last_slot_reservation_is_atomic_and_released_on_cancel_and_restart() ->
         assert sum(isinstance(item, DispatchCapacityExhausted) for item in results) == 1
         admitted = next(item[0] for item in results if isinstance(item, tuple))
 
-        restarted = DispatchStore(path)
+        # The unconditional one-hour timeout is opt-in; the default renews
+        # reservations while nothing waits (see test_card_policy_defaults.py).
+        restarted = DispatchStore(path, reservation_hard_expiry=True)
         with pytest.raises(DispatchCapacityExhausted):
             restarted.admit(
                 _record(

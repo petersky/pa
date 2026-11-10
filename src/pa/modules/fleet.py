@@ -109,6 +109,8 @@ from pa.execution.post_turn import (
     SafetyClassification,
     TurnEndSnapshotV1,
     action_catalog,
+    automatic_followup_budget_exhausted,
+    automatic_followups_used,
     is_authorized_same_session_continuation,
     mark_record_only_actions,
 )
@@ -767,6 +769,9 @@ def _dispatch_store(request: Request) -> DispatchStore:
         request.app.state.ctx.settings.data_dir,
         read_only=auxiliary,
         deferred_read_only=auxiliary,
+        reservation_hard_expiry=(
+            request.app.state.ctx.settings.dispatch_capacity_reservation_hard_expiry
+        ),
     )
     request.app.state.ctx.register_service("dispatch_store", service)
     return service
@@ -11924,20 +11929,16 @@ async def execute_post_turn_action(
         inherited = is_authorized_same_session_continuation(
             action, decision=evaluation.decision, session_id=record.session_id
         )
-        automatic_used = sum(
-            1
-            for prior_evaluation in record.post_turn_evaluations
-            for prior_action in prior_evaluation.recommended_actions
-            if prior_action.name == FollowupActionName.PROMPT_SAME_SESSION
-            and any(event.get("automatic") for event in prior_action.audit)
-        )
+        automatic_used = automatic_followups_used(record.post_turn_evaluations)
         budget = request.app.state.ctx.settings.post_turn_max_automatic_followups
-        if not inherited or automatic_used >= budget:
+        if not inherited or automatic_followup_budget_exhausted(
+            record.post_turn_evaluations, budget
+        ):
             action.human_approval_required = True
             action.status_reason = (
                 "Withheld for operator approval: continuation scope was not inherited "
-                "or the automatic follow-up budget is exhausted. Approve this action "
-                "to continue."
+                "or the automatic follow-up budget is exhausted (setting "
+                "post_turn_max_automatic_followups). Approve this action to continue."
             )
         else:
             action.audit.append(
@@ -15216,6 +15217,7 @@ class FleetModule(Module):
             settings.data_dir,
             read_only=auxiliary,
             deferred_read_only=auxiliary,
+            reservation_hard_expiry=settings.dispatch_capacity_reservation_hard_expiry,
         )
         ctx.register_service("dispatch_store", dispatch_store)
         ctx.register_service(

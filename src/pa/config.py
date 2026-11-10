@@ -73,6 +73,10 @@ class Settings(BaseSettings):
     dispatch_provider_queue_capacities: dict[str, DispatchQueueCapacity] = Field(
         default_factory=dict
     )
+    # A pre-start capacity reservation older than one hour is renewed unless
+    # another dispatch is waiting for the slot. True restores the old behaviour:
+    # fail every reservation that is not running after one hour.
+    dispatch_capacity_reservation_hard_expiry: bool = False
     relay_enabled: bool = False
 
     # Optional always-on coordination plane. The endpoint implements PA's
@@ -189,8 +193,11 @@ class Settings(BaseSettings):
 
     # Bounded post-turn evaluation and automatic follow-up policy. Evaluators
     # remain read-only; PA validates and executes eligible catalog actions.
+    # The automatic follow-up budget is a runaway-loop guard, not a work limit:
+    # it is high enough that a single card finishes end to end without an
+    # operator approval. Set it to 2 to restore the previous behaviour.
     post_turn_evaluator_max_attempts: int = Field(default=2, ge=1, le=5)
-    post_turn_max_automatic_followups: int = Field(default=2, ge=0, le=10)
+    post_turn_max_automatic_followups: int = Field(default=25, ge=0, le=1000)
     post_turn_evaluation_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
     post_turn_retry_seconds: float = Field(default=15.0, gt=0, le=3600)
     post_turn_escalation_threshold: int = Field(default=2, ge=1, le=10)
