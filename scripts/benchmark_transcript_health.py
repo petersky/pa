@@ -1,125 +1,96 @@
-"""Compare fresh transcript health on private identical retained objects.
-
-Only the selected archived method differs between stages. Both stages
-retain the current native integrity check and read fresh event references.
-"""
+"""Bounded fresh-reference/health comparison; aggregate stdout, disposable data."""
 from __future__ import annotations
 
 import argparse
-import ast
-import asyncio
 import hashlib
-import inspect
 import json
-import os
-import re
-import subprocess
-import tempfile
-import textwrap
-import time
-from datetime import UTC, datetime
+import math
 from pathlib import Path
+import shutil
+import statistics
+import tempfile
+import time
 from unittest.mock import patch
 
+from pa.core.performance import OperationObservation, current_observation
+from pa.core.sqlite_metrics import sqlite_connection_scope
+from pa.domain.transcript_storage import TranscriptStorage
+import pa.domain.transcript_storage as module
 
-def run(output: Path, *, baseline: str, count: int, pairs: int,
-        method_name: str = "_missing_referenced_objects") -> dict:
-    assert re.fullmatch(r"[0-9a-f]{40}", baseline)
-    assert 1 <= count <= 15000 and 1 <= pairs <= 20
-    assert not output.exists(), "Preserve earlier measurements"
-    assert method_name in {"_missing_referenced_objects", "referenced_hashes"}
-    with tempfile.TemporaryDirectory(prefix="pa-fresh-health-") as temporary:
+
+def summary(values):
+    ordered = sorted(values)
+    return {"samples": len(values), "p50_ms": round(statistics.median(values), 3),
+            "p95_ms": round(ordered[math.ceil(.95 * len(values)) - 1], 3),
+            "p99_ms": round(ordered[math.ceil(.99 * len(values)) - 1], 3),
+            "max_ms": round(max(values), 3)}
+
+
+def benchmark(*, objects=24576, pairs=20):
+    if not 1 <= objects <= 32768 or not 1 <= pairs <= 30:
+        raise ValueError("fixture bounds: objects1..32768, pairs1..30")
+    samples = {128: [], 1024: []}
+    with tempfile.TemporaryDirectory(prefix="pa-health-benchmark-") as temporary:
         root = Path(temporary)
-        os.environ.update(PA_DATA_DIR=str(root / "data"),
-                          PA_WORKSPACE_ROOT=str(root / "workspaces"), PA_AGENT_ENABLED="false")
-        from pa.core.async_runtime import AsyncRuntime
-        from pa.core.performance import distribution
-        from pa.domain.models import TranscriptEvent
-        import pa.domain.transcript_storage as module
-
-        source = subprocess.check_output([
-            "git", "show", baseline + ":src/pa/domain/transcript_storage.py",
-        ], text=True)
-        cls = next(n for n in ast.parse(source).body
-                   if isinstance(n, ast.ClassDef) and n.name == "TranscriptStorage")
-        method = next(n for n in cls.body if isinstance(n, ast.FunctionDef)
-                      and n.name == method_name)
-        baseline_code = textwrap.dedent("\n".join(source.splitlines()[method.lineno - 1:method.end_lineno]))
-        namespace = vars(module).copy()
-        exec(compile(baseline_code, "<archived-health-baseline>", "exec"), namespace)
-        functions = {"baseline": namespace[method_name],
-                     "candidate": getattr(module.TranscriptStorage, method_name)}
-        storage = module.TranscriptStorage(root / "fixture.db")
-        for start in range(0, count, 256):
-            storage.append([
-                TranscriptEvent(session_id="retained", seq=i + 1, event_type="output",
-                                payload={"text": f"{i}:" + "retained fixture " * 400})
-                for i in range(start, min(count, start + 256))
-            ])
-
-        def contents():
-            return {str(p.relative_to(storage.objects_dir)): hashlib.sha256(p.read_bytes()).hexdigest()
-                    for p in storage.objects_dir.glob("*/*.zlib")}
-
-        before = contents()
-        assert len(before) == count
-        expected = storage.metrics()
-        assert expected["missing_objects"] == 0 and expected["integrity"] == "ok"
-        samples = []
-
-        async def compare():
-            runtime = AsyncRuntime(max_workers=1)
-            try:
-                for pair in range(pairs):
-                    for label in (("baseline", "candidate") if pair % 2 == 0 else ("candidate", "baseline")):
-                        def measured():
-                            wall, cpu = time.perf_counter_ns(), time.thread_time_ns()
-                            offset = time.time() - time.monotonic()
-                            with patch.object(storage, method_name, lambda: functions[label](storage)):
-                                answer = storage.metrics()
-                            assert answer == expected
-                            return {"stage": label, "pair": pair,
-                                    "wall_ms": (time.perf_counter_ns() - wall) / 1e6,
-                                    "thread_cpu_ms": (time.thread_time_ns() - cpu) / 1e6,
-                                    "wall_minus_monotonic_before": offset,
-                                    "wall_minus_monotonic_after": time.time() - time.monotonic()}
-
-                        samples.append(await runtime.run_blocking("benchmark.fresh_health." + label,
-                                                                  measured, wait_for_completion=True))
-                return runtime.snapshot()
-            finally:
-                await runtime.close()
-
-        runtime = asyncio.run(compare())
-        assert contents() == before
-        value = {"contract": "pa.transcript-fresh-health-comparison/v1",
-                 "observed_at": datetime.now(UTC).isoformat(), "baseline": baseline,
-                 "compared_method": method_name,
-                 "source_sha256": hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest(),
-                 "baseline_method_sha256": hashlib.sha256(baseline_code.encode()).hexdigest(),
-                 "candidate_method_sha256": hashlib.sha256(inspect.getsource(functions["candidate"]).encode()).hexdigest(),
-                 "retained_objects": count, "pairs": pairs, "samples": samples, "runtime": runtime,
-                 "cold_file_manifest_sha256": hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest(),
-                 "all_file_bytes_unchanged": True, "identical_fresh_health": expected,
-                 "summary": {label: {key: distribution([r[key] for r in samples if r["stage"] == label])
-                                     for key in ("wall_ms", "thread_cpu_ms")} for label in functions},
-                 "scope": "Alternating same-input fresh-health reads, one worker, private roots. "
-                          "Every native quick_check, event-reference read and filesystem diagnostic remains. "
-                          "No production state/provider/peer/install/restart/fault workload. "
-                          "Not mixed-load, deployed or whole-PA acceptance."}
-    output.write_text(json.dumps(value, indent=2) + "\n")
-    return value
+        if shutil.disk_usage(root).free < 4 * 1024**3:
+            raise RuntimeError("At least4GiB free space required before seeding")
+        storage = TranscriptStorage(root / "fixture.db")
+        hashes = {hashlib.sha256(str(i).encode()).hexdigest() for i in range(objects)}
+        for digest in hashes:
+            path = storage._object_path(digest)
+            path.parent.mkdir(exist_ok=True)
+            path.write_bytes(b"immutable synthetic fixture")
+        with storage._conn() as connection:
+            connection.executemany(
+                """INSERT INTO transcript_objects
+                (hash,codec,uncompressed_bytes,compressed_bytes,ref_count,created_at)
+                VALUES(?,'zlib',27,27,1,'2026-11-10')""", ((h,) for h in hashes))
+            connection.executemany(
+                """INSERT INTO transcript_events
+                (id,session_id,seq,event_type,hot_payload,payload_hash,cold_hash,created_at)
+                VALUES(?,'fixture',?,'output','{}',?,?,'2026-11-10')""",
+                ((h, i, h, h) for i, h in enumerate(hashes)))
+        expected_health = None
+        for pair in range(pairs):
+            for size in ([128, 1024] if pair % 2 == 0 else [1024, 128]):
+                observation = OperationObservation()
+                token = current_observation.set(observation)
+                try:
+                    with patch.object(module, "_HEALTH_REFERENCE_BATCH", size), sqlite_connection_scope():
+                        wall, cpu = time.perf_counter(), time.thread_time()
+                        references = storage.referenced_hashes()
+                        reference_ms = (time.perf_counter() - wall) * 1000
+                        reference_cpu_ms = (time.thread_time() - cpu) * 1000
+                        reference_calls = observation.sqlite_calls
+                        wall = time.perf_counter()
+                        health = storage.metrics()
+                        health_ms = (time.perf_counter() - wall) * 1000
+                finally:
+                    current_observation.reset(token)
+                assert references == hashes
+                assert health["events"] == health["objects"] == health["references"] == objects
+                assert health["integrity"] == "ok" and health["missing_objects"] == 0
+                if expected_health is None:
+                    expected_health = health
+                assert health == expected_health
+                samples[size].append((reference_ms, reference_cpu_ms, health_ms, reference_calls))
+        for digest in hashes:
+            assert storage._object_path(digest).read_bytes() == b"immutable synthetic fixture"
+        with storage._conn() as connection:
+            assert connection.execute("SELECT COUNT(*),SUM(ref_count) FROM transcript_objects").fetchone()[:] == (objects, objects)
+    return {"scope": "Alternating warm private read-page bounds on the final query shape. Synthetic reference catalog/file membership, not payload decoding, real-provider, full maintenance or deployed acceptance.",
+            "objects_preserved": objects, "pairs": pairs,
+            **{f"page{size}": {"references": summary([r[0] for r in values]),
+                               "reference_thread_cpu": summary([r[1] for r in values]),
+                               "fresh_full_health": summary([r[2] for r in values]),
+                               "observed_reference_sqlite_calls": sorted({r[3] for r in values}),
+                               "expected_reference_pages": math.ceil(objects / size) + 1}
+               for size, values in samples.items()},
+            "all_health_values_equal": True, "temporary_fixture_removed": not root.exists()}
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--baseline", default="d244274ba50a5c057040471403bfbb7dedade9f6")
-    parser.add_argument("--objects", type=int, default=12511)
-    parser.add_argument("--pairs", type=int, default=5)
-    parser.add_argument("--method", choices=["_missing_referenced_objects", "referenced_hashes"],
-                        default="_missing_referenced_objects")
-    args = parser.parse_args()
-    value = run(args.output, baseline=args.baseline, count=args.objects, pairs=args.pairs,
-                method_name=args.method)
-    print(json.dumps({"output": str(args.output), "summary": value["summary"]}))
+    parser.add_argument("--objects", type=int, default=24576)
+    parser.add_argument("--pairs", type=int, default=20)
+    print(json.dumps(benchmark(**vars(parser.parse_args()))))
