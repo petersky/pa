@@ -3193,6 +3193,7 @@
           this.addBubble("user", payload.message || "", created, {
             system: payload.source === "system",
             images: payload.images || [],
+            promptId: payload.id,
           });
         }
         // A live user_message is emitted when the runtime actually begins a
@@ -3302,6 +3303,13 @@
       case "available_commands_update":
         if (!replay) this.refreshCommandCatalog(true);
         break;
+      case "prompt_mentions":
+        this.promptMentions = this.promptMentions || {};
+        this.promptMentions[payload.prompt_id] = payload.mentions || [];
+        this.els.messages.querySelectorAll(".acw-msg[data-prompt-id]").forEach(function (row) {
+          if (row.dataset.promptId === payload.prompt_id) self.decorateMentions(row);
+        });
+        break;
       case "shell_result":
         this.renderShellResult(payload, created);
         break;
@@ -3399,6 +3407,7 @@
     this.clearPlaceholder();
     const row = document.createElement("div");
     row.className = "acw-msg acw-msg-" + role + (opts.system ? " is-system" : "");
+    if (opts.promptId) row.dataset.promptId = opts.promptId;
     if (this.renderingEvent) row.dataset.sourceSeq = this.renderingEvent.payload.source_first_seq || this.renderingEvent.seq;
     if (opts.system && !this.showSystem) row.hidden = true;
     const bubble = document.createElement("div");
@@ -3452,6 +3461,7 @@
     row.appendChild(meta);
     this.els.messages.appendChild(row);
     this.messageRowCount = (this.messageRowCount || 0) + 1;
+    if (opts.promptId) this.decorateMentions(row);
     return { row: row, bubble: bubble };
   };
 
@@ -4660,6 +4670,7 @@
     const rawText = draftRawText == null ? displayText : draftRawText;
     if (!this._isDuplicateUserBubble(displayText)) {
       this.addBubble("user", displayText, new Date().toISOString(), {
+        promptId: promptId,
         images: (submittedImages || []).map(function (image) {
           return {
             name: image.name,
@@ -5130,6 +5141,61 @@
     });
     return command ? { command: command, arguments: match[2] || "" } : null;
   };
+
+  // Turns the mentions the server resolved for a prompt into links inside that prompt's bubble.
+  // The message text is untouched; only how it is shown changes.
+  AgentChatWidget.prototype.decorateMentions = function (row) {
+    const mentions = this.promptMentions && this.promptMentions[row.dataset.promptId];
+    const bubble = row.querySelector(".acw-bubble");
+    if (!mentions || !mentions.length || !bubble) return;
+    const byToken = {};
+    mentions.forEach(function (mention) { byToken[mention.token] = mention; });
+    // Same reading as the server: "@" at the start of a word, trailing punctuation not part of it.
+    const pattern = /(^|\s)(@\S+)/g;
+    const trailing = /[.,;:!?)\]}"']+$/;
+    const walker = document.createTreeWalker(bubble, NodeFilter.SHOW_TEXT, {
+      acceptNode: function (node) {
+        return node.parentElement && node.parentElement.closest("a, code, pre, .acw-mention")
+          ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    nodes.forEach(function (node) {
+      const text = node.nodeValue;
+      const parts = [];
+      let last = 0;
+      let match;
+      pattern.lastIndex = 0;
+      while ((match = pattern.exec(text))) {
+        const core = match[2].replace(trailing, "");
+        const mention = byToken[core];
+        if (!mention) continue;
+        const start = match.index + match[1].length;
+        if (start > last) parts.push(document.createTextNode(text.slice(last, start)));
+        parts.push(mentionChip(mention));
+        last = start + core.length;
+      }
+      if (!parts.length) return;
+      if (last < text.length) parts.push(document.createTextNode(text.slice(last)));
+      node.replaceWith.apply(node, parts);
+    });
+  };
+
+  function mentionChip(mention) {
+    const linked = mention.ok && mention.href;
+    const chip = document.createElement(linked ? "a" : "span");
+    chip.className = "acw-mention acw-mention-" + mention.kind + (mention.ok ? "" : " is-unresolved");
+    if (linked) {
+      chip.href = mention.href;
+      if (mention.kind === "file") { chip.target = "_blank"; chip.rel = "noopener"; }
+    }
+    const shown = mention.kind === "file" ? mention.token
+      : mention.kind === "user" ? "@" + mention.label : mention.label;
+    chip.textContent = shown;
+    chip.title = mention.ok ? mention.token : mention.token + " was not found or is not available to you";
+    return chip;
+  }
 
   AgentChatWidget.prototype.shellEnabled = function () {
     return !!(this.root && this.root.dataset.shell === "on" && window.PAComposerTriggers);

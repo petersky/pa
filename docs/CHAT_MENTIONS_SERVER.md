@@ -1,6 +1,13 @@
 # Handling `@` mentions on the server (ideas)
 
-Status: proposal. Nothing here is built yet.
+Status: section 1 is built (below); everything else is still a proposal.
+
+**Built.** When a prompt is accepted the server resolves its `@` tokens (`chat_mentions.resolve_prompt_mentions`,
+same access rules as search) and appends a `prompt_mentions` transcript event
+(`{prompt_id, mentions: [{token, kind, label, href, ok}]}`). The message text is never changed. The chat
+widget turns the resolved tokens into links or chips inside that prompt's bubble and shows unresolved explicit
+ones (`@card:nope`) struck through. Bare `@word` is only a mention when it names a file in the working
+directory. A prompt retried after a lost acknowledgement is not re-resolved, so its bubble stays plain text.
 
 ## Where things stand
 
@@ -12,7 +19,7 @@ literal token. Images are the one exception; the browser attaches them as normal
 Because only the browser understands the tokens, a prompt from the CLI, MCP or an API client gets
 none of the behaviour. Anything below that matters beyond the web UI belongs on the server.
 
-## 1. Resolve at submission and record structured mentions (do first)
+## 1. Resolve at submission and record structured mentions (built, recorded as a separate event)
 
 In `_session_prompt_owned`, parse the message with one shared rule (the same one as
 `composer-triggers.js`: `@` at a word start, so `a@b.com` is not a mention), then resolve each
