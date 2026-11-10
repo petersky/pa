@@ -20,7 +20,7 @@ def poll_events(ctx, ledger):
             if previous is None or previous[0] != head:
                 db.execute('INSERT OR REPLACE INTO source_heads VALUES (?,?)',(realm,head))
         for _ in range(100):
-            with ledger.connect() as db:
+            with ledger.connect(read_only=True) as db:
                 row=db.execute('SELECT hash FROM source_commits WHERE realm=? AND processed=0 LIMIT 1',(realm,)).fetchone()
             if row is None:
                 break
@@ -51,7 +51,7 @@ def poll_events(ctx, ledger):
 
 
 def _records(ledger):
-    with ledger.connect() as db:
+    with ledger.connect(read_only=True) as db:
         return [dict(row) for row in db.execute('SELECT owner FROM schedules WHERE deleted=0')]
 
 

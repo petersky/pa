@@ -134,11 +134,18 @@ class Ledger:
                 db.execute('ALTER TABLE schedules ADD COLUMN cancelled INTEGER NOT NULL DEFAULT 0')
 
     @contextmanager
-    def connect(self):
+    def connect(self, *, read_only=False):
         db = sqlite3.connect(self.path, timeout=5, isolation_level=None)
         db.row_factory = sqlite3.Row
         try:
-            db.execute('BEGIN IMMEDIATE')
+            if read_only:
+                # Keep multi-query reads on one committed snapshot without
+                # reserving the sole writer slot. Claims/mutations still fence
+                # their authoritative reads with BEGIN IMMEDIATE below.
+                db.execute('PRAGMA query_only=ON')
+                db.execute('BEGIN')
+            else:
+                db.execute('BEGIN IMMEDIATE')
             yield db
             db.commit()
         except BaseException:
@@ -183,7 +190,7 @@ class Ledger:
                 'cancelled':bool(row['cancelled']), 'version': row['version'], 'next_due': row['next_due'], 'occurrence_count': row['count']}
 
     def get(self, owner, sid, include_deleted=False):
-        with self.connect() as db:
+        with self.connect(read_only=True) as db:
             return self._get(db, owner, sid, include_deleted)
 
     def list(self, owner):
@@ -192,7 +199,7 @@ class Ledger:
     def list_page(self, owner, cursor=None, limit=50, session_id=None, pending_only=False, now=None):
         if not 1 <= limit <= 200:
             raise ValueError('page limit must be between 1 and 200')
-        with self.connect() as db:
+        with self.connect(read_only=True) as db:
             # Filter before pagination so reminders beyond the first page remain discoverable.
             clauses = ["owner=?", "deleted=0", "id>?"]
             args = [owner, cursor or '']
@@ -372,7 +379,7 @@ class Ledger:
                 db.execute('UPDATE schedules SET next_due=?,backlog=NULL WHERE id=?', (following, row['id']))
 
     def pending(self, now, limit=100):
-        with self.connect() as db:
+        with self.connect(read_only=True) as db:
             return [dict(row) for row in db.execute('''SELECT o.* FROM occurrences o JOIN schedules s ON s.id=o.schedule_id
               WHERE o.state='pending' AND o.next_retry<=? AND s.deleted=0 AND s.cancelled=0
               AND json_extract(s.spec,'$.enabled')=1 ORDER BY next_retry LIMIT ?''', (now, limit))]
@@ -390,7 +397,7 @@ class Ledger:
                        (row['schedule_id'], row['schedule_id']))
 
     def history(self, owner, sid):
-        with self.connect() as db:
+        with self.connect(read_only=True) as db:
             self._get(db, owner, sid)
             return [dict(r) for r in db.execute('SELECT * FROM occurrences WHERE schedule_id=? ORDER BY rowid DESC LIMIT 100', (sid,))]
 
@@ -444,7 +451,7 @@ class Ledger:
                 'last_occurrence':dict(latest) if latest else None}
 
     def status(self, owner, sid):
-        with self.connect() as db:
+        with self.connect(read_only=True) as db:
             self._get(db, owner, sid)
             return self._summary(db, sid)
 
@@ -454,7 +461,7 @@ class Ledger:
         Backoff and exhaustion do not erase overdue delivery. Paused/deleted
         schedules are excluded until actionable again; acceptance clears it.
         """
-        with self.connect() as db:
+        with self.connect(read_only=True) as db:
             row = db.execute("""SELECT COUNT(*) AS overdue_delivery_count,
               MIN(json_extract(o.envelope,'$.due_at')) AS oldest_overdue_due_at
               FROM occurrences o JOIN schedules s ON s.id=o.schedule_id
