@@ -734,6 +734,35 @@ class GoalService:
             return GoalActorRole.EXECUTOR
         return GoalActorRole.COORDINATOR
 
+    def record_supervision_failure(
+        self,
+        goal_id: str,
+        context: GoalMutationContext,
+        *,
+        reason: str,
+        retry_after: datetime,
+    ) -> Goal:
+        """Durably count one failed supervision cycle and schedule its backoff."""
+
+        def mutate(goal: Goal) -> dict[str, Any]:
+            goal.supervision.consecutive_failures += 1
+            goal.supervision.last_failure_at = self._clock()
+            goal.supervision.last_failure_reason = reason[:2000]
+            goal.supervision.retry_after = retry_after
+            return {
+                "consecutive_failures": goal.supervision.consecutive_failures,
+                "reason": reason[:2000],
+                "retry_after": retry_after.isoformat(),
+            }
+
+        return self._mutate(
+            goal_id,
+            context,
+            "goal.supervision_failed",
+            mutate,
+            operation={"reason": reason[:2000], "retry_after": retry_after},
+        )
+
     def checkpoint_supervision(
         self,
         goal_id: str,

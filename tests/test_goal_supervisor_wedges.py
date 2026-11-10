@@ -354,5 +354,72 @@ class DefaultPolicyAdvancesTests(unittest.TestCase):
             self.assertEqual(decision.disposition, GoalActionDisposition.DENIED)
 
 
+class CycleFailureEscalationTests(unittest.TestCase):
+    """A1: a cycle that keeps raising is counted, backed off and escalated."""
+
+    def test_persistent_cycle_failure_backs_off_notifies_and_recovers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(tmp, failure_notify_after=3)
+            goal = h.create_goal(GoalPolicy(autonomy_level=4, permitted_actions=FULL_ACTIONS))
+            real = h.supervisor._ensure_plan_proposal
+
+            def boom(*_args, **_kwargs):
+                raise RuntimeError("synthetic wedge")
+
+            h.supervisor._ensure_plan_proposal = boom
+
+            self.assertEqual(h.supervisor.run_once(goal.id), [])
+            first = h.get(goal.id)
+            self.assertEqual(first.supervision.consecutive_failures, 1)
+            self.assertIn("synthetic wedge", first.supervision.last_failure_reason)
+            self.assertEqual(
+                first.supervision.retry_after, h.clock[0] + timedelta(seconds=30)
+            )
+
+            # The scheduled poll leaves a backing-off goal alone ...
+            h.supervisor.run_once()
+            self.assertEqual(h.get(goal.id).supervision.consecutive_failures, 1)
+
+            # ... then retries with a doubling delay.
+            h.advance(31)
+            h.supervisor.run_once()
+            second = h.get(goal.id)
+            self.assertEqual(second.supervision.consecutive_failures, 2)
+            self.assertEqual(
+                second.supervision.retry_after, h.clock[0] + timedelta(seconds=60)
+            )
+            self.assertEqual(h.notifications.stalls(), [])
+
+            h.advance(61)
+            h.supervisor.run_once()
+            third = h.get(goal.id)
+            self.assertEqual(third.supervision.consecutive_failures, 3)
+            stalls = h.notifications.stalls("manual_review")
+            self.assertEqual(len(stalls), 1)
+            self.assertIn("synthetic wedge", stalls[0].body)
+            self.assertEqual(stalls[0].priority, NotificationPriority.HIGH)
+
+            # Recovery clears the streak.
+            h.supervisor._ensure_plan_proposal = real
+            h.advance(121)
+            h.supervisor.run_once()
+            recovered = h.get(goal.id)
+            self.assertEqual(recovered.supervision.consecutive_failures, 0)
+            self.assertIsNone(recovered.supervision.retry_after)
+
+    def test_a_manual_cycle_ignores_the_failure_backoff(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(tmp)
+            goal = h.create_goal(GoalPolicy(autonomy_level=4, permitted_actions=FULL_ACTIONS))
+            real = h.supervisor._ensure_plan_proposal
+            h.supervisor._ensure_plan_proposal = lambda *a, **k: (_ for _ in ()).throw(
+                RuntimeError("once")
+            )
+            h.supervisor.run_once(goal.id)
+            self.assertTrue(h.supervisor._backing_off(h.get(goal.id)))
+            h.supervisor._ensure_plan_proposal = real
+            self.assertEqual(len(h.supervisor.run_once(goal.id)), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

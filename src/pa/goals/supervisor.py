@@ -79,6 +79,7 @@ from pa.goals.models import (
     WorkPackageState,
 )
 from pa.goals.service import GoalConflict, GoalService, goal_completion_findings
+from pa.notifications.stall import StallKind, notify_stall
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +117,9 @@ _TERMINAL_INTERACTIONS = {
 _MAX_PACKAGE_REPLACEMENTS = 20
 _MAX_GOAL_REPLACEMENTS = 100
 _MAX_GOAL_DISPATCH_IDS = 200
+_FAILURE_BACKOFF_BASE_SECONDS = 30
+_FAILURE_BACKOFF_CAP_SECONDS = 15 * 60
+_CONFLICT_STREAK_BEFORE_FAILURE = 5
 
 
 class GoalSupervisor:
@@ -136,6 +140,7 @@ class GoalSupervisor:
         stalled_cycles: int = 6,
         lease_ttl_seconds: int = 90,
         default_provider: str | None = None,
+        failure_notify_after: int = 3,
     ) -> None:
         if stalled_cycles <= no_progress_cycles:
             raise ValueError("stalled_cycles must exceed no_progress_cycles")
@@ -155,6 +160,8 @@ class GoalSupervisor:
         self.no_progress_threshold = no_progress_cycles
         self.stalled_threshold = stalled_cycles
         self.lease_ttl_seconds = lease_ttl_seconds
+        self.failure_notify_after = max(1, failure_notify_after)
+        self._conflict_streaks: dict[str, int] = {}
         self._wakeup = threading.Event()
 
     def wake(self) -> None:
@@ -173,6 +180,9 @@ class GoalSupervisor:
         for candidate in candidates:
             if not candidate or candidate.state in _TERMINAL_GOAL_STATES:
                 continue
+            # An explicit (manual) cycle ignores the failure backoff.
+            if goal_id is None and self._backing_off(candidate):
+                continue
             if not self._needs_cycle(candidate):
                 continue
             try:
@@ -180,14 +190,112 @@ class GoalSupervisor:
                 if leased is None:
                     continue
                 processed.append(self._cycle(leased))
-            except GoalConflict:
+                self._conflict_streaks.pop(candidate.id, None)
+            except GoalConflict as exc:
                 logger.info(
                     "Goal supervision lost a concurrent race for %s", candidate.id
                 )
+                # A genuine race clears on the next poll; a conflict that repeats
+                # is a wedge and must be counted and escalated like any failure.
+                streak = self._conflict_streaks.get(candidate.id, 0) + 1
+                if streak >= _CONFLICT_STREAK_BEFORE_FAILURE:
+                    self._conflict_streaks.pop(candidate.id, None)
+                    self._record_cycle_failure(candidate.id, exc)
+                else:
+                    self._conflict_streaks[candidate.id] = streak
             except Exception as exc:
                 logger.exception("Goal supervision failed for %s", candidate.id)
+                self._conflict_streaks.pop(candidate.id, None)
+                self._record_cycle_failure(candidate.id, exc)
                 self._reschedule_failed_wakeup(candidate.id, exc)
         return processed
+
+    def _backing_off(self, goal: Goal) -> bool:
+        retry_after = goal.supervision.retry_after
+        return bool(
+            goal.supervision.consecutive_failures
+            and retry_after is not None
+            and retry_after > self.now()
+        )
+
+    def _record_cycle_failure(self, goal_id: str, exc: Exception) -> None:
+        """Count a failed cycle durably, back off, and tell the owner when it persists."""
+
+        try:
+            current = self.service.get(goal_id)
+            if (
+                current is None
+                or current.control_authority_instance_id != self.instance_id
+            ):
+                return
+            leased = self._claim(current)
+            if leased is None:
+                return
+            failures = current.supervision.consecutive_failures + 1
+            delay = min(
+                _FAILURE_BACKOFF_CAP_SECONDS,
+                _FAILURE_BACKOFF_BASE_SECONDS * 2 ** min(failures - 1, 10),
+            )
+            reason = f"{type(exc).__name__}: {exc}"[:2000]
+            retry_after = self.now() + timedelta(seconds=delay)
+            recorded = self.service.record_supervision_failure(
+                goal_id,
+                self._context(
+                    leased,
+                    f"goal-supervisor:cycle-failed:{goal_id}:{leased.version}:"
+                    f"{failures}",
+                ),
+                reason=reason,
+                retry_after=retry_after,
+            )
+            if (
+                failures == self.failure_notify_after
+                or failures % 20 == 0
+            ):
+                self._notify(
+                    recorded,
+                    StallKind.MANUAL_REVIEW,
+                    f"goal-cycle:{goal_id}",
+                    f"Goal supervision keeps failing: {recorded.objective[:120]}",
+                    (
+                        f"The goal supervisor has failed {failures} consecutive "
+                        f"cycles and is retrying with backoff (next attempt "
+                        f"around {retry_after.isoformat(timespec='minutes')}). "
+                        f"Last error: {reason}"
+                    ),
+                )
+        except Exception:  # noqa: BLE001 - recording a failure must never raise
+            logger.exception("Could not record the supervision failure for %s", goal_id)
+
+    def _notify(
+        self,
+        goal: Goal,
+        kind: StallKind,
+        dedupe_key: str,
+        title: str,
+        body: str,
+        *,
+        severity: str = "error",
+    ) -> None:
+        """Tell the owner (in-app and Telegram) that a goal needs a human."""
+
+        if not self.notifications:
+            return
+        notify_stall(
+            self.notifications,
+            kind=kind,
+            subject_ids={
+                "realm_id": goal.realm_id,
+                "project_id": goal.project_id,
+                "goal_id": goal.id,
+            },
+            title=title,
+            body=body,
+            severity=severity,
+            dedupe_key=dedupe_key,
+            actions=["dismiss"],
+            reopen_resolved=True,
+        )
 
     def _needs_cycle(self, goal: Goal) -> bool:
         if any(package.dispatch_attempt is not None for package in goal.work_packages):
@@ -569,6 +677,8 @@ class GoalSupervisor:
         meaningful = self._detect_drift(goal, now) or meaningful
         meaningful = self._advance_goal_state(goal) or meaningful
 
+        goal.supervision.consecutive_failures = 0
+        goal.supervision.retry_after = None
         goal.supervision.cycle += 1
         goal.supervision.last_cycle_at = now
         goal.supervision.next_wakeup_at = now + timedelta(seconds=30)

@@ -907,6 +907,13 @@ class GoalSupervision(BaseModel):
     next_wakeup_at: datetime | None = None
     controller_session_id: GoalReferenceId | None = None
     replacement_session_ids: list[GoalReferenceId] = Field(default_factory=list)
+    # Durable record of supervision cycles that raised. A goal whose cycle keeps
+    # failing is retried with backoff and escalated to the owner instead of being
+    # retried silently every poll forever.
+    consecutive_failures: int = Field(default=0, ge=0)
+    last_failure_at: datetime | None = None
+    last_failure_reason: str = Field(default="", max_length=2000)
+    retry_after: datetime | None = None
 
 
 class Goal(BaseModel):
