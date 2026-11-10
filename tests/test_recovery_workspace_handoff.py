@@ -17,6 +17,66 @@ from pa.repository.workspace import WorkspaceLease, workspace_blocks_admission
 
 
 @pytest.fixture
+def empty_retry(reserved):
+    r = reserved
+    sibling = r.source.model_copy(update={
+        "id": "empty-retry", "external_session_id": None, "execution_binding": {},
+        "config_json": {"provisioning": {"state": "failed"}},
+    }, deep=True)
+    r.store.save_session(sibling)
+    r.sibling = sibling
+    return r
+
+
+@pytest.mark.asyncio
+async def test_canonically_retired_empty_retry_is_not_an_owner_candidate(empty_retry):
+    r = empty_retry
+    closed = await session_close(r.request, r.sibling.id)
+    assert closed["ok"] and not closed["live"]
+    result = await session_close(r.request, r.source.id, preserve_workspace=True)
+    assert result["workspace_preserved"] and result["leases_expired"] == 1
+    current = r.ledger.get(r.origin.dispatch_id)
+    assert current.session_id == r.source.id
+    assert current.events[-1].detail["retired_empty_retry_ids"] == [r.sibling.id]
+    assert (r.path / "preserved.txt").read_text() == "original work and history"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["unclosed", "external", "binding", "lease", "turn", "reservation", "runtime", "ownership", "queue"])
+async def test_empty_retry_exclusion_rejects_any_unretired_or_competing_work(empty_retry, case):
+    from pa.domain.models import TranscriptEvent
+    r = empty_retry
+    if case != "unclosed":
+        await session_close(r.request, r.sibling.id)
+    sibling = r.store.get_session(r.sibling.id)
+    if case == "external":
+        sibling.external_session_id = "retained-provider"
+    elif case == "binding":
+        sibling.execution_binding = {"version": 1}
+    elif case == "ownership":
+        sibling.authority_instance_id = "another-authority"
+    elif case == "queue":
+        sibling.config_json["durable_runtime"] = {"queued_prompts": [{"id": "work"}]}
+    elif case == "lease":
+        lease, = r.manager.workspace_manager.list()
+        r.manager.workspace_manager._save(lease.model_copy(update={"id": "other-lease", "session_id": sibling.id}))
+    elif case == "turn":
+        r.store.append_transcript_events([TranscriptEvent(session_id=sibling.id, seq=2,
+            event_type="prompt_accepted", payload={"prompt_id": "work"})])
+    elif case == "reservation":
+        r.manager._admitting_sessions.add(sibling.id)
+    elif case == "runtime":
+        r.manager._runtimes[sibling.id] = AgentSessionRuntime(r.manager, sibling)
+    r.store.save_session(sibling)
+    before = r.ledger.get(r.origin.dispatch_id).model_dump()
+    with pytest.raises(HTTPException):
+        await session_close(r.request, r.source.id, preserve_workspace=True)
+    assert r.ledger.get(r.origin.dispatch_id).model_dump() == before
+    assert r.store.get_session(r.source.id).status == "recovery_blocked"
+    assert (r.path / "preserved.txt").exists()
+
+
+@pytest.fixture
 def reserved(recovery):
     r = recovery
     r.source.authority_instance_id = r.origin.authority_instance_id
