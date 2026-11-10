@@ -6001,24 +6001,38 @@ class CompletionOutbox:
     def __init__(
         self,
         store: DispatchStore,
-        token: str,
+        token: str | Callable[[], str],
         *,
         retry_seconds: float = 5.0,
-        retry_max_seconds: float = 300.0,
+        retry_max_seconds: float | Callable[[], float] = 300.0,
         max_attempts: int = 12,
         rng: random.Random | None = None,
         async_runtime: AsyncRuntime | None = None,
         disposition_notifier: Callable[[str, dict[str, Any]], Awaitable[Any] | Any]
         | None = None,
         stall_notifier: Callable[[DispatchRecord], Any] | None = None,
+        peer_post: Callable[..., Awaitable[httpx.Response]] | None = None,
+        notify_after_attempts: int = 0,
+        unknown_dispatch_grace_seconds: float = 0.0,
     ) -> None:
         self.store = store
-        self.token = token
+        # A callable is read at send time so a rotated fleet token is picked up
+        # without restarting; a plain string keeps the legacy fixed behaviour.
+        self._token_source = token
+        # Posts to the authority through endpoint failover; falls back to the
+        # authority URL frozen into the record when not provided.
+        self.peer_post = peer_post
         # Tells the owner a completion could not be delivered; never allowed to raise.
         self.stall_notifier = stall_notifier
         self.retry_seconds = retry_seconds
-        self.retry_max_seconds = max(retry_seconds, retry_max_seconds)
-        self.max_attempts = max(1, max_attempts)
+        self._retry_max_source = retry_max_seconds
+        # 0 retries forever; the stall notifier still fires after
+        # ``notify_after_attempts`` (once per incident: its dedupe key is stable).
+        self.max_attempts = max(0, max_attempts)
+        self.notify_after_attempts = max(0, notify_after_attempts)
+        # How long 404/unknown_dispatch/401 keep being retried: the authority may
+        # still be restoring its ledger or rotating credentials. 0 = never.
+        self.unknown_dispatch_grace_seconds = max(0.0, unknown_dispatch_grace_seconds)
         self.rng = rng or random.Random()
         self.async_runtime = async_runtime
         self.disposition_notifier = disposition_notifier
@@ -6038,6 +6052,46 @@ class CompletionOutbox:
                 operation, call, *args, **kwargs
             )
         return await asyncio.to_thread(call, *args, **kwargs)
+
+    @property
+    def token(self) -> str:
+        source = self._token_source
+        value = source() if callable(source) else source
+        return str(value or "")
+
+    @property
+    def retry_max_seconds(self) -> float:
+        source = self._retry_max_source
+        value = source() if callable(source) else source
+        return max(self.retry_seconds, float(value))
+
+    async def _post(
+        self,
+        record: DispatchRecord,
+        suffix: str,
+        *,
+        json: dict[str, Any],
+        headers: dict[str, str],
+    ) -> httpx.Response:
+        headers = dict(headers)
+        token = self.token
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        path = f"api/fleet/dispatch/{record.dispatch_id}/{suffix}"
+        if self.peer_post is not None:
+            routed = await self.peer_post(record, path, json=json, headers=headers)
+            if routed is not None:
+                return routed
+        return await self._http_client().post(
+            f"{record.authority_url.rstrip('/')}/{path}", json=json, headers=headers
+        )
+
+    def _delivery_started_at(self, record: DispatchRecord) -> datetime:
+        """When this delivery obligation was armed (not when it was last written)."""
+        for event in reversed(record.events):
+            if event.state == "completion_pending":
+                return event.created_at
+        return record.events[0].created_at if record.events else record.created_at
 
     def _http_client(self) -> httpx.AsyncClient:
         if self._client is None:
@@ -6161,12 +6215,9 @@ class CompletionOutbox:
             f"{turn.get('prompt_id') or turn.get('idempotency_key')}"
         )
         headers = {"Idempotency-Key": key}
-        if self.token:
-            headers["Authorization"] = f"Bearer {self.token}"
         try:
-            response = await self._http_client().post(
-                f"{record.authority_url.rstrip('/')}/api/fleet/dispatch/"
-                f"{record.dispatch_id}/turn-end",
+            response = await self._post(
+                record, "turn-end",
                 headers=headers,
                 json={
                     "mutation_id": record.mutation_id,
@@ -6189,16 +6240,16 @@ class CompletionOutbox:
             turn["delivered_at"] = datetime.now(UTC).isoformat()
             turn["delivery_error"] = None
             turn["next_retry_at"] = None
-        except (httpx.HTTPError, ValueError) as exc:
+        except (httpx.HTTPError, ValueError, TimeoutError, OSError) as exc:
             turn["delivery_error"] = sanitize_text(exc, limit=500)
-            if int(turn["delivery_attempts"]) >= self.max_attempts:
+            if self.max_attempts and int(turn["delivery_attempts"]) >= self.max_attempts:
                 turn["delivery_state"] = "failed"
                 turn["next_retry_at"] = None
             else:
                 delay = min(
                     self.retry_max_seconds,
                     self.retry_seconds
-                    * (2 ** max(0, int(turn["delivery_attempts"]) - 1)),
+                    * (2 ** min(20, max(0, int(turn["delivery_attempts"]) - 1))),
                 )
                 turn["next_retry_at"] = (
                     datetime.now(UTC) + timedelta(seconds=delay)
@@ -6207,13 +6258,13 @@ class CompletionOutbox:
 
     def _schedule_retry(self, record: DispatchRecord, error: str) -> None:
         record.last_error = sanitize_text(error, limit=500)
-        if record.attempts >= self.max_attempts:
+        if self.max_attempts and record.attempts >= self.max_attempts:
             record.completion_delivery_class = "transport_exhausted"
             record.completion_next_retry_at = None
             return
         ceiling = min(
             self.retry_max_seconds,
-            self.retry_seconds * (2 ** max(0, record.attempts - 1)),
+            self.retry_seconds * (2 ** min(20, max(0, record.attempts - 1))),
         )
         delay = self.rng.uniform(ceiling / 2, ceiling)
         record.completion_delivery_class = "transport_retry"
@@ -6223,11 +6274,9 @@ class CompletionOutbox:
         record.attempts += 1
         await self._offload("dispatch.record_write", self.store.put, record)
         headers = {"Idempotency-Key": record.mutation_id}
-        if self.token:
-            headers["Authorization"] = f"Bearer {self.token}"
         try:
-            request = self._http_client().post(
-                f"{record.authority_url.rstrip('/')}/api/fleet/dispatch/{record.dispatch_id}/complete",
+            request = self._post(
+                record, "complete",
                 json={
                     "mutation_id": record.mutation_id,
                     "card_id": record.card_id,
@@ -6348,6 +6397,17 @@ class CompletionOutbox:
                         "completed",
                         "Agent turn ended; legacy authority reconciliation needs attention.",
                     )
+                elif (
+                    response.status_code in {401, 404}
+                    or (response.status_code == 409 and code == "unknown_dispatch")
+                ) and (
+                    datetime.now(UTC) - self._delivery_started_at(record)
+                    < timedelta(seconds=self.unknown_dispatch_grace_seconds)
+                ):
+                    # The authority may be restoring its ledger or rotating
+                    # credentials; keep the immutable completion and retry.
+                    self._schedule_retry(record, message)
+                    await self._offload("dispatch.record_write", self.store.put, record)
                 elif response.status_code == 409 or response.status_code in {
                     401,
                     403,
@@ -6362,13 +6422,21 @@ class CompletionOutbox:
                 else:
                     self._schedule_retry(record, message)
                     await self._offload("dispatch.record_write", self.store.put, record)
-        except httpx.HTTPError as exc:
-            self._schedule_retry(record, str(exc))
+        except (httpx.HTTPError, TimeoutError, OSError) as exc:
+            self._schedule_retry(record, str(exc) or type(exc).__name__)
             await self._offload("dispatch.record_write", self.store.put, record)
-        if self.stall_notifier and record.completion_delivery_class in {
-            "transport_exhausted",
-            "permanent_failure",
-        }:
+        if self.stall_notifier and (
+            record.completion_delivery_class
+            in {
+                "transport_exhausted",
+                "permanent_failure",
+            }
+            or (
+                self.notify_after_attempts
+                and record.completion_delivery_class == "transport_retry"
+                and record.attempts == self.notify_after_attempts
+            )
+        ):
             try:
                 await self._offload(
                     "dispatch.stall_notify", self.stall_notifier, record

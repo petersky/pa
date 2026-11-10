@@ -7655,6 +7655,35 @@ async def _process_remote_dispatch_stages(app, record: DispatchRecord) -> None:
     )
 
 
+def _authority_peer_post(ctx: AppContext):
+    """Build the outbox/progress sender that reaches the authority by its current
+    fleet endpoints (with failover) instead of the URL frozen into the record.
+
+    Returns ``None`` when the authority is not a known fleet member, so the
+    caller falls back to the recorded URL.
+    """
+
+    async def post(record, path, *, json, headers):
+        fleet = ctx.services.get("fleet_registry")
+        client = ctx.services.get("dispatch_http_client") or ctx.services.get(
+            "fleet_http_client"
+        )
+        inst = (
+            fleet.get_instance(record.authority_instance_id)
+            if fleet is not None
+            else None
+        )
+        if inst is None or client is None:
+            return None
+        headers = {"X-PA-Origin-Instance-ID": ctx.settings.instance_id, **headers}
+        response, _endpoint = await request_peer(
+            ctx, client, inst, "POST", path, timeout=15.0, headers=headers, json=json
+        )
+        return response
+
+    return post
+
+
 async def _placement_candidates(
     request: Request, instances: list[FleetInstance]
 ) -> list[PlacementCandidate]:
@@ -15461,12 +15490,20 @@ class FleetModule(Module):
         ctx.register_service("dispatch_worker", dispatch_worker)
         outbox = CompletionOutbox(
             ctx.require_service("dispatch_store"),
-            ctx.settings.sync_token,
+            # Read at send time: sync_token rotates while the process runs.
+            lambda: ctx.settings.sync_token,
             async_runtime=async_runtime,
             disposition_notifier=ctx.require_service(
                 "instance_agent"
             ).record_card_disposition_status,
             stall_notifier=lambda record: notify_completion_undeliverable(ctx, record),
+            peer_post=_authority_peer_post(ctx),
+            retry_max_seconds=lambda: ctx.settings.completion_delivery_retry_max_seconds,
+            max_attempts=ctx.settings.completion_delivery_max_attempts,
+            notify_after_attempts=ctx.settings.completion_delivery_notify_after_attempts,
+            unknown_dispatch_grace_seconds=(
+                ctx.settings.completion_unknown_dispatch_grace_seconds
+            ),
         )
         ctx.register_service("completion_outbox", outbox)
         agent = ctx.require_service("instance_agent")
@@ -15490,9 +15527,11 @@ class FleetModule(Module):
         progress_service = ProgressService(
             ctx.require_service("dispatch_store"),
             instance_id=ctx.settings.instance_id,
-            token=ctx.settings.sync_token,
+            token=lambda: ctx.settings.sync_token,
             async_runtime=async_runtime,
             session_manager=agent,
+            peer_post=_authority_peer_post(ctx),
+            retry_max_seconds=lambda: ctx.settings.progress_delivery_retry_max_seconds,
         )
         ctx.register_service("progress_service", progress_service)
         agent.progress_handler = progress_service.observe

@@ -59,6 +59,15 @@ class InstanceConfig(BaseModel):
     # full hour is failed. True restores the old behaviour: fail every
     # reservation that is not running after one hour.
     dispatch_capacity_reservation_hard_expiry: bool = False
+    # Cap of the progress-delivery backoff (old behaviour: flat 3 s).
+    progress_delivery_retry_max_seconds: int = Field(default=300, ge=1, le=86400)
+    # Retry window for 404/401/unknown_dispatch (0 = permanent after one try, as before).
+    completion_unknown_dispatch_grace_seconds: int = Field(default=3600, ge=0, le=30 * 24 * 3600)
+    completion_delivery_notify_after_attempts: int = Field(default=12, ge=0, le=1_000_000)
+    # 0 retries forever; 12 restores the old give-up-after-12 behaviour.
+    completion_delivery_max_attempts: int = Field(default=0, ge=0, le=1_000_000)
+    # Cap of the completion-delivery backoff (it retries indefinitely; old cap 300).
+    completion_delivery_retry_max_seconds: int = Field(default=600, ge=5, le=86400)
     # Worker re-executions allowed for one dispatch before it fails recoverably;
     # 0 restores the old unlimited behaviour.
     dispatch_max_stage_attempts: int = Field(default=5, ge=0, le=100)
