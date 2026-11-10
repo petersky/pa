@@ -2174,6 +2174,10 @@ def create_card_api(
 ) -> dict:
     store = get_store()
     settings = request.app.state.ctx.settings
+    if data.completion_requirement is not None:
+        from pa.domain.completion import declared_requirement
+        data = data.model_copy(update={"completion_requirement": declared_requirement(
+            data.completion_requirement, keep_active_default=settings.completion_active_milestone_default)})
     payload = data.model_dump(mode="json") | {
         "auto_enrich": data.auto_enrich,
         "enrichment_protected_fields": sorted(explicit_enrichment_fields(data)),
@@ -2743,6 +2747,12 @@ def update_card_api(
         actor_principal = record.principal_id
     settings = request.app.state.ctx.settings
     realm_id = realm or settings.primary_realm
+    if data.completion_requirement is not None:
+        from pa.domain.completion import declared_requirement
+        existing = get_store().get_card(card_id, realm_id=realm_id)
+        if existing is None or existing.completion_requirement != data.completion_requirement:
+            data = data.model_copy(update={"completion_requirement": declared_requirement(
+                data.completion_requirement, keep_active_default=settings.completion_active_milestone_default)})
     payload = {
         "card_id": card_id,
         **data.model_dump(mode="json", exclude_unset=True),

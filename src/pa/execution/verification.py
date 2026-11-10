@@ -603,9 +603,13 @@ class VerificationService:
             if recovered:
                 await self.call(self.store.update, key, 'dispatched', dispatch_id=recovered.dispatch_id, diagnostic_phase='verification_intent_write')
                 job = await self.call(self.store.get, key, diagnostic_phase='verification_intent_read')
-        receipts = [e for e in card.completion_evidence if e.requirement_revision == packet['requirement_revision']
-                    and e.outcome == 'accepted' and e.subject_revision == packet['subject']
-                    and 'verification-intent:' + key in e.references]
+        # A receipt for an earlier revision the current one covers (see requirement_covers) still certifies
+        # this subject; it names its own intent rather than the current one.
+        inherited = set(card.completion_requirement.prior_revisions) if card.completion_requirement else set()
+        receipts = [e for e in card.completion_evidence
+                    if e.outcome == 'accepted' and e.subject_revision == packet['subject']
+                    and ((e.requirement_revision == packet['requirement_revision'] and 'verification-intent:' + key in e.references)
+                         or (e.requirement_revision in inherited and any(r.startswith('verification-intent:') for r in e.references)))]
         if receipts and card.completion_status['accepted']:
             # Re-read canonical evidence; successful dispatch transport is not acceptance.
             await self.finish(card, job, receipts[-1])
@@ -646,7 +650,9 @@ class VerificationService:
                 return
             if not await self.call(self.job_controls_settled, old, record, diagnostic_phase='verification_controls'):
                 return
-            if not (await self.origin_readiness(record))['ready']:
+            # An accepted verifier has finished its job; whether its session has been retired is the
+            # lifecycle policy's business and must not hold back verification of a later revision.
+            if old['state'] != 'accepted' and not (await self.origin_readiness(record))['ready']:
                 return
         if card.realm_id != self.ctx.settings.primary_realm:
             await self.call(self.store.update, key, 'blocked', diagnostic='verification_realm_authority_required', diagnostic_phase='verification_intent_write')

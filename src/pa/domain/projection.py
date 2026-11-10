@@ -2817,7 +2817,7 @@ class CardProjection:
             tags=data.tags,
             preferred_instance=data.preferred_instance,
             preferred_capabilities=data.preferred_capabilities,
-            completion_requirement=(data.completion_requirement.model_copy(update={"revision": str(uuid4())}) if data.completion_requirement else None),
+            completion_requirement=(data.completion_requirement.model_copy(update={"revision": str(uuid4()), "prior_revisions": []}) if data.completion_requirement else None),
             execution_preferences=data.execution_preferences,
             created_by_principal=principal_id,
             created_by_instance=instance_id,
@@ -3747,7 +3747,13 @@ class CardProjection:
             requirement = bind_verification_authority(requirement, instance_id)
             if requirement.schema_version != 1:
                 raise CompletionConflict("unsupported_completion_requirement")
-            requirement = requirement.model_copy(update={"revision": str(uuid4())})
+            from pa.domain.completion import requirement_covers
+            previous = card.completion_requirement
+            inherited = (
+                [*previous.prior_revisions, previous.revision][-20:]
+                if previous and previous.revision and requirement_covers(previous, requirement) else []
+            )
+            requirement = requirement.model_copy(update={"revision": str(uuid4()), "prior_revisions": inherited})
             updates["completion_requirement"] = requirement.model_dump(mode="json")
             if card.lane == CardLane.DONE and updates.get("lane") not in {CardLane.ACTIVE, CardLane.WAITING}:
                 raise CompletionConflict("completion_requirement_change_requires_reopen")

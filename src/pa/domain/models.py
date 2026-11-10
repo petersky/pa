@@ -417,6 +417,12 @@ class CompletionRequirement(BaseModel):
     verification_paused: bool = False
     originating_session_ids: list[str] = Field(default_factory=list, max_length=100)
     originating_dispatch_ids: list[str] = Field(default_factory=list, max_length=100)
+    # The `active` milestone is opt-in. When a requirement is declared, PA drops `active` unless this
+    # is true (or the instance setting completion_active_milestone_default restores the old default).
+    include_active: bool = False
+    # Earlier revisions whose receipts still count: set when an edit did not change what is required
+    # (see pa.domain.completion.requirement_covers), so such an edit never discards finished work.
+    prior_revisions: list[str] = Field(default_factory=list, max_length=20)
 
     @model_validator(mode="after")
     def integration_mode_requires_integration(self):

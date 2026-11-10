@@ -26,6 +26,40 @@ def completion_capabilities(requirement: Any) -> set[str]:
     return required
 
 
+def declared_requirement(requirement, *, keep_active_default: bool = False):
+    """Apply declaration-time defaults to a requirement an agent or client submitted.
+
+    ``active`` (the declared thing is live and in use) is a deliberate milestone: it is dropped
+    unless the declaration selected it (``include_active``) or the instance restores the old
+    default. Existing stored requirements are never rewritten implicitly.
+    """
+    if requirement is None or keep_active_default or getattr(requirement, "include_active", False):
+        return requirement
+    if "active" not in requirement.milestones:
+        return requirement
+    return requirement.model_copy(update={"milestones": [m for m in requirement.milestones if m != "active"]})
+
+
+_SUBSTANTIVE = ("schema_version", "mode", "criteria", "acceptance_principals", "provenance", "source_reference",
+                "verification_policy", "verification_principal", "originating_session_id",
+                "originating_dispatch_id", "originating_session_ids", "originating_dispatch_ids")
+
+
+def requirement_covers(old: Any, new: Any) -> bool:
+    """True when ``new`` asks for nothing beyond ``old``, so receipts for ``old`` still certify it.
+
+    Authority, pause and activation-selection edits, and dropping a milestone, change nothing about
+    the work or who may certify it. Any change to criteria, mode, principals, policy or lineage is
+    substantive and starts a fresh revision with no inherited receipts.
+    """
+    old, new = _dict(old), _dict(new)
+    if not old or not new:
+        return False
+    if any(old.get(key) != new.get(key) for key in _SUBSTANTIVE):
+        return False
+    return set(new.get("milestones", [])) <= set(old.get("milestones", []))
+
+
 class CompletionConflict(ValueError):
     def __init__(self, code: str):
         self.code = code
@@ -47,10 +81,11 @@ def completion_state(requirement: Any, evidence: Any = ()) -> dict:
     if requirement.get("schema_version") != 1:
         return {"reason_code": "unsupported_completion_requirement", "missing": ["compatible_owner"], "satisfied": [], "accepted": False}
     revision = requirement.get("revision")
+    valid_revisions = {revision, *requirement.get("prior_revisions", [])}
     receipts = [_dict(item) for item in evidence or ()]
     # Editing acceptance criteria invalidates acceptance, not the immutable
     # fact that an exact source subject was integrated.
-    current = [item for item in receipts if (item.get("requirement_revision") == revision or item.get("outcome") == "integrated") and item.get("actor") and item.get("recorded_at")]
+    current = [item for item in receipts if (item.get("requirement_revision") in valid_revisions or item.get("outcome") == "integrated") and item.get("actor") and item.get("recorded_at")]
     integrated = [item for item in current if item.get("outcome") == "integrated"]
     # A receipt accepting build A never certifies a later integrated build B.
     subjects = integrated or [item for item in current if item.get("outcome") == "accepted"]
