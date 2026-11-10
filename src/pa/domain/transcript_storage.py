@@ -27,6 +27,7 @@ from typing import Any, Iterator
 from pa.core.operation_budget import measured_lock, report_work_progress
 from pa.core.performance import PerformanceMetrics, current_observation, retention_phase
 from pa.core.sqlite_metrics import ObservedConnection, derived_connection
+from pa.core.sqlite_maintenance import DatabaseMaintenanceGate, maintenance_writer
 from pa.domain.models import TranscriptEvent
 
 SCHEMA_VERSION = 1
@@ -176,6 +177,7 @@ class TranscriptStorage:
         self.objects_dir = metadata_db_path.parent / "transcript_objects"
         self.objects_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
+        self.maintenance = DatabaseMaintenanceGate()
         self._object_readers = 0
         self.performance = PerformanceMetrics()
         with sqlite3.connect(self.db_path, timeout=30) as conn:
@@ -323,7 +325,7 @@ class TranscriptStorage:
         self.performance.record("canonical_payload_bytes", input_bytes)
         mirrors: list[tuple[TranscriptEvent, dict]] = []
         waiting = time.perf_counter()
-        with measured_lock(self._lock, name="transcript.write"):
+        with self.maintenance.writer(), measured_lock(self._lock, name="transcript.write"):
             self.performance.record("python_lock_wait_ms", (time.perf_counter() - waiting) * 1000)
             file_started = time.perf_counter()
             sizes = {digest: self._prepare_object(digest, compressed)
@@ -564,7 +566,7 @@ class TranscriptStorage:
     def prune(self, session_ids: list[str], *, keep_audit: bool = True) -> int:
         if not session_ids: return 0
         changed = 0
-        with (retention_phase("retention_transaction"),
+        with (self.maintenance.writer(), retention_phase("retention_transaction"),
               measured_lock(self._lock, name="transcript.write"), self._conn() as conn):
             # Publication is fenced for this entire transaction, so discover
             # nonempty sessions once rather than querying every expired ID on
@@ -827,6 +829,7 @@ class TranscriptStorage:
             row = conn.execute("SELECT * FROM transcript_operations WHERE name=?", (name,)).fetchone()
         return dict(row) if row else None
 
+    @maintenance_writer
     def record_operation(self, name: str, *, cursor: str | None, state: str, examined: int, changed: int, error: str | None = None) -> None:
         with self._conn() as conn:
             conn.execute("""INSERT INTO transcript_operations(name,cursor,state,examined,changed,error,updated_at)

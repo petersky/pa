@@ -4,9 +4,9 @@
 
 ## Current bounded performance work
 
-[One current compact report](performance-current.json) records fresh transcript health read batching and aggregate validation. Bounded reference pages increase from 128 to 1024; observed SQLite calls fall from 392 to 56 for 24,576 references. Across 20 alternating private pairs, reference-read p95 improves from 28.126 to 24.262 ms; full fresh-health p95 changes only slightly, from 173.930 to 172.489 ms. All 70 targeted regressions pass. PR708's earlier GC repair is integrated, without deployed acceptance.
+[One current compact report](performance-current.json) contains the latest bounded source repair, aggregate measurements, failed-probe summary and explicit limits. It is overwritten for the next repair; earlier reports remain in Git history. PR708's GC and PR710's fresh-health repairs are integrated, without deployed acceptance.
 
-The existing stop-event prototype did not release a foreground writer early: all three private cancellation trials had already compacted before stop handling returned. No product writer hooks were added. Full VACUUM foreground blocking and its cancellation/starvation-safe repair remain open. Disposable fixtures are removed on success/failure; no raw captures or mirrored histories are retained. All 755 findings and 185 concerns remain open; these measurements do not establish deployed or whole-card acceptance.
+Disposable fixtures are removed on success/failure; no raw captures or mirrored histories are retained. All 755 findings and 185 concerns remain open, including native full-compaction latency, uncovered writers, starvation and physical write amplification. Source integration does not establish deployed or whole-card acceptance.
 
 ## Automatic maintenance startup ordering — 2026-11-08
 

@@ -15,12 +15,15 @@ from pathlib import Path
 from typing import Any
 
 from pa.core.sqlite_metrics import ObservedConnection
+from pa.core.sqlite_maintenance import DatabaseMaintenanceGate
 from pa.core.performance import capture_retention_phases, capture_sqlite_calls
 from pa.execution.dispatch import DispatchStoreReadOnlyError
 
 logger = logging.getLogger(__name__)
 
 _MAINTENANCE_TIMEOUT_SECONDS = 120.0
+_COMPACTION_RETRY_INITIAL_SECONDS = 1.0
+_COMPACTION_RETRY_MAX_SECONDS = 30.0
 
 _PhaseTimes = dict[str, dict[str, Any]]
 
@@ -73,7 +76,8 @@ def _maintenance_connection(path: Path, phases: _PhaseTimes) -> Iterator[sqlite3
 
 
 def _maintain_database(
-    path: Path, *, stop: threading.Event | None = None
+    path: Path, *, stop: threading.Event | None = None,
+    writers: DatabaseMaintenanceGate | None = None,
 ) -> dict[str, Any]:
     """Maintain one existing database using SQLite's transactional write lock.
 
@@ -82,11 +86,12 @@ def _maintain_database(
     """
     phases: _PhaseTimes = {}
     with _maintenance_phase(phases, "total"):
-        return _maintain_database_measured(path, stop=stop, phases=phases)
+        return _maintain_database_measured(path, stop=stop, phases=phases, writers=writers)
 
 
 def _maintain_database_measured(
     path: Path, *, stop: threading.Event | None, phases: _PhaseTimes,
+    writers: DatabaseMaintenanceGate | None,
 ) -> dict[str, Any]:
     # Keep the mapping by reference: close/total finish after a return, including
     # deferred copies of result. Readers see their completed timings, too.
@@ -101,9 +106,14 @@ def _maintain_database_measured(
     )
     if stop is not None and stop.is_set():
         return {**result, "status": "deferred", "reason": "stopping"}
-    with _maintenance_connection(path, phases) as conn:
-        if stop is not None:
-            conn.set_progress_handler(lambda: int(stop.is_set()), 100_000)
+    # Offline compaction has no live owner writers, but shutdown cancellation
+    # still needs direct interruption during native VACUUM copy work.
+    gate = writers if writers is not None else DatabaseMaintenanceGate()
+    with (_maintenance_connection(path, phases) as conn,
+          gate.maintenance(conn, stop=stop) as ticket):
+        if reason := ticket.reason(stop):
+            return {**result, "status": "deferred", "reason": reason}
+        conn.set_progress_handler(lambda: int(ticket.reason(stop) is not None), 100_000)
 
         def sizes(name: str) -> dict[str, int]:
             with _maintenance_phase(phases, name):
@@ -138,7 +148,7 @@ def _maintain_database_measured(
                 ("wal_busy", "wal_log", "wal_checkpointed"), checkpoint_result
             ))
             if checkpoint_result[0]:
-                return {**result, "status": "deferred", "reason": "busy"}
+                return {**result, "status": "deferred", "reason": ticket.reason(stop) or "busy"}
             before = sizes("size_pre_compact")
             result.update(before=before, after=before, **before)
             if before["free_bytes"]:
@@ -150,8 +160,8 @@ def _maintain_database_measured(
                         **result, "status": "deferred",
                         "reason": "insufficient_disk_space",
                     }
-                if stop is not None and stop.is_set():
-                    return {**result, "status": "deferred", "reason": "stopping"}
+                if reason := ticket.reason(stop):
+                    return {**result, "status": "deferred", "reason": reason}
                 with _maintenance_phase(phases, "vacuum"):
                     conn.execute("VACUUM")
                 result["compacted"] = True
@@ -161,16 +171,16 @@ def _maintain_database_measured(
                     ("wal_busy", "wal_log", "wal_checkpointed"), checkpoint_result
                 ))
                 if checkpoint_result[0]:
-                    result.update(status="deferred", reason="busy")
+                    result.update(status="deferred", reason=ticket.reason(stop) or "busy")
             after = sizes("size_final")
             result.update(after=after, **after)
             return result
         except sqlite3.OperationalError as exc:
             code = getattr(exc, "sqlite_errorcode", 0) & 0xff
             if code in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
-                return {**result, "status": "deferred", "reason": "busy"}
-            if code == sqlite3.SQLITE_INTERRUPT and stop is not None and stop.is_set():
-                return {**result, "status": "deferred", "reason": "stopping"}
+                return {**result, "status": "deferred", "reason": ticket.reason(stop) or "busy"}
+            if code == sqlite3.SQLITE_INTERRUPT and (reason := ticket.reason(stop)):
+                return {**result, "status": "deferred", "reason": reason}
             raise
 
 
@@ -291,15 +301,28 @@ def _run_maintenance_measured(
         except DispatchStoreReadOnlyError:
             result["dispatch_compact"] = {"skipped": "read_only"}
     with _maintenance_phase(phases, "projection_database"):
-        result["sqlite"] = _maintain_database(store.db_path, stop=stop)
+        result["sqlite"] = _maintain_database(
+            store.db_path, stop=stop, writers=getattr(store, "maintenance", None)
+        )
     with _maintenance_phase(phases, "transcript_database"):
         result["transcript_sqlite"] = _maintain_database(
-            store.transcripts.db_path, stop=stop
+            store.transcripts.db_path, stop=stop,
+            writers=getattr(store.transcripts, "maintenance", None),
         )
     if (stop is None or not stop.is_set()) and hasattr(store, "transcript_storage_metrics"):
         with _maintenance_phase(phases, "transcript_health_final"):
             result["transcript_storage"] = store.transcript_storage_metrics()
     return result
+
+
+def _retry_compactions(store: Any, keys: tuple[str, ...], *, stop) -> dict[str, Any]:
+    """Retry only interrupted databases; never repeat retention/migration here."""
+    targets = {"sqlite": store, "transcript_sqlite": store.transcripts}
+    return {
+        key: _maintain_database(targets[key].db_path, stop=stop,
+                                writers=getattr(targets[key], "maintenance", None))
+        for key in keys
+    }
 
 
 class InstanceMaintenanceService:
@@ -327,6 +350,9 @@ class InstanceMaintenanceService:
         self._wake = asyncio.Event()
         self._closing = False
         self._active_run: asyncio.Task[dict[str, Any]] | None = None
+        self._active_database_only = False
+        self._pending_compactions: set[str] = set()
+        self._retry_attempt = 0
         self._stop = threading.Event()
 
     def _startup_settled(self, _task: asyncio.Future[None]) -> None:
@@ -351,7 +377,8 @@ class InstanceMaintenanceService:
         self._stop.set()
         self._wake.set()
         # Shield the actual worker even if the server's shutdown budget expires.
-        # The progress callback interrupts SQLite and rolls VACUUM back safely.
+        # The owner-local observer interrupts native VACUUM too, then joins
+        # before closing its connection. Do not release the actual worker early.
         if self._task:
             await asyncio.shield(self._task)
         if self._active_run:
@@ -376,6 +403,7 @@ class InstanceMaintenanceService:
                 self.last_finished_at.isoformat() if self.last_finished_at else None
             ),
             "last_error": self.last_error,
+            "pending_database_compactions": sorted(self._pending_compactions),
             "last_result": self.last_result,
             "transcript_storage": (
                 self.store.transcript_storage_status()
@@ -385,7 +413,11 @@ class InstanceMaintenanceService:
         }
 
     async def _run(self) -> None:
+        loop = asyncio.get_running_loop()
+        full_due_at = 0.0
+        retry_delay = _COMPACTION_RETRY_INITIAL_SECONDS
         while not self._closing:
+            full_requested = self._wake.is_set()
             self._wake.clear()
             # Automatic full compaction must not contend with the durable
             # startup/recovery work that establishes admission. A wake is not
@@ -396,53 +428,92 @@ class InstanceMaintenanceService:
                     continue
                 if self._startup_ready.cancelled():
                     break
+            database_only = bool(self._pending_compactions) and not full_requested and loop.time() < full_due_at
             try:
-                await self.run_once()
+                await self._run_once(database_only=database_only)
             except Exception:
                 logger.exception("Instance maintenance sweep failed")
+            finally:
+                if not database_only:
+                    full_due_at = loop.time() + float(self.settings.maintenance_interval_seconds)
+                    retry_delay = _COMPACTION_RETRY_INITIAL_SECONDS
             if self._closing:
                 break
             try:
+                interval = float(self.settings.maintenance_interval_seconds)
+                if self._pending_compactions:
+                    # Coalesce bursts and bound retry frequency. A continuous
+                    # writer can keep compaction pending, never falsely "ok".
+                    interval = min(retry_delay, max(0.0, full_due_at - loop.time()))
+                    retry_delay = min(retry_delay * 2, _COMPACTION_RETRY_MAX_SECONDS)
                 await asyncio.wait_for(
                     self._wake.wait(),
-                    timeout=float(self.settings.maintenance_interval_seconds),
+                    timeout=interval,
                 )
             except TimeoutError:
                 pass
 
     async def run_once(self, *, now: datetime | None = None) -> dict[str, Any]:
+        return await self._run_once(now=now, database_only=False)
+
+    async def _run_once(self, *, now: datetime | None = None, database_only=False) -> dict[str, Any]:
         if self._closing:
             raise RuntimeError("Instance maintenance is stopping")
         # Manual requests and the timer share a worker. A disconnected request
         # must not release ownership while its SQLite thread is still running.
+        if self._active_run is not None and not self._active_run.done() and self._active_database_only and not database_only:
+            # A manual full sweep must not silently become a database-only
+            # retry. Wait for that same owned worker, then coalesce a full run.
+            await asyncio.shield(self._active_run)
+            if self._closing:
+                raise RuntimeError("Instance maintenance is stopping")
         if self._active_run is None or self._active_run.done():
+            self._active_database_only = database_only
             self._active_run = asyncio.create_task(
-                self._execute(now=now), name="pa-instance-maintenance-sweep"
+                self._execute(now=now, database_only=database_only), name="pa-instance-maintenance-sweep"
             )
             self._active_run.add_done_callback(
                 lambda task: task.exception() if not task.cancelled() else None
             )
         return await asyncio.shield(self._active_run)
 
-    async def _execute(self, *, now: datetime | None = None) -> dict[str, Any]:
+    async def _execute(self, *, now: datetime | None = None, database_only=False) -> dict[str, Any]:
         started = datetime.now(UTC)
         self.last_started_at = started
         self.last_error = None
         try:
-            result = await self._call(
-                run_maintenance,
-                self.settings,
-                self.store,
-                self.services.get("dispatch_store"),
-                now=now,
-                stop=self._stop,
-            )
+            if database_only:
+                keys = tuple(sorted(self._pending_compactions))
+                reports = await self._call(_retry_compactions, self.store, keys, stop=self._stop)
+                self._retry_attempt += 1
+                result = {**(self.last_result or {}), **reports, "database_retry": {
+                    "ran_at": started.isoformat(), "attempt": self._retry_attempt,
+                    "scope": "Deferred databases only; retention/migration/file-health retain their original measurement timestamps.",
+                }}
+            else:
+                result = await self._call(
+                    run_maintenance, self.settings, self.store,
+                    self.services.get("dispatch_store"), now=now, stop=self._stop,
+                )
+                self._retry_attempt = 0
         except Exception as exc:
             self.last_error = str(exc)
             self.last_finished_at = datetime.now(UTC)
             raise
         self.last_result = result
+        self._pending_compactions = {
+            key for key in ("sqlite", "transcript_sqlite")
+            if isinstance(report := result.get(key), dict)
+            and report.get("status") == "deferred"
+            and (report.get("reason") == "foreground_write" or
+                 key in self._pending_compactions)
+        }
         self.last_finished_at = datetime.now(UTC)
+        if database_only:
+            logger.info("Instance database maintenance retry %s: %s", self._retry_attempt,
+                        {key: {field: value.get(field) for field in ("compacted", "status", "reason")}
+                         for key, value in reports.items()})
+            return result
         logger.info(
             "Instance maintenance removed %s transcript events, %s mutation receipts, "
             "%s dispatch events, %s dispatch receipts; database maintenance: %s",
