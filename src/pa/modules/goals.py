@@ -1691,7 +1691,11 @@ class GoalsModule(Module):
         return "Durable goals, evidence, autonomy, provider adapters, and governance"
 
     def on_load(self, ctx: AppContext) -> None:
-        service = GoalService(ctx.store, ctx.settings.instance_id)
+        service = GoalService(
+            ctx.store,
+            ctx.settings.instance_id,
+            allow_owner_audit=ctx.settings.goal_owner_may_audit,
+        )
         ctx.register_service("goal_service", service)
         governance = GoalGovernanceService(
             ctx.store,
@@ -1726,6 +1730,7 @@ class GoalsModule(Module):
             verifier_independence=ctx.settings.goal_verifier_independence,
             no_progress_seconds=ctx.settings.goal_drifting_after_seconds,
             stalled_seconds=ctx.settings.goal_stalled_after_seconds,
+            owner_may_audit=ctx.settings.goal_owner_may_audit,
         )
         ctx.register_service("goal_supervisor", supervisor)
         self._supervisor_stop: asyncio.Event | None = None

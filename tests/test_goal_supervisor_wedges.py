@@ -29,11 +29,16 @@ from pa.goals.governance import GoalGovernanceService
 from pa.goals.materialization import GoalExecutionIdentityV1
 from pa.goals.models import (
     CreateWorkPackageAction,
+    CriterionVerdict,
+    EvidenceKind,
     DispatchWorkPackageAction,
     Goal,
     GoalActorRole,
     GoalCreate,
+    GoalAuditCreate,
     GoalCriterion,
+    GoalEvidence,
+    GoalEvidenceCreate,
     GoalInteractionState,
     GoalMutationContext,
     GoalPolicy,
@@ -185,14 +190,24 @@ class RecordingNotifications:
 
 
 class Harness:
-    def __init__(self, tmp: str, *, start: datetime | None = None, **kwargs) -> None:
+    def __init__(
+        self,
+        tmp: str,
+        *,
+        start: datetime | None = None,
+        allow_owner_audit: bool = False,
+        **kwargs,
+    ) -> None:
         root = Path(tmp)
         objects = ObjectStore(root / "objects")
         log = EventLog(objects, root, INSTANCE)
         self.projection = CardProjection(root / "projection.db", log)
         self.clock = [start or datetime(2026, 11, 1, 12, tzinfo=UTC)]
         self.service = GoalService(
-            self.projection, INSTANCE, clock=lambda: self.clock[0]
+            self.projection,
+            INSTANCE,
+            clock=lambda: self.clock[0],
+            allow_owner_audit=allow_owner_audit,
         )
         self.governance = GoalGovernanceService(
             self.projection, INSTANCE, self.service, clock=lambda: self.clock[0]
@@ -986,6 +1001,208 @@ class StallDetectionTests(unittest.TestCase):
                 h.supervisor.run_once(goal.id)
 
             self.assertEqual(len(h.dispatched), dispatched + 1)
+
+
+class CompletionAuditTests(unittest.TestCase):
+    """A5: VERIFYING is not a dead end; the audit can be recorded and achieves the goal."""
+
+    POLICY = GoalPolicy(autonomy_level=4, permitted_actions=FULL_ACTIONS)
+
+    def _to_verifier(self, h: Harness, goal: Goal, *, verifier_state: str):
+        current = VerifierIndependenceTests._run_to_verifier_dispatch(h, goal)
+        verifier = next(
+            item
+            for item in current.work_packages
+            if item.role == GoalActorRole.VERIFIER
+        )
+        finish_dispatch(
+            h,
+            verifier,
+            role="verifier",
+            session="verifier-session",
+            principal="verify",
+            state=verifier_state,
+            report=passing_report() if verifier_state == "completed" else None,
+        )
+        return verifier
+
+    def _verifier_ctx(self, h: Harness, goal_id: str, key: str) -> GoalMutationContext:
+        goal = h.get(goal_id)
+        return GoalMutationContext(
+            actor_principal="service:goal-verifier:verify",
+            authority_instance_id=INSTANCE,
+            idempotency_key=key,
+            expected_version=goal.version,
+            policy_revision=goal.policy.revision,
+            fencing_token=goal.lease.fencing_token,
+        )
+
+    def test_assigned_verifier_audit_achieves_the_goal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(tmp, verifier_independence="single_user")
+            goal = h.create_goal(self.POLICY)
+            self._to_verifier(h, goal, verifier_state="running")
+            h.run(goal.id)  # binds the verifier's service identity
+            criterion = h.get(goal.id).criteria[0]
+
+            # What the verifier agent does with its assigned MCP tools.
+            recorded = h.service.add_evidence(
+                goal.id,
+                GoalEvidenceCreate(
+                    evidence=GoalEvidence(
+                        criterion_ids=[criterion.id],
+                        kind=EvidenceKind.TEST,
+                        summary="Focused suite passed under the verifier.",
+                        observed_at=h.clock[0],
+                    )
+                ),
+                self._verifier_ctx(h, goal.id, "verifier-evidence"),
+            )
+            audited = h.service.audit(
+                goal.id,
+                GoalAuditCreate(
+                    criterion_verdicts={criterion.id: CriterionVerdict.SATISFIED},
+                    evidence_ids=[recorded.evidence[0].id],
+                    explanation="Independent run accepted.",
+                ),
+                self._verifier_ctx(h, goal.id, "verifier-audit"),
+            )
+            self.assertIsNotNone(audited.audit)
+
+            verifier = h.get(goal.id).work_packages[-1]
+            finish_dispatch(
+                h,
+                verifier,
+                role="verifier",
+                session="verifier-session",
+                principal="verify",
+                report=passing_report(),
+            )
+            verifying = h.run(goal.id)
+            self.assertEqual(verifying.state, GoalState.VERIFYING)
+            achieved = h.run(goal.id)
+
+            self.assertEqual(achieved.state, GoalState.ACHIEVED)
+            self.assertEqual(
+                len(h.notifications.stalls("other")), 1, "achievement is announced"
+            )
+            self.assertTrue(
+                any(
+                    "ready for its completion audit" in item.title
+                    for item in h.notifications.stalls("manual_review")
+                ),
+                "entering VERIFYING notifies the owner",
+            )
+
+    def test_verifier_prompt_tells_the_agent_to_audit(self) -> None:
+        goal = Goal(
+            objective="x",
+            criteria=[
+                GoalCriterion(
+                    description="c",
+                    verification_method="v",
+                    evidence_requirement="e",
+                )
+            ],
+        )
+        from pa.goals.models import GoalWorkPackage
+
+        package = GoalWorkPackage(
+            proposal_id="p",
+            title="Verify",
+            objective="verify it",
+            criterion_ids=[goal.criteria[0].id],
+            role=GoalActorRole.VERIFIER,
+        )
+        prompt = GoalSupervisor._work_prompt(goal, package, "")
+        self.assertIn("audit_assigned_goal", prompt)
+        self.assertIn("record_assigned_goal_evidence", prompt)
+
+    def _verified_goal(self, tmp: str, **kwargs):
+        h = Harness(tmp, verifier_independence="single_user", **kwargs)
+        goal = h.create_goal(self.POLICY)
+        self._to_verifier(h, goal, verifier_state="completed")
+        verifying = h.run(goal.id)
+        self.assertEqual(verifying.state, GoalState.VERIFYING)
+        return h, verifying
+
+    def _owner_audit(self, h: Harness, goal: Goal, key: str):
+        return h.service.audit(
+            goal.id,
+            GoalAuditCreate(
+                criterion_verdicts={goal.criteria[0].id: CriterionVerdict.SATISFIED},
+                evidence_ids=[item.id for item in goal.evidence],
+                explanation="I reviewed the evidence.",
+            ),
+            h.ctx(goal, key),
+        )
+
+    def test_owner_audit_is_refused_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h, verifying = self._verified_goal(tmp)
+            with self.assertRaisesRegex(GoalConflict, "independent of the goal owner"):
+                self._owner_audit(h, verifying, "owner-audit")
+
+    def test_single_user_setting_lets_the_owner_audit_and_achieves_the_goal(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h, verifying = self._verified_goal(tmp, allow_owner_audit=True)
+
+            audited = self._owner_audit(h, verifying, "owner-audit")
+            self.assertTrue(audited.audit.owner_attested)
+            achieved = h.run(verifying.id)
+
+            self.assertEqual(achieved.state, GoalState.ACHIEVED)
+
+    def test_owner_attestation_cannot_cover_an_executor_service(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h, verifying = self._verified_goal(tmp, allow_owner_audit=True)
+            executor = next(
+                item
+                for item in verifying.work_packages
+                if item.role == GoalActorRole.EXECUTOR
+            )
+            with self.assertRaises(GoalConflict):
+                h.service.audit(
+                    verifying.id,
+                    GoalAuditCreate(
+                        criterion_verdicts={
+                            verifying.criteria[0].id: CriterionVerdict.SATISFIED
+                        },
+                        evidence_ids=[item.id for item in verifying.evidence],
+                        explanation="The executor grades itself.",
+                    ),
+                    GoalMutationContext(
+                        actor_principal=executor.executor_service_id,
+                        authority_instance_id=INSTANCE,
+                        idempotency_key="executor-audit",
+                        expected_version=verifying.version,
+                        policy_revision=verifying.policy.revision,
+                        fencing_token=verifying.lease.fencing_token,
+                    ),
+                )
+
+    def test_a_rejecting_audit_blocks_the_goal_and_notifies(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h, verifying = self._verified_goal(tmp, allow_owner_audit=True)
+            h.service.audit(
+                verifying.id,
+                GoalAuditCreate(
+                    criterion_verdicts={
+                        verifying.criteria[0].id: CriterionVerdict.UNSATISFIED
+                    },
+                    evidence_ids=[item.id for item in verifying.evidence],
+                    explanation="The evidence does not show the behaviour.",
+                ),
+                h.ctx(verifying, "owner-rejects"),
+            )
+
+            blocked = h.run(verifying.id)
+
+            self.assertEqual(blocked.state, GoalState.BLOCKED)
+            self.assertIn("did not accept", blocked.supervision.parked_reason)
+            self.assertEqual(len(h.notifications.stalls("verification_failed")), 1)
 
 
 if __name__ == "__main__":

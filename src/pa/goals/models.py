@@ -547,6 +547,9 @@ class GoalAudit(BaseModel):
     auditor_instance_id: GoalReferenceId | None = None
     verifier_service_id: GoalReferenceId | None = None
     independent: bool = True
+    # Set by the service (never accepted from a caller) when the goal's own owner
+    # recorded this audit under the instance's single-user setting.
+    owner_attested: bool = False
     verdict: CriterionVerdict
     criterion_verdicts: dict[GoalReferenceId, CriterionVerdict]
     evidence_ids: list[GoalReferenceId] = Field(default_factory=list)

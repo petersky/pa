@@ -166,7 +166,9 @@ def goal_completion_findings(goal: Goal, *, now: datetime) -> list[str]:
     if audit is None:
         return ["an independently satisfied audit is required before achievement"]
     findings: list[str] = []
-    if not audit.independent or audit.auditor_principal == goal.owner_principal:
+    if not audit.independent or (
+        audit.auditor_principal == goal.owner_principal and not audit.owner_attested
+    ):
         findings.append("completion audit is not independent of the goal owner")
     if audit.verdict != CriterionVerdict.SATISFIED:
         findings.append("completion audit is not satisfied")
@@ -214,9 +216,12 @@ class GoalService:
         instance_id: str,
         *,
         clock: Callable[[], datetime] | None = None,
+        allow_owner_audit: bool = False,
     ) -> None:
         self.store = store
         self.instance_id = instance_id
+        # Single-user instances: the signed-in owner may record the completion audit.
+        self.allow_owner_audit = allow_owner_audit
         self._clock = clock or (lambda: datetime.now(UTC))
 
     @serialized_goal_mutation
@@ -477,9 +482,14 @@ class GoalService:
                 raise GoalConflict(
                     "audit principal must match the authenticated mutation actor"
                 )
-            if (
-                not change.independent
-                or context.actor_principal == goal.owner_principal
+            owner_attested = (
+                context.actor_principal == goal.owner_principal
+                and self.allow_owner_audit
+                and context.actor_principal.startswith(("user:", "role:admin"))
+            )
+            if not change.independent or (
+                context.actor_principal == goal.owner_principal
+                and not owner_attested
             ):
                 raise GoalConflict(
                     "completion audit must be independent of the goal owner"
@@ -539,6 +549,7 @@ class GoalService:
                     else None
                 ),
                 independent=True,
+                owner_attested=owner_attested,
                 verdict=verdict,
                 criterion_verdicts=change.criterion_verdicts,
                 evidence_ids=change.evidence_ids,

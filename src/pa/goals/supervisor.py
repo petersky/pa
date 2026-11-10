@@ -8,6 +8,7 @@ import logging
 import threading
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from fnmatch import fnmatchcase
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
@@ -176,6 +177,9 @@ class GoalSupervisor:
     # "strict": a verifier needs a different session, target instance, provider and
     # service principal. "single_user": a different session and service principal.
     verifier_independence = "strict"
+    # Whether the Goals page lets the signed-in owner record the completion audit
+    # (only used to word the notification that the goal is awaiting its audit).
+    owner_may_audit = False
 
     def __init__(
         self,
@@ -196,7 +200,9 @@ class GoalSupervisor:
         verifier_independence: str = "strict",
         no_progress_seconds: int = 0,
         stalled_seconds: int = 0,
+        owner_may_audit: bool = False,
     ) -> None:
+        self.owner_may_audit = owner_may_audit
         if verifier_independence not in {"strict", "single_user"}:
             raise ValueError("verifier_independence must be strict or single_user")
         self.verifier_independence = verifier_independence
@@ -390,6 +396,18 @@ class GoalSupervisor:
 
     def _needs_cycle(self, goal: Goal) -> bool:
         if any(package.dispatch_attempt is not None for package in goal.work_packages):
+            return True
+        if (
+            goal.state == GoalState.VERIFYING
+            and goal.audit is not None
+            and not goal.supervision.parked_reason
+            and (
+                goal.audit.verdict != CriterionVerdict.SATISFIED
+                or not goal_completion_findings(goal, now=self.now())
+            )
+        ):
+            # A recorded completion audit is the event that finishes (or rejects)
+            # the goal; without this a verified goal was never cycled again.
             return True
         if not self._may_act(goal):
             # Parked: a paused/blocked/waiting goal only needs a cycle to observe
@@ -983,6 +1001,27 @@ class GoalSupervisor:
                         reason,
                     ),
                 )
+            return goal.state != previous
+        if (
+            goal.state == GoalState.VERIFYING
+            and goal.audit is not None
+            and goal.audit.verdict != CriterionVerdict.SATISFIED
+        ):
+            reason = (
+                "The completion audit did not accept the evidence: "
+                f"{goal.audit.explanation}. Retry verification or take over."
+            )
+            self._park(
+                goal,
+                GoalState.BLOCKED,
+                reason,
+                notify=(
+                    StallKind.VERIFICATION_FAILED,
+                    f"goal-audit-rejected:{goal.id}:{goal.audit.id}",
+                    f"Goal audit rejected the evidence: {goal.objective[:120]}",
+                    reason,
+                ),
+            )
             return goal.state != previous
         failed = [
             item
@@ -3106,7 +3145,48 @@ class GoalSupervisor:
             )
         ):
             goal.state = GoalState.VERIFYING
+            self._outbox.append(
+                (
+                    StallKind.MANUAL_REVIEW,
+                    f"goal-verifying:{goal.id}:{goal.strategy_revision}",
+                    f"Goal ready for its completion audit: {goal.objective[:120]}",
+                    (
+                        "Every work package is verified. The goal is achieved "
+                        "once a completion audit is recorded: the verifier "
+                        "service was asked to record it"
+                        + (
+                            ", or you can record your own review on the Goals page."
+                            if self.owner_may_audit
+                            else "; enable goal_owner_may_audit to record it "
+                            "yourself on a single-user instance."
+                        )
+                    ),
+                )
+            )
+        elif (
+            previous == GoalState.VERIFYING
+            and goal.state == GoalState.VERIFYING
+            and goal.audit is not None
+            and not self._transition_prohibited(goal)
+            and not goal_completion_findings(goal, now=self.now())
+        ):
+            goal.state = GoalState.ACHIEVED
+            self._outbox.append(
+                (
+                    StallKind.OTHER,
+                    f"goal-achieved:{goal.id}",
+                    f"Goal achieved: {goal.objective[:120]}",
+                    "The independent completion audit accepted the evidence.",
+                )
+            )
         return previous != goal.state
+
+    @staticmethod
+    def _transition_prohibited(goal: Goal) -> bool:
+        return any(
+            fnmatchcase("transition_goal", pattern)
+            for pattern in goal.policy.prohibited_actions
+        )
 
     @staticmethod
     def _dispatch_fingerprint(record) -> str:
@@ -3160,7 +3240,13 @@ class GoalSupervisor:
         role_instruction = {
             GoalActorRole.EXECUTOR: "Implement the bounded work and report evidence.",
             GoalActorRole.VERIFIER: (
-                "Independently verify; run concrete checks and do not trust executor claims."
+                "Independently verify; run concrete checks and do not trust executor "
+                "claims. When the checks pass, record one piece of evidence per "
+                "criterion with record_assigned_goal_evidence, then call "
+                "get_assigned_goal for the current version and policy revision and "
+                "finish by calling audit_assigned_goal with a verdict for every "
+                "criterion listed under Criteria, the evidence ids you recorded and a "
+                "short explanation. The goal can only be marked achieved by that audit."
             ),
             GoalActorRole.CRITIC: (
                 "Critique the strategy and submit a typed revision proposal."
