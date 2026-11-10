@@ -237,6 +237,8 @@ class Settings(BaseSettings):
 
     blocking_slow_call_seconds: float = Field(default=0.5, gt=0, le=60)
     event_loop_probe_interval: float = Field(default=0.1, gt=0, le=10)
+    # How long the shared Workshop snapshot is reused across live subscribers.
+    workshop_snapshot_ttl_seconds: float = Field(default=1.5, ge=0, le=30)
 
     # Resource telemetry. Samples are deliberately isolated from pa.db and realm
     # sync; an empty database path resolves to <data_dir>/telemetry.db.

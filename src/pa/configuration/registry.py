@@ -1519,6 +1519,17 @@ _DEFINITIONS = (
         validator="range_exclusive_min:0:10",
     ),
     _s(
+        "workshop_snapshot_ttl_seconds",
+        "float",
+        1.5,
+        "Shared Workshop live-snapshot reuse window.",
+        "Fleet",
+        90,
+        "Connected Workshop clients share one fleet snapshot build per window; 0 rebuilds for every client tick.",
+        apply="live",
+        validator="range:0:30",
+    ),
+    _s(
         "telemetry_enabled",
         "bool",
         True,

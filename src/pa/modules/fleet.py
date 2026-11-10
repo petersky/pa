@@ -209,7 +209,18 @@ from pa.fleet.update import (
     prepare_update_job_recovery,
     start_update_job,
 )
-from pa.fleet.workshop import build_workshop_snapshot, workshop_semantic_snapshot
+from pa.fleet.workshop import (
+    WORKSHOP_VIEWS,
+    build_workshop_snapshot,
+    workshop_floor_view,
+    workshop_view,
+)
+from pa.fleet.workshop_feed import (
+    WorkshopFeed,
+    make_snapshot_event,
+    semantic_digest,
+    snapshot_payload,
+)
 from pa.goals.advanced_models import (
     GoalActionDisposition,
     GoalActionRequest,
@@ -3567,7 +3578,8 @@ def _workshop_context(request: Request) -> dict:
     instances = list(fleet.list_instances())
     overview = build_overview(ctx, instances, list(peer_table.all_routes()))
     return {
-        "workshop": build_workshop_snapshot(ctx, overview),
+        # The page embeds the same slim projection the live client consumes.
+        "workshop": workshop_floor_view(build_workshop_snapshot(ctx, overview)),
         "primary_realm": ctx.settings.primary_realm,
     }
 
@@ -3644,22 +3656,66 @@ def _build_workshop(
 
 
 def _workshop_stream_iteration(
-    snapshot: dict[str, Any], last_digest: str, sequence: int
+    snapshot: dict[str, Any], last_digest: str, sequence: int, view: str = "full"
 ) -> tuple[str, str, int]:
-    digest = hashlib.sha256(
-        json.dumps(
-            workshop_semantic_snapshot(snapshot), sort_keys=True, default=str
-        ).encode()
-    ).hexdigest()
+    """Format one standalone stream step for ``view`` (heartbeat if nothing changed).
+
+    The live endpoint shares one derived frame per snapshot through
+    ``WorkshopFeed`` instead; this is the equivalent for a single caller.
+    """
+    projected = workshop_view(snapshot, view)
+    digest = semantic_digest(projected)
     if digest == last_digest:
         return ": workshop heartbeat\n\n", last_digest, sequence
     sequence += 1
     return (
-        f"id: {sequence}\nevent: snapshot\ndata: "
-        + json.dumps(snapshot, default=str)
-        + "\n\n",
+        make_snapshot_event(sequence, snapshot_payload(projected)),
         digest,
         sequence,
+    )
+
+
+_workshop_feeds: dict[str, WorkshopFeed] = {}
+
+
+def _workshop_feed(ctx: Any) -> WorkshopFeed:
+    key = str(ctx.settings.data_dir)
+    feed = _workshop_feeds.get(key)
+    if feed is None:
+        feed = _workshop_feeds[key] = WorkshopFeed()
+    return feed
+
+
+def _workshop_snapshot_ttl(ctx: Any) -> float:
+    try:
+        return max(0.0, float(ctx.settings.workshop_snapshot_ttl_seconds))
+    except (AttributeError, TypeError, ValueError):
+        return 1.5
+
+
+def _workshop_view_name(view: str) -> str:
+    if view not in WORKSHOP_VIEWS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown Workshop view; expected one of {', '.join(WORKSHOP_VIEWS)}",
+        )
+    return view
+
+
+async def _produce_workshop_snapshot(
+    ctx: Any, fleet: FleetRegistry, peer_table: PeerTable, *, force: bool
+) -> dict:
+    """Probe the fleet, then rebuild the snapshot off the event loop."""
+    instances = list(fleet.list_instances())
+    observations = await _refresh_workshop_dimensions(ctx, instances, force=force)
+    return await _offload_ctx(
+        ctx,
+        "fleet.workshop_snapshot",
+        _build_workshop,
+        ctx,
+        instances,
+        list(peer_table.all_routes()),
+        observations,
     )
 
 
@@ -4032,20 +4088,40 @@ def fleet_overview(request: Request) -> dict:
 
 
 @router.get("/fleet/workshop")
-async def fleet_workshop(request: Request, refresh: bool = False) -> dict:
-    """Return one canonical, presentation-ready Workshop snapshot."""
+async def fleet_workshop(
+    request: Request, refresh: bool = False, view: str = "full"
+) -> Response:
+    """Return one canonical, presentation-ready Workshop snapshot.
+
+    ``view=floor`` returns the slim projection the Workshop page renders.
+    """
     require_user(request)
+    view = _workshop_view_name(view)
     ctx = request.app.state.ctx
     fleet: FleetRegistry = ctx.require_service("fleet_registry")
     peer_table: PeerTable = ctx.require_service("peer_table")
-    instances = list(fleet.list_instances())
-    observations = await _refresh_workshop_dimensions(ctx, instances, force=refresh)
-    return _build_workshop(ctx, instances, list(peer_table.all_routes()), observations)
+    frame = await _workshop_feed(ctx).frame(
+        view,
+        lambda: _produce_workshop_snapshot(ctx, fleet, peer_table, force=refresh),
+        lambda operation, call, *args: _offload_ctx(ctx, operation, call, *args),
+        # An explicit read always joins or starts a build; only the push stream
+        # may reuse a snapshot built a moment ago.
+        max_age=0.0,
+    )
+    body = await _offload_ctx(
+        ctx, "fleet.workshop_json", snapshot_payload, frame.snapshot
+    )
+    return Response(content=body, media_type="application/json")
 
 
 @router.get("/fleet/workshop/events")
-async def fleet_workshop_events(request: Request) -> StreamingResponse:
-    """Stream one fleet-wide Workshop projection with bounded probe fallback."""
+async def fleet_workshop_events(
+    request: Request, view: str = "full"
+) -> StreamingResponse:
+    """Stream one fleet-wide Workshop projection with bounded probe fallback.
+
+    All subscribers share one snapshot build per ``workshop_snapshot_ttl_seconds``.
+    """
     from pa.server.shutdown import (
         is_shutting_down,
         wait_for_shutdown,
@@ -4053,27 +4129,34 @@ async def fleet_workshop_events(request: Request) -> StreamingResponse:
     )
 
     require_user(request)
+    view = _workshop_view_name(view)
     ctx = request.app.state.ctx
     fleet: FleetRegistry = ctx.require_service("fleet_registry")
     peer_table: PeerTable = ctx.require_service("peer_table")
+    feed = _workshop_feed(ctx)
 
     async def stream() -> AsyncIterator[str]:
-        last_digest = ""
-        sequence = 0
+        last_sequence = 0
         while not is_shutting_down() and not await request.is_disconnected():
-            instances = list(fleet.list_instances())
-            stopping, observations = await wait_for_shutdown_or(
-                _refresh_workshop_dimensions(ctx, instances, force=False)
+            stopping, frame = await wait_for_shutdown_or(
+                feed.frame(
+                    view,
+                    lambda: _produce_workshop_snapshot(
+                        ctx, fleet, peer_table, force=False
+                    ),
+                    lambda operation, call, *args: _offload_ctx(
+                        ctx, operation, call, *args
+                    ),
+                    max_age=_workshop_snapshot_ttl(ctx),
+                )
             )
-            if stopping or observations is None:
+            if stopping or frame is None:
                 return
-            snapshot = _build_workshop(
-                ctx, instances, list(peer_table.all_routes()), observations
-            )
-            event, last_digest, sequence = _workshop_stream_iteration(
-                snapshot, last_digest, sequence
-            )
-            yield event
+            if frame.sequence != last_sequence:
+                last_sequence = frame.sequence
+                yield frame.event
+            else:
+                yield ": workshop heartbeat\n\n"
             if await wait_for_shutdown(2.0):
                 return
 

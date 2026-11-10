@@ -165,6 +165,7 @@ class InstanceConfig(BaseModel):
 
     blocking_slow_call_seconds: float = Field(default=0.5, gt=0, le=60)
     event_loop_probe_interval: float = Field(default=0.1, gt=0, le=10)
+    workshop_snapshot_ttl_seconds: float = Field(default=1.5, ge=0, le=30)
     telemetry_enabled: bool = True
     telemetry_live_interval_seconds: float = Field(default=5.0, ge=1.0, le=300)
     telemetry_persistence_interval_seconds: float = Field(default=30.0, ge=5.0, le=3600)
