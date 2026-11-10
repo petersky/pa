@@ -5426,6 +5426,50 @@ class CardProjection:
                     result[row["session_id"]].append({key: row[key] for key in ("id", "title", "project_id")})
         return result
 
+    def list_history_card_summaries(self, session_ids: list[str]) -> dict[str, list[dict]]:
+        """Display-only history links, fully validating each distinct Card.
+
+        Keep the first encounter's decoder/error order and one read snapshot.
+        Only detached scalar summaries are shared within this invocation; no
+        authorization decisions or complete Card models are cached.
+        """
+        def summary(card):
+            return {"id": card.id, "title": card.title,
+                    "project_id": card.project_id, "lane": card.lane.value}
+
+        if getattr(self.list_cards_for_session, "__func__", None) is not CardProjection.list_cards_for_session:
+            return {key: [summary(card) for card in self.list_cards_for_session(key)]
+                    for key in session_ids}
+        session_ids = list(dict.fromkeys(session_ids))
+        result = {key: [] for key in session_ids}
+        if not session_ids:
+            return result
+        with self._conn() as conn:
+            conn.execute("SAVEPOINT pa_history_card_read")
+            try:
+                links = {key: [] for key in session_ids}
+                for offset in range(0, len(session_ids), 500):
+                    batch = session_ids[offset:offset + 500]
+                    rows = conn.execute(
+                        "SELECT session_id, card_id FROM agent_session_cards "
+                        "WHERE retired_at IS NULL AND session_id IN ("
+                        + ",".join("?" for _ in batch) + ") ORDER BY linked_at, card_id",
+                        batch,
+                    ).fetchall()
+                    for row in rows:
+                        links[row["session_id"]].append(row["card_id"])
+                cards: dict[str, dict | None] = {}
+                for key in session_ids:
+                    for card_id in links[key]:
+                        if card_id not in cards:
+                            row = conn.execute("SELECT * FROM cards WHERE id=?", (card_id,)).fetchone()
+                            cards[card_id] = summary(self._row_to_card(row)) if row else None
+                        if cards[card_id] is not None:
+                            result[key].append(dict(cards[card_id]))
+                return result
+            finally:
+                conn.execute("RELEASE pa_history_card_read")
+
     def list_session_card_history(self, session_id: str) -> list[dict]:
         """Return active and retired card links with their full provenance."""
         with self._conn() as conn:
