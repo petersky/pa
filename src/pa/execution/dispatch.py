@@ -4499,6 +4499,23 @@ class DispatchStore:
         *,
         detail: dict[str, Any] | None = None,
     ) -> DispatchRecord:
+        self.apply_transition(record, state, message, detail=detail)
+        return self.put(record)
+
+    @staticmethod
+    def apply_transition(
+        record: DispatchRecord,
+        state: str,
+        message: str,
+        *,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        """Apply a lifecycle transition to ``record`` in memory (no persistence).
+
+        ``transition`` persists this with a whole-record ``put``; callers that
+        hold a fresh record inside ``mutate_current`` use it directly so the
+        state change is committed atomically with their other field edits.
+        """
         if state not in DISPATCH_STAGES:
             raise ValueError(f"unknown dispatch state: {state}")
         previous_state = record.state
@@ -4542,7 +4559,6 @@ class DispatchStore:
                 detail=detail or {},
             )
         )
-        return self.put(record)
 
     def record_followup_started(
         self,
