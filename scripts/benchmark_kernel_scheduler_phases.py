@@ -382,7 +382,7 @@ def write_report_stage(path, section, result, *, limit=128*1024):
     output = encoded()
     if len(output.encode()) > limit:
         previous = document.get("scheduler_source_reader_comparison", {})
-        if "group_poll_counters" in previous:
+        if not previous.get("failed") and "group_poll_counters" in previous:
             previous.pop("group_poll_counters")
             previous.pop("group_poll_counter_keys", None)
             previous["older_positive_group_counters"] = "ref:pr722_report#scheduler_source_reader_comparison.group_poll_counters"
@@ -399,5 +399,8 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(); parser.add_argument("--factory-overhead", action="store_true")
     parser.add_argument("--reader-kernel", action="store_true")
+    parser.add_argument("--oracle-cpu", action="store_true")
     args = parser.parse_args()
-    print(json.dumps(compact_runs(factory_overhead() if args.factory_overhead else reader_kernel_comparison() if args.reader_kernel else benchmark()), separators=(",", ":")))
+    print(json.dumps(compact_runs(factory_overhead() if args.factory_overhead else
+        reader_kernel_comparison() if args.reader_kernel else oracle_comparison() if args.oracle_cpu else
+        benchmark()), separators=(",", ":")))

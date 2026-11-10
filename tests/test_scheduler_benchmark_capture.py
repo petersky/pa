@@ -56,3 +56,9 @@ def test_report_capacity_fallback_preserves_stage_and_all_old_failures(tmp_path)
         module.write_report_stage(report, "new", oversized, limit=800)
     assert error.value.stage == oversized
     assert report.read_bytes() == before
+    original["scheduler_source_reader_comparison"]["failed"] = True
+    report.write_text(json.dumps(original))
+    before = report.read_bytes()
+    with pytest.raises(ValueError):
+        module.write_report_stage(report, "new", stage, limit=800)
+    assert report.read_bytes() == before
