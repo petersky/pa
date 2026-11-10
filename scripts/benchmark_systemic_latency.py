@@ -28,7 +28,7 @@ from contextlib import contextmanager, redirect_stderr
 from collections import Counter, defaultdict, deque
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from threading import Lock
+from threading import Lock, local
 from unittest.mock import patch
 
 import httpx
@@ -214,6 +214,113 @@ def benchmark(**options):
     if len(encoded.encode()) > 128 * 1024:
         raise RuntimeError("Aggregate report exceeds128KiB; reduce structural duplication, never drop findings")
     return result
+
+
+class MaintenanceAttempts:
+    """Fixture-owner aggregates retain retries that last_result replaces."""
+    def __init__(self, service):
+        self.service = service
+        self.original = service._execute
+        self.stage = "steady"
+        self.calls = Counter()
+        self.databases = {}
+
+    async def execute(self, **kwargs):
+        stage = self.stage
+        only = kwargs.get("database_only", False)
+        keys = tuple(self.service._pending_compactions) if only else ("sqlite", "transcript_sqlite")
+        self.calls[stage + (":database_only" if only else ":full")] += 1
+        try:
+            result = await self.original(**kwargs)
+        except BaseException as exc:
+            self.calls[stage + ":error:" + type(exc).__name__] += 1
+            raise
+        for key in keys:
+            if key not in result:
+                continue
+            report = result[key]
+            value = self.databases.setdefault(key, {"attempts": 0, "outcomes": {}, "phases": {}})
+            value["attempts"] += 1
+            outcome = ":".join((stage, self.stage, report.get("status", "unknown"), report.get("reason", "none")))
+            value["outcomes"][outcome] = value["outcomes"].get(outcome, 0) + 1
+            for name, phase in report.get("phases", {}).items():
+                total = value["phases"].setdefault(name, {"calls":0,"errors":0,"wall_ms":0,"thread_cpu_ms":0,"max_wall_ms":0})
+                for field in ("calls", "errors", "wall_ms", "thread_cpu_ms"):
+                    total[field] += phase.get(field, 0)
+                if phase.get("wall_ms", 0) >= total["max_wall_ms"]:
+                    total.update(max_wall_ms=phase["wall_ms"],
+                                 max_call_thread_cpu_ms=phase.get("thread_cpu_ms"),
+                                 max_call_start=phase.get("started_at_monotonic"),
+                                 max_call_finish=phase.get("finished_at_monotonic"))
+        return result
+
+    def snapshot(self):
+        return {"calls":dict(self.calls), "databases":self.databases,
+                "scope":"Every owned execute entered after the measured-window boundary, including database-only retries through the quiet barrier. Start/end stages are explicit. Only requested databases counted, never carried-forward stale reports. Inclusive phases overlap; logical totals are not physical I/O."}
+
+
+class CommitProbe:
+    """Private native commit intervals; fixed owner WAL metadata, no SQL probes."""
+    def __init__(self, paths):
+        self.paths = paths
+        self.local = local()
+        self.lock = Lock()
+        self.operations = {}
+        from pa.core.sqlite_metrics import ObservedConnection
+        self.original = ObservedConnection.commit
+
+    def wal_sizes(self):
+        values = {}
+        for key, path in self.paths.items():
+            try:
+                values[key] = Path(str(path) + "-wal").stat().st_size
+            except FileNotFoundError:
+                values[key] = 0
+        return values
+
+    def commit(self, connection):
+        if not connection.in_transaction:
+            return self.original(connection)
+        name = getattr(self.local, "operation", "other_private_work")
+        metadata_started = time.perf_counter()
+        before = self.wal_sizes()
+        started, cpu = time.perf_counter(), time.thread_time()
+        error = False
+        try:
+            return self.original(connection)
+        except BaseException:
+            error = True
+            raise
+        finally:
+            finished = time.perf_counter()
+            elapsed, cpu_ms = (finished-started)*1000, (time.thread_time()-cpu)*1000
+            after = self.wal_sizes()
+            overhead = (time.perf_counter()-metadata_started)*1000-elapsed
+            with self.lock:
+                value = self.operations.setdefault(name, {"calls":0,"errors":0,"wall_ms":0,"thread_cpu_ms":0,"metadata_overhead_ms":0,"ge500ms":0,"max_wall_ms":0})
+                value["calls"] += 1
+                value["errors"] += int(error)
+                value["wall_ms"] += elapsed
+                value["thread_cpu_ms"] += cpu_ms
+                value["metadata_overhead_ms"] += overhead
+                value["ge500ms"] += int(elapsed>=500)
+                if elapsed >= value["max_wall_ms"]:
+                    value.update(max_wall_ms=elapsed, max_call_thread_cpu_ms=cpu_ms,
+                                 max_call_start=started,max_call_finish=finished,
+                                 max_call_wal_bytes_before=before,max_call_wal_bytes_after=after)
+
+    def call(self, name, function, *args, **kwargs):
+        previous = getattr(self.local, "operation", "other_private_work")
+        self.local.operation = name
+        try:
+            return function(*args, **kwargs)
+        finally:
+            self.local.operation = previous
+
+    def snapshot(self):
+        with self.lock:
+            return {"operations":dict(self.operations),
+                    "scope":"Actual private ObservedConnection.commit calls with active transactions. Helper operation labels propagate on the owning thread; other work stays explicit. Max-call intervals/WAL stat sizes only; allocated WAL length is not committed frames, checkpoint progress or physical bytes. Metadata overhead is outside native interval. Default checkpoint/synchronous policies unchanged."}
 
 
 class Counts:
@@ -463,7 +570,7 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False, rete
         if inspect.isawaitable(pending):
             await pending
     async def offload(name, call, *args, **kwargs):
-        return await measure(name, runtime.run_blocking(name, call, *args, **kwargs))
+        return await measure(name, runtime.run_blocking(name, commits.call, name, call, *args, **kwargs))
     async def sync_work():
         for i in range(iterations):
             # Imported objects are canonical and validated by the normal sync
@@ -639,6 +746,13 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False, rete
     diagnostics_before = diagnostics.snapshot() if diagnostics else {}
     before_io = resource.getrusage(resource.RUSAGE_SELF)
     started = time.perf_counter()
+    attempts = MaintenanceAttempts(maintenance)
+    commits = CommitProbe({"sqlite":store.db_path,"transcript_sqlite":store.transcripts.db_path})
+    execute_patch = patch.object(maintenance, "_execute", attempts.execute)
+    from pa.core.sqlite_metrics import ObservedConnection
+    commit_patch = patch.object(ObservedConnection, "commit", lambda connection: commits.commit(connection))
+    execute_patch.start()
+    commit_patch.start()
     if retention_events:
         maintenance.start()
     workload_outcomes = {}
@@ -650,6 +764,7 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False, rete
                                  *(transcript_work(worker) for worker in transcript_runtimes),
                                  outcomes=workload_outcomes)
         finished = time.perf_counter()
+        attempts.stage = "postmeasurement"
         elapsed = finished - started
         after_io = resource.getrusage(resource.RUSAGE_SELF)
         snapshot = runtime.snapshot()
@@ -816,6 +931,8 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False, rete
                           "long_pause_window": "last_64_collections_at_least_10ms_during_measurement",
                           "long_observations": list(long_gc_pauses)},
             "template_artifact": template_artifact,
+            "maintenance_attempts": attempts.snapshot(),
+            "commit_probe": commits.snapshot(),
             "quiet_completion": quiet,
             "transcript_input_rows": expected, "transcript_retained_rows": actual,
             "runtime": snapshot, "runtime_window_note": "Counters/windows include boot and fixture seeding; counter deltas and explicit latency samples cover only the declared measurement scenario.",
@@ -838,6 +955,8 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False, rete
                 await pending
         raise
     finally:
+        execute_patch.stop()
+        commit_patch.stop()
         if observe_gc in gc.callbacks:
             gc.callbacks.remove(observe_gc)
         logging.getLogger().removeHandler(handler)
