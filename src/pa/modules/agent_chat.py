@@ -2755,11 +2755,17 @@ def list_agent_session_history(
     settings = request.app.state.ctx.settings
     sessions = mgr.store.list_sessions()
     if card_id:
+        lookup = getattr(type(mgr.store), "session_ids_linked_to_card", None)
+        linked_ids = (
+            lookup(mgr.store, card_id, [session.id for session in sessions if session.card_id != card_id])
+            if callable(lookup) else None
+        )
         sessions = [
             session
             for session in sessions
             if session.card_id == card_id
-            or card_id in mgr.store.list_card_ids_for_session(session.id)
+            or (session.id in linked_ids if linked_ids is not None
+                else card_id in mgr.store.list_card_ids_for_session(session.id))
         ]
     if project_id:
         sessions = [session for session in sessions if session.project_id == project_id]

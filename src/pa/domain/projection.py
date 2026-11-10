@@ -5371,6 +5371,30 @@ class CardProjection:
             ).fetchall()
         return [str(row["card_id"]) for row in rows]
 
+    def session_ids_linked_to_card(self, card_id: str, session_ids: list[str]) -> set[str]:
+        """Read active membership for an already-decoded history inventory.
+
+        Keep extension implementations of the per-session lookup authoritative.
+        Native reads bind at most 500 session IDs per query and never hydrate or
+        join cards: a missing card does not erase its still-active association.
+        """
+        if not session_ids:
+            return set()
+        if getattr(self.list_card_ids_for_session, "__func__", None) is not CardProjection.list_card_ids_for_session:
+            return {key for key in session_ids if card_id in self.list_card_ids_for_session(key)}
+        result: set[str] = set()
+        with self._conn() as conn:
+            for offset in range(0, len(session_ids), 500):
+                batch = session_ids[offset:offset + 500]
+                rows = conn.execute(
+                    "SELECT session_id FROM agent_session_cards WHERE card_id=? "
+                    "AND retired_at IS NULL AND session_id IN ("
+                    + ",".join("?" for _ in batch) + ")",
+                    (card_id, *batch),
+                ).fetchall()
+                result.update(str(row["session_id"]) for row in rows)
+        return result
+
     def list_cards_for_session(self, session_id: str) -> list[Card]:
         with self._conn() as conn:
             rows = conn.execute(
