@@ -1,0 +1,358 @@
+"""Regression tests for the ways a durable goal's supervisor could wedge.
+
+Each test drives the real GoalService/GoalSupervisor/GoalGovernanceService on a
+throwaway projection; nothing here boots PA.
+"""
+
+from __future__ import annotations
+
+import tempfile
+import unittest
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
+
+from pa.domain.notifications import (
+    InteractionState,
+    Notification,
+    NotificationPriority,
+)
+from pa.domain.projection import CardProjection
+from pa.execution.progress import CompletionReportV1, ProgressValidationV1
+from pa.goals.advanced_models import (
+    GoalActionDisposition,
+    GoalActionRequest,
+    GovernanceMutationContext,
+)
+from pa.goals.governance import GoalGovernanceService
+from pa.goals.models import (
+    CreateWorkPackageAction,
+    DispatchWorkPackageAction,
+    Goal,
+    GoalActorRole,
+    GoalCreate,
+    GoalCriterion,
+    GoalInteractionState,
+    GoalMutationContext,
+    GoalPolicy,
+    GoalProposalCreate,
+    GoalState,
+    GoalTransition,
+    ProposalStatus,
+    WorkPackageState,
+)
+from pa.goals.service import GoalService
+from pa.goals.supervisor import GoalSupervisor
+from pa.sync.event_log import EventLog
+from pa.sync.object_store import ObjectStore
+
+OPERATOR = "user:operator"
+INSTANCE = "instance-a"
+FULL_ACTIONS = [
+    "request_operator",
+    "record_evidence",
+    "revise_strategy",
+    "create_work_package",
+    "dispatch_work_package",
+    "transition_goal",
+    "audit_goal",
+]
+
+
+class FakeDispatchStore:
+    def __init__(self) -> None:
+        self.records: dict[str, SimpleNamespace] = {}
+
+    def get(self, dispatch_id: str):
+        return self.records.get(dispatch_id)
+
+    def by_authority_idempotency(self, authority_instance_id, idempotency_key):
+        return next(
+            (
+                record
+                for record in self.records.values()
+                if getattr(record, "authority_instance_id", None)
+                == authority_instance_id
+                and getattr(record, "idempotency_key", None) == idempotency_key
+            ),
+            None,
+        )
+
+
+def dispatch_record(
+    dispatch_id: str,
+    state: str,
+    *,
+    session_id: str | None = None,
+    final_report: CompletionReportV1 | None = None,
+    last_error: str | None = None,
+    progress_heartbeat=None,
+):
+    return SimpleNamespace(
+        dispatch_id=dispatch_id,
+        state=state,
+        session_id=session_id,
+        final_report=final_report,
+        last_error=last_error,
+        latest_progress=None,
+        progress_heartbeat=progress_heartbeat,
+    )
+
+
+class RecordingNotifications:
+    """NotificationService stand-in over a real projection; records every create."""
+
+    def __init__(self, projection: CardProjection) -> None:
+        self.store = projection
+        self.created: list = []
+
+    def create(self, data, *, principal_id: str, instance_id: str | None = None):
+        self.created.append(data)
+        existing = (
+            self.store.find_notification_by_dedup(
+                data.realm_id, data.deduplication_key
+            )
+            if data.deduplication_key
+            else None
+        )
+        if existing is not None:
+            return existing
+        values = data.model_dump(exclude={"id"}, mode="python")
+        notification = Notification(id=data.id or str(uuid4()), **values)
+        return self.store.save_notification(
+            notification,
+            principal_id=principal_id,
+            instance_id=instance_id or INSTANCE,
+        )
+
+    def stalls(self, kind: str | None = None):
+        return [
+            item
+            for item in self.created
+            if (item.capability or "").startswith("stall:")
+            and (kind is None or item.capability == f"stall:{kind}")
+        ]
+
+
+class Harness:
+    def __init__(self, tmp: str, *, start: datetime | None = None, **kwargs) -> None:
+        root = Path(tmp)
+        objects = ObjectStore(root / "objects")
+        log = EventLog(objects, root, INSTANCE)
+        self.projection = CardProjection(root / "projection.db", log)
+        self.clock = [start or datetime(2026, 11, 1, 12, tzinfo=UTC)]
+        self.service = GoalService(
+            self.projection, INSTANCE, clock=lambda: self.clock[0]
+        )
+        self.governance = GoalGovernanceService(
+            self.projection, INSTANCE, self.service, clock=lambda: self.clock[0]
+        )
+        self.notifications = RecordingNotifications(self.projection)
+        self.records = FakeDispatchStore()
+        self.dispatched: list[dict] = []
+        self.supervisor = GoalSupervisor(
+            self.service,
+            self.projection,
+            INSTANCE,
+            notification_service=self.notifications,
+            dispatch_store=self.records,
+            dispatch=self._dispatch,
+            governance=self.governance,
+            default_provider="codex",
+            now=lambda: self.clock[0],
+            **kwargs,
+        )
+
+    def _dispatch(self, payload: dict) -> dict:
+        self.dispatched.append(payload)
+        return {"dispatch_id": f"dispatch-{len(self.dispatched)}"}
+
+    def advance(self, seconds: float) -> None:
+        self.clock[0] = self.clock[0] + timedelta(seconds=seconds)
+
+    def ctx(self, goal: Goal | int, key: str, *, actor: str = OPERATOR):
+        version = goal if isinstance(goal, int) else goal.version
+        return GoalMutationContext(
+            actor_principal=actor,
+            authority_instance_id=INSTANCE,
+            idempotency_key=key,
+            expected_version=version,
+            policy_revision=1 if isinstance(goal, int) else goal.policy.revision,
+        )
+
+    def create_goal(
+        self,
+        policy: GoalPolicy | None = None,
+        *,
+        state: GoalState = GoalState.ACTIVE,
+        criteria: int = 1,
+        key: str = "goal",
+    ) -> Goal:
+        goal = self.service.create(
+            GoalCreate(
+                objective="Ship supervised orchestration",
+                criteria=[
+                    GoalCriterion(
+                        description=f"criterion {index}",
+                        verification_method="independent tests",
+                        evidence_requirement="passing checks",
+                    )
+                    for index in range(criteria)
+                ],
+                policy=policy or GoalPolicy(),
+            ),
+            self.ctx(0, key),
+        )
+        for target in (GoalState.READY, GoalState.ACTIVE):
+            goal = self.service.transition(
+                goal.id,
+                GoalTransition(state=target, reason="activate"),
+                self.ctx(goal, f"{key}-{target.value}"),
+            )
+            if target == state:
+                break
+        return goal
+
+    def operator_transition(self, goal: Goal, state: GoalState, key: str) -> Goal:
+        return self.service.transition(
+            goal.id,
+            GoalTransition(state=state, reason=f"operator {state.value}"),
+            self.ctx(goal, key),
+        )
+
+    def run(self, goal_id: str) -> Goal:
+        result = self.supervisor.run_once(goal_id)
+        assert result, "supervisor cycle did not complete"
+        return result[0]
+
+    def get(self, goal_id: str) -> Goal:
+        goal = self.service.get(goal_id)
+        assert goal is not None
+        return goal
+
+    def answer(self, goal: Goal, index: int = -1, *, approve: bool = True) -> None:
+        link = goal.operator_interactions[index]
+        notification = self.projection.get_notification(
+            link.notification_id, realm_id="default"
+        )
+        assert notification is not None and notification.interaction is not None
+        notification.interaction.state = InteractionState.ANSWERED
+        notification.interaction.response = {
+            "choice_id": "approve" if approve else "reject",
+            "value": approve,
+        }
+        notification.interaction.response_summary = (
+            "Approved" if approve else "Rejected"
+        )
+        notification.interaction.response_principal = OPERATOR
+        notification.version += 1
+        self.projection.save_notification(
+            notification, principal_id=OPERATOR, instance_id=INSTANCE
+        )
+
+
+class DefaultPolicyAdvancesTests(unittest.TestCase):
+    """A1: a goal with the model-default policy must be able to ask for approval."""
+
+    def test_default_policy_goal_asks_for_approval_instead_of_wedging(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(tmp)
+            goal = h.create_goal(GoalPolicy())  # autonomy 1, no permitted actions
+            self.assertEqual(goal.policy.autonomy_level, 1)
+            self.assertEqual(goal.policy.permitted_actions, [])
+
+            after = h.run(goal.id)
+
+            plan = after.proposals[0]
+            self.assertEqual(plan.status, ProposalStatus.OPERATOR_REQUIRED)
+            self.assertEqual(len(after.operator_interactions), 1)
+            self.assertEqual(after.state, GoalState.WAITING_OPERATOR)
+            notification = h.projection.get_notification(
+                after.operator_interactions[0].notification_id, realm_id="default"
+            )
+            assert notification is not None
+            self.assertEqual(notification.priority, NotificationPriority.HIGH)
+
+    def test_default_policy_goal_advances_to_dispatch_once_operator_approves(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(tmp)
+            goal = h.create_goal(GoalPolicy())
+            goal = h.run(goal.id)
+            h.answer(goal)
+            goal = h.run(goal.id)
+            self.assertEqual(len(goal.work_packages), 1)
+            # Dispatch is its own approval gate at autonomy 1.
+            goal = h.run(goal.id)
+            self.assertEqual(len(goal.operator_interactions), 2)
+            self.assertEqual(h.dispatched, [])
+            h.answer(goal)
+            for _ in range(3):
+                goal = h.run(goal.id)
+            self.assertEqual(len(h.dispatched), 1)
+
+    def test_governance_never_denies_asking_or_pausing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(tmp)
+            policies = {
+                "no permitted actions": GoalPolicy(),
+                "propose autonomy": GoalPolicy(autonomy_level=2),
+                "permitted list without the ask": GoalPolicy(
+                    autonomy_level=4, permitted_actions=["code.edit"]
+                ),
+                "operator required for everything": GoalPolicy(
+                    autonomy_level=4,
+                    permitted_actions=["code.edit"],
+                    require_operator_for=["*"],
+                ),
+                "everything prohibited": GoalPolicy(
+                    autonomy_level=4,
+                    permitted_actions=["code.edit"],
+                    prohibited_actions=["*"],
+                ),
+            }
+            for label, policy in policies.items():
+                with self.subTest(policy=label):
+                    for action_class in ("request_operator", "pause_goal"):
+                        goal = h.create_goal(policy, key=f"gov-{label}-{action_class}")
+                        version = h.governance.get_state(goal.id).version
+                        state, decision = h.governance.authorize_action(
+                            goal.id,
+                            GoalActionRequest(action_class=action_class),
+                            GovernanceMutationContext(
+                                actor_principal=OPERATOR,
+                                authority_instance_id=INSTANCE,
+                                idempotency_key=f"{label}-{action_class}",
+                                expected_version=version,
+                                policy_revision=goal.policy.revision,
+                                goal_version=goal.version,
+                                fencing_token=None,
+                            ),
+                        )
+                        version = state.version
+                        self.assertEqual(
+                            decision.disposition,
+                            GoalActionDisposition.AUTHORIZED,
+                            decision.reasons,
+                        )
+            # Executing actions stay gated: the exemption is only for asking/stopping.
+            goal = h.create_goal(GoalPolicy(), key="still-gated")
+            _state, decision = h.governance.authorize_action(
+                goal.id,
+                GoalActionRequest(action_class="dispatch_work_package"),
+                GovernanceMutationContext(
+                    actor_principal=OPERATOR,
+                    authority_instance_id=INSTANCE,
+                    idempotency_key="still-gated-dispatch",
+                    expected_version=h.governance.get_state(goal.id).version,
+                    policy_revision=goal.policy.revision,
+                    goal_version=goal.version,
+                ),
+            )
+            self.assertEqual(decision.disposition, GoalActionDisposition.DENIED)
+
+
+if __name__ == "__main__":
+    unittest.main()

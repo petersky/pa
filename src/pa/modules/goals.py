@@ -1169,7 +1169,11 @@ def transition_goal(
         lambda: _governed_goal_mutation(
             request,
             goal_id,
-            "transition_goal",
+            # Deliberate stop controls are safety controls: governance never lets a
+            # goal's own permitted/prohibited action lists block them.
+            "pause_goal"
+            if body.state in {GoalState.PAUSED, GoalState.ABANDONED}
+            else "transition_goal",
             ctx,
             lambda: _service(request).transition(goal_id, body, ctx),
             operation_payload=body,

@@ -83,6 +83,12 @@ _RISK_RANK = {
     GoalActionRisk.CRITICAL: 4,
 }
 _TERMINAL_STATES = {GoalState.ACHIEVED, GoalState.ABANDONED}
+# Actions that are how the supervisor asks a human, or how a human stops a goal.
+# They can never be denied or gated by the goal's own permitted/autonomy policy:
+# a goal that cannot ask for approval can never advance, and a deliberate stop
+# control must work whatever the policy says.
+_ASK_ACTIONS = frozenset({"request_operator"})
+_STOP_ACTIONS = frozenset({"pause_goal"})
 _TERMINAL_PROVIDER_STATES = {
     ProviderRunState.COMPLETED,
     ProviderRunState.FAILED,
@@ -3047,12 +3053,20 @@ class GoalGovernanceService:
                 or self._has_correlated_operator_approval(goal, request)
             )
         )
-        if _matches(request.action_class, policy.prohibited_actions):
+        always_allowed = (
+            request.action_class in _ASK_ACTIONS
+            or request.action_class in _STOP_ACTIONS
+        )
+        if not always_allowed and _matches(
+            request.action_class, policy.prohibited_actions
+        ):
             hard_denial = True
             reasons.append("the action is prohibited by the goal policy")
-        safe_read = request.action_class.startswith(
-            "observe"
-        ) or request.action_class.endswith(".read")
+        safe_read = (
+            request.action_class.startswith("observe")
+            or request.action_class.endswith(".read")
+            or always_allowed
+        )
         if (
             not policy.permitted_actions
             and not safe_read
@@ -3152,10 +3166,12 @@ class GoalGovernanceService:
             reasons.append(
                 "materialization receipts and execution identities require an envelope"
             )
-        if _matches(request.action_class, policy.require_operator_for):
+        if not always_allowed and _matches(
+            request.action_class, policy.require_operator_for
+        ):
             approval_required = True
             reasons.append("the goal policy requires operator approval for this action")
-        if (
+        if not always_allowed and (
             _RISK_RANK[request.risk]
             > _RISK_RANK[GoalActionRisk(policy.max_action_risk)]
         ):
@@ -3164,12 +3180,12 @@ class GoalGovernanceService:
         if policy.autonomy_level == 1 and not safe_read:
             approval_required = True
             reasons.append("observe autonomy cannot execute this action")
-        elif policy.autonomy_level == 2:
+        elif policy.autonomy_level == 2 and not safe_read:
             approval_required = True
             reasons.append("propose autonomy requires approval before execution")
         elif policy.autonomy_level == 3 and (
             not request.reversible or request.delegated
-        ):
+        ) and not always_allowed:
             approval_required = True
             reasons.append(
                 "reversible autonomy cannot delegate or take irreversible action"
