@@ -2708,9 +2708,11 @@ class PRSupervisor:
         )
         deadline = self._monotonic() + budget
         for watch in watches:
+            await self._complete_merged_card(watch)
+            # Report progress only after a unit completes, so a unit that
+            # blocks or fails still expires under the watchdog.
             if self._worker_heartbeat:
                 self._worker_heartbeat()
-            await self._complete_merged_card(watch)
             # One evaluation per card: share the outcome with its other merged watches.
             siblings = await self._offload(
                 "sqlite.pr_supervisor_watch_write",
