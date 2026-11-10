@@ -4552,7 +4552,7 @@
     if (this.els.working) this.els.working.hidden = !on;
     if (this.els.stop) this.els.stop.disabled = !on;
     if (this.els.send) {
-      this.els.send.textContent = on ? "Queue for current work" : "Send";
+      this.els.send.textContent = on ? "Queue" : "Send";
       this.els.send.title = on ? "Saved input runs after the active turn. This is not native steering." : "Send to this conversation";
     }
     if (!on) {
@@ -4628,7 +4628,7 @@
           ? "Sending…"
           : this.submissionState === "retryable"
             ? "Retry"
-            : this.turnActive ? "Queue for current work" : "Send";
+            : this.turnActive ? "Queue" : "Send";
     }
     this.root.querySelectorAll("[data-acw-action]").forEach(function (control) {
       control.disabled = disabled;

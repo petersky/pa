@@ -5,6 +5,32 @@
   if (window.__paLayoutBound) return;
   window.__paLayoutBound = true;
 
+  // Transient menus only: inline disclosures and conversation reference panels
+  // deliberately stay open while the user works elsewhere.
+  var popupMenus = "details.acw-menu[open], details.acw-send-menu[open], " +
+    "details[data-card-action-menu][open], details[data-responsive-nav][open], " +
+    "details[data-account-menu][open]";
+  document.addEventListener("click", function (event) {
+    document.querySelectorAll(popupMenus).forEach(function (menu) {
+      if (!menu.contains(event.target)) menu.open = false;
+    });
+    document.querySelectorAll("[data-agent-chat]").forEach(function (root) {
+      var widget = root._acw;
+      if (widget && widget.commandMenuOpen() &&
+          !widget.els.commandMenu.contains(event.target) && event.target !== widget.els.input) {
+        widget.closeCommandMenu();
+      }
+    });
+  }, true);
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    document.querySelectorAll(popupMenus).forEach(function (menu) {
+      menu.open = false;
+      var summary = menu.querySelector("summary");
+      if (summary && menu.contains(document.activeElement)) summary.focus();
+    });
+  });
+
   var RIGHT_KEY = "pa.sidebar.rightWidth";
   var MIN_RIGHT = 180;
   var MAX_RIGHT = 560;
