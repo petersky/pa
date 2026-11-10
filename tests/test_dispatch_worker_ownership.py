@@ -209,3 +209,28 @@ async def test_zero_cap_keeps_the_old_unlimited_behaviour(ledger):
     worker = DispatchWorker(ledger, handler, instance_id=LOCAL, max_stage_attempts=0)
     await worker._execute(ledger.runnable(LOCAL)[0])
     handler.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_cancel_committed_mid_stage_cancels_the_dispatch_at_the_next_boundary(ledger):
+    """The fleet worker turns DispatchCancelRequested into a clean cancellation."""
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from pa.modules.fleet import _process_remote_dispatch
+
+    ledger.put(make("d", authority=LOCAL, target=PEER, state="provisioning"))
+    cancel_like_the_endpoint(ledger, "d")
+    ctx = MagicMock()
+    ctx.services = {"dispatch_store": ledger}
+    ctx.require_service = ctx.services.__getitem__
+    app = SimpleNamespace(state=SimpleNamespace(ctx=ctx))
+
+    async def stage_runs_into_the_cancel(_app, record):
+        ledger.commit_worker_stage(record, "starting_session", "Provider session allocated.")
+
+    with patch("pa.modules.fleet._process_remote_dispatch_stages", stage_runs_into_the_cancel), patch(
+        "pa.modules.fleet._release_goal_dispatch_reservation_async", AsyncMock(),
+    ), patch("pa.modules.fleet._offload_ctx", AsyncMock(side_effect=lambda _c, _o, call, *a, **k: call(*a, **k))):
+        await _process_remote_dispatch(app, ledger.get("d"))
+    assert ledger.get("d").state == "cancelled"
