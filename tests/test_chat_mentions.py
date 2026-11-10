@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 from pa.domain.models import AgentSession, CardCreate
 from pa.modules import chat_mentions
-from pa.modules.chat_mentions import mentions, parse_query
+from pa.modules.chat_mentions import extract_tokens, mentions, parse_query, record_prompt_mentions, resolve_prompt_mentions
 from tests.test_conversation_issues import setup  # noqa: F401  shared isolated store/request fixture
 
 
@@ -42,7 +42,7 @@ def world(setup, workspace):  # noqa: F811
         SimpleNamespace(id="u2", username="grace", display_name=""),
     ])
     app.state.ctx.services["users"] = users
-    return SimpleNamespace(request=request, card=card)
+    return SimpleNamespace(request=request, card=card, store=store, manager=manager)
 
 
 async def search(world, q, principal="user:test"):
@@ -130,3 +130,91 @@ async def test_a_session_without_a_working_directory_simply_has_no_files(world, 
     session.cwd = None
     store.save_session(session)
     assert [kind for kind, _ in pairs(await search(world, ""))].count("file") == 0
+
+
+# ------------------------------------------------------------------ server-side resolution
+
+
+def test_tokens_are_read_like_the_composer_does():
+    text = "see @src/app/server.py, @card:abc. mail ada@example.com and (@no) @card:abc @user:ada!"
+    assert extract_tokens(text) == ["@src/app/server.py", "@card:abc", "@user:ada"]
+    assert extract_tokens("no mentions, just an @") == []
+
+
+def resolve(world, text, principal="user:test", admin=False):
+    request = world.request(principal=principal)
+    if admin:
+        request.state.user = SimpleNamespace(role="admin")
+    session = world.store.get_session("discussion")
+    return {m["token"]: m for m in resolve_prompt_mentions(request, session, world.manager, text)}
+
+
+def test_each_kind_resolves_to_a_label_and_link(world):
+    found = resolve(world, f"@src/app/server.py @docs/shot.png @card:{world.card.id} @session:other-chat @user:ada")
+    assert found["@src/app/server.py"]["ok"] and found["@src/app/server.py"]["href"].startswith("/api/files/raw?path=")
+    assert found["@docs/shot.png"]["image"] is True
+    assert found[f"@card:{world.card.id}"]["label"] == "Fix release pipeline"
+    assert f"card={world.card.id}" in found[f"@card:{world.card.id}"]["href"]
+    assert found["@session:other-chat"]["href"] == "/agent?session=other-chat"
+    assert found["@user:ada"]["label"] == "Ada Lovelace" and "href" not in found["@user:ada"]
+
+
+def test_unknown_explicit_mentions_are_flagged_but_bare_words_are_left_alone(world):
+    found = resolve(world, "@card:nope @user:nobody @session:ghost @file:missing.txt @here @missing.txt")
+    assert {token: m["ok"] for token, m in found.items()} == {
+        "@card:nope": False, "@user:nobody": False, "@session:ghost": False, "@file:missing.txt": False,
+    }
+
+
+def test_mentions_never_reach_outside_the_working_directory_or_other_peoples_conversations(world, tmp_path):
+    (tmp_path / "outside.txt").write_text("secret")
+    assert resolve(world, "@../outside.txt") == {}  # a bare path outside the directory is not a mention at all
+    flagged = resolve(world, "@file:../outside.txt @session:foreign-chat @session:worker-run")
+    assert not any(m["ok"] for m in flagged.values()) and len(flagged) == 3
+    assert resolve(world, "@session:foreign-chat", admin=True)["@session:foreign-chat"]["ok"]
+
+
+@pytest.mark.asyncio
+async def test_accepting_a_prompt_records_what_its_mentions_resolved_to(world):
+    events = []
+    live = SimpleNamespace(_append_transcript=lambda kind, payload: events.append((kind, payload)))
+
+    async def drained():
+        return None
+
+    live._drain_transcripts = drained
+    world.manager.get = lambda session_id: live
+    await record_prompt_mentions(world.request(), "discussion", "p-1", "look at @src/app/server.py and @card:nope")
+    (kind, payload), = events
+    assert kind == "prompt_mentions" and payload["prompt_id"] == "p-1"
+    assert [(m["token"], m["ok"]) for m in payload["mentions"]] == [("@src/app/server.py", True), ("@card:nope", False)]
+    events.clear()
+    await record_prompt_mentions(world.request(), "discussion", "p-2", "nothing to see")
+    await record_prompt_mentions(world.request(), "discussion", None, "@card:nope")
+    assert events == []
+
+
+@pytest.mark.asyncio
+async def test_only_a_newly_accepted_prompt_records_mentions(world, monkeypatch):
+    from pa.modules import agent_chat
+
+    recorded = []
+
+    async def record(_request, session_id, prompt_id, text):
+        recorded.append((session_id, prompt_id, text))
+
+    monkeypatch.setattr(chat_mentions, "record_prompt_mentions", record)
+    replies = iter([
+        {"accepted": True, "prompt_id": "p-1"},
+        {"accepted": True, "prompt_id": "p-1", "duplicate": True},
+        {"accepted": False},
+    ])
+
+    async def admitted(*_args):
+        return next(replies)
+
+    monkeypatch.setattr(agent_chat, "_session_prompt_admitted", admitted)
+    body = SimpleNamespace(message="hi @card:x")
+    for _ in range(3):
+        await agent_chat.session_prompt(world.request(), "discussion", body)
+    assert recorded == [("discussion", "p-1", "hi @card:x")]

@@ -53,7 +53,9 @@ async def test_slash_and_dollar_menus_complete_text_without_running_anything(ope
             pytest.fail("Browser condition timed out: " + expression)
 
         await wait_for("!!(document.querySelector('[data-agent-chat]')._acw && document.querySelector('[data-acw-input]'))")
-        # A real catalog refresh can land at any moment, so the fixed catalog is re-applied on every keystroke.
+        # Page load starts a real /commands fetch; let it land first so it cannot overwrite the fixed catalog mid-test.
+        await wait_for("(w => !!w.sessionId && !w.commandLoading && (w.commandCatalogSession === w.sessionId || !!w.commandError))(document.querySelector('[data-agent-chat]')._acw)")
+        # A real catalog refresh can still land at any moment, so the fixed catalog is re-applied on every keystroke.
         catalog = json.dumps(CATALOG)
         type_text = f"""(([text, caret]) => {{ const w = document.querySelector('[data-agent-chat]')._acw;
             w.commandCatalog = {catalog}; w.commandCatalogSession = w.sessionId;
@@ -285,6 +287,51 @@ async def test_bang_runs_a_command_and_shares_or_keeps_the_output(operator_serve
             w.handleEvent(event, true); w.handleEvent(event, true); })()""")
         assert await page.evaluate("document.querySelectorAll('.acw-msg-shell').length") == 2  # the earlier `!!echo hello` plus this one
         assert await page.evaluate("[...document.querySelectorAll('.acw-msg-shell')].pop().dataset.shellStatus") == "failed"
+    finally:
+        await manager.close()
+        await browser.close()
+
+
+@pytest.mark.skipif(not _browser_executable(), reason="managed Chromium is not installed")
+@pytest.mark.asyncio
+async def test_resolved_mentions_become_links_in_the_prompts_bubble(operator_server, tmp_path):  # noqa: F811
+    app, base = operator_server
+    browser = BrowserManager(tmp_path / "browser")
+    manager = BrowserSessionManager(browser, instance_id="composer-chips-test")
+    scope = BrowserScope("user:test", "composer-chips", "composer-chips-test")
+    async with httpx.AsyncClient(base_url=base, follow_redirects=False) as client:
+        await client.get("/fixture")
+    try:
+        await manager.attach(scope, url=base + "/agent?session=viz-session", width=1280, height=900)
+        page = manager.resolve(scope).page
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline and not await page.evaluate("!!document.querySelector('[data-agent-chat]')._acw"):
+            await asyncio.sleep(.05)
+        # Events can arrive in either order; the chips appear once both the prompt and its mentions are known.
+        await page.evaluate("""(() => { const w = document.querySelector('[data-agent-chat]')._acw;
+            w.sessionId = 'viz-session';
+            const mentions = (id, items) => ({seq: 0, type: 'prompt_mentions', payload: {prompt_id: id, mentions: items}});
+            const prompt = (id, text) => ({seq: 0, type: 'user_message', payload: {id: id, message: text, source: 'ui', images: []}});
+            w.handleEvent(prompt('p1', 'see @card:abc, `@card:abc` and @src/x_y.py plus @card:zzz now'), true);
+            w.handleEvent(mentions('p1', [
+              {token: '@card:abc', kind: 'card', label: 'Fix release pipeline', href: '/?realm=r&card=abc&tab=summary', ok: true},
+              {token: '@src/x_y.py', kind: 'file', label: 'x_y.py', href: '/api/files/raw?path=/w/src/x_y.py', ok: true},
+              {token: '@card:zzz', kind: 'card', label: 'zzz', ok: false}]), true);
+            w.handleEvent(mentions('p2', [{token: '@user:ada', kind: 'user', label: 'Ada Lovelace', ok: true}]), true);
+            w.handleEvent(prompt('p2', 'ping @user:ada.'), true); })()""")
+        rows = "[...document.querySelectorAll('.acw-msg-user[data-prompt-id=%s] .acw-mention')]"
+        first = await page.evaluate(rows % "p1" + ".map(e => [e.tagName, e.textContent, e.getAttribute('href'), e.classList.contains('is-unresolved')])")
+        assert first == [
+            ["A", "Fix release pipeline", "/?realm=r&card=abc&tab=summary", False],
+            ["A", "@src/x_y.py", "/api/files/raw?path=/w/src/x_y.py", False],
+            ["SPAN", "zzz", None, True],
+        ]  # the `@card:abc` inside code stays literal
+        assert await page.evaluate("document.querySelector('.acw-msg-user[data-prompt-id=p1] code').textContent") == "@card:abc"
+        second = await page.evaluate(rows % "p2" + ".map(e => [e.tagName, e.textContent])")
+        assert second == [["SPAN", "@Ada Lovelace"]]
+        assert (await page.evaluate("document.querySelector('.acw-msg-user[data-prompt-id=p2] .acw-bubble').textContent")).strip() == "ping @Ada Lovelace."
+        # Copy still gives the message exactly as it was written.
+        assert await page.evaluate("document.querySelector('.acw-msg-user[data-prompt-id=p2] .acw-bubble').dataset.markdown") == "ping @user:ada."
     finally:
         await manager.close()
         await browser.close()

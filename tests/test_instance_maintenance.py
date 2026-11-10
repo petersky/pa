@@ -515,3 +515,41 @@ async def test_failed_sweep_does_not_stop_periodic_maintenance(tmp_path):
     assert work.await_count == 2
     assert service.last_error is None
     await service.close()
+
+
+def test_sweep_removes_chat_images_only_once_nothing_can_show_them(tmp_path):
+    import os
+    import time as _time
+
+    settings = Settings(data_dir=tmp_path, transcript_retention_days=14)
+    store = CardProjection(settings.db_path)
+    images = tmp_path / "chat-images"
+    old = datetime.now(UTC) - timedelta(days=30)
+
+    def keep_image(session_id):
+        (images / session_id).mkdir(parents=True)
+        (images / session_id / ("a" * 64 + ".png")).write_bytes(b"png")
+
+    for session_id in ("closed-old", "closed-recent", "open-old"):
+        store.save_session(AgentSession(id=session_id, agent_name="codex", status="idle"))
+        keep_image(session_id)
+    for session_id in ("closed-old", "closed-recent"):
+        store.close_session(session_id, reason="test")
+    with store._conn() as conn:
+        for session_id in ("closed-old", "open-old"):
+            conn.execute("UPDATE agent_sessions SET updated_at=? WHERE id=?", (old.isoformat(), session_id))
+    keep_image("orphan-old")
+    keep_image("orphan-new")
+    stale = images / "open-old" / ".tmp-stale"
+    fresh = images / "open-old" / ".tmp-fresh"
+    stale.write_bytes(b"x")
+    fresh.write_bytes(b"x")
+    long_ago = _time.time() - 7200
+    os.utime(stale, (long_ago, long_ago))
+    os.utime(images / "orphan-old", (old.timestamp(), old.timestamp()))
+
+    result = run_maintenance(settings, store)
+
+    assert result["chat_images_deleted"]["directories"] == 2
+    assert sorted(path.name for path in images.iterdir()) == ["closed-recent", "open-old", "orphan-new"]
+    assert not stale.exists() and fresh.exists()  # an in-flight upload is left alone

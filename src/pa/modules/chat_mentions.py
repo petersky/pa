@@ -6,16 +6,20 @@ directory, conversations to the caller's own (or all for an admin), cards to the
 """
 from __future__ import annotations
 
+import logging
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, HTTPException, Request
 
 from pa.auth.middleware import get_principal_id, require_user
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/agent/sessions")
 
 KINDS = ("file", "card", "session", "user")
@@ -221,6 +225,122 @@ def search_mentions(request: Request, session: Any, manager: Any, raw: str) -> d
         if users is not None:
             items += search_users(users, query, limit("user"))
     return {"kind": kind, "query": query, "items": items}
+
+
+# --------------------------------------------------------------------------- resolution
+#
+# The composer completes mentions from the endpoint above; this is the other half. When a prompt
+# is accepted the server resolves the tokens it contains with the same access rules and records
+# the outcome in the transcript, so every client can show the same chips and links. The message
+# text itself is never changed.
+
+TOKEN = re.compile(r"(?<!\S)@(\S+)")
+TRAILING_PUNCTUATION = ".,;:!?)]}\"'"
+MAX_MENTIONS = 20
+
+
+def extract_tokens(text: str) -> list[str]:
+    """Distinct `@...` tokens in order, the way the composer reads them (word starts only)."""
+    seen: dict[str, None] = {}
+    for match in TOKEN.finditer(text or ""):
+        token = match.group(1).rstrip(TRAILING_PUNCTUATION)
+        if token:
+            seen.setdefault("@" + token, None)
+    return list(seen)[:MAX_MENTIONS]
+
+
+def _resolve_file(session: Any, path: str) -> dict[str, Any] | None:
+    if not session.cwd:
+        return None
+    root = Path(session.cwd).resolve()
+    try:
+        target = (root / path).resolve()
+        if not target.is_relative_to(root) or not target.is_file():
+            return None
+    except (OSError, ValueError):
+        return None
+    image = target.suffix.lower() in IMAGE_TYPES
+    return {"kind": "file", "id": path, "label": target.name, "image": image,
+            "href": "/api/files/raw?" + urlencode({"path": str(target)})}
+
+
+def resolve_token(
+    token: str, *, session: Any, store: Any, settings: Any, users: Any, principal: str, admin: bool,
+) -> dict[str, Any] | None:
+    """One resolved mention, an `ok: false` one for an explicit kind that cannot be found, or None.
+
+    A bare `@word` is only a mention when it names a file in the working directory; otherwise it is
+    ordinary text (`@here`, a handle on another service) and is left alone.
+    """
+    body = token[1:]
+    kind, separator, rest = body.partition(":")
+    kind = kind.lower()
+    if not (separator and kind in KINDS and rest):
+        found = _resolve_file(session, body)
+        return {"token": token, **found, "ok": True} if found else None
+    result: dict[str, Any] | None = None
+    try:
+        if kind == "file":
+            result = _resolve_file(session, rest)
+        elif kind == "card":
+            realm = getattr(session, "realm_id", None) or settings.primary_realm
+            card = store.get_card(rest, realm_id=realm)
+            if card:
+                result = {"kind": "card", "id": card.id, "label": card.title or card.id,
+                          "href": "/?" + urlencode({"realm": card.realm_id, "card": card.id, "tab": "summary"})}
+        elif kind == "session":
+            other = store.get_session(rest)
+            allowed = other and other.purpose == "chat" and (
+                admin or other.principal_id in {None, principal})
+            if allowed:
+                result = {"kind": "session", "id": other.id,
+                          "label": other.title or other.label or other.agent_name or other.id[:8],
+                          "href": "/agent?session=" + quote(other.id)}
+        elif kind == "user" and users is not None:
+            wanted = rest.lower()
+            user = next((u for u in users.list_users() if u.username.lower() == wanted), None)
+            if user:
+                result = {"kind": "user", "id": user.id, "label": user.display_name or user.username}
+    except Exception:  # noqa: BLE001 - a lookup failure must read as "not found", never block a prompt
+        logger.warning("Mention lookup failed for %s", token, exc_info=True)
+    if result is None:
+        return {"token": token, "kind": kind, "id": rest, "label": rest, "ok": False}
+    return {"token": token, **result, "ok": True}
+
+
+def resolve_prompt_mentions(request: Request, session: Any, manager: Any, text: str) -> list[dict[str, Any]]:
+    tokens = extract_tokens(text)
+    if not tokens:
+        return []
+    ctx = request.app.state.ctx
+    user = require_user(request)
+    shared = {
+        "session": session, "store": manager.store, "settings": ctx.settings,
+        "users": ctx.services.get("users"), "principal": get_principal_id(request),
+        "admin": getattr(user, "role", None) == "admin",
+    }
+    found = (resolve_token(token, **shared) for token in tokens)
+    return [item for item in found if item]
+
+
+async def record_prompt_mentions(request: Request, session_id: str, prompt_id: str | None, text: str) -> None:
+    """Append what the prompt's mentions resolved to; never lets a failure reach the sender."""
+    if not prompt_id or "@" not in (text or ""):
+        return
+    try:
+        from pa.modules.agent_chat import _manager, _offload
+
+        manager = _manager(request)
+        runtime = manager.get(session_id)
+        session = await _offload(manager, "mentions.session", manager.store.get_session, session_id)
+        if runtime is None or session is None:
+            return
+        mentions = await _offload(manager, "mentions.resolve", resolve_prompt_mentions, request, session, manager, text)
+        if mentions:
+            runtime._append_transcript("prompt_mentions", {"prompt_id": prompt_id, "mentions": mentions})
+            await runtime._drain_transcripts()
+    except Exception:  # noqa: BLE001
+        logger.warning("Could not record mentions for prompt %s", prompt_id, exc_info=True)
 
 
 @router.get("/{session_id}/mentions")
