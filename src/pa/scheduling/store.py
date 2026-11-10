@@ -19,6 +19,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from croniter import croniter
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
+from pa.core.sqlite_metrics import ObservedConnection
+
 
 class Trigger(BaseModel):
     model_config = ConfigDict(extra='forbid')
@@ -133,10 +135,26 @@ class Ledger:
             if 'cancelled' not in columns:
                 db.execute('ALTER TABLE schedules ADD COLUMN cancelled INTEGER NOT NULL DEFAULT 0')
 
+    def _new_connection(self):
+        db = sqlite3.connect(self.path, timeout=5, isolation_level=None, factory=ObservedConnection)
+        db.row_factory = sqlite3.Row
+        return db
+
+    @contextmanager
+    def _source_reader(self):
+        # Source polling makes independent single-SELECT reads. Autocommit and
+        # closed cursors give each query fresh committed owners/cursors without
+        # holding a snapshot or connection pool across requests or workers.
+        db = self._new_connection()
+        try:
+            db.execute('PRAGMA query_only=ON')
+            yield db
+        finally:
+            db.close()
+
     @contextmanager
     def connect(self, *, read_only=False):
-        db = sqlite3.connect(self.path, timeout=5, isolation_level=None)
-        db.row_factory = sqlite3.Row
+        db = self._new_connection()
         try:
             if read_only:
                 # Keep multi-query reads on one committed snapshot without
