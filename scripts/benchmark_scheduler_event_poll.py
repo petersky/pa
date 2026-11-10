@@ -22,6 +22,7 @@ from pa.domain.models import CardEvent, EventType
 from pa.domain.notifications import Notification
 from pa.scheduling import events
 from pa.scheduling.store import Ledger, Schedule
+from pa.core.sqlite_metrics import ObservedConnection
 import pa.scheduling.store as ledger_module
 from pa.sync.event_log import EventLog
 from pa.sync.object_store import ObjectStore
@@ -90,7 +91,7 @@ def profile(root, *, name, batches, commits_per_batch, schedules, progress):
         if index == 0: matching_id = created["id"]
     observations = Observations()
     original_connect = sqlite3.connect
-    class Connection(sqlite3.Connection):
+    class Connection(ObservedConnection):
         def execute(self, sql, *args, **kwargs):
             operation = sql.lstrip().split(None, 1)[0].lower()
             wall, cpu = time.perf_counter(), time.thread_time()
@@ -106,7 +107,7 @@ def profile(root, *, name, batches, commits_per_batch, schedules, progress):
             try: return super().close()
             finally: observations.add("close", wall, cpu, calls=1)
     def connected(database, *args, **kwargs):
-        if Path(database) != ledger.path: return original_connect(database, *args, **kwargs)
+        assert Path(database) == ledger.path
         wall, cpu = time.perf_counter(), time.thread_time()
         try: return original_connect(database, *args, **(kwargs|{"factory": Connection}))
         finally: observations.add("connect", wall, cpu, calls=1)
@@ -131,7 +132,10 @@ def profile(root, *, name, batches, commits_per_batch, schedules, progress):
             foreground.append((time.perf_counter()-wall)*1000)
             observations.active.reset(token)
     original_user_init = UserDirectory.__init__
-    with (patch.object(sqlite3, "connect", connected),
+    class PrivateSQLite:
+        connect = staticmethod(connected)
+        def __getattr__(self, key): return getattr(sqlite3, key)
+    with (patch.object(ledger_module, "sqlite3", PrivateSQLite()),
           patch.object(log, "get_head", observations.wrap("get_head", log.get_head)),
           patch.object(log, "get_commit", observations.wrap("get_commit", log.get_commit)),
           patch.object(log, "get_event", observations.wrap("get_event", log.get_event)),
@@ -214,10 +218,11 @@ def benchmark(*, batches=3, commits_per_batch=100):
     return result
 
 
-def compare(*, pairs=3, commits=100):
+def compare(*, pairs=3, commits=100, source_reader_before=None):
     if not 1 <= pairs <= 3 or not 1 <= commits <= 100: raise ValueError("bounded population")
     result = {"contract": "pa.scheduler-read-transaction-comparison/v1", "runs": []}
     native = Ledger.connect; progress = {}
+    native_reader = Ledger._source_reader
     pooled = defaultdict(lambda: {"poll": [], "foreground": []})
     @contextmanager
     def immediate(ledger, *, read_only=False):
@@ -232,7 +237,8 @@ def compare(*, pairs=3, commits=100):
                     digests = []
                     for mode in (("before", "after") if pair % 2 == 0 else ("after", "before")):
                         identifiers = itertools.count()
-                        with (patch.object(Ledger, "connect", immediate if mode == "before" else native),
+                        with (patch.object(Ledger, "connect", immediate if mode == "before" and source_reader_before is None else native),
+                              patch.object(Ledger, "_source_reader", source_reader_before if mode == "before" and source_reader_before else native_reader),
                               patch.object(ledger_module, "uuid4", lambda: f"synthetic-{next(identifiers):04d}"),
                               patch.object(events.time, "time", lambda: 1794312000.0)):
                             run = profile(root/f"{name}-{pair}-{mode}", name=name, batches=1,

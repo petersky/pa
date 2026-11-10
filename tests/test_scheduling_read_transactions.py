@@ -1,5 +1,6 @@
 """Passive ledger readers never reserve the writer slot; claims still do."""
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 import sqlite3
 from types import SimpleNamespace
 from unittest.mock import Mock, call, patch
@@ -125,3 +126,73 @@ def test_event_error_retains_prior_durable_occurrence_and_replays_without_duplic
     assert log.get_event.call_args_list == [call("one"), call("two"), call("one"), call("two")]
     with ledger.connect(read_only=True) as db:
         assert db.execute("SELECT processed FROM source_commits WHERE hash='new'").fetchone()[0] == 1
+
+
+def test_source_reader_has_fresh_queries_without_blocking_committed_writes(populated):
+    ledger, sid = populated
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with ledger._source_reader() as reader:
+            with closing(reader.execute("SELECT deleted FROM schedules WHERE id=?", (sid,))) as cursor:
+                assert cursor.fetchone()[0] == 0
+            def update():
+                with ledger.connect() as writer:
+                    writer.execute("UPDATE schedules SET deleted=1 WHERE id=?", (sid,))
+            executor.submit(update).result(timeout=2)
+            with closing(reader.execute("SELECT deleted FROM schedules WHERE id=?", (sid,))) as cursor:
+                assert cursor.fetchone()[0] == 1
+            with pytest.raises(sqlite3.OperationalError, match="readonly"):
+                reader.execute("UPDATE schedules SET deleted=0 WHERE id=?", (sid,))
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        reader.execute("SELECT 1")
+
+
+def test_source_reader_closes_on_error(populated):
+    ledger, _ = populated
+    with pytest.raises(RuntimeError):
+        with ledger._source_reader() as reader:
+            raise RuntimeError("synthetic exit")
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        reader.execute("SELECT 1")
+
+
+def test_source_reader_observes_new_schedule_owner_between_events(tmp_path):
+    ledger, log, ctx, first, second = event_source(tmp_path)
+    def get_event(key):
+        if key == "two":
+            ledger.create("later", "create-later", Schedule(name="Later", payload={"synthetic": True},
+                trigger={"kind": "event", "event_type": EventType.CARD_CREATED.value},
+                destination={"kind": "inbox", "target": "later"}), 0)
+        return first if key == "one" else second
+    log.get_event.side_effect = get_event
+    with patch("pa.auth.users.UserDirectory", side_effect=lambda *_:
+            SimpleNamespace(get=lambda _: SimpleNamespace(role="admin"))):
+        poll_events(ctx, ledger)
+    rows = ledger.pending(2**40)
+    assert len(rows) == 3
+    later = ledger.list("later")[0]["id"]
+    assert [row["identity"] for row in rows if row["schedule_id"] == later] == ["event:second"]
+
+
+def test_source_reader_connection_bound_keeps_100_commit_limit_and_continuation(tmp_path):
+    ledger = Ledger(tmp_path / "source.db")
+    log = Mock(); log.get_head.return_value = "baseline"
+    ctx = SimpleNamespace(settings=SimpleNamespace(subscribed_realms=["default"], data_dir=tmp_path),
+        services={"event_log": log})
+    poll_events(ctx, ledger)
+    commits = {f"c{i}": SyncCommit(hash=f"c{i}", realm_id="default", instance_id="fixture",
+        parent_hashes=[f"c{i-1}" if i > 1 else "baseline"], event_hashes=[]) for i in range(1, 102)}
+    log.get_head.return_value = "c101"; log.get_commit.side_effect = commits.__getitem__
+    opened = []; native = ledger._new_connection
+    def connect():
+        opened.append(1)
+        return native()
+    with patch.object(ledger, "_new_connection", connect):
+        poll_events(ctx, ledger)
+        assert len(opened) == 102  # Header + one reader +100 unchanged write checkpoints.
+        assert log.get_commit.call_count == 100
+        opened.clear()
+        poll_events(ctx, ledger)
+        assert len(opened) == 3
+    assert log.get_commit.call_count == 101
+    with ledger.connect(read_only=True) as db:
+        assert db.execute("SELECT count(*) FROM source_commits WHERE processed=0").fetchone()[0] == 0
