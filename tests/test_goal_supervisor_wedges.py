@@ -826,5 +826,167 @@ class VerifierIndependenceTests(unittest.TestCase):
             self.assertIn("not independent", stalls[0].body)
 
 
+class StallDetectionTests(unittest.TestCase):
+    """A6: stalls are measured in time since real progress, and are recoverable."""
+
+    @staticmethod
+    def _harness(tmp: str, **kwargs) -> tuple[Harness, Goal]:
+        h = Harness(
+            tmp,
+            no_progress_seconds=2 * 3600,
+            stalled_seconds=8 * 3600,
+            **kwargs,
+        )
+        goal = h.create_goal(
+            GoalPolicy(autonomy_level=4, permitted_actions=FULL_ACTIONS)
+        )
+        for _ in range(4):
+            current = h.run(goal.id)
+            if current.work_packages and current.work_packages[0].dispatch_ids:
+                break
+        return h, h.get(goal.id)
+
+    def _idle(self, h: Harness, goal_id: str, seconds: int, *, step: int = 30) -> Goal:
+        for _ in range(seconds // step):
+            h.advance(step)
+            h.supervisor.run_once(goal_id)
+        return h.get(goal_id)
+
+    def test_a_silent_turn_of_hours_is_not_stalled_by_cycle_counting(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h, goal = self._harness(tmp)
+            dispatch_id = goal.work_packages[0].dispatch_ids[-1]
+            h.records.records[dispatch_id] = dispatch_record(
+                dispatch_id, "running", session_id="s1"
+            )
+
+            after = self._idle(h, goal.id, 90 * 60)  # 90 minutes of silence
+
+            self.assertEqual(after.state, GoalState.ACTIVE)
+            self.assertEqual(after.work_packages[0].state, WorkPackageState.RUNNING)
+            self.assertEqual(after.supervision.drift_state.value, "on_track")
+            self.assertEqual(h.notifications.stalls(), [])
+
+    def test_prolonged_silence_stalls_blocks_and_notifies_exactly_once(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h, goal = self._harness(tmp)
+            dispatch_id = goal.work_packages[0].dispatch_ids[-1]
+            h.records.records[dispatch_id] = dispatch_record(
+                dispatch_id, "running", session_id="s1"
+            )
+
+            after = self._idle(h, goal.id, 9 * 3600, step=300)
+
+            self.assertEqual(after.work_packages[0].state, WorkPackageState.BLOCKED)
+            self.assertEqual(after.state, GoalState.BLOCKED)
+            stalls = h.notifications.stalls("manual_review")
+            self.assertEqual(len(stalls), 1)
+            self.assertIn("showed no progress", stalls[0].body)
+
+    def test_a_queued_dispatch_never_counts_as_silence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h, goal = self._harness(tmp)
+            dispatch_id = goal.work_packages[0].dispatch_ids[-1]
+            h.records.records[dispatch_id] = dispatch_record(dispatch_id, "queued")
+
+            after = self._idle(h, goal.id, 12 * 3600, step=300)
+
+            self.assertEqual(after.state, GoalState.ACTIVE)
+            self.assertNotEqual(after.work_packages[0].state, WorkPackageState.BLOCKED)
+            self.assertEqual(h.notifications.stalls(), [])
+
+    def test_heartbeats_count_as_progress(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h, goal = self._harness(tmp)
+            dispatch_id = goal.work_packages[0].dispatch_ids[-1]
+            record = dispatch_record(dispatch_id, "running", session_id="s1")
+            h.records.records[dispatch_id] = record
+
+            for _ in range(12 * 12):  # twelve hours in five-minute steps
+                h.advance(300)
+                record.progress_heartbeat = SimpleNamespace(occurred_at=h.clock[0])
+                h.supervisor.run_once(goal.id)
+
+            after = h.get(goal.id)
+            self.assertEqual(after.state, GoalState.ACTIVE)
+            self.assertEqual(after.work_packages[0].state, WorkPackageState.RUNNING)
+
+    def test_a_blocked_package_resumes_when_the_dispatch_shows_progress(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h, goal = self._harness(tmp)
+            dispatch_id = goal.work_packages[0].dispatch_ids[-1]
+            record = dispatch_record(dispatch_id, "running", session_id="s1")
+            h.records.records[dispatch_id] = record
+            blocked = self._idle(h, goal.id, 9 * 3600, step=300)
+            self.assertEqual(blocked.state, GoalState.BLOCKED)
+
+            record.last_error = None
+            record.latest_progress = SimpleNamespace(
+                model_dump=lambda mode="json": {"summary": "tests are green now"}
+            )
+            h.advance(30)
+            h.supervisor.run_once(goal.id)
+
+            resumed = h.get(goal.id)
+            self.assertEqual(resumed.work_packages[0].state, WorkPackageState.RUNNING)
+            self.assertEqual(resumed.state, GoalState.ACTIVE)
+
+    def test_operator_retry_unblocks_a_stalled_package_and_a_failed_one(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h, goal = self._harness(tmp)
+            package = goal.work_packages[0]
+            dispatch_id = package.dispatch_ids[-1]
+            h.records.records[dispatch_id] = dispatch_record(
+                dispatch_id, "running", session_id="s1"
+            )
+            blocked = self._idle(h, goal.id, 9 * 3600, step=300)
+            self.assertEqual(blocked.state, GoalState.BLOCKED)
+
+            retried = h.service.retry_work_package(
+                goal.id, package.id, h.ctx(blocked, "retry-1")
+            )
+
+            self.assertEqual(retried.state, GoalState.ACTIVE)
+            self.assertEqual(retried.work_packages[0].state, WorkPackageState.DISPATCHED)
+            self.assertEqual(retried.work_packages[0].no_progress_cycles, 0)
+            after = h.run(goal.id)  # the fresh window means it is not re-blocked
+            self.assertEqual(after.state, GoalState.ACTIVE)
+
+            with self.assertRaises(GoalConflict):
+                h.service.retry_work_package(
+                    goal.id, package.id, h.ctx(after, "retry-running")
+                )
+
+    def test_operator_retry_gives_a_failed_package_another_attempt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(tmp)
+            goal = h.create_goal(
+                GoalPolicy(autonomy_level=4, permitted_actions=FULL_ACTIONS)
+            )
+            for _ in range(60):
+                current = h.get(goal.id)
+                if current.state == GoalState.BLOCKED:
+                    break
+                for dispatch_id in current.linked_dispatch_ids:
+                    h.records.records[dispatch_id] = dispatch_record(
+                        dispatch_id, "failed", last_error="provider crashed"
+                    )
+                h.supervisor.run_once(goal.id)
+            blocked = h.get(goal.id)
+            package = blocked.work_packages[0]
+            self.assertEqual(package.state, WorkPackageState.FAILED)
+            dispatched = len(h.dispatched)
+
+            retried = h.service.retry_work_package(
+                goal.id, package.id, h.ctx(blocked, "retry-failed")
+            )
+            self.assertEqual(retried.state, GoalState.ACTIVE)
+            self.assertEqual(retried.work_packages[0].state, WorkPackageState.READY)
+            for _ in range(3):
+                h.supervisor.run_once(goal.id)
+
+            self.assertEqual(len(h.dispatched), dispatched + 1)
+
+
 if __name__ == "__main__":
     unittest.main()

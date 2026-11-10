@@ -13,6 +13,7 @@ from pa.goals.models import (
     GoalAudit,
     GoalAuditCreate,
     GoalCreate,
+    GoalDriftState,
     GoalEvidence,
     GoalEvidenceCreate,
     GoalMutationContext,
@@ -23,6 +24,7 @@ from pa.goals.models import (
     GoalSupervisionCheckpoint,
     GoalTransition,
     GoalWakeup,
+    WorkPackageState,
 )
 from pa.goals.projection import (
     find_goal_event_by_idempotency,
@@ -736,6 +738,69 @@ class GoalService:
                 return GoalActorRole.CRITIC
             return GoalActorRole.EXECUTOR
         return GoalActorRole.COORDINATOR
+
+    def retry_work_package(
+        self,
+        goal_id: str,
+        package_id: str,
+        context: GoalMutationContext,
+        *,
+        reason: str = "Retried by operator",
+    ) -> Goal:
+        """Operator retry of a BLOCKED or terminally FAILED work package.
+
+        A blocked package whose dispatch may still be alive gets a fresh stall
+        window (the supervisor reconciles the real Fleet state next cycle); a failed
+        or dispatch-less one goes back to READY with one more attempt. The goal's
+        supervisor hold is released and a BLOCKED goal resumes.
+        """
+
+        def mutate(goal: Goal) -> dict[str, Any]:
+            package = next(
+                (item for item in goal.work_packages if item.id == package_id), None
+            )
+            if package is None:
+                raise GoalConflict(f"unknown work package {package_id}")
+            if package.state not in {
+                WorkPackageState.BLOCKED,
+                WorkPackageState.FAILED,
+            }:
+                raise GoalConflict(
+                    f"only a blocked or failed work package can be retried, not "
+                    f"{package.state.value}"
+                )
+            previous = package.state
+            now = self._clock()
+            package.last_progress_at = now
+            package.last_progress_fingerprint = None
+            package.no_progress_cycles = 0
+            package.updated_at = now
+            if previous == WorkPackageState.BLOCKED and package.dispatch_ids:
+                package.state = WorkPackageState.DISPATCHED
+            else:
+                if previous == WorkPackageState.FAILED:
+                    package.max_attempts = min(20, max(package.max_attempts, package.attempts + 1))
+                package.state = WorkPackageState.READY
+            package.result_summary = reason[:8000]
+            goal.supervision.parked_reason = ""
+            goal.supervision.drift_state = GoalDriftState.ON_TRACK
+            goal.supervision.drift_reasons = []
+            if goal.state == GoalState.BLOCKED:
+                goal.state = GoalState.ACTIVE
+            return {
+                "work_package_id": package_id,
+                "from": previous.value,
+                "to": package.state.value,
+                "reason": reason,
+            }
+
+        return self._mutate(
+            goal_id,
+            context,
+            "goal.work_package_retried",
+            mutate,
+            operation={"work_package_id": package_id, "reason": reason},
+        )
 
     def record_supervision_failure(
         self,

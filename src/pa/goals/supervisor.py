@@ -135,6 +135,19 @@ _OBSERVED_WORK = {
     WorkPackageState.RUNNING,
     WorkPackageState.BLOCKED,
 }
+# Fleet states in which the platform, not the agent, owns the wait: a queued,
+# capacity-blocked or starting dispatch is not a silent turn and never counts as
+# stalled however long it waits.
+_WAITING_DISPATCH_STATES = {
+    "queued",
+    "waiting_capacity",
+    "admission_pending",
+    "dispatching",
+    "starting",
+    "backing_off",
+    "completion_pending",
+}
+_HEARTBEAT_PROGRESS_GRANULARITY = timedelta(minutes=5)
 _PLAN_RATIONALE = "ACTIVE unmet criteria require one bounded governed work package."
 # Authorization rejections that a fresh proposal cures by itself.
 _STALE_REASON_CODES = {"stale_policy_revision", "future_goal_version"}
@@ -181,6 +194,8 @@ class GoalSupervisor:
         default_provider: str | None = None,
         failure_notify_after: int = 3,
         verifier_independence: str = "strict",
+        no_progress_seconds: int = 0,
+        stalled_seconds: int = 0,
     ) -> None:
         if verifier_independence not in {"strict", "single_user"}:
             raise ValueError("verifier_independence must be strict or single_user")
@@ -202,6 +217,11 @@ class GoalSupervisor:
         self._active_reservation_id: str | None = None
         self.no_progress_threshold = no_progress_cycles
         self.stalled_threshold = stalled_cycles
+        # Wall-clock floor on top of the cycle counts: a package is only drifting or
+        # stalled when BOTH its cycle count and its idle time reach the threshold.
+        # 0 means "cycle count alone", the original behaviour.
+        self.no_progress_seconds = max(0, no_progress_seconds)
+        self.stalled_seconds = max(0, stalled_seconds)
         self.lease_ttl_seconds = lease_ttl_seconds
         self.failure_notify_after = max(1, failure_notify_after)
         self._conflict_streaks: dict[str, int] = {}
@@ -2443,13 +2463,46 @@ class GoalSupervisor:
                 # durably observable and the admission attempt has been cleared.
                 continue
             fingerprint = self._dispatch_fingerprint(record)
+            progressed = False
+            beat_at = getattr(
+                getattr(record, "progress_heartbeat", None), "occurred_at", None
+            )
             if fingerprint != package.last_progress_fingerprint:
                 package.last_progress_fingerprint = fingerprint
                 package.last_progress_at = now
                 package.no_progress_cycles = 0
-                changed = True
+                changed = progressed = True
+            elif beat_at is not None and (
+                package.last_progress_at is None
+                or beat_at > package.last_progress_at + _HEARTBEAT_PROGRESS_GRANULARITY
+            ):
+                # A live heartbeat is progress (recorded at most every few minutes
+                # so a healthy long turn does not rewrite the goal every cycle).
+                package.last_progress_at = beat_at
+                package.no_progress_cycles = 0
+                changed = progressed = True
+            elif record.state in _WAITING_DISPATCH_STATES:
+                if package.no_progress_cycles:
+                    package.no_progress_cycles = 0
+                    changed = True
+                progressed = True
             elif record.state not in {"completed", "failed", "cancelled"}:
-                package.no_progress_cycles += 1
+                package.no_progress_cycles = min(
+                    package.no_progress_cycles + 1, self.stalled_threshold
+                )
+            if (
+                progressed
+                and package.state == WorkPackageState.BLOCKED
+                and record.state not in {"completed", "failed", "cancelled"}
+            ):
+                # The dispatch the stall detector gave up on has moved again.
+                package.state = (
+                    WorkPackageState.RUNNING
+                    if record.state == "running"
+                    else WorkPackageState.DISPATCHED
+                )
+                package.result_summary = ""
+                changed = True
             if record.session_id and record.session_id != package.session_id:
                 if package.session_id:
                     self._append_bounded(
@@ -2473,7 +2526,13 @@ class GoalSupervisor:
                 else:
                     package.executor_service_id = service_id
                 changed = True
-            if record.state == "running" and package.state != WorkPackageState.RUNNING:
+            if (
+                record.state == "running"
+                and package.state == WorkPackageState.DISPATCHED
+            ):
+                # Only a freshly dispatched package starts running. A BLOCKED one
+                # resumes through the progress check above, not merely because the
+                # silent record still says "running" (that flapped every cycle).
                 package.state = WorkPackageState.RUNNING
                 changed = True
             elif record.state == "completed":
@@ -2760,12 +2819,14 @@ class GoalSupervisor:
             item
             for item in goal.work_packages
             if item.no_progress_cycles >= self.stalled_threshold
+            and self._idle_seconds(item, now) >= self.stalled_seconds
             and item.state in _ACTIVE_WORK
         ]
         drifting = [
             item
             for item in goal.work_packages
             if item.no_progress_cycles >= self.no_progress_threshold
+            and self._idle_seconds(item, now) >= self.no_progress_seconds
             and item.state in _ACTIVE_WORK
         ]
         if stalled:
@@ -2800,12 +2861,33 @@ class GoalSupervisor:
         )
         goal.supervision.drift_state = state
         goal.supervision.drift_reasons = reasons
-        if stalled:
+        if stalled and self._may_act(goal):
             for package in stalled:
                 package.state = WorkPackageState.BLOCKED
                 package.updated_at = now
+                idle_minutes = int(self._idle_seconds(package, now) // 60)
+                self._outbox.append(
+                    (
+                        StallKind.MANUAL_REVIEW,
+                        f"goal-stalled:{goal.id}:{package.id}:"
+                        f"{(package.last_progress_at or package.created_at).isoformat()}",
+                        f"Goal work stalled: {goal.objective[:120]}",
+                        (
+                            f"'{package.title}' showed no progress for about "
+                            f"{idle_minutes} minutes and was blocked. It resumes "
+                            "by itself if the agent reports progress again; use "
+                            "Retry on the Goals page to give it a fresh window or "
+                            "take over the session."
+                        ),
+                    )
+                )
             self._ensure_critic_proposal(goal, reasons, now)
         return changed
+
+    @staticmethod
+    def _idle_seconds(package: GoalWorkPackage, now: datetime) -> float:
+        reference = package.last_progress_at or package.created_at
+        return max(0.0, (now - reference).total_seconds())
 
     def _ensure_critic_proposal(
         self, goal: Goal, reasons: list[str], now: datetime

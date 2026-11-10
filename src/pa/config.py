@@ -313,7 +313,7 @@ class Settings(BaseSettings):
     goal_verifier_independence: Literal["single_user", "strict"] = "single_user"
     # Seconds without real progress (heartbeat, checkpoint, queue movement) before
     # a goal's in-flight work package is reported as drifting / stalled and blocked.
-    # 0 disables that signal. The previous behaviour counted 30 s supervision cycles
+    # 0 restores the previous behaviour, which counted 30 s supervision cycles
     # (about 90 s / 180 s).
     goal_drifting_after_seconds: int = Field(default=2 * 60 * 60, ge=0, le=30 * 24 * 60 * 60)
     goal_stalled_after_seconds: int = Field(default=8 * 60 * 60, ge=0, le=30 * 24 * 60 * 60)

@@ -144,3 +144,12 @@ def test_verifier_independence_setting_reaches_the_supervisor() -> None:
         ) as client:
             supervisor = client.app.state.ctx.require_service("goal_supervisor")
             assert supervisor.verifier_independence == "strict"
+
+
+def test_stall_thresholds_are_generous_time_based_settings() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        with TestClient(_app(Path(tmp))) as client:
+            supervisor = client.app.state.ctx.require_service("goal_supervisor")
+            # Hours of silence, not a handful of 30-second supervision cycles.
+            assert supervisor.no_progress_seconds == 2 * 60 * 60
+            assert supervisor.stalled_seconds == 8 * 60 * 60

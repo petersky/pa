@@ -1183,6 +1183,45 @@ def transition_goal(
     return result.model_dump(mode="json")
 
 
+@router.post("/goals/{goal_id}/work-packages/{package_id}/retry")
+def retry_goal_work_package(
+    request: Request,
+    goal_id: str,
+    package_id: str,
+    expected_version: int,
+    policy_revision: int,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    actor: Annotated[str, Header(alias="X-PA-Actor")] = "user:local",
+    authority: Annotated[str | None, Header(alias="X-PA-Authority-Instance")] = None,
+    fencing_token: Annotated[
+        int | None, Header(alias="X-PA-Goal-Fencing-Token")
+    ] = None,
+):
+    """Operator retry of a blocked or failed work package (and its goal)."""
+
+    ctx = _ctx(
+        request,
+        expected_version,
+        policy_revision,
+        idempotency_key,
+        actor,
+        authority,
+        fencing_token,
+    )
+    result = _run(
+        lambda: _governed_goal_mutation(
+            request,
+            goal_id,
+            "transition_goal",
+            ctx,
+            lambda: _service(request).retry_work_package(goal_id, package_id, ctx),
+            operation_payload={"retry_work_package": package_id},
+        )
+    )
+    _wake_supervisor(request)
+    return result.model_dump(mode="json")
+
+
 @router.post("/goals/{goal_id}/revisions")
 def revise_goal(
     request: Request,
@@ -1685,6 +1724,8 @@ class GoalsModule(Module):
             governance=governance,
             default_provider=ctx.settings.agent_provider,
             verifier_independence=ctx.settings.goal_verifier_independence,
+            no_progress_seconds=ctx.settings.goal_drifting_after_seconds,
+            stalled_seconds=ctx.settings.goal_stalled_after_seconds,
         )
         ctx.register_service("goal_supervisor", supervisor)
         self._supervisor_stop: asyncio.Event | None = None
