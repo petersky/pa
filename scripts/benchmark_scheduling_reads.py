@@ -230,9 +230,11 @@ async def profile(folder, *, population, payload_bytes, iterations, progress):
 
 
 def benchmark(*, population=480, iterations=6, payloads=(1024, 12288)):
-    if not 24 <= population <= 480 or not 1 <= iterations <= 6 or any(not 1 <= n <= 12288 for n in payloads):
+    if (not 24 <= population <= 480 or not 1 <= iterations <= 6 or not 1 <= len(payloads) <= 2
+            or any(not 1 <= n <= 12288 for n in payloads)):
         raise ValueError("bounded population/iterations/valid payload")
-    result = {"contract": "pa.scheduling-read-api-inventory/v1", "distribution_columns": DISTRIBUTION_COLUMNS, "profiles": []}
+    result = {"contract": "pa.scheduling-read-api-inventory/v1", "distribution_columns": DISTRIBUTION_COLUMNS, "profiles": [],
+        "payload_size_scope": "ASCII synthetic value length; complete JSON adds index/key overhead and passes the unchanged16000byte Schedule validator."}
     with tempfile.TemporaryDirectory(prefix="pa-scheduling-read-api-") as temporary:
         root = Path(temporary).resolve()
         if shutil.disk_usage(root).free < 4*1024**3: raise RuntimeError("At least4GiB free required")
