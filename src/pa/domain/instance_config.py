@@ -64,6 +64,13 @@ class InstanceConfig(BaseModel):
     dispatch_lost_remote_seconds: int = Field(default=21600, ge=0, le=90 * 24 * 3600)
     # Silence before an authority asks the target about a running remote dispatch (0 = never; old behaviour).
     dispatch_stale_running_seconds: int = Field(default=1800, ge=0, le=30 * 24 * 3600)
+    # Dispatch lease: a running remote dispatch whose target negotiated the lease is
+    # live while its lease is fresh; progress, heartbeats and a confirmed probe renew it
+    # (0 = grant no leases; older stale-running behaviour only).
+    dispatch_lease_ttl_seconds: int = Field(default=300, ge=0, le=7 * 24 * 3600)
+    # Extra time an expired lease is given when the target cannot even answer a status
+    # probe, before the dispatch is failed recoverably and re-offered.
+    dispatch_lease_grace_seconds: int = Field(default=300, ge=0, le=7 * 24 * 3600)
     # Cap of the progress-delivery backoff (old behaviour: flat 3 s).
     progress_delivery_retry_max_seconds: int = Field(default=300, ge=1, le=86400)
     # Retry window for 404/401/unknown_dispatch (0 = permanent after one try, as before).

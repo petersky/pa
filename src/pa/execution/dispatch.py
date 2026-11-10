@@ -48,6 +48,9 @@ from pa.execution.progress import (
     CompletionReportV1,
     DispatchProgressEventV1,
     DispatchProgressHeartbeatV1,
+    LEASE_FENCE_HEADER,
+    LEASE_PROTOCOL,
+    STALE_LEASE_FENCE_CODE,
     ProgressIngestResult,
     ProgressDeliveryTarget,
     progress_freshness,
@@ -158,10 +161,14 @@ CANCELLABLE_WORKER_STAGES = {
 WORKER_OWNED_FIELDS = (
     "sync_evidence", "card_version", "card_snapshot", "project_id",
     "attachment_evidence", "progress_protocol_version", "session_id",
-    "goal_provenance", "knowledge_recorded_at",
+    "goal_provenance", "knowledge_recorded_at", "lease_protocol",
 )
 CAPACITY_RESERVATION_TTL = timedelta(hours=1)
 CAPACITY_CONSUMER_LINK_LIMIT = 256
+# Dispatch lease protocol, negotiated in the materialize handshake. The lease is
+# the authority's liveness claim on the target that holds a running dispatch; the
+# fence orders successive assignments so a superseded holder cannot write.
+DEFAULT_LEASE_TTL_SECONDS = 300.0
 RECOVERABLE_DISPATCH_STATES = {
     "checking_sync",
     "materializing",
@@ -173,6 +180,18 @@ RECOVERABLE_DISPATCH_STATES = {
     "dispatched",
     "materialized",
 }
+
+
+class StaleLeaseFence(ValueError):
+    """A writer presented a lease fence older than the dispatch's current one."""
+
+    def __init__(self, dispatch_id: str, presented: int, current: int) -> None:
+        super().__init__(
+            f"dispatch {dispatch_id} was reassigned (fence {presented} < {current})"
+        )
+        self.dispatch_id = dispatch_id
+        self.presented = presented
+        self.current = current
 
 
 class DispatchEvent(BaseModel):
@@ -392,6 +411,24 @@ class DispatchRecord(BaseModel):
     completion_delivery_class: str | None = None
     completion_next_retry_at: datetime | None = None
     acknowledged_at: datetime | None = None
+    # Dispatch lease (stage 2). ``lease_fence`` is the assignment generation: it
+    # starts at 1 and is bumped by every retry/re-offer, and a writer holding an
+    # older fence is rejected. ``lease_protocol`` is set only when the target
+    # confirmed it in the materialize handshake; the other lease fields are
+    # authority-side liveness bookkeeping granted when the dispatch starts
+    # running and renewed by every progress, heartbeat and confirmed probe.
+    # Authority == target dispatches never carry a lease (implicitly fresh).
+    lease_protocol: str | None = None
+    lease_id: str | None = None
+    lease_fence: int = Field(default=1, ge=1)
+    lease_holder_instance_id: str | None = None
+    lease_granted_at: datetime | None = None
+    lease_renewed_at: datetime | None = None
+    lease_expires_at: datetime | None = None
+    lease_ttl_seconds: float | None = None
+    # Target-side: a newer fence made this mirror stale; it stops reporting.
+    lease_superseded_at: datetime | None = None
+    lease_superseded_by_fence: int | None = None
     events: list[DispatchEvent] = Field(default_factory=list)
     progress_protocol_version: int | None = None
     progress_next_sequence: int = 1
@@ -423,6 +460,46 @@ class DispatchRecord(BaseModel):
             key=lambda event: (event.sequence, event.occurred_at),
             default=None,
         )
+
+    @property
+    def is_local_dispatch(self) -> bool:
+        return self.authority_instance_id == self.target_instance_id
+
+    @property
+    def assignment_lease_id(self) -> str:
+        """Identity of the current assignment (stable for one fence)."""
+        return f"{self.dispatch_id}:{self.lease_fence}"
+
+    def lease_is_fresh(self, now: datetime | None = None) -> bool | None:
+        """Whether the holder's lease is current; ``None`` when no lease exists.
+
+        A local dispatch (authority == target) is covered by session liveness and
+        needs no renewal traffic, so its lease is implicitly always fresh.
+        """
+        if self.is_local_dispatch:
+            return True
+        if self.lease_expires_at is None:
+            return None
+        stamp = self.lease_expires_at
+        stamp = stamp if stamp.tzinfo else stamp.replace(tzinfo=UTC)
+        return (now or datetime.now(UTC)) < stamp
+
+    def public_lease(self, now: datetime | None = None) -> dict[str, Any]:
+        local = self.is_local_dispatch
+        return {
+            "protocol": self.lease_protocol,
+            "mode": "implicit" if local else ("leased" if self.lease_expires_at else "none"),
+            "id": None if local else (self.lease_id or self.assignment_lease_id),
+            "fence": self.lease_fence,
+            "holder_instance_id": self.lease_holder_instance_id,
+            "granted_at": self.lease_granted_at.isoformat() if self.lease_granted_at else None,
+            "renewed_at": self.lease_renewed_at.isoformat() if self.lease_renewed_at else None,
+            "expires_at": self.lease_expires_at.isoformat() if self.lease_expires_at else None,
+            "fresh": self.lease_is_fresh(now),
+            "superseded_at": (
+                self.lease_superseded_at.isoformat() if self.lease_superseded_at else None
+            ),
+        }
 
     @property
     def completion_outbox_last_error(self) -> str | None:
@@ -516,6 +593,8 @@ class DispatchRecord(BaseModel):
             },
         )
         data["can_retry"] = self.retryable
+        if not summary:
+            data["lease"] = self.public_lease()
         data["execution_selection"] = self.request_payload.get("execution_selection")
         data["can_cancel"] = self.state in {
             "waiting_capacity",
@@ -1058,6 +1137,7 @@ class DispatchStore:
         read_only: bool = False,
         deferred_read_only: bool = False,
         reservation_hard_expiry: bool = False,
+        lease_ttl_seconds: float | Callable[[], float] = DEFAULT_LEASE_TTL_SECONDS,
     ) -> None:
         if deferred_read_only and not read_only:
             raise ValueError("deferred dispatch storage must be read-only")
@@ -1066,6 +1146,9 @@ class DispatchStore:
         # failed when a stage has been hung for a full TTL. True restores the
         # unconditional timeout.
         self.reservation_hard_expiry = bool(reservation_hard_expiry)
+        # Seconds a granted dispatch lease stays valid without a renewal (0 = do
+        # not grant leases). A callable is read at use so a live setting applies.
+        self._lease_ttl_source = lease_ttl_seconds
         self.path = data_dir / "dispatch_mutations.json"
         self.db_path = data_dir / "dispatch_mutations.db"
         self.backup_path = self.path.with_name(
@@ -3963,6 +4046,18 @@ class DispatchStore:
             # terminal. Reuse the same atomic gate as new admission on retry.
             self._check_card_concurrency_locked(current)
             now = datetime.now(UTC)
+            # Every (re)assignment starts a new lease generation: whoever held the
+            # previous one can no longer report for this dispatch.
+            current.lease_fence += 1
+            current.lease_protocol = None
+            current.lease_id = None
+            current.lease_holder_instance_id = None
+            current.lease_granted_at = None
+            current.lease_renewed_at = None
+            current.lease_expires_at = None
+            current.lease_ttl_seconds = None
+            current.lease_superseded_at = None
+            current.lease_superseded_by_fence = None
             if retarget:
                 for field_name, value in retarget.items():
                     setattr(current, field_name, copy.deepcopy(value))
@@ -4220,7 +4315,11 @@ class DispatchStore:
         return len(event.__pydantic_serializer__.to_json(event))
 
     def ingest_progress(
-        self, event: DispatchProgressEventV1, *, delivered: bool = False
+        self,
+        event: DispatchProgressEventV1,
+        *,
+        delivered: bool = False,
+        lease_fence: int | None = None,
     ) -> ProgressIngestResult:
         """Idempotently retain a bounded, safely reorderable checkpoint history."""
         sanitized = sanitize_progress_event(event)
@@ -4232,6 +4331,7 @@ class DispatchStore:
             replayed = self._replay_progress_receipt(sanitized)
             if replayed:
                 return replayed
+            self.enforce_lease_fence(stored, lease_fence)
             self._validate_progress_provenance(stored, sanitized)
             if delivered and sanitized.delivered_at is None:
                 sanitized.delivered_at = datetime.now(UTC)
@@ -4289,6 +4389,7 @@ class DispatchStore:
                     -MAX_PROGRESS_SEEN_KEYS:
                 ]
                 record.updated_at = datetime.now(UTC)
+                self._renew_lease(record, record.updated_at)
                 result = ProgressIngestResult(
                     accepted=True,
                     status="coalesced",
@@ -4368,6 +4469,7 @@ class DispatchStore:
                 record.progress_next_sequence, sanitized.sequence + 1
             )
             record.updated_at = datetime.now(UTC)
+            self._renew_lease(record, record.updated_at)
             result = ProgressIngestResult(
                 accepted=True,
                 status="late" if sanitized.sequence < previous_max else "accepted",
@@ -4388,6 +4490,7 @@ class DispatchStore:
         heartbeat: DispatchProgressHeartbeatV1,
         *,
         delivered: bool = False,
+        lease_fence: int | None = None,
     ) -> ProgressIngestResult:
         """Replace the freshness signal without appending activity history."""
         sanitized = sanitize_heartbeat(heartbeat)
@@ -4399,6 +4502,7 @@ class DispatchStore:
             replayed = self._replay_progress_receipt(sanitized)
             if replayed:
                 return replayed
+            self.enforce_lease_fence(stored, lease_fence)
             self._validate_progress_provenance(stored, sanitized)
             # Only seen keys mutate in place. Range helpers replace their lists
             # and the incoming heartbeat is detached by sanitization. Preserve
@@ -4416,6 +4520,7 @@ class DispatchStore:
                     -MAX_PROGRESS_SEEN_KEYS:
                 ]
                 record.updated_at = datetime.now(UTC)
+                self._renew_lease(record, record.updated_at)
                 result = ProgressIngestResult(
                     accepted=True,
                     status="late",
@@ -4446,6 +4551,7 @@ class DispatchStore:
                 record.progress_next_sequence, sanitized.sequence + 1
             )
             record.updated_at = datetime.now(UTC)
+            self._renew_lease(record, record.updated_at)
             result = ProgressIngestResult(
                 accepted=True,
                 status="accepted",
@@ -4477,6 +4583,8 @@ class DispatchStore:
         with measured_lock(self._lock):
             for record in self._records.values():
                 if record.target_instance_id != originating_instance_id:
+                    continue
+                if record.lease_superseded_at is not None:
                     continue
                 for event in record.progress_events:
                     if event.delivered_at is None:
@@ -4526,10 +4634,13 @@ class DispatchStore:
             for record in self._records.values():
                 if record.target_instance_id != originating_instance_id:
                     continue
+                if record.lease_superseded_at is not None:
+                    continue
                 target = ProgressDeliveryTarget(
                     record.dispatch_id,
                     record.authority_instance_id,
                     record.authority_url,
+                    record.lease_fence if record.lease_protocol else None,
                 )
                 for event in record.progress_events:
                     if event.delivered_at is None:
@@ -4846,6 +4957,9 @@ class DispatchStore:
                     ))
                 else:
                     self.apply_transition(current, state, message, detail=detail)
+                    if state == "running":
+                        # The target acknowledged the prompt: grant the lease.
+                        self._renew_lease(current)
             current.updated_at = datetime.now(UTC)
             self._save(current, durability="full")
             return self._snapshot(self._records[current.dispatch_id])
@@ -5558,9 +5672,91 @@ class DispatchStore:
                 seq=current.events[-1].seq + 1 if current.events else 1,
                 state="running", message=message, detail={"liveness_probe": True},
             ))
+            self._renew_lease(current)
             return True
 
         return self.mutate_current(dispatch_id, mutate=mutate)
+
+    # ---- dispatch lease -------------------------------------------------
+
+    def lease_ttl(self) -> float:
+        source = self._lease_ttl_source
+        try:
+            return max(0.0, float(source() if callable(source) else source))
+        except (TypeError, ValueError):
+            return DEFAULT_LEASE_TTL_SECONDS
+
+    def _renew_lease(self, record: DispatchRecord, now: datetime | None = None) -> bool:
+        """Grant or extend the holder's lease on ``record`` (in memory).
+
+        Only a running remote dispatch whose target negotiated the lease protocol
+        carries a lease; a local dispatch is implicitly fresh and is never
+        written. The expiry only moves forward.
+        """
+        ttl = self.lease_ttl()
+        if (
+            ttl <= 0
+            or record.lease_protocol != LEASE_PROTOCOL
+            or record.is_local_dispatch
+            or record.state != "running"
+            or record.acknowledged_at is not None
+        ):
+            return False
+        now = now or datetime.now(UTC)
+        expires = now + timedelta(seconds=ttl)
+        previous = record.lease_expires_at
+        if previous is not None:
+            previous = previous if previous.tzinfo else previous.replace(tzinfo=UTC)
+            expires = max(expires, previous)
+        else:
+            record.lease_granted_at = now
+        record.lease_id = record.assignment_lease_id
+        record.lease_holder_instance_id = record.target_instance_id
+        record.lease_renewed_at = now
+        record.lease_ttl_seconds = ttl
+        record.lease_expires_at = expires
+        return True
+
+    @staticmethod
+    def enforce_lease_fence(record: DispatchRecord, presented: int | None) -> None:
+        """Reject a writer whose fence predates the current assignment.
+
+        An absent fence (an older target that never negotiated a lease) is not
+        checked; the existing provenance checks still apply to it. A presented
+        fence is checked even after a reassignment cleared ``lease_protocol``
+        (it is renegotiated with the new holder).
+        """
+        if presented is not None and presented < record.lease_fence:
+            raise StaleLeaseFence(record.dispatch_id, presented, record.lease_fence)
+
+    def mark_lease_superseded(
+        self, dispatch_id: str, current_fence: int | None
+    ) -> DispatchRecord | None:
+        """Target side: the authority reassigned this dispatch; stop reporting."""
+
+        def mutate(current: DispatchRecord) -> bool:
+            if current.lease_superseded_at is not None:
+                return False
+            if current_fence is not None and current_fence <= current.lease_fence:
+                return False
+            current.lease_superseded_at = datetime.now(UTC)
+            current.lease_superseded_by_fence = current_fence
+            current.events.append(DispatchEvent(
+                seq=current.events[-1].seq + 1 if current.events else 1,
+                state=current.state,
+                message=(
+                    "The authority reassigned this dispatch to a newer lease; "
+                    "this instance no longer reports for it."
+                ),
+                detail={"lease_superseded": True, "held_fence": current.lease_fence,
+                        "current_fence": current_fence},
+            ))
+            return True
+
+        try:
+            return self.mutate_current(dispatch_id, mutate=mutate)
+        except ValueError:
+            return None
 
     def pending(self) -> list[DispatchRecord]:
         self._require_readable()
@@ -6185,8 +6381,13 @@ class CompletionOutbox:
         peer_post: Callable[..., Awaitable[httpx.Response]] | None = None,
         notify_after_attempts: int = 0,
         unknown_dispatch_grace_seconds: float = 0.0,
+        superseded_notifier: Callable[[str, dict[str, Any]], Awaitable[Any] | Any]
+        | None = None,
     ) -> None:
         self.store = store
+        # Told ``(dispatch_id, detail)`` when the authority rejects a completion
+        # because a newer lease fence owns the dispatch.
+        self.superseded_notifier = superseded_notifier
         # A callable is read at send time so a rotated fleet token is picked up
         # without restarting; a plain string keeps the legacy fixed behaviour.
         self._token_source = token
@@ -6361,6 +6562,7 @@ class CompletionOutbox:
                     "transport_exhausted",
                     "permanent_failure",
                     "semantic_conflict",
+                    "superseded",
                 }:
                     continue
                 if (
@@ -6487,6 +6689,8 @@ class CompletionOutbox:
 
         record = await self._mutate(record, count_attempt)
         headers = {"Idempotency-Key": record.mutation_id}
+        if record.lease_protocol and record.lease_fence:
+            headers[LEASE_FENCE_HEADER] = str(record.lease_fence)
         try:
             request = self._post(
                 record, "complete",
@@ -6601,7 +6805,43 @@ class CompletionOutbox:
                     detail = {}
                 code = str(detail.get("code") or "")
                 message = f"HTTP {response.status_code}: {response.text[:500]}"
-                if response.status_code == 409 and code in {
+                if response.status_code == 409 and code == STALE_LEASE_FENCE_CODE:
+                    current_fence = detail.get("current_fence")
+
+                    def superseded(current: DispatchRecord) -> None:
+                        now = datetime.now(UTC)
+                        current.last_error = sanitize_text(
+                            "Superseded: the authority reassigned this dispatch to a "
+                            "newer lease; the completion was not accepted.",
+                            limit=500,
+                        )
+                        current.completion_delivery_class = "superseded"
+                        current.completion_next_retry_at = None
+                        current.recoverable = False
+                        current.lease_superseded_at = now
+                        current.lease_superseded_by_fence = (
+                            current_fence if isinstance(current_fence, int) else None
+                        )
+                        current.events.append(DispatchEvent(
+                            seq=current.events[-1].seq + 1 if current.events else 1,
+                            state=current.state,
+                            message="Completion rejected: this dispatch was reassigned to a newer lease.",
+                            detail={"lease_superseded": True,
+                                    "held_fence": current.lease_fence,
+                                    "current_fence": current_fence},
+                        ))
+
+                    record = await self._mutate(record, superseded)
+                    if self.superseded_notifier:
+                        try:
+                            result = self.superseded_notifier(record.dispatch_id, dict(detail))
+                            if asyncio.iscoroutine(result):
+                                await result
+                        except Exception:
+                            logger.exception(
+                                "Superseded-lease notice failed for %s", record.dispatch_id
+                            )
+                elif response.status_code == 409 and code in {
                     "authority_version_conflict",
                     "authority_card_missing",
                 }:
