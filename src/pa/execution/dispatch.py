@@ -2536,15 +2536,19 @@ class DispatchStore:
         self._yield_to_index_writer()
         with measured_lock(self._index_lock):
             records = [
-                self._snapshot(record)
+                record
                 for record in self._goal_lifecycle_records.values()
                 if record.authority_instance_id == authority_instance_id
                 and record.goal_provenance is not None
                 and record.goal_provenance.authority_instance_id
                 == authority_instance_id
             ]
-        records.sort(key=lambda record: record.updated_at)
-        return records[: max(1, min(limit, 1000))]
+            # Recovery uses only the oldest bounded batch. Select references
+            # before copying retained plans/proofs, preserving stable ties and
+            # the publication lock until every returned record is detached.
+            records.sort(key=lambda record: record.updated_at)
+            return [self._snapshot(record)
+                    for record in records[: max(1, min(limit, 1000))]]
 
     def latest_by_card(
         self, card_ids: set[str], *, realm_id: str | None = None
