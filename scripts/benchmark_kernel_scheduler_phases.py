@@ -150,10 +150,11 @@ def measured_poll(root, collector, progress, *, detailed):
     return poll
 
 
-def one(root, *, mode, population, iterations):
+def one(root, *, mode, population, iterations, defer_oracles=False):
     root.mkdir(); progress = {}; collector = Collector()
     with patch.object(events, "poll_events", measured_poll(root, collector, progress, detailed=mode == "observed")):
-        try: result = asyncio.run(inbox.run(root, population=population, iterations=iterations, progress=progress))
+        try: result = asyncio.run(inbox.run(root, population=population, iterations=iterations, progress=progress,
+            defer_oracles=defer_oracles))
         except Exception as exc:
             result = {"failed": True, **inbox.shared.support.minimum_failure(exc),
                 "partial_status_counts": dict(progress.get("statuses", {})), "failed_phase": progress.get("phase")}
@@ -161,11 +162,30 @@ def one(root, *, mode, population, iterations):
         "request_ms", "response_bytes", "status_counts", "operation_deltas", "expiry_passes", "detail_and_auth_probes",
         "explicit_ge500ms", "warning_counts", "warning_phase_counts", "warning_observations",
         "private_response_retained", "public_redaction_verified", "phase_ms", "select_counts",
-        "response_byte_totals", "runtime")
+        "response_byte_totals", "runtime", "oracle")
     return {**{k: result[k] for k in keys if k in result}, "mode": mode,
         "poll_calls": collector.completed, "poll_overflow": collector.overflow,
         "event_loop": result.get("runtime", {}).get("event_loop"),
         "console_characters": result.get("console_characters")}
+
+
+def oracle_comparison(*, population=480, iterations=4):
+    if not 30 <= population <= 480 or not 1 <= iterations <= 4: raise ValueError("bounded population")
+    result = {"contract": "pa.private-oracle-cpu-comparison/v1", "population": population,
+        "iterations": iterations, "runs": [], "sql_observation_columns": SQL_FIELDS}
+    with tempfile.TemporaryDirectory(prefix="pa-private-oracle-cpu-") as temporary:
+        root = Path(temporary).resolve()
+        if shutil.disk_usage(root).free < 4*1024**3: raise RuntimeError("At least4GiB free required")
+        for mode in ("inline_oracles", "after_shutdown_oracles"):
+            run = one(root/mode, mode=mode, population=population, iterations=iterations,
+                defer_oracles=mode == "after_shutdown_oracles")
+            result["runs"].append(run)
+            if run.get("failed"): break
+        result["fixture_storage"] = inbox.shared.support.fixture_bytes(root)
+    result.update(temporary_fixture_removed=not root.exists(),
+        script_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        scope="Two independent normal private full Kernels. Source unchanged. Both keep minimal poll/processCPU timers and builtin SQL observations, no detailed observer. Compare original synchronous inline fixture oracle vs identical full assertions after normal shutdown, response payloads held only in bounded16MiB RAM. All HTTP/auth/realm/state/public-model/receipt assertions retained in original order; no service/worker/poll bound or product threshold changes. First-start/cache/work cohorts differ; fixture CPU attribution is not native/provider/deployed acceptance.")
+    return result
 
 
 def benchmark(*, pairs=2, population=480, iterations=4):

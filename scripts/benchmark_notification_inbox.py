@@ -28,7 +28,7 @@ from pa.modules import notifications as module
 from pa.notifications.service import can_view_notification
 
 
-async def run(root, *, population, iterations, progress):
+async def run(root, *, population, iterations, progress, defer_oracles=False):
     settings = shared.Settings(data_dir=root/"data", workspace_root=root/"workspaces",
         agent_enabled=False, telemetry_enabled=False, auth_required=True,
         primary_realm="default", subscribed_realms=["default", "engineering"])
@@ -170,7 +170,10 @@ async def run(root, *, population, iterations, progress):
                 "limit_above_max": ({"limit": 201}, 422),
                 "negative_offset": ({"offset": -1}, 422),
             }
-            def verify(response, params, principal):
+            pending_oracles = []
+            oracle_totals = {}
+            retained_response_bytes = 0
+            def verify_payload(response, params, principal):
                 body = response.json(); realm = params.get("realm", "default")
                 visible = [r for r in records if r.realm_id == realm and
                     can_view_notification(r, principal, {"default", "engineering"})]
@@ -196,6 +199,29 @@ async def run(root, *, population, iterations, progress):
                     if record.interaction and record.interaction.sensitive:
                         assert public["interaction"]["response"] is None
                         assert public["interaction"]["response_summary"] == "Sensitive response recorded"
+                return len(body["items"])
+            def verify(response, params, principal):
+                wall, cpu = time.perf_counter(), time.thread_time()
+                phase = progress["phase"]
+                totals = oracle_totals.setdefault(phase, {"calls": 0, "rows": 0, "bytes": 0,
+                    "wall_ms": 0., "thread_cpu_ms": 0., "errors": 0})
+                totals["calls"] += 1; totals["bytes"] += len(response.content)
+                try: totals["rows"] += verify_payload(response, params, principal)
+                except BaseException:
+                    totals["errors"] += 1
+                    raise
+                finally:
+                    totals["wall_ms"] += (time.perf_counter()-wall)*1000
+                    totals["thread_cpu_ms"] += (time.thread_time()-cpu)*1000
+            def check_response(response, params, principal):
+                nonlocal retained_response_bytes
+                if defer_oracles:
+                    retained_response_bytes += len(response.content)
+                    if retained_response_bytes > 16*1024**2:
+                        raise ValueError("private_oracle_response_budget_exceeded")
+                    pending_oracles.append((response, dict(params), principal))
+                else:
+                    verify(response, params, principal)
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://fixture",
                     headers={"Authorization": "Bearer "+alice.cli_token}) as client:
                 with patch.object(service, "expire_due", timed_expire):
@@ -209,7 +235,7 @@ async def run(root, *, population, iterations, progress):
                     for params, expected in variants.values():
                         response = await client.get("/api/notifications", params=params)
                         assert response.status_code == expected
-                        if expected == 200: verify(response, params, f"user:{alice.id}")
+                        if expected == 200: check_response(response, params, f"user:{alice.id}")
                     before = runtime.snapshot()
                     progress["phase"] = "measurement"
                     async def background():
@@ -244,14 +270,14 @@ async def run(root, *, population, iterations, progress):
                                 sizes[name].append(len(response.content))
                                 assert response.status_code == expected
                                 assert len(response.content) < 8*1024*1024
-                                if expected == 200: verify(response, params, f"user:{alice.id}")
+                                if expected == 200: check_response(response, params, f"user:{alice.id}")
                     after = runtime.snapshot()
                     progress["phase"] = "postmeasurement_auth"
                     # Same records, different authenticated principal; no private-response effect.
                     response = await client.get("/api/notifications", params={"limit": 200},
                         headers={"Authorization": "Bearer "+bob.cli_token})
                     assert response.status_code == 200
-                    verify(response, {"limit": 200}, f"user:{bob.id}")
+                    check_response(response, {"limit": 200}, f"user:{bob.id}")
                     details = {}
                     for name, path, token, expected in (
                         ("own_detail", "/api/notifications/notice-0002", alice.cli_token, 200),
@@ -283,6 +309,22 @@ async def run(root, *, population, iterations, progress):
                 "explicit_ge500ms": {k: sum(t >= 500 for t in v) for k, v in samples.items()},
                 "private_response_retained": True, "public_redaction_verified": True}
             progress["phase"] = "shutdown"
+        if defer_oracles:
+            # Fixture-only client/oracle CPU is deliberately outside the server
+            # lifetime. Preserve every response and the same assertion order;
+            # no product worker, schedule, timer or threshold is changed.
+            progress["phase"] = "deferred_oracles"
+            for arguments in pending_oracles: verify(*arguments)
+            pending_oracles.clear()
+        expected_checks = sum(expected == 200 for _, expected in variants.values())*(iterations+1)+1
+        assert sum(cell["calls"] for cell in oracle_totals.values()) == expected_checks
+        assert not any(cell["errors"] for cell in oracle_totals.values())
+        result["oracle"] = {"deferred_until_after_shutdown": defer_oracles,
+            "retained_response_logical_bytes": retained_response_bytes,
+            "retained_response_budget_bytes": 16*1024**2,
+            "scope": "Same full ID/order/filter/public-field/redaction assertions. Oracle time includes JSON decode and expected-model construction; thread CPU belongs to the fixture event-loop/client thread. Response bytes are RAM-only payload totals, not peak RAM. All deferred checks complete after normal server shutdown; no server work skipped.",
+            "phases": {phase: {key: round(value, 3) if isinstance(value, float) else value
+                for key, value in cell.items()} for phase, cell in oracle_totals.items()}}
         result.update(warning_counts=dict(warnings.counts), warning_phase_counts=dict(warning_phases),
             warning_observations=warning_observations, console_characters=console.characters)
     return result
