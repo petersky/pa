@@ -379,7 +379,7 @@ class PAClient(Client):
         self.session_titles: dict[str, dict] = {}
         self._mcp_startup_failures: dict[str, str] = {}
         self._mcp_startup_successes: set[str] = set()
-        self._mcp_recovery_calls: dict[tuple[str, str], None] = {}
+        self._mcp_recovery_calls: dict[tuple[str, str], tuple[str, str] | None] = {}
         self._mcp_live_session: str | None = None
         self._mcp_startup_events: dict[str, asyncio.Event] = {}
         self.on_mcp_startup: Callable[[str], None] | None = None
@@ -514,10 +514,15 @@ class PAClient(Client):
             and normalized.get("status") in {"pending", "in_progress"}
             and call_id and (is_pa_call or call_id == "mcp_startup.pa")
         ):
-            self._mcp_recovery_calls[call_key] = None
+            # ACP updates are deltas: Codex omits rawInput on completion.
+            # Retain only identity, never arguments, from the live start.
+            self._mcp_recovery_calls[call_key] = (
+                ("pa", raw_input["tool"]) if is_pa_call else None
+            )
             if len(self._mcp_recovery_calls) > 256:
                 self._mcp_recovery_calls.pop(next(iter(self._mcp_recovery_calls)))
         live_call = call_key in self._mcp_recovery_calls
+        live_identity = self._mcp_recovery_calls.get(call_key)
         recovery_allowed = (
             key not in self._mcp_startup_failures or call_key in self._mcp_recovery_calls
         )
@@ -548,7 +553,8 @@ class PAClient(Client):
             if self.on_mcp_startup:
                 self.on_mcp_startup(key)
         # Codex ACP 1.11 forwards only failed/cancelled startup events. Its
-        # completed MCP calls carry rawInput.server/tool and rawOutput.result.
+        # MCP starts carry rawInput.server/tool; completion deltas may carry
+        # only rawOutput.result. Join them by exact session and live call ID.
         # A successful call through PA is positive evidence from this provider
         # session; titles, silence and an independent owner probe are not.
         raw_input = normalized.get("raw_input")
@@ -560,10 +566,11 @@ class PAClient(Client):
             and normalized.get("status") == "completed"
             and key == self._mcp_live_session
             and live_call
-            and isinstance(raw_input, dict)
-            and raw_input.get("server") == "pa"
-            and isinstance(raw_input.get("tool"), str)
-            and raw_input["tool"]
+            and live_identity is not None
+            and (
+                raw_input is None
+                or (is_pa_call and (raw_input["server"], raw_input["tool"]) == live_identity)
+            )
             and isinstance(raw_output, dict)
             and raw_output.get("error") is None
             and isinstance(raw_output.get("result"), dict)
