@@ -1035,9 +1035,10 @@ class DispatchStore:
     ) -> None:
         if deferred_read_only and not read_only:
             raise ValueError("deferred dispatch storage must be read-only")
-        # False (default): a pre-start reservation that outlives its TTL is only
-        # failed when another dispatch is waiting for the slot; otherwise the
-        # reservation is renewed. True restores the unconditional timeout.
+        # False (default): a pre-start reservation that outlives its TTL is
+        # renewed while it is queued or still making stage transitions, and only
+        # failed when a stage has been hung for a full TTL. True restores the
+        # unconditional timeout.
         self.reservation_hard_expiry = bool(reservation_hard_expiry)
         self.path = data_dir / "dispatch_mutations.json"
         self.db_path = data_dir / "dispatch_mutations.db"
@@ -4597,9 +4598,11 @@ class DispatchStore:
     ) -> list[DispatchRecord]:
         """Fail timed-out pre-start work and durably release its slot.
 
-        Unless ``reservation_hard_expiry`` is set, a reservation whose target has
-        no dispatch waiting for capacity is renewed instead of failed: holding an
-        idle slot costs nothing, while failing it interrupts healthy work.
+        Unless ``reservation_hard_expiry`` is set, an overdue reservation is
+        renewed only while the dispatch is genuinely waiting (``queued`` for a
+        worker) or progressing (its last stage transition is within the TTL).
+        A pre-start stage that made no transition for a full TTL is hung and is
+        failed whether or not anyone is waiting for the slot.
         """
 
         checked_at = now or datetime.now(UTC)
@@ -4623,11 +4626,12 @@ class DispatchStore:
                     or stored.capacity_reservation_expires_at > checked_at
                 ):
                     continue
-                if not self.reservation_hard_expiry and not any(
-                    waiter.state == "waiting_capacity"
-                    for waiter in self._capacity_records_by_target.get(
-                        stored.target_instance_id, ()
+                if not self.reservation_hard_expiry and (
+                    stored.state == "queued"
+                    or (
+                        stored.events[-1].created_at if stored.events else stored.updated_at
                     )
+                    > checked_at - CAPACITY_RESERVATION_TTL
                 ):
                     record = self._snapshot(stored)
                     record.capacity_reservation_expires_at = (

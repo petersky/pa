@@ -52,9 +52,10 @@ class InstanceConfig(BaseModel):
     dispatch_provider_queue_capacities: dict[str, DispatchQueueCapacity] = Field(
         default_factory=dict
     )
-    # A pre-start capacity reservation older than one hour is renewed unless
-    # another dispatch is waiting for the slot. True restores the old behaviour:
-    # fail every reservation that is not running after one hour.
+    # A pre-start capacity reservation older than one hour is renewed while the
+    # dispatch is queued or still progressing between stages; a stage hung for a
+    # full hour is failed. True restores the old behaviour: fail every
+    # reservation that is not running after one hour.
     dispatch_capacity_reservation_hard_expiry: bool = False
     relay_enabled: bool = False
     cloud_endpoint: str = ""

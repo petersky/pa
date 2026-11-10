@@ -13,7 +13,12 @@ from pathlib import Path
 from pa.config import Settings
 from pa.configuration.registry import REGISTRY
 from pa.domain.instance_config import InstanceConfig
-from pa.execution.dispatch import CAPACITY_RESERVATION_TTL, DispatchRecord, DispatchStore
+from pa.execution.dispatch import (
+    CAPACITY_RESERVATION_TTL,
+    DispatchEvent,
+    DispatchRecord,
+    DispatchStore,
+)
 from pa.execution.post_turn import (
     FollowupActionName,
     PostTurnEvaluator,
@@ -92,13 +97,36 @@ def _overdue(store: DispatchStore, record: DispatchRecord) -> None:
     store.put(record)
 
 
-def test_reservation_ttl_default_keeps_healthy_dispatch_when_nothing_waits() -> None:
+def _enter_stage(
+    store: DispatchStore, record: DispatchRecord, state: str, *, age: timedelta
+) -> DispatchRecord:
+    """Move a reserved dispatch into a pre-start stage ``age`` ago, then make it overdue."""
+    record.state = state
+    record.events.append(
+        DispatchEvent(
+            seq=record.events[-1].seq + 1,
+            state=state,
+            message=f"entered {state}",
+            created_at=datetime.now(UTC) - age,
+        )
+    )
+    _overdue(store, record)
+    return record
+
+
+def test_reservation_default_is_not_hard_expiry() -> None:
     assert Settings().dispatch_capacity_reservation_hard_expiry is False
     assert InstanceConfig().dispatch_capacity_reservation_hard_expiry is False
     assert _registry_default("dispatch_capacity_reservation_hard_expiry") is False
+
+
+def test_queued_reservation_is_renewed_even_when_another_dispatch_waits() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         store = DispatchStore(Path(tmp))
         record = _queued(store, "healthy", "card-healthy")
+        waiter = _queued(store, "waiter", "card-waiter")
+        waiter.state = "waiting_capacity"
+        store.put(waiter)
         _overdue(store, record)
 
         assert store.expire_capacity_reservations() == []
@@ -112,22 +140,41 @@ def test_reservation_ttl_default_keeps_healthy_dispatch_when_nothing_waits() -> 
         )
 
 
-def test_reservation_ttl_still_frees_slot_when_another_dispatch_waits() -> None:
+def test_progressing_prestart_stage_is_renewed() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         store = DispatchStore(Path(tmp))
-        stuck = _queued(store, "stuck", "card-stuck")
-        waiter = _queued(store, "waiter", "card-waiter")
-        waiter.state = "waiting_capacity"
-        store.put(waiter)
-        _overdue(store, stuck)
+        record = _queued(store, "slow", "card-slow")
+        _enter_stage(store, record, "provisioning", age=timedelta(minutes=5))
 
-        expired = store.expire_capacity_reservations()
+        assert store.expire_capacity_reservations() == []
 
-        assert [item.dispatch_id for item in expired] == [stuck.dispatch_id]
-        failed = store.get(stuck.dispatch_id)
-        assert failed.state == "failed"
-        assert failed.error_code == "capacity_reservation_timeout"
-        assert store.get(waiter.dispatch_id).state == "waiting_capacity"
+        kept = store.get(record.dispatch_id)
+        assert kept.state == "provisioning"
+        assert kept.capacity_reservation_expires_at > datetime.now(UTC)
+
+
+def test_dispatch_hung_in_starting_session_is_still_failed() -> None:
+    """The live capacity_reservation_timeout: no transition for a full TTL, capacity free."""
+    for waiting in (False, True):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = DispatchStore(Path(tmp))
+            hung = _queued(store, "hung", "card-hung")
+            if waiting:
+                waiter = _queued(store, "waiter", "card-waiter")
+                waiter.state = "waiting_capacity"
+                store.put(waiter)
+            _enter_stage(
+                store, hung, "starting_session", age=CAPACITY_RESERVATION_TTL + timedelta(minutes=1)
+            )
+
+            expired = store.expire_capacity_reservations()
+
+            assert [item.dispatch_id for item in expired] == [hung.dispatch_id]
+            failed = store.get(hung.dispatch_id)
+            assert failed.state == "failed"
+            assert failed.error_code == "capacity_reservation_timeout"
+            assert failed.recoverable is True
+            assert failed.capacity_release_reason == "timeout"
 
 
 def test_reservation_hard_expiry_setting_restores_unconditional_timeout() -> None:

@@ -443,10 +443,10 @@ _DEFINITIONS = (
         "dispatch_capacity_reservation_hard_expiry",
         "bool",
         False,
-        "Fail a dispatch that has not started execution within one hour even when no other dispatch is waiting for its slot.",
+        "Fail every dispatch that has not started execution within one hour, even if it is still queued or progressing between pre-start stages.",
         "Execution",
         45,
-        "Off by default so a healthy single card is never failed for a slow start while capacity is free; enable to restore the unconditional one-hour reservation timeout.",
+        "Off by default: a queued or progressing dispatch is renewed, and only a pre-start stage with no transition for a full hour is failed. Enable to restore the unconditional one-hour reservation timeout.",
         apply="restart",
     ),
     _s(
