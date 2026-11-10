@@ -250,6 +250,46 @@ class ProviderTurnError(RuntimeError):
         super().__init__(self.payload.get("message") or "Provider turn failed")
 
 
+class ACPConnectTimeout(ProviderStartError):
+    """An ACP connect step (initialize, session/new, session/load) never answered."""
+
+    def __init__(self, stage: str, timeout_s: float, provider: str | None = None):
+        self.stage = stage
+        self.timeout_s = timeout_s
+        super().__init__(
+            {
+                "code": "connect_timeout",
+                "message": (
+                    f"The ACP provider did not answer {stage} within {timeout_s:g}s. "
+                    "The provider process was stopped; PA will retry."
+                ),
+                "recoverable": True,
+                "retryable": True,
+                "stage": stage,
+                "provider": provider,
+            }
+        )
+
+
+class TurnInactivityTimeout(ConnectionError):
+    """A turn produced no real ACP output for the inactivity deadline.
+
+    A ``ConnectionError`` on purpose: the provider was cancelled, did not end the
+    turn within the grace period and was killed, so the session goes through the
+    ordinary connection-loss recovery path, which requeues the interrupted prompt.
+    """
+
+    reason = "inactivity_timeout"
+
+    def __init__(self, idle_seconds: float, grace_seconds: float):
+        self.idle_seconds = float(idle_seconds)
+        self.grace_seconds = float(grace_seconds)
+        super().__init__(
+            f"Provider made no progress for {int(idle_seconds)}s and did not end the "
+            f"cancelled turn within {grace_seconds:g}s; the provider process was killed"
+        )
+
+
 def classify_acp_failure(
     exc: BaseException,
     *,
