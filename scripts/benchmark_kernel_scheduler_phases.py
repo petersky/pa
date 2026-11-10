@@ -133,6 +133,7 @@ def measured_poll(root, collector, progress, *, detailed):
             after = resource.getrusage(resource.RUSAGE_SELF)
             record["process_context_switch_delta"] = [after.ru_nvcsw-usage.ru_nvcsw, after.ru_nivcsw-usage.ru_nivcsw]
             record["process_io_block_delta"] = [after.ru_inblock-usage.ru_inblock, after.ru_oublock-usage.ru_oublock]
+            record["process_cpu_ms"] = round(((after.ru_utime+after.ru_stime)-(usage.ru_utime+usage.ru_stime))*1000, 3)
             observation = current_observation.get()
             if observation is not None:
                 record["sql_observation"] = [round(getattr(observation, key), 3) for key in SQL_FIELDS]
@@ -159,7 +160,8 @@ def one(root, *, mode, population, iterations):
     keys = ("failed", "error_type", "location", "partial_status_counts", "failed_phase", "startup_ms", "seed_ms",
         "request_ms", "response_bytes", "status_counts", "operation_deltas", "expiry_passes", "detail_and_auth_probes",
         "explicit_ge500ms", "warning_counts", "warning_phase_counts", "warning_observations",
-        "private_response_retained", "public_redaction_verified")
+        "private_response_retained", "public_redaction_verified", "phase_ms", "select_counts",
+        "response_byte_totals", "runtime")
     return {**{k: result[k] for k in keys if k in result}, "mode": mode,
         "poll_calls": collector.completed, "poll_overflow": collector.overflow,
         "event_loop": result.get("runtime", {}).get("event_loop"),
@@ -186,7 +188,7 @@ def benchmark(*, pairs=2, population=480, iterations=4):
         result["fixture_storage"] = inbox.shared.support.fixture_bytes(root)
     result.update(temporary_fixture_removed=not root.exists(),
         script_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        scope="Alternating independent full private Kernels, original inbox creation/auth/oracle/cadence/shutdown. Sole normal Scheduler consumer, no manual polling/delivery handlers/provider/peer/native/live state. Original poll_events name and100commit bound preserved. Observer replaces only private ledger-module sqlite binding guarded to exact new root/data/scheduling.db; global sqlite3.connect untouched. Both modes have minimal poll wall/CPU and process rusage samples; observed adds numeric inclusive phases/calls/errors/rows/bytes, never SQL/parameters/results. Phases overlap and cannot be summed. Per-process context switches/IO blocks include all private foreground/background work; neither wall-minusCPU nor block counts prove GIL/physicalIO/fsync. First Kernel startup/caches differ; two pairs are small, observer overhead/control tails must remain explicit. Runtime windows include boot/warmup; request/deltas/lifecycle warnings distinct. No acceptance claim.")
+        scope=f"{pairs} alternating pair(s) of independent full private Kernels, population{population}/iterations{iterations}, original inbox creation/auth/oracle/cadence/shutdown. Sole normal Scheduler consumer, no manual polling/delivery handlers/provider/peer/native/live state. Original poll_events name and100commit bound preserved. Observer replaces only private ledger-module sqlite binding guarded to exact new root/data/scheduling.db; global sqlite3.connect untouched. Both modes have minimal poll wall/threadCPU and process CPU/rusage samples; process CPU includes all private foreground/background threads, not just the poll; observed adds numeric inclusive phases/calls/errors/rows/bytes, never SQL/parameters/results. Phases overlap and cannot be summed. Per-process context switches/IO blocks include all private foreground/background work; neither wall-minusCPU nor block counts prove GIL/physicalIO/fsync. First Kernel startup/caches differ; small cohorts, observer overhead/control tails must remain explicit. Runtime windows include boot/warmup; request/deltas/lifecycle warnings distinct. No acceptance claim.")
     assert len(json.dumps(result).encode()) <= 128*1024
     return result
 
@@ -309,7 +311,7 @@ def compact_runs(result):
     """Losslessly factor repeated numeric-grid labels before bounded reporting."""
     runs = result.get("runs", [])
     projected = {**result, "runs": [dict(run) for run in runs], "numeric_grid_headers": {}}
-    for field in ("request_ms", "response_bytes", "operation_deltas", "status_counts"):
+    for field in ("request_ms", "response_bytes", "operation_deltas", "status_counts", "phase_ms", "select_counts", "response_byte_totals"):
         mappings = [run.get(field, {}) for run in runs]
         names = sorted({key for mapping in mappings for key in mapping})
         cells = [value for mapping in mappings for value in mapping.values()]
@@ -328,6 +330,21 @@ def compact_runs(result):
                 for index, value in zip(present, values)}
             assert rebuilt == mapping
             if field in target: target[field] = {"present": present, "values": values}
+    # The existing runtime projection includes every positive measured operation,
+    # boot/seed counters and bounded route windows. Factor labels without dropping
+    # operations, samples, outcomes or the distinction between windows and maxima.
+    for run in projected["runs"]:
+        if "runtime" in run: run["runtime"] = dict(run["runtime"])
+    runtimes = [run.get("runtime", {}) for run in projected["runs"]]
+    names = sorted({name for runtime in runtimes for name in runtime.get("operations", {})})
+    if names:
+        projected["runtime_operation_names"] = names
+        for runtime in runtimes:
+            mapping = runtime.get("operations", {})
+            present = [index for index, name in enumerate(names) if name in mapping]
+            values = [mapping[names[index]] for index in present]
+            assert {names[index]: value for index, value in zip(present, values)} == mapping
+            runtime["operations"] = {"present": present, "values": values}
     return projected
 
 

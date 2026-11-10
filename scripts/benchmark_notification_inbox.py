@@ -276,6 +276,7 @@ async def run(root, *, population, iterations, progress):
                 "seed_ms": round(seed_ms, 3), "request_ms": {k: shared.support.distribution(v) for k, v in samples.items()},
                 "response_bytes": {k: {field.removesuffix("_ms"): value for field, value in
                     shared.support.distribution(v).items()} for k, v in sizes.items()},
+                "response_byte_totals": {k: sum(v) for k, v in sizes.items()},
                 "phase_ms": {k: shared.support.distribution(v) for k, v in phases.items()},
                 "status_counts": dict(statuses), "select_counts": dict(counts), "expiry_passes": expiry,
                 "detail_and_auth_probes": details, "operation_deltas": deltas, "runtime": compact,
