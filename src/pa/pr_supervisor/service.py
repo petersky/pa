@@ -865,9 +865,22 @@ class PRSupervisor:
         if heartbeat:
             heartbeat()
         try:
-            await self.refresh_capability(force=True)
+            capability = await self.refresh_capability(force=True)
             if heartbeat:
                 heartbeat()
+            # Existing ready watches must not wait for legacy discovery. Use
+            # the same freshly verified capability; do not add another probe.
+            try:
+                await self._poll_due(capability)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # A transient active-watch failure must not suppress legacy
+                # discovery that used to run before the first poll.
+                logger.exception("PR supervisor initial watch polling failed")
+                await self._offload(
+                    "sqlite.pr_supervisor_metric", self.store.increment_metric, "loop_errors",
+                )
             await self.migrate_discoverable_associations()
         except asyncio.CancelledError:
             raise
@@ -947,11 +960,11 @@ class PRSupervisor:
         capability = await self.refresh_capability()
         if self._worker_heartbeat:
             self._worker_heartbeat()
-        await self._prune_lease_state(capability)
-        await self._renew_due_local_leases(capability)
+        await self._poll_due(capability)
         await self._reconcile_merged_cards()
-        # The reconcile pass is time-bounded, but renew again so a slow pass can
-        # never push a held lease past its renewal window.
+
+    async def _poll_due(self, capability: GitHubCapability) -> None:
+        await self._prune_lease_state(capability)
         await self._renew_due_local_leases(capability)
         due = await self._offload("sqlite.pr_supervisor_due_read", self.store.list_due)
         if not due:
@@ -3748,6 +3761,11 @@ class PRSupervisor:
         migrated = 0
         cards = await self._offload("sqlite.card_read", self.domain_store.list_cards)
         for card in cards:
+            # Advancing to another card is real discovery progress, including
+            # completed classifications/lookups on the prior card. A blocked
+            # individual await still expires under the unchanged watchdog.
+            if self._worker_heartbeat:
+                self._worker_heartbeat()
             if card.lane == CardLane.DONE:
                 continue
             for match in _EXPLICIT_PR_INTENT.finditer(card.body or ""):
@@ -3799,6 +3817,8 @@ class PRSupervisor:
                     source="legacy_explicit_integration_discovery",
                 )
                 migrated += 1
+        if cards and self._worker_heartbeat:
+            self._worker_heartbeat()
         if migrated:
             await self._offload(
                 "sqlite.pr_supervisor_metric",

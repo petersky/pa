@@ -10,3 +10,8 @@ build/
 docker-compose.override.yml
 .pa/
 *.db
+
+# Historical benchmark dumps must not multiply across worker checkouts.
+/docs/benchmarks/*.gz
+/docs/benchmarks/*.gz.part*
+/docs/benchmarks/*.manifest.json

@@ -21,7 +21,18 @@ files under the data dir) — there is no separate database, cache, or broker to
 - Tests: `uv run pytest -q` (serial) or `uv run pytest -n auto --dist worksteal`
   (parallel; CI uses this plus four shards). Chrome dump-dom layout tests are
   ignored in CI.
-- Build artifacts: `uv build`.
+- Local package artifacts: `uv build` (wheel/sdist already exclude repository evidence).
+- Exact revision builds across workers: `uv run python scripts/build_verified.py --revision <commit> --output .dev/wheels-<short-sha>`.
+  Use this selective streaming exporter for integrated/rollback builds; it exports only package/build inputs,
+  enforces a 64 MiB source budget, removes temporary source on success/failure, and retains the wheel
+  plus source SHA/input bytes/wheel hash attestation. Reuse uv's shared dependency cache.
+  Never create a full repository tar plus extracted tree for a package build. For baseline test runs,
+  select only the particular tests/scripts needed in a disposable context; do not copy benchmark evidence.
+- Historical benchmark retention: see `docs/benchmarks/README.md`. Keep compact useful summaries;
+  raw dumps and large historical snapshots belong outside the tracked tree during a run and should
+  be removed after summarizing. Do not recreate retired archives, chain retained parents, or attach
+  replacement copies. Existing Git history provides recovery. Each worker retains its isolated leased
+  worktree; update idle owners through supported PA lifecycle rather than editing their checkout.
 
 ### Non-obvious caveats
 - **Isolate instance state with `PA_DATA_DIR`.** For a throwaway dev instance, set

@@ -2762,11 +2762,17 @@ def list_agent_session_history(
     settings = request.app.state.ctx.settings
     sessions = mgr.store.list_sessions()
     if card_id:
+        lookup = getattr(type(mgr.store), "session_ids_linked_to_card", None)
+        linked_ids = (
+            lookup(mgr.store, card_id, [session.id for session in sessions if session.card_id != card_id])
+            if callable(lookup) else None
+        )
         sessions = [
             session
             for session in sessions
             if session.card_id == card_id
-            or card_id in mgr.store.list_card_ids_for_session(session.id)
+            or (session.id in linked_ids if linked_ids is not None
+                else card_id in mgr.store.list_card_ids_for_session(session.id))
         ]
     if project_id:
         sessions = [session for session in sessions if session.project_id == project_id]
@@ -2780,6 +2786,7 @@ def list_agent_session_history(
         )
         if selected is not None:
             bounded_sessions[-1] = selected
+    card_summaries = _history_card_summaries(request, bounded_sessions)
     result: list[dict[str, Any]] = []
     for session in bounded_sessions:
         session_payload = session.model_dump(mode="json")
@@ -2798,7 +2805,9 @@ def list_agent_session_history(
         result.append(
             {
                 **session_payload,
-                "cards": _session_cards_payload(request, session),
+                "cards": ([{**card, "primary": card["id"] == session.card_id}
+                           for card in card_summaries[session.id]]
+                          if card_summaries is not None else _session_cards_payload(request, session)),
                 "card_ids": mgr.store.list_card_ids_for_session(session.id),
                 "project": _session_project_payload(request, session),
                 "instance_id": settings.instance_id,
@@ -3286,6 +3295,15 @@ def _session_cards_payload(request: Request, session: AgentSession) -> list[dict
         }
         for card in request.app.state.ctx.store.list_cards_for_session(session.id)
     ]
+
+
+def _history_card_summaries(request, sessions, *, _default_payload=_session_cards_payload):
+    # Extensions of the existing payload hook remain authoritative.
+    if _session_cards_payload is not _default_payload:
+        return None
+    store = request.app.state.ctx.store
+    lookup = getattr(type(store), "list_history_card_summaries", None)
+    return lookup(store, [session.id for session in sessions]) if callable(lookup) else None
 
 
 @router.get("/sessions/{session_id}/cards")

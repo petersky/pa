@@ -18,6 +18,19 @@ pytest cache, fixture `workspace_leases.db`, and `.dev/tmp` automation browser
 fixture data are disposable. Other files require custody outside this operation.
 No shared cache, dependency root, session store or user browser profile is touched.
 
+For a closed legacy owner with no runtime checkpoint at all, only an inventory
+containing directories can be collected. This does **not** certify idle or an
+empty prompt queue. Only `rmdir` runs in this case; any file, link, known queued
+work, live owner, pending restart or recreated content retains the container.
+The receipt records `closed_owner_empty_directories_only` and the missing
+checkpoint owner IDs. No session, checkpoint, lease ownership or queue is repaired
+or rewritten to make it eligible. Fixture files still require explicit idle proof.
+
+Both selected and ordinary Git worktree collection retain known durable queued
+or in-flight work and pending owner controls even after expiry, including when
+the provider runtime is offline. The checkpoint is read again immediately before
+native removal. Collection never drains, clears or rewrites those records.
+
 The server saves an intent receipt on the selected lease before unlinking exact
 inventoried files and removing empty directories. Read `workspace_leases` after
 any interrupted response; do not resend an uncertain mutation. A `disposing`

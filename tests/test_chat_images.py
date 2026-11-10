@@ -226,7 +226,11 @@ class ChatWidgetTemplateTests(unittest.TestCase):
         self.assertIn("Resume session", html)
         self.assertIn("data-acw-end", html)
         self.assertIn("data-acw-stop", html)
-        self.assertIn("disabled>Stop", html)
+        stop = html.split("data-acw-stop", 1)[1].split("</button>", 1)[0]
+        self.assertIn('aria-label="Stop response"', stop)
+        self.assertIn('disabled><svg', stop)
+        self.assertIn('aria-hidden="true"', stop)
+        self.assertNotIn('>Stop', stop)
         self.assertNotIn("data-acw-provider", html)
         self.assertIn("data-acw-tool-toggle", html)
         self.assertIn("data-acw-tool-flyout", html)

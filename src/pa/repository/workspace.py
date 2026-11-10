@@ -2108,11 +2108,24 @@ class WorkspaceManager:
         lines = result.stdout.strip().splitlines()
         return result.returncode == 0 and bool(lines) and bool(merge_tree) and lines[0] == merge_tree
 
+    def _assert_owner_has_no_pending_work(self, lease: WorkspaceLease) -> None:
+        owner = self.store.get_session(lease.session_id)
+        checkpoint = (owner.config_json or {}).get('durable_runtime') if owner else None
+        # Offline recovery owners still own their accepted queue and controls.
+        # Absence of a checkpoint does not establish idle; existing legacy
+        # completion/expiry guards remain responsible for those owners.
+        if isinstance(checkpoint, dict) and any(checkpoint.get(key) for key in (
+            'in_flight', 'queued_prompts', 'pending_permissions',
+            'pending_elicitations', 'pending_interaction',
+        )):
+            raise WorkspaceProvisioningError('workspace owner has pending durable work or controls')
+
     def _cleanup_lease_locked(self, lease: WorkspaceLease, *, merged_proof: dict[str, Any] | None = None,
                               expected_target: WorkspaceCleanupTarget | None = None) -> bool:
         worktree = Path(lease.worktree_path)
         cache = Path(lease.cache_path)
         try:
+            self._assert_owner_has_no_pending_work(lease)
             branch = (self._verify_selected_worktree(lease, expected_target)
                       if expected_target is not None else lease.branch)
             if self.store.pending_restart_continuation(session_id=lease.session_id):
@@ -2205,6 +2218,7 @@ class WorkspaceManager:
                     self._verify_selected_worktree(lease, expected_target)
                     if self._git("-C", str(worktree), "rev-parse", "HEAD").stdout.strip() != expected_target.expected_head:
                         raise WorkspaceProvisioningError("selected HEAD changed before cleanup")
+                self._assert_owner_has_no_pending_work(lease)
                 self._git("-C", str(cache), "worktree", "remove", str(worktree))
                 for empty_parent in (worktree.parent, worktree.parent.parent):
                     try:

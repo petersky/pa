@@ -1,3 +1,13 @@
+> Historical evidence retention changed on 2026-11-10: bulky raw bundles and
+> snapshots are now linked to their original Git revision. Earlier statements about
+> retaining all stages describe that revision. See [current retention policy](benchmarks/README.md).
+
+## Current bounded performance work
+
+[One current compact report](performance-current.json) contains the latest bounded source repair, aggregate measurements, failed-probe summary and explicit limits. It is overwritten for the next repair; earlier reports remain in Git history. PR708's GC and PR710's fresh-health repairs are integrated, without deployed acceptance.
+
+Disposable fixtures are removed on success/failure; no raw captures or mirrored histories are retained. All 755 findings and 185 concerns remain open, including native full-compaction latency, uncovered writers, starvation and physical write amplification. Source integration does not establish deployed or whole-card acceptance.
+
 ## Automatic maintenance startup ordering — 2026-11-08
 
 **753 findings / 185 concerns remain open.** [Complete source and workload evidence](benchmarks/systemic-maintenance-startup-order-20261108.json) preserves every earlier row and failure. The extra concern records fixture sibling-task ownership, separately from the unresolved HTTP timeout.
@@ -26,7 +36,7 @@ A further private existing-database conversion succeeds with intact data/reclama
 
 ## Active 1.6.4 evidence and Git subprocess phases — 2026-11-08
 
-**752 findings / 184 concerns remain open.** All751 earlier rows and stage histories remain. [Complete evidence](benchmarks/systemic-workspace-git-phases-20261108.json) records native observations, exact source/instance provenance, all operation distributions and the current source verification.
+**752 findings / 184 concerns remain open.** All751 earlier rows and stage histories remain. [Complete evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-workspace-git-phases-20261108.json) records native observations, exact source/instance provenance, all operation distributions and the current source verification.
 
 The originating activation request was guarded against changed external state: PA was already running newer1.6.4/PID91188/startupfbfd/package51b15. Independently verified453RECORDentries and452sourcefiles match release1339, which contains mergedPR664/662. Notification recovery enhancements explain its later module bytes; batching/context AST is identical. All54dependencyversions remain. No downgrade/install/restart occurred and no permission was carried forward. PR664's actual combinedtree7b5a2f was separately rebuilt after main advanced viaPR663; head/main CI each passed5checks. Earlier failed equality guard, wrong test filename and both uninstalled candidate wheels remain preserved.
 
@@ -38,7 +48,7 @@ The new100iteration private mixed run retains9600ordered events with0workerwarni
 
 ## Repository lock observations and scheduling inventory — 2026-11-08
 
-**751 findings / 183 concerns remain open.** All741 prior rows remain; nine passive scheduling operation entries and one lock-observation concern are appended. PR662 is integrated at17c4b31 with matching source/merge trees and five successful checks each on head/main; its code is uninstalled. The [complete evidence](benchmarks/systemic-workspace-lock-observations-20261108.json) retains that provenance, installed-base byte proof, native maintenance phases, numeric distributions and current private results.
+**751 findings / 183 concerns remain open.** All741 prior rows remain; nine passive scheduling operation entries and one lock-observation concern are appended. PR662 is integrated at17c4b31 with matching source/merge trees and five successful checks each on head/main; its code is uninstalled. The [complete evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-workspace-lock-observations-20261108.json) retains that provenance, installed-base byte proof, native maintenance phases, numeric distributions and current private results.
 
 Repositoryflock previously had no wait/hold/unlock observation. The existing bounded observer now records those intervals under one static sanitized name, retaining native blocking, ownership, error propagation, handle lifetime and existing deadline behavior. No Git command or caller identifier is retained. Tests prove native exclusion, body-error release, lock-error handle closure, exact interval accounting, unchanged deadline handling and bounded numeric custody. The first29 targeted and broader180 tests pass, with overlap. Fifty alternating100-lock pairs measure raw p953.614ms versus observed3.954ms; this is an instrumentation cost, not a speed improvement.
 
@@ -50,7 +60,7 @@ One new private100-iteration mixed scenario retains9600ordered events with0opera
 
 **741 findings / 182 concerns remain open.** Fresh session d768 uses its own verified leased worktree at base ab46641. All ten dispatch-materialized attachments were reread and their manifest sizes/SHA256 verified. PA reports loaded1.6.2/PID53580/startupb5c72 with consistent sync; that package is not claimed to contain this source.
 
-[Complete numeric evidence](benchmarks/systemic-fresh-context-notification-labels-20261108.json) retains every prior ledger row, passive operation/route distribution, first failures and private results. Notification presentation reached853.253ms across7process calls; its slow observation had24SQLcalls/1572rows,732.578msSQLwall versus147.144msSQLCPU. Source reloads full linked records per notice for labels. Selected-page scalar reads preserve realm scoping, global session lookup, title/label/agent/missing fallbacks, exact public responses, routing and interaction/lifecycle behavior.
+[Complete numeric evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-fresh-context-notification-labels-20261108.json) retains every prior ledger row, passive operation/route distribution, first failures and private results. Notification presentation reached853.253ms across7process calls; its slow observation had24SQLcalls/1572rows,732.578msSQLwall versus147.144msSQLCPU. Source reloads full linked records per notice for labels. Selected-page scalar reads preserve realm scoping, global session lookup, title/label/agent/missing fallbacks, exact public responses, routing and interaction/lifecycle behavior.
 
 Thirty alternating private200-notice/20-identity pairs with64KiB retained fields reduce600SELECTs/page to3, p9519.018→0.987ms/max19.210→1.048ms. This removes amplification without fully explaining the native853ms tail. All152 notification/continuation/restart/CLI/UI/dispatch tests pass. The first new fixture lacked app ctx before lifespan; only its setup was corrected and failure/hash retained.
 
@@ -102,7 +112,7 @@ This source is not deployed. Full realKernel/provider/MCP/admission/startup/drai
 
 ## Current status — session wire source638, 2026-11-02
 
-**All718 findings /172 concerns remain open.** PR637 is integrated at2db5c50f with equal source/merge trees and first5success head+main checks; it is uninstalled. The running service remains exact635. [Complete current evidence and immutable history](benchmarks/systemic-session-wire638-20261101.json) retains all earlier fields, first failures and adverse populations. The JSON ledger's current overlay supersedes the historical status labels below.
+**All718 findings /172 concerns remain open.** PR637 is integrated at2db5c50f with equal source/merge trees and first5success head+main checks; it is uninstalled. The running service remains exact635. [Complete current evidence and immutable history](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-session-wire638-20261101.json) retains all earlier fields, first failures and adverse populations. The JSON ledger's current overlay supersedes the historical status labels below.
 
 The session-list route now renders complete compact UTF-8 JSON, preserving lone surrogates as escapes without rendering twice. Selection/filter/limit/detail, decoded values, array/key order, default=str calls/errors, off-loop work, metrics and headers remain unchanged. In150 alternating source-route pairs across5private shapes, Unicode bytes3934760→1640711 and p952.674→2.192ms improve; ASCII p951.687→1.932ms and structured4.638→5.416ms are **adverse**. Surrogate/custom timing regressions and every raw sample/CPU/max remain retained. This reduces wire amplification; it is not a universal latency improvement.
 
@@ -116,7 +126,7 @@ The following historical records remain unchanged.
 
 ## Current status — 2026-11-02
 
-**718 findings /172 concerns remain open.** The running service is exact635; its settled activation and first retests are published through merged evidence-only PR636. The guarded duplicate transcript-index repair below is a new source candidate, with no deployment or whole-PA acceptance. [Current source evidence and complete history](benchmarks/systemic-transcript-sequence-index637-20261101.json) preserves all earlier populations and every first failure/adverse result. The current status overlay in the JSON ledger takes precedence over historical snapshot labels retained below.
+**718 findings /172 concerns remain open.** The running service is exact635; its settled activation and first retests are published through merged evidence-only PR636. The guarded duplicate transcript-index repair below is a new source candidate, with no deployment or whole-PA acceptance. [Current source evidence and complete history](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-transcript-sequence-index637-20261101.json) preserves all earlier populations and every first failure/adverse result. The current status overlay in the JSON ledger takes precedence over historical snapshot labels retained below.
 
 The source comparison removes24,720 logical WAL file bytes for512 appends and49,440 bytes for5000-event pruning. Hot/cold prune medians improve6.303→5.409ms and12.403→11.369ms; hot-append maximum7.026→22.277ms and cold-append median55.140→55.317ms are adverse. WAL file allocation is not physical I/O, and the repair is not asserted to explain historical multi-second stalls. An809,926-row private fixture preserves every event value/order/hash and native uniqueness while removing the verified duplicate, freeing4277 logical pages in4.847ms. It has no native cold-object composition claim.
 
@@ -128,7 +138,7 @@ The unchanged source100-iteration mixed scenario retains9600 ordered events, zer
 
 The following records retain their original historical labels and full evidence.
 
-All **708 findings / 164 concerns remain open**. [Bounded maintenance phase alignment and complete history](benchmarks/systemic-maintenance-phase-alignment-20261029.json) embeds the COMPLETE49,737,341-byte initial618parent and all older layers/fields. Initial6186daCI40962918880 passed5firstattemptchecks but was not merged; this expanded source requires fresh exacthead gates.
+All **708 findings / 164 concerns remain open**. [Bounded maintenance phase alignment and complete history](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-maintenance-phase-alignment-20261029.json) embeds the COMPLETE49,737,341-byte initial618parent and all older layers/fields. Initial6186daCI40962918880 passed5firstattemptchecks but was not merged; this expanded source requires fresh exacthead gates.
 
 A passive GET retained the actual616startup maintenance result:5.183sruntime; projection3.307s includesVACUUM2.611s/2.273sCPU, DBsizemetadata468.4→459.0MB. This is not a physicalwritebyte measurement. Approximate currentclockalignment places bothsession-save andworkspaceGC spans inside the whole cached sweep; exact subphase/nativebusy/IO ownership remains unverified. Nested phases must not be summed. No live maintenance was triggered.
 
@@ -136,7 +146,7 @@ Existing fixed-name phase maps now retain bounded first-start/last-finish monoto
 
 All prior collaborationSQL/lock measurements,180healthy/12receiptpairs, currentowner110operation/39routeinventory,617integration/616activation/public5full2MiBfailures, attachment413effectunknown, peer/log/ambiguousreceipt and exact17dindependentacceptance obligations remain preserved/open. No install/restart or wholecardacceptance. Prior text follows unchanged.
 
-All **708 findings / 164 concerns remain open**. [Collaboration-store observations and complete617/current source evidence](benchmarks/systemic-collaboration-store-observations-20261029.json) preserves the COMPLETE47,023,493-byte parent and every older layer/field/failure. All prior708rows remain unchanged.
+All **708 findings / 164 concerns remain open**. [Collaboration-store observations and complete617/current source evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-collaboration-store-observations-20261029.json) preserves the COMPLETE47,023,493-byte parent and every older layer/field/failure. All prior708rows remain unchanged.
 
 The diagnostic gap is source-addressed: native receipt reads now capture real SQLite statement/fetch CPU/wall/row counts and a fixed bounded lock timeline. The same15RLock contexts and native transaction/rollback/query/effect bodies remain; track_deadlineFalse preserves their existing budget selection. **87 tests pass**. 180healthy pairs preserve exact results and retain overhead/adverse outcomes (observedmodep950.406→0.469ms/max0.544ms). Native eachreceiptlabel3calls nowreports4SQLcalls/1row, rather than uninstrumentedzeros. The separate200msread fixture stillmatchescomplete duplicates and loopmax214.528→6.458ms.
 
@@ -144,7 +154,7 @@ This does not separate successfulnativebusy/physicalIO/connect/close/implicitCco
 
 Protected6171d145702→acd4e88b/head40960265286/main40960851657 first5success each is DONE, same application as active6162ea/package8a. No remerge/install/restart. Newadditionalattachment413/b5fb489f remains originalcanonicalfailed/effectunknown; no retry/removal/replacement of existingten. All earlier source/activation/adverse/GC/invalidprofile/main610failure/no-retry, payload/peer/log/ambiguousreceipt/acceptedbackupDB scope and exact17dindependentacceptance boundaries remain. Prior text follows unchanged.
 
-All **708 findings / 164 concerns remain open**. [Installed #616 first-retest evidence](benchmarks/systemic-installed616-first-retests-20261029.json) embeds the COMPLETE40,608,706-byte input bundle, every prior layer, all original19adapter bodies and actual installation/handoff/activation/retests. Every existing ledger row and field is unchanged; this is an appended activation overlay. Private prompts/raw logs/ZIPs stay LOCAL with custody hashes.
+All **708 findings / 164 concerns remain open**. [Installed #616 first-retest evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-installed616-first-retests-20261029.json) embeds the COMPLETE40,608,706-byte input bundle, every prior layer, all original19adapter bodies and actual installation/handoff/activation/retests. Every existing ledger row and field is unchanged; this is an appended activation overlay. Private prompts/raw logs/ZIPs stay LOCAL with custody hashes.
 
 The original616handoff d4184fe7 is positively complete at attempt1. Source2ea575bb/package8a052d runs as actualPID60457/startupae5341a4, unchangedconfiguration86968/lease334/nice0/Interactive4. All439source/440RECORD/38template/52dependency checks pass. **911tests and9subtests,19private stages and12additional stages pass**; these are declared fixtures, not full real-provider/Kernel/admission/fleet acceptance.
 
@@ -152,7 +162,7 @@ Mixed100 preserves9600ordered events; full warnings/counters/timers and maintena
 
 All earlier adverse results, unmerged616first-request race/greenCI, corrected70contracts, maintenance diagnostics/invalidtimer, GCfirstfailure/main610failure/no retry, peers/log/ambiguousreceipt gaps and originalacceptedbackup/DB scope boundaries remain preserved. No repeat install/restart, configuration/default/permission/GC/power/clock change, cleanup, or whole-card acceptance. Scheduler owns exact17d independent_agent_v1. Prior text follows unchanged.
 
-All **708 findings / 164 concerns remain open**. [Corrected collaboration receipt ownership and complete evidence](benchmarks/systemic-collaboration-receipt-concurrency-20261029.json) preserves every prior707row/field and the complete33,386,306-byte parent.
+All **708 findings / 164 concerns remain open**. [Corrected collaboration receipt ownership and complete evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-collaboration-receipt-concurrency-20261029.json) preserves every prior707row/field and the complete33,386,306-byte parent.
 
 PR616 originalb464head passed first-attemptCI, but a new private concurrent-FIRST-request probe found two absence reads could duplicate notification attempts and return different transition receipts. That head was not merged. The correction serializes matching family/session/key through read/effects, cleans cancelled waiters/owners, and allows other identities to progress. **70 tests pass**, including30new cases; counts are not additive to earlier56/52results. Original failure remains in full.
 
@@ -160,7 +170,7 @@ Corrected12paired fixtures preservecomplete duplicate receipts and the200msstora
 
 Boundary-onlyinstalled614diagnostics retain the firstpreworkloadpackagepathfailure and corrected separatepopulation. Retained-coldmaintenance755.617wall/268.731CPU contains nestedfreshhealth/GC/SQLspans that mustnotbesummed; it supplies no physicalIO/historicalcause oracceptanceproof. Earlierinvalidcustomprofile andglobalobserverremainpreserved. Actual614341e/package7c7e/PID50504/config86968 and exact17dindependentacceptance remainunchanged/unaccepted. All earliertextfollows unchanged.
 
-All **707 findings / 163 concerns remain open**. [#615 integration and internal receipt-read repair](benchmarks/systemic-pr615-integration-collaboration-receipts-20261029.json) embeds the complete31,315,682-byte parent. Every prior704row/field is unchanged; one concern and two source operation labels are added with explicit measurement gaps. Complete first failures, adverse outcomes and ten attachments remain; raw logs/ZIPs/private receipts stay local with hashes.
+All **707 findings / 163 concerns remain open**. [#615 integration and internal receipt-read repair](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-pr615-integration-collaboration-receipts-20261029.json) embeds the complete31,315,682-byte parent. Every prior704row/field is unchanged; one concern and two source operation labels are added with explicit measurement gaps. Complete first failures, adverse outcomes and ten attachments remain; raw logs/ZIPs/private receipts stay local with hashes.
 
 #615 merged protected as7d4052fd from4c3fdbf0, equalbb4ff41e trees; head40952841664/main40953539491 each five first-attempt successes. Actual PA remains #614341e8549/package7c7ec4df/PID50504/config86968. Docs-only615needs no reinstall/restart. This new source repair is unmerged/uninstalled.
 
@@ -168,7 +178,7 @@ Internal collaboration transition/command receipt reads move off-loop through th
 
 The source100-iteration fixture preserves9600ordered events withzero workerwarnings/failedtimedoutrejecteddeltas, but maintenance843.540ms remains. The newcustomtimerCPUprofile wasINVALID and is retained withoutcausaluse. The correctedownerthreadobserver haszero unmatchedreturns/openframes; its selected inclusive spans overlap and mustnotbesummed, and profilingoverheadprecludesacceptanceclaims. InitialsystemPython3.9ASTfailure and corrected3.14scopeproof arepreserved. Full-listpayloadfailures/maintenance/nativebusy/disk/offCPU/peer/log/realpaths and exact17d independentacceptance remainopen. All earlier text follows unchanged.
 
-All **704 findings / 162 concerns remain open**. [Installed #614 first-retest evidence](benchmarks/systemic-installed614-first-retests-20261029.json) embeds the complete29,328,901-byte parent and all earlier histories. Every existing row/field is unchanged; a current activation overlay is appended. Raw logs/ZIPs/prompt-bearing receipts remain local with hashes.
+All **704 findings / 162 concerns remain open**. [Installed #614 first-retest evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-installed614-first-retests-20261029.json) embeds the complete29,328,901-byte parent and all earlier histories. Every existing row/field is unchanged; a current activation overlay is appended. Raw logs/ZIPs/prompt-bearing receipts remain local with hashes.
 
 Exact #614 is positively activated at341e8549/package7c7ec4df/PID50504/startup7e20ed39, unchangedconfiguration86968/nice0/Interactive4/52dependencies/38templates. **881 tests and9subtests,19private stages and11additional stages passed**. These separate populations cover declared fixtures, not fullrealprovider/Kernel/admission/fleet acceptance. Mixed100 retains9600ordered events with0workerwarnings and0failed/timedout/rejected counterdeltas, but **maintenance840.356ms remains a threshold violation**.
 
@@ -198,7 +208,7 @@ The final mixed run retains 9,600 ordered events and zero worker warnings, failu
 
 The five installed full-list assertion failures and exact-cause/full-body schema gap, rejected encoding regressions, and remaining provider/Kernel/admission/concurrency, maintenance/session/payload/call/write amplification, peer/log/build/retention/screenshot obligations remain open. Exact17d independent acceptance remains scheduler-owned and unaccepted. All prior rows and text follow unchanged.
 
-All **703 findings / 161 concerns remain open**. The [installed #612 results and encoding prototype](benchmarks/systemic-installed612-encoding-prototype-20261029.json) preserve the complete 22,900,374-byte parent bundle, every prior field and failure, and all ten attachments. Raw logs, ZIPs and prompt-bearing receipts remain local with recorded hashes.
+All **703 findings / 161 concerns remain open**. The [installed #612 results and encoding prototype](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-installed612-encoding-prototype-20261029.json) preserve the complete 22,900,374-byte parent bundle, every prior field and failure, and all ten attachments. Raw logs, ZIPs and prompt-bearing receipts remain local with recorded hashes.
 
 Commit d3d98da9 / package f7ae4494 was installed once and positively activated through handoff ab6bd620 on attempt 1. The loaded build, PID 39858, startup d801803a, unchanged configuration, process class and interpreter were verified. All 439 source files, 440 package records, 38 cached templates and 52 unchanged dependency versions passed attestation.
 
@@ -237,7 +247,7 @@ The runs remove4,500full snapshots/4,440,000logical retained plan steps. Followu
 
 Actual608maintenance/session/VACUUM tails, full-listfive2MiBnegatives/fullbody-schema gap, fullrealKernel/provider/MCP/placement/admission/startup/drain/concurrency and peer/log/build/retention/screenshot gaps remain. Inclusive nested spans must not be summed; nativebusy/GC/offCPU/disk ownership remains unknown. Freshmigration/finalhealth/integrity/compaction/retention policies are unchanged. Backup0331/b527 andDB89957 original accepted scopes stay closed; scheduler-owned exact17d independent acceptance remains open. Prior text and every prior row field follow unchanged.
 
-All **702 findings / 160 concerns remain OPEN**. The [PR610 integration, first main failure and handoff test phase stage](benchmarks/systemic-pr610-main-failure-handoff-guard-20261029.json) embeds the complete18,483,744-byte `0842f9e6` input bundle, including prior17,767,614-byte protected history, every prior row field, first failure, negative/interrupted stage and ten attachments. Raw prompts/logs/ZIPs remain LOCAL/hash-only.
+All **702 findings / 160 concerns remain OPEN**. The [PR610 integration, first main failure and handoff test phase stage](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-pr610-main-failure-handoff-guard-20261029.json) embeds the complete18,483,744-byte `0842f9e6` input bundle, including prior17,767,614-byte protected history, every prior row field, first failure, negative/interrupted stage and ten attachments. Raw prompts/logs/ZIPs remain LOCAL/hash-only.
 
 PR610 merged `6dc87d95` from watched `6baaa6f5`, equal `392ad0b1` trees, after stablegreen11 and independent protection/check/review/pagination/authorship verification. Head40934768617 had five first-attempt successes. **Main40935556426 first attempt failed**: four successful jobs, one failed late-handoff recovery test expecting one receipt but finding zero. The failed run/log/ZIP and numeric artifacts remain; no retry or green claim. Source609/610 remains uninstalled; actual608 `3fdad48f`/package07e/PID20833/startupe11702c9/config86968 remains active.
 
@@ -247,7 +257,7 @@ The next measured origin-settlement path still copies3,000full dispatches/2,970,
 
 Source610maintenance857.815ms, actual608maintenance/session tails, five full-list2MiB negatives/fullbody-schema gap and all earlier causes/gaps remain open. Head610Linux snapshot4.447ms overlaps a2.691ms gen0GC; failed-main snapshot2.010ms is separate. Whole mixed93.626/93.100ms is not lagp95; older218.784msGC failure/custom cycles/offCPU ownership remains unknown. All fullKernel/provider/MCP/placement/admission/startup/drain/concurrency/payload/peer/log/retention/screenshot obligations and scheduler-owned independent acceptance remain. Existing same-session5bce notification is queued, not running/consumed; no new worker, restart, install, configuration/default or policy change. Prior text and all prior row fields follow unchanged.
 
-All **702 findings /160 concerns remain OPEN**. The [PR609 integration and verification-origin stage](benchmarks/systemic-pr609-integration-verification-origins-20261029.json) embeds the COMPLETE16,129,485-byte `4df468c7` integration bundle, including prior608activation/retests, every701priorrow/field/history/firstfailure/negative/interruptedstage and tenattachments. Raw prompts/logs/ZIPs remain LOCAL/hash-only.
+All **702 findings /160 concerns remain OPEN**. The [PR609 integration and verification-origin stage](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-pr609-integration-verification-origins-20261029.json) embeds the COMPLETE16,129,485-byte `4df468c7` integration bundle, including prior608activation/retests, every701priorrow/field/history/firstfailure/negative/interruptedstage and tenattachments. Raw prompts/logs/ZIPs remain LOCAL/hash-only.
 
 PR609 is protected merged `4bc5b353` from exact`71cc59d4`, equal`de4dceeb` trees; head40929944108/main40930743145 each five first-attempt successes, no retries, retiredwatchc7e97c3d12observations/errornull, independent protection/checks/pagination/authorship/zero required approvals/zero threads verified without bypass. The delayed609notice is now the running same-session turn; no repeat merge. **609 remains uninstalled**. Owner18:45:43Z remains actual608`3fdad48f`/package07e/PID20833/startupe11702c9/config86968; no restart/install/rollback/rearm.
 
@@ -268,7 +278,7 @@ Separate nine-module hash-fenced mixed100 retains9,600ordered events with zero w
 
 Installed608tests and public reads remain separate; all5full10session-list negatives under unchanged5s/2MiBbounds/serverwindow2,493,678B/fullbody-schema gap remain. FullKernel/provider/MCP/placement/admission/startup/drain/concurrency/sharedsource/maintenance/session/workspace/queue/payload/callwriteamplification/peer/log/retention/screenshot gaps and scheduler-owned independent acceptance remain. Backup0331/b527 andDB89957 original accepted scopes stay closed. Prior text and every prior row field follow unchanged.
 
-All **701 findings /159 concerns remain OPEN**. The [exact608 activation and progress-byte stage](benchmarks/systemic-exact608-activation-progress-bytes-20261029.json) embeds the COMPLETE14,228,491-byte `e6876a93` integration/install bundle, every prior row/field/history/firstfailure/negative/interruptedstage and tenattachments. Raw prompts/logs/ZIPs remain LOCAL/hash-only.
+All **701 findings /159 concerns remain OPEN**. The [exact608 activation and progress-byte stage](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-exact608-activation-progress-bytes-20261029.json) embeds the COMPLETE14,228,491-byte `e6876a93` integration/install bundle, every prior row/field/history/firstfailure/negative/interruptedstage and tenattachments. Raw prompts/logs/ZIPs remain LOCAL/hash-only.
 
 607/608 protected integration and combined installation completed once. Original608 `98ad1856` is positively complete/attempt1/delivered18:04:17Z; actualloaded `3fdad48f` /package07e9107c/PID20833/startupe11702c9/config86968/solelease334/nativeInteractive4/nice0/absoluteinstalledinterpreter verified.439source/440RECORD/38templates/52unchangedversions/Python3.14.2 match. Historical pending/notice/singleNONRESTARTfollowup receipts remain; no replay. **738installed tests /9subtests,19private+7additional stages pass**. Installed mixed100 retains9,600ordered events/zero workerwarnings/failures/timeouts/rejections but **maintenance765.255ms** remains. Cold10maxcreate69.327ms is toolfree, not fullrealKernel/provider/startup/drain acceptance.
 
@@ -290,7 +300,7 @@ Separate seven-module hash-attested mixed100 preserves9,600ordered events with z
 
 All **700 findings / 158 concerns remain OPEN**. The [authority-runtime coverage delta](benchmarks/systemic-exact606-authority-runtime-coverage-20261029.json) explicitly adds positive private executor observations for `browser.session_read` and `collaboration.session_read`, already retained in the complete activation-stage bundle below. Every prior698row/field and immutable base stage remains unchanged. These two private populations are distinct from the actual listener99operations/32routes; collaboration remains sourceonly/uninstalled.
 
-All **698 findings / 158 concerns remain OPEN**. The [exact606 activation and collaboration-read stage](benchmarks/systemic-exact606-activation-collaboration-reads-20261029.json) embeds the COMPLETE `0b36af29` integration/install input bundle (11,311,980bytes) losslessly, preserving all697prior rows/fields, first failures, negative/interrupted stages and tenattachments. Raw prompts/private answers/logs/ZIPs remain LOCAL with hash custody.
+All **698 findings / 158 concerns remain OPEN**. The [exact606 activation and collaboration-read stage](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-exact606-activation-collaboration-reads-20261029.json) embeds the COMPLETE `0b36af29` integration/install input bundle (11,311,980bytes) losslessly, preserving all697prior rows/fields, first failures, negative/interrupted stages and tenattachments. Raw prompts/private answers/logs/ZIPs remain LOCAL with hash custody.
 
 Exact605/606 installed once; original `8d78310b` handoff is positively complete, attempt1, delivered17:18:06.106607Z. Actual loaded `40f1b539` / package586b2cfa / PID11660 / startupa1b4ce18 / unchangedconfiguration86968 / solelease334 / nativeInteractive4/nice0/absoluteinterpreter are verified;439source/440RECORD/38templates/52unchangeddependencies/Python3.14.2 match. All earlier pending/delayed-notice/singlefollow-up receipts remain. **662 installed tests /9subtests**,19private stages and5additional comparisons pass. Installed mixed100 retains9,600ordered events, zero worker warnings/failures/timeouts/rejections, with **maintenance700.942ms** still above threshold. Controlled cold10 maxcreate68.001ms/drain0.0125ms/combined68.020ms remains separate from real Kernel/provider/MCP/placement/admission acceptance.
 
@@ -308,7 +318,7 @@ Origin-readiness now reuses the existing `lifecycle_watch_links()` reader instea
 
 The separate hash-attested source mixed100 retains9,600ordered events and zero worker warnings/failures/timeouts/rejections, with **maintenance835.659ms** still above threshold. Prior849.652ms source-browser and756.220ms installed604 results remain separate. All five full-session-list collector negatives remain under unchanged5s/2MiB bounds; full-body/schema acceptance stays open. Saved604SQL session-save/max2349.823ms, prompt-acceptance/max928.856ms and canonical-health/max614.388ms tails retain per-call, bounded-window and process distinctions; native busy/lock/GC/disk ownership is not established and inclusive spans are never summed. New readiness source is unmerged/uninstalled. Maintenance, payload, real Kernel/provider/MCP/placement/admission/startup/drain/concurrency, peer/log/retention/screenshot and scheduler-owned independent acceptance obligations remain. Prior text and row fields follow unchanged.
 
-All **696 findings / 156 concerns remain OPEN**. The [exact604 activation and browser authority-read stage](benchmarks/systemic-exact604-activation-browser-reads-20261029.json) embeds the COMPLETE `f19be78d` integration/install input bundle (9,203,989 bytes), preserving all 695 prior rows/fields and ten attachments. Raw full prompts, native receipt/preview bodies, private answers, logs and ZIPs remain local with hash custody.
+All **696 findings / 156 concerns remain OPEN**. The [exact604 activation and browser authority-read stage](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-exact604-activation-browser-reads-20261029.json) embeds the COMPLETE `f19be78d` integration/install input bundle (9,203,989 bytes), preserving all 695 prior rows/fields and ten attachments. Raw full prompts, native receipt/preview bodies, private answers, logs and ZIPs remain local with hash custody.
 
 Exact combined603/604 installed once; original `b20b4ca8` handoff is positively complete, attempt1, delivered16:21:29.146474Z. Actual loaded `76ce544e` / package `f1b268e8` / PID99969 / startup02603e5d, configuration86968 and sole lease334 are verified, along with native Interactive4/nice0/absolute virtualenv interpreter and439source/440RECORD/38templates/52unchanged versions. No reinstall/restart/merge replay or OS reboot inference. **542 installed tests /7subtests**,19private stages and3new native comparisons complete. Mixed100 retains9,600ordered events, zero worker warnings/failures/timeouts/rejections, but maintenance remains **756.220ms**. Controlled cold10 and schema/Fleet comparisons remain separate from real provider/Kernel/admission acceptance.
 
@@ -364,13 +374,13 @@ The 95 ordinary owner GETs have zero sampled 500 ms violations (max `205.272 ms`
 
 A substantive full-session watch repair now filters related rows before native hydration, retaining complete matching evidence, retired watches, original matching and custom readers. In the private 100-watch/10-session fixture, complete response bytes match; median batch time is `153.410 to 4.753 ms`, model hydration `1,000 to 10`, and materialized state JSON `65,549,000 to 655,490 bytes`. An all-related control retains the same 1,000 models and bytes. The repair passes 177 tests plus 12 subtests, but is unmerged and uninstalled at this stage. First fixture/benchmark errors, sandbox denials, all source and deployed thresholds, and every broader acceptance gap remain retained. All prior text follows unchanged.
 
-All **685 findings / 149 concerns remain OPEN**. The [new immutable stage](benchmarks/systemic-pr598-integration-project-labels-20261029.json) losslessly retains the complete preceding PR #598 integration input and every earlier failure. PR #598 is protected merged with green main CI but remains uninstalled; the loaded service is still `695b46e7`. Its first `463.366 ms` CI request and exact `454.873 ms` generation-2 GC overlap remain open despite one passing bounded rerun.
+All **685 findings / 149 concerns remain OPEN**. The [new immutable stage](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-pr598-integration-project-labels-20261029.json) losslessly retains the complete preceding PR #598 integration input and every earlier failure. PR #598 is protected merged with green main CI but remains uninstalled; the loaded service is still `695b46e7`. Its first `463.366 ms` CI request and exact `454.873 ms` generation-2 GC overlap remain open despite one passing bounded rerun.
 
 The new native session-list label repair has 70 passing contracts. For 250 rows sharing eight projects, complete response bytes match while median list time is `27.345 to 8.750 ms`, hydrations `250 to 8`, materialized project text `32,773,250 to 1,048,744 bytes`, and SQL calls `505 to 21`. A separate 250-unique-project control retains the same work. Labels use the first full validated native read per project within one invocation; later requests re-read, custom readers retain per-row behavior, and rows own distinct label dictionaries. This changes only display-label consistency, without caching authoritative project state.
 
 The corrected source mixed scenario retains 9,600 ordered events and zero worker warnings, but maintenance takes `844.624 ms`. The initial numeric `886.644 ms` stage and missing-module-key observer failure remain retained; no comparison between them establishes speedup. Natural maintenance `5062.863 ms`, installed `762.740 ms`, receipt-source `911.797 ms`, every historical tail and every broader provider/startup/drain/peer/observability/acceptance obligation remain separate and open. All prior text follows unchanged.
 
-Exact PR #597 is installed, loaded and scoped-retested. All **684 findings / 148 concerns remain OPEN**. The [immutable activation and receipt-candidate evidence](benchmarks/systemic-exact597-activation-receipt-candidates-20261029.json) losslessly preserves the complete preceding source, integration and installation inputs. All 132 installed compaction/GC tests and ten sequential private stages pass; 95 ordinary HTTP GETs have zero sampled 500 ms violations and maximum `109.443 ms`. Eight full encoding checks pass; cached Macmini status and sync remain stale.
+Exact PR #597 is installed, loaded and scoped-retested. All **684 findings / 148 concerns remain OPEN**. The [immutable activation and receipt-candidate evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-exact597-activation-receipt-candidates-20261029.json) losslessly preserves the complete preceding source, integration and installation inputs. All 132 installed compaction/GC tests and ten sequential private stages pass; 95 ordinary HTTP GETs have zero sampled 500 ms violations and maximum `109.443 ms`. Eight full encoding checks pass; cached Macmini status and sync remain stale.
 
 Installed mixed maintenance takes `762.740 ms`, new source mixed `911.797 ms`, and natural startup maintenance `5062.863 ms`, including projection VACUUM `2361.210 ms`. These are separate populations; inclusive spans overlap and off-CPU time remains unclassified. A scoped receipt candidate removes 1,000 no-op DELETEs with one transactional discovery query. Five-pair median sweeps improve for absent/recent receipts but regress `4.833 to 6.327 ms` when all receipts expire. That tradeoff, first observer and sandbox failures, every prior tail and every unresolved finding remain explicit. No whole-PA performance acceptance is claimed. All prior text follows unchanged.
 
@@ -459,7 +469,7 @@ The original `c7ad81df` managed handoff `3747818d` is now positively `continuati
 
 # Exact PR #593 activation and lease matching
 
-[Full stage evidence](benchmarks/systemic-exact593-activation-lease-matching-20261026.json) and its adjacent lossless raw bundle preserve the complete preceding source/integration/install evidence, every first-attempt failure, negative/interrupted stage and ten attachments. All **680 findings / 144 concerns remain open**; every preceding row and field is preserved. Earlier pending activation labels are historical. Three new native/ordinary populations are separate: **85 operations / 19 routes**, **85 / 27**, and **85 / 29**; All operation names already exist; the newly exercised `/api/telemetry/export` route is appended with its actual bounded-read evidence.
+[Full stage evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-exact593-activation-lease-matching-20261026.json) and its adjacent lossless raw bundle preserve the complete preceding source/integration/install evidence, every first-attempt failure, negative/interrupted stage and ten attachments. All **680 findings / 144 concerns remain open**; every preceding row and field is preserved. Earlier pending activation labels are historical. Three new native/ordinary populations are separate: **85 operations / 19 routes**, **85 / 27**, and **85 / 29**; All operation names already exist; the newly exercised `/api/telemetry/export` route is appended with its actual bounded-read evidence.
 
 PR #593 is integrated at `c7ad81df0cad0ffeac004d4496930d8c3ac69af5`, from exact head `59d7d8ee`, with equal source/merge trees. Head CI `40253435357` and main CI `40253761137` each have five first-attempt successes, no retry. Actual loaded source is now `c7ad81df`, package `9d07d576`, listener `77539`, supervisor `77536`, startup `63a8a77a-1e87-41c1-a09e-a554d5f903e7`, Interactive (4), nice 0. Installed proofs match all 439 source files, 440 RECORD entries, 38 templates, eight named modules, Python 3.14.2, all 52 unchanged dependency versions/cache/configuration. Native status/runtime/maintenance and ordinary complete owner GETs work. No credentials were searched or restored. The original answered/delivered/resolved request remains private and unmodified. The original exact managed handoff remains `continuation_queued` until normal continuation settlement; no additional install/restart is authorized by pending status.
 
@@ -477,7 +487,7 @@ Substantive maintenance, every remaining session/provider/workspace/queue/call/w
 
 # Exact PR #592 activation and dispatch matching
 
-[Full stage evidence](benchmarks/systemic-exact592-activation-dispatch-matching-20261026.json) and the adjacent lossless raw bundle retain the complete preceding installation/integration history, first-attempt CI failures, every retest sample and separate **86-operation / 33-route** and **86 / 35** owner snapshots. Every name already exists in the coverage ledger. **All 678 findings / 143 concerns remain open**, preserving every prior row and field. Earlier pending activation/access labels below are historical and superseded by this stage only.
+[Full stage evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-exact592-activation-dispatch-matching-20261026.json) and the adjacent lossless raw bundle retain the complete preceding installation/integration history, first-attempt CI failures, every retest sample and separate **86-operation / 33-route** and **86 / 35** owner snapshots. Every name already exists in the coverage ledger. **All 678 findings / 143 concerns remain open**, preserving every prior row and field. Earlier pending activation/access labels below are historical and superseded by this stage only.
 
 Actual installed and loaded source is `8ef9f9b4be8fce6e7f37a3a7480fa2d0ec0f88c2`, package `fb7dfb78`, listener `73400`, supervisor `73397`, startup `d941b97f-87e0-4167-bb64-75f4ee48c40c`, Interactive (4), nice 0. Proofs match 439 source files, 440 RECORD entries, 38 templates, eight named modules, Python 3.14.2 and all 52 unchanged versions/cache/configuration. Native status/runtime/maintenance reads work. Provider environment sanitization is intentional; no credential recovery is needed. The original question is genuinely delivered/resolved and preserved privately, never withdrawn or treated as consent. The exact managed handoff is executing this continuation and remains pending until normal turn settlement; no installation/restart is repeated.
 
@@ -633,7 +643,7 @@ The original CI failure remains unclassified. Installed private maintenance **75
 
 # Current peer coverage extends the open ledger to 670 findings
 
-A [bounded supported peer follow-up](benchmarks/systemic-exact585-peer-followup-20261025.json), captured `20:21:47.214008–20:21:47.876143 UTC`, preserves **every returned operation and route count, p50/p95/p99/window maximum, process maximum, failure, byte and loop field** in the adjacent lossless numeric bundle. Four ordinary reads per peer check identity, readiness, status and runtime, with a five-second bound and no retries, redirects, update/restart or configuration change. All twelve reads succeed; that is a one-off reachability result, not peer acceptance or a latency distribution.
+A [bounded supported peer follow-up](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-exact585-peer-followup-20261025.json), captured `20:21:47.214008–20:21:47.876143 UTC`, preserves **every returned operation and route count, p50/p95/p99/window maximum, process maximum, failure, byte and loop field** in the adjacent lossless numeric bundle. Four ordinary reads per peer check identity, readiness, status and runtime, with a five-second bound and no retries, redirects, update/restart or configuration change. All twelve reads succeed; that is a one-off reachability result, not peer acceptance or a latency distribution.
 
 | Peer | Runtime operations / route groups | Loaded-source evidence | Current residual examples |
 | --- | --- | --- | --- |
@@ -649,7 +659,7 @@ All **669 prior rows and every prior field remain intact**. One previously unlis
 
 # SQLite CPU activation and indexed health type checks; acceptance remains open
 
-All **669 findings and 136 concerns remain open**. The [complete new evidence](benchmarks/systemic-exact585-reference-type-20261025.json) and adjacent lossless numeric bundle preserve every returned runtime operation/route window, process maximum, CPU/SQL/lock/fsync phase, failure, byte count, raw fixture sample and write-amplification population. Every prior row field and immutable artifact is retained. Existing concerns own the follow-up; no worker, verifier or duplicate concern was created.
+All **669 findings and 136 concerns remain open**. The [complete new evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-exact585-reference-type-20261025.json) and adjacent lossless numeric bundle preserve every returned runtime operation/route window, process maximum, CPU/SQL/lock/fsync phase, failure, byte count, raw fixture sample and write-amplification population. Every prior row field and immutable artifact is retained. Existing concerns own the follow-up; no worker, verifier or duplicate concern was created.
 
 Actual running source is `24c85fc7546336efc52c6074d7c2853771e2ed48`, package `sha256:c7aefc23278c6642302adbdd8ca1be2a78ec378a027a05ab7a08e8d28fb81c8e`, listener `24453`, supervisor `24450`, startup `a57641c0-591f-4dd6-9894-9d79f87ad4ee`. Independent verification matches 439 source files, 440 RECORD checksums, 38 templates, Python 3.14.2 and 52 unchanged versions; cache, configuration and native Interactive (4), nice 0 remain unchanged. PR #585 head/main CI each has five first-attempt successes. No merge, installation or restart was repeated.
 
@@ -703,7 +713,7 @@ Original backup and DB scopes stay independently accepted. Nine archives remain 
 
 # Exact Fleet encoding activation and migration read setup; acceptance remains open
 
-The ledger retains **669 open findings and 136 concerns**, with all prior rows unchanged. [Complete evidence](benchmarks/systemic-exact583-migration-read-scope-20261025.json) and its adjacent lossless numeric bundle preserve every runtime window, process maximum, phase, sample, byte count, warning and failure. Earlier retained **101/43, 106/43 and 106/44** operation/route snapshots are now published losslessly alongside this distinct stage.
+The ledger retains **669 open findings and 136 concerns**, with all prior rows unchanged. [Complete evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-exact583-migration-read-scope-20261025.json) and its adjacent lossless numeric bundle preserve every runtime window, process maximum, phase, sample, byte count, warning and failure. Earlier retained **101/43, 106/43 and 106/44** operation/route snapshots are now published losslessly alongside this distinct stage.
 
 Actual running source is `8ca8d6860aa548d4babac02b0bbb646010e2f9ab`, package `sha256:2339405fbed14b86d77c56f8fed5f8e10c33d9b1e5b8867c3c9898d8da7784c0`, listener PID `15966`, supervisor PID `15963`, startup `6a8019a1-4290-4fcb-ab72-18710549576a`. Independent checks match 439 source files, 440 RECORD checksums, 38 cached templates, Python 3.14.2 and all 52 unchanged dependencies. Native class remains Interactive (4), nice 0; configuration and exclusive lease are unchanged. PR #583 head and main CI each passed five jobs on their first attempt. No merge or installation was repeated.
 
@@ -729,7 +739,7 @@ Original backup and DB scopes remain independently accepted. Nine archives are u
 
 # Exact activation and Fleet transport encoding; acceptance remains open
 
-The ledger retains **668 open findings and 135 concerns**, with every prior row unchanged. [Complete evidence](benchmarks/systemic-exact582-fleet-encoding-20261025.json) and its adjacent lossless numeric bundle retain every runtime window, process maximum, phase, sample, byte count, warning and failure separately.
+The ledger retains **668 open findings and 135 concerns**, with every prior row unchanged. [Complete evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-exact582-fleet-encoding-20261025.json) and its adjacent lossless numeric bundle retain every runtime window, process maximum, phase, sample, byte count, warning and failure separately.
 
 Actual running source is `4b1ded17b56a43de6982e2eb4c62fd19ba797bb0`, package `sha256:b4ca0b63cb2a95957e83b555c13a9bf4ff92d30d7f67770a3a6c6fb30c874b15`, listener PID `10899`, supervisor PID `10896`, startup `a7117425-d20b-42a0-892b-b50d9b534706`. Independent checks match 438 source files, 439 RECORD checksums, 38 templates, Python 3.14.2 and all 52 unchanged dependencies. Native class remains Interactive (4), nice 0; configuration and the exclusive lease are unchanged. PR #582 head and main CI each passed five jobs on their first attempt. No merge or installation was repeated.
 
@@ -749,7 +759,7 @@ Original backup and DB scopes remain independently accepted. Nine archives remai
 
 # Exact activation and cold-payload digest work; acceptance remains open
 
-The ledger retains **667 open findings and 134 concerns**, with every prior row unchanged. [Complete evidence](benchmarks/systemic-exact581-payload-hash-20261025.json) includes all returned numeric runtime fields, route windows, samples, phases, warnings, failures and bytes in its adjacent lossless raw bundle. Current measurements supersede historical deployment labels only for the paths actually observed.
+The ledger retains **667 open findings and 134 concerns**, with every prior row unchanged. [Complete evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-exact581-payload-hash-20261025.json) includes all returned numeric runtime fields, route windows, samples, phases, warnings, failures and bytes in its adjacent lossless raw bundle. Current measurements supersede historical deployment labels only for the paths actually observed.
 
 Actual running source is `1e82797763020e25685868fa6d4be62f77a33a76`, package `sha256:6fdadbec1273c5e496b568ea9a9e7fae41c1e2e7ad3af76c6b19048e7901d487`, listener PID `6146`, supervisor PID `6141`, startup `ef771b8b-3bde-4a71-b4b0-16ed71bc2f1e`. Independent checks match 438 source files, 439 RECORD checksums, 38 cached templates, Python 3.14.2 and all 52 unchanged dependency versions. Native scheduling is Interactive (4), nice 0; configuration and the exclusive lease remain unchanged. PRs #579, #580 and #581 are already integrated; none was merged again.
 
@@ -799,7 +809,7 @@ PR #579 is integrated as `a7b03c7a1678872683af788030b4b9618cf11d54`, with five f
 
 # Exact `aa711e4b` activation and retained maintenance cost — 2026-10-25
 
-All **664 findings and 131 concerns remain open**. [Complete activation and repair evidence](benchmarks/systemic-aa711-activation-gc-digest-20261025.json) and [lossless raw inputs](benchmarks/systemic-aa711-activation-gc-digest-20261025.raw.json.gz) preserve every stage, source identity, sample, counter, byte total and diagnostic. Earlier stages below retain their original as-of statements; this section supersedes their deployment status.
+All **664 findings and 131 concerns remain open**. [Complete activation and repair evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-aa711-activation-gc-digest-20261025.json) and [lossless raw inputs](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-aa711-activation-gc-digest-20261025.raw.json.gz) preserve every stage, source identity, sample, counter, byte total and diagnostic. Earlier stages below retain their original as-of statements; this section supersedes their deployment status.
 
 The actual listener is now PID `96776`, startup `eed43c5c-990f-4ba6-a83e-ff3c9733b67d`, running reviewed source `aa711e4b702781118562117ec90ca649138d7683` and package `b8d75cd1…`. Native launchd policy remains Interactive (4), nice 0. All 438 installed source files, 439 package records, 38 templates, Python 3.14.2 and 52 unchanged dependency versions were checked. Configuration remains `86968d12…`. Runtime identity is separate from the current native continuation receipt, which remains active until its turn completes. No installation or restart is repeated from a stale notice.
 
@@ -857,7 +867,7 @@ Prior stages retain their original as-of state and evidence.
 
 # Snapshot-preserving reference pages — 2026-10-25
 
-All **664 findings /131 concerns remain open**. [Complete source evidence](benchmarks/systemic-reference-pages-20261025.json) and [lossless raw inputs](benchmarks/systemic-reference-pages-20261025.raw.json.gz) retain every earlier stage, including failures and slower idle results. This source repair is not deployed.
+All **664 findings /131 concerns remain open**. [Complete source evidence](benchmarks/systemic-reference-pages-20261025.json) and [lossless raw inputs](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-reference-pages-20261025.raw.json.gz) retain every earlier stage, including failures and slower idle results. This source repair is not deployed.
 
 Fresh health now reads distinct text references in pages of128 JSON values within one SQLite read snapshot. Non-text values and pages exceeding SQLite's string limit fall back to native rows in that same snapshot. Native errors and cancellation cannot return a partial set. Numeric observations retain all12511aggregate items/838337bytes per diagnostic health read alongside99returned rows/202observed calls. Both fresh maintenance checks and native integrity/filesystem diagnostics remain.
 
@@ -875,7 +885,7 @@ Prior stages retain their original as-of state and evidence.
 
 # Exact7460 activation and awake-window retest — 2026-10-25
 
-**All663findings/130concerns remain open.** [Complete retest](benchmarks/systemic-loaded7460-awake-20261025.json) and [lossless numeric inputs](benchmarks/systemic-loaded7460-awake-20261025.raw.json.gz) preserve installation, actual loaded identity, every sample and full runtime counters/windows/bytes. The correlated operator response was applied only to its originating acceptance window; no private response value is published.
+**All663findings/130concerns remain open.** [Complete retest](benchmarks/systemic-loaded7460-awake-20261025.json) and [lossless numeric inputs](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-loaded7460-awake-20261025.raw.json.gz) preserve installation, actual loaded identity, every sample and full runtime counters/windows/bytes. The correlated operator response was applied only to its originating acceptance window; no private response value is published.
 
 Reviewed7460/packagea4d2 is now actually loaded on listener88315/startup591ffd90, supervisor88312, launchdInteractive4.438installed sources match the immutable target;439RECORD checksums/38template entries and52unchanged dependency versions were independently verified at installation. Configuration remains86968. PR574/575 application repairs are active; PR576 only carries evidence. The native0f633restart continuation remains queued/pending separately from this actual loaded proof; no replay/rearm or power/config/default change.
 
@@ -917,7 +927,7 @@ Prior stages retain their original as-of status; the activation evidence above s
 
 # PR575 integration and remaining health delivery diagnostics — 2026-10-25
 
-All **663 findings / 130 concerns stay open**. [Complete followup evidence](benchmarks/systemic-after575-diagnostics-20261025.json) and [lossless full numeric bundle](benchmarks/systemic-after575-diagnostics-20261025.raw.json.gz) retain both new mixed diagnostics, every method timeline/rawsample, and the complete current110operation/50route inventory. No new unrepresented operation/route names were found; name coverage does not establish every branch/provider/deployment.
+All **663 findings / 130 concerns stay open**. [Complete followup evidence](benchmarks/systemic-after575-diagnostics-20261025.json) and [lossless full numeric bundle](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-after575-diagnostics-20261025.raw.json.gz) retain both new mixed diagnostics, every method timeline/rawsample, and the complete current110operation/50route inventory. No new unrepresented operation/route names were found; name coverage does not establish every branch/provider/deployment.
 
 PR575 exacthead65683d98 merged42924157, equal tree0b5b429c; supervisor stablegreen8observations plus independent5success/no approvalsrequired/reviews/threads/fullpagination/attribution/protection/CLEAN. HeadCI40210732138 andmain40211048052 both five first-attempt successes. PR574 head+main also five successes each. Actual loaded source remains87e/package921c50/PID68901/startupa74e/Interactive4/config86968; neither repair deployed.
 
@@ -950,7 +960,7 @@ Prior stages retain their original as-of status; integration followup above supe
 
 # Fresh transcript health digest CPU — 2026-10-25
 
-All **663 findings / 130 concerns remain open**; every prior finding and stage is retained. [Complete evidence](benchmarks/systemic-health-digest-validation-20261025.json) and [lossless full raw inputs](benchmarks/systemic-health-digest-validation-20261025.raw.json.gz) include the rejected query prototype, source proofs, each separate mixed stage, every returned operation/route, count/window/maximum/byte value and raw sample.
+All **663 findings / 130 concerns remain open**; every prior finding and stage is retained. [Complete evidence](benchmarks/systemic-health-digest-validation-20261025.json) and [lossless full raw inputs](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-health-digest-validation-20261025.raw.json.gz) include the rejected query prototype, source proofs, each separate mixed stage, every returned operation/route, count/window/maximum/byte value and raw sample.
 
 Confirmed leaf cost: each health call validates 12,511 ordinary hashes with up to 800,704 Python character iterations. A compiled full match accepts the same 64 lowercase ASCII hexadecimal characters. Both distinct fresh health reads, event-derived references, native quick_check, missing/malformed paths, case aliases, search permissions, symlinks and native errors remain. No caching, threshold/default/permission/durability change.
 
@@ -970,7 +980,7 @@ The following previous stages retain their original as-of status; current integr
 
 # Loaded87e4, host availability and bounded GC candidate filtering — 2026-10-25
 
-All **662 findings / 129 concerns remain open**. Every prior661finding and historical stage remains; one measured GC materialization concern is added. [Complete stage evidence](benchmarks/systemic-loaded87e4-gc-prefilter-20261025.json) and [lossless complete raw inputs](benchmarks/systemic-loaded87e4-gc-prefilter-20261025.raw.json.gz) retain every returned operation/route, count/window/maximum/byte value, raw sample and failed/interrupted stage. No two-cause or integration blanket closure.
+All **662 findings / 129 concerns remain open**. Every prior661finding and historical stage remains; one measured GC materialization concern is added. [Complete stage evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-loaded87e4-gc-prefilter-20261025.json) and [lossless complete raw inputs](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-loaded87e4-gc-prefilter-20261025.raw.json.gz) retain every returned operation/route, count/window/maximum/byte value, raw sample and failed/interrupted stage. No two-cause or integration blanket closure.
 
 Actual activation: macbook `0c7d8ecb` loaded `87e49ca8` / package `921c50` / PID68901 / startupa74e; installed438sourcefiles/439RECORDchecksums/38templates/Python3.14.2/unchanged52dependencies verified, launchdInteractive4/config86968 unchanged. PR572 and573 are merged; currentGCcandidate is **source-only**. Nativebb51550b continuation is running and settles after this turn; no additionalrestart is requested.
 
@@ -1011,7 +1021,7 @@ Evidence-pointer correction: the cadence row previously paired its mainartifact 
 The following older summary and base ledger retain their original as-of status; the loaded87e4 stage above and JSONstage_history supply the current deployment updates.
 # Independent required Fleet refresh and complete peer inventory — 2026-10-24
 
-All **661 findings / 128 concerns remain open**. Every prior654row is byte-for-value preserved; the previously disclosed cadence concern and five newly retained peer route families are included. [Complete numeric evidence](benchmarks/systemic-fleet-required-refresh-20261024.json) retains all returned peer operations/routes/bytes/phase windows, passive freshness samples and both synthetic comparison stages.
+All **661 findings / 128 concerns remain open**. Every prior654row is byte-for-value preserved; the previously disclosed cadence concern and five newly retained peer route families are included. [Complete numeric evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-fleet-required-refresh-20261024.json) retains all returned peer operations/routes/bytes/phase windows, passive freshness samples and both synthetic comparison stages.
 
 Confirmed cause: required fields expire after3s while the old background loop waits all probes plus15s. Passive37s/eight cached GETs observed71/72peer required fields stale despite successful~15s refreshes and0new slow/failed/timeout counter deltas. This is a cadence defect; historical Fleet/PR/sync transport failures remain unattributed.
 
@@ -1023,7 +1033,7 @@ Cost: logical durable cache writes **18→60**, bytes **9959→32345**; process 
 
 Nine-peer scale evidence is also retained, including a failure. Initial24s/stage comparison: healthy stale8168/10968→552/10968; logical writes54→222/bytes29147→118814, candidate loop driftmax102.220ms. Probe starts remain~2.7s. The first scale fixture omitted wall/observation timestamps, so the cause of552stale samples is **unverified**, not retroactively attributed.
 
-Adding those timestamps without changing the application, the second9peer comparison yields8150/10968→0/10968stale; writes54→222/bytes29147→118814; candidate processCPU580.120ms/24s, loop driftp95/max2.197/2.268ms. It directly observes wall-minus-monotonic offset range**51.011seconds in baseline**,8.208ms in candidate. This is a confirmed disposable-process clock discontinuity; clock source, host suspension/correction and production-server impact remain unknown. No time/power/deadline/TTL change. Neither repeat clears the prior552samples or establishes acceptance. [Full initial scale samples](benchmarks/systemic-fleet-required-refresh-initial-scale-20261024.json.gz) and [full clock-instrumented repeat](benchmarks/systemic-fleet-required-refresh-clock-instrumented-repeat-20261024.json.gz) are lossless gzip JSON with hashes in the adjacent numeric artifact. Distributions remain separate by host/stage/population.
+Adding those timestamps without changing the application, the second9peer comparison yields8150/10968→0/10968stale; writes54→222/bytes29147→118814; candidate processCPU580.120ms/24s, loop driftp95/max2.197/2.268ms. It directly observes wall-minus-monotonic offset range**51.011seconds in baseline**,8.208ms in candidate. This is a confirmed disposable-process clock discontinuity; clock source, host suspension/correction and production-server impact remain unknown. No time/power/deadline/TTL change. Neither repeat clears the prior552samples or establishes acceptance. [Full initial scale samples](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-fleet-required-refresh-initial-scale-20261024.json.gz) and [full clock-instrumented repeat](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-fleet-required-refresh-clock-instrumented-repeat-20261024.json.gz) are lossless gzip JSON with hashes in the adjacent numeric artifact. Distributions remain separate by host/stage/population.
 
 New supported peer reads21:09:45.618859–21:09:46.309851Z: one identity/readiness/status/runtime per current canonical origin, all12HTTP200,5.539–253.474ms. macmini66operations/version1.5.9/runtime_buildnull; monica67/alex60operations/source0d6638/packageb573. All operation names already exist in the ledger; five additional registered route families are retained. No peer log files/older retention were read, and fast individual GETs do not erase historical counters. One normal non-forced reachability GET per peer21:11:07Z returned fresh18.880–21.785ms; those normal GETs may refresh derived caches, not production configuration.
 
@@ -1134,7 +1144,7 @@ Next: supervised integration, broader fleet-scale/stalled-concurrency/call/write
 
 # Exact6573 activation and fresh transcript health — 2026-10-24
 
-All **654 findings and 126 concerns remain open**; every prior651row is preserved. [Complete numeric evidence](benchmarks/systemic-loaded6573-health-scan-20261024.json) retains every live runtime/route family,95GET sample, both mixed stages, cold-session trace and paired health sample. Historical source/log/CI evidence below remains unchanged.
+All **654 findings and 126 concerns remain open**; every prior651row is preserved. [Complete numeric evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-loaded6573-health-scan-20261024.json) retains every live runtime/route family,95GET sample, both mixed stages, cold-session trace and paired health sample. Historical source/log/CI evidence below remains unchanged.
 
 Actual installed **65736c30/packagec387**, PID52322/startupe13a2b41 is loaded after managed handoff9f6a708f. Read-only launchctl confirms **Interactive(4)**. Handoff continuation is queued, not yet terminally delivered; this turn cannot verify its own final transcript flush. No second restart/configuration/default change.
 
@@ -1203,7 +1213,7 @@ The scheduling comparison and maintenance residual below remain valid for their 
 
 # Shared macOS scheduling cause and remaining tails — 2026-10-24
 
-All **649 findings and 123 concerns remain open**; every prior647row and historical failure is preserved. [Complete causal, numeric and integration evidence](benchmarks/systemic-scheduling-20261024.json) includes all four full JSON/CSV workload populations, timer/provider counts and source limits.
+All **649 findings and 123 concerns remain open**; every prior647row and historical failure is preserved. [Complete causal, numeric and integration evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-scheduling-20261024.json) includes all four full JSON/CSV workload populations, timer/provider counts and source limits.
 
 The actual loaded `com.pa.server` job at15:16:45UTC is **background(5)**, PID78314; listener78321 and disposable inherited processes report priority4. PA's template explicitly selects `ProcessType=Background`. Six alternating disposable timer processes retain maximum waits120.058/25.067/120.086/25.081/120.043/136.417ms for inherited/application/background/application/background/inherited roles, requesting1/5/20ms. Application resource treatment materially improves wake delivery. No existing process, host power/scheduling policy, service definition or agent/model/permission default was changed. Apple primary references are linked in the numeric evidence.
 
@@ -1266,7 +1276,7 @@ Both prior exact100iteration stages retain12violations each, installed95GET reta
 
 # Resumed full performance inventory — 2026-10-23
 
-All **644 findings and 119 concerns remain open**. Every prior640row and failure is preserved. [Complete numeric evidence](benchmarks/systemic-resume-20261023.json), [all slow names/source percentiles](benchmarks/systemic-resume-20261023-slow-operations.csv), [all local/peer runtime operations and numeric phases](benchmarks/systemic-resume-20261023-runtime-operations.csv), and [all returned route groups/bytes/windows](benchmarks/systemic-resume-20261023-runtime-routes.csv) separate source fixes, integration, installed source, deployed observations and acceptance. The user explicitly resumed all unfinished work; a missing historical backup payload is a disclosed gap, **not a blocker for the remaining work**.
+All **644 findings and 119 concerns remain open**. Every prior640row and failure is preserved. [Complete numeric evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-resume-20261023.json), [all slow names/source percentiles](benchmarks/systemic-resume-20261023-slow-operations.csv), [all local/peer runtime operations and numeric phases](benchmarks/systemic-resume-20261023-runtime-operations.csv), and [all returned route groups/bytes/windows](benchmarks/systemic-resume-20261023-runtime-routes.csv) separate source fixes, integration, installed source, deployed observations and acceptance. The user explicitly resumed all unfinished work; a missing historical backup payload is a disclosed gap, **not a blocker for the remaining work**.
 
 Fresh macbook identity and exclusive fence334 match this same session/workspace. Installed and loaded metadata remain **c02e6d84/package5917/PID78321/startupa50c**. All438installed Python files match c02e;38template entries and the package cache match. Source ancestry confirms backup548 is included. This proves installed composition plus matching runtime metadata, not execution of every loaded branch.35bf and combined8641 packages were prepared/attested only; neither was installed or restarted.
 
@@ -1327,7 +1337,7 @@ Durable/projection sync heads agree; three peers report conflict while conflict 
 
 # Lifecycle progress copy repair — 2026-10-21
 
-All **640 findings and 118 concerns remain open**; every prior639row is preserved. [Complete paired measurements and contracts](benchmarks/systemic-lifecycle-progress-copy-20261021.json) distinguish this source repair from deployment and whole-service acceptance.
+All **640 findings and 118 concerns remain open**; every prior639row is preserved. [Complete paired measurements and contracts](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-lifecycle-progress-copy-20261021.json) distinguish this source repair from deployment and whole-service acceptance.
 
 `DispatchStore.put` copied the caller's progress before discarding it in favor of current normalized progress. It now selects current events, heartbeat and seen keys before the existing full provisional deep copy. Mutation/writer/terminal-repair checks still precede copying; authority-history/maxima fences, FULL durability, complete deep committed publication and the detached return remain. New dispatch insertion is unchanged. All other application AST nodes equal pinned merged baseline7232fd9d.
 
@@ -1357,7 +1367,7 @@ All original valid-branch/provider/MCP/placement/workspace, sync/peers/log/reten
 
 # Bounded progress byte accounting and startup CI evidence — 2026-10-21
 
-All **639 findings and 117 concerns remain open**, with every prior row unchanged. [Complete source/fixture/CI evidence](benchmarks/systemic-progress-retention-json-20261021.json) records the implemented byte-accounting repair and a separate unresolved main-CI startup finding.
+All **639 findings and 117 concerns remain open**, with every prior row unchanged. [Complete source/fixture/CI evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-progress-retention-json-20261021.json) records the implemented byte-accounting repair and a separate unresolved main-CI startup finding.
 
 Retention now enforces count overflow using the same first removable checkpoint before byte accounting. It calculates byte totals only when a removable checkpoint remains and the count fits; at most 64 payloads then require accounting. Protected-only history stays complete even above the count/byte bounds. This removes the measured reserialization of history that cannot be pruned, without SQL caching, schema assumptions, changed encoding, limits, receipt semantics, ordering or durability. Full committed publication remains.
 
@@ -1392,7 +1402,7 @@ No activation/restart, installed-path retest or full module attestation occurred
 
 # Progress ingestion copy and serialization — 2026-10-21
 
-All **638 findings and 116 concerns remain open**. All 636 prior source rows and historical failures are unchanged. The [complete numeric evidence](benchmarks/systemic-progress-ingest-copy-20261021.json) adds separate findings for redundant provisional copying and retained event JSON accounting; the latter is **not repaired** in this patch.
+All **638 findings and 116 concerns remain open**. All 636 prior source rows and historical failures are unchanged. The [complete numeric evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-progress-ingest-copy-20261021.json) adds separate findings for redundant provisional copying and retained event JSON accounting; the latter is **not repaired** in this patch.
 
 Progress ingestion only mutates the event and seen-key containers in place. It now copies those two lists for the provisional record; retained payloads stay read-only and range helpers replace their lists. The full deep copy after commit remains. Every other application AST node equals pinned baseline de7ab4dc. SQL durability, exact receipts, provenance, rejection/coalescing/late behavior, sorting and age/count/byte/protected retention are unchanged.
 
@@ -1425,7 +1435,7 @@ PR561 is integrated as de7ab4dc from exact 8795de28 with equal trees and five fi
 
 # Progress acknowledgment copy repair — 2026-10-21
 
-All **636 findings and 114 concerns remain open**; all635prior source rows are unchanged. The acknowledgment finding previously preserved in the durable card report is now folded into the [complete source evidence](benchmarks/systemic-progress-ack-copy-20261021.json), including its original three-call probe and full prior coverage delta. Ten original card attachments remain; the earlier extra attachment was rejected at the ten-attachment boundary and was not resent or claimed attached.
+All **636 findings and 114 concerns remain open**; all635prior source rows are unchanged. The acknowledgment finding previously preserved in the durable card report is now folded into the [complete source evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-progress-ack-copy-20261021.json), including its original three-call probe and full prior coverage delta. Ten original card attachments remain; the earlier extra attachment was rejected at the ten-attachment boundary and was not resent or claimed attached.
 
 Delivery success/failure used to deep-copy every retained event and plan before changing one payload, then deep-copy again for committed publication. The helper now locates the first matching event or heartbeat, shallow-copies only its scalar-mutated payload and containing event list/provisional record, and returns without copying for absent keys. Existing scalar updates/error sanitization, writer fence, SQL writes, NORMAL transaction, exact before/after-commit fault handling and full deep committed publication remain unchanged. Every other application AST node equals pinned baseline45347da4.
 
@@ -1459,7 +1469,7 @@ One guarded original diagnostic passes with both acknowledgment methods and Work
 
 # Dispatch SQLite observation coverage — 2026-10-21
 
-All **635 findings and 113 concerns remain open**, with all634prior rows unchanged. [Complete evidence](benchmarks/systemic-dispatch-sql-observation-20261021.json) confirms DispatchStore used raw SQLite connections: a captured zero SQL count was missing coverage. Both writer and read-only opens now use the existing numeric observer. Every other application AST node is unchanged. Execute/lazy-fetch durations and row counts, actual commit durations and BUSY/LOCKED errors become visible without retaining SQL, parameters or results. Writer30s/readonly5s timeouts, WAL, NORMAL/temporaryFULL durability, admission and receipt fences remain unchanged.
+All **635 findings and 113 concerns remain open**, with all634prior rows unchanged. [Complete evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-dispatch-sql-observation-20261021.json) confirms DispatchStore used raw SQLite connections: a captured zero SQL count was missing coverage. Both writer and read-only opens now use the existing numeric observer. Every other application AST node is unchanged. Execute/lazy-fetch durations and row counts, actual commit durations and BUSY/LOCKED errors become visible without retaining SQL, parameters or results. Writer30s/readonly5s timeouts, WAL, NORMAL/temporaryFULL durability, admission and receipt fences remain unchanged.
 
 **35 guarded disposable contracts pass (six new,29existing overlapping prior suites)**: lazy rows, commits, exact before/after-commit errors/publication/reload, receipts, contention rollback, read-only SELECT-only initialization and unchanged database/WAL/metadata bytes+mtimes, deferred opening and promotion. The first collection failed on an invalid test-helper import. The next run34pass/one fail incorrectly included SQLite's ephemeral shared-memory reader marks in durable file equality. Both failures are retained; fixtures were corrected, application semantics/deadlines unchanged.
 
@@ -1483,7 +1493,7 @@ PR558 is integrated34b599b7 with equal source/merge trees and independently gree
 
 # Current installed/loaded metadata inventory — 2026-10-21 00:40 UTC
 
-All **633 findings and 111 concerns remain open**; all 633 ledger rows are unchanged. The [complete supported numeric snapshot](benchmarks/systemic-live-runtime-20261021T0040.json), [source/limits summary](benchmarks/systemic-live-runtime-20261021T0040-summary.json), [all121 operations and phases](benchmarks/systemic-live-runtime-20261021T0040-operations.csv) and [all47 route groups](benchmarks/systemic-live-runtime-20261021T0040-routes.csv) retain every returned metric. No new names were needed; each observed family updates its existing evidence overlay.
+All **633 findings and 111 concerns remain open**; all 633 ledger rows are unchanged. The [complete supported numeric snapshot](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-live-runtime-20261021T0040.json), [source/limits summary](benchmarks/systemic-live-runtime-20261021T0040-summary.json), [all121 operations and phases](benchmarks/systemic-live-runtime-20261021T0040-operations.csv) and [all47 route groups](benchmarks/systemic-live-runtime-20261021T0040-routes.csv) retain every returned metric. No new names were needed; each observed family updates its existing evidence overlay.
 
 Source: macbook0c7d8ecb, status/runtime/status reads **2026-10-21T00:40:16.961973Z–00:40:17.776792Z**. Before/after build metadata matches sourcec02e6d84/package5917d4f0/PID78321/startupa50c19a2; installed revision is separatelyc02e. This replaces the earlier228 metadata observation. Source ancestry includes PR555, but full module composition, specific path activation and paired deployed performance acceptance are not established. Root performed no installation/restart. PR558 is newer source; the existing source-review proposal does not authorize a floating activation.
 
@@ -1658,7 +1668,7 @@ Ten alternating pairs on the shared macbook host pass in both versions: request 
 
 # Loaded228 numeric runtime inventory — 2026-10-21 00:01 UTC
 
-All **631 findings and 109 concerns remain open**. All 613 prior rows remain unchanged; 12 operations and six route groups are newly represented. The [complete numeric API snapshot](benchmarks/systemic-live-runtime-20261021T0001.json), [source and interpretation summary](benchmarks/systemic-live-runtime-20261021T0001-summary.json), [all 170 operations and phase metrics](benchmarks/systemic-live-runtime-20261021T0001-operations.csv) and [all 75 route groups](benchmarks/systemic-live-runtime-20261021T0001-routes.csv) preserve every returned family and distribution.
+All **631 findings and 109 concerns remain open**. All 613 prior rows remain unchanged; 12 operations and six route groups are newly represented. The [complete numeric API snapshot](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-live-runtime-20261021T0001.json), [source and interpretation summary](benchmarks/systemic-live-runtime-20261021T0001-summary.json), [all 170 operations and phase metrics](benchmarks/systemic-live-runtime-20261021T0001-operations.csv) and [all 75 route groups](benchmarks/systemic-live-runtime-20261021T0001-routes.csv) preserve every returned family and distribution.
 
 Source: macbook0c7d8ecb, bounded supported status/runtime/status reads **2026-10-21T00:01:28.671265Z–00:01:29.357245Z**. Before/after metadata matches loaded2283d907/package41eed1ca/PID26578/startup6c743433. This fences process identity, not complete module composition or repair activation. Individual read times377.980/168.984/137.954ms are not acceptance distributions. No fresh log files, peer files or retention inventory were read. Ordinary foreground/background/test traffic is uncontrolled.
 
@@ -1952,7 +1962,7 @@ The backup owner’s current stable-build review window is preserved. Existing p
 
 # Fresh current-process inventory — 2026-10-19 22:27 UTC
 
-All **606 findings and102concerns remain open**. All598 previous rows remain unchanged; four newly observed runtime names and four route groups are added. The [unchanged numeric API snapshot](benchmarks/systemic-live-runtime-20261019T2227.json), [interpretation/count summary](benchmarks/systemic-live-runtime-20261019T2227-summary.json), [all139 operations CSV](benchmarks/systemic-live-runtime-20261019T2227-operations.csv) and [all86 route groups CSV](benchmarks/systemic-live-runtime-20261019T2227-routes.csv) retain every returned distribution and count.
+All **606 findings and102concerns remain open**. All598 previous rows remain unchanged; four newly observed runtime names and four route groups are added. The [unchanged numeric API snapshot](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-live-runtime-20261019T2227.json), [interpretation/count summary](benchmarks/systemic-live-runtime-20261019T2227-summary.json), [all139 operations CSV](benchmarks/systemic-live-runtime-20261019T2227-operations.csv) and [all86 route groups CSV](benchmarks/systemic-live-runtime-20261019T2227-routes.csv) retain every returned distribution and count.
 
 Source: macbook0c7d8ecb, supported status/runtime/status reads22:27:04.426554–22:27:05.158541UTC. All three reads fence the same53b42/package6cc/PID69337/startup69233661 process; installed revision is separately228. Individual reads440.149/145.506/145.708ms are not acceptance distributions. No fresh log files or peer logs were scanned. This is a process snapshot, not a new24h log audit or distinct incident count.
 
@@ -2169,7 +2179,7 @@ Backup run5659 completed04:30:53UTC with integrity verified but data incomplete 
 
 # Exact deployed inventory and dispatch summary repair — 2026-10-19
 
-All **597 findings and 101 concerns remain open**. The [unchanged full deployed retest artifact](benchmarks/systemic-exact53b42-loaded-retest-20261019.json) publishes the evidence that could not be added to the full ten-attachment card. Its SHA256 remains `5ec8c78ec0da88b0c2b487d54a2442ae2c055f6121d9813da9b917c714e4f191`. All ten existing attachments remain preserved. Both JSON and gzip submissions returned definite413; a fresh read confirmed ten attachments and the source enforces a ten-file cap. The early byte-size hypothesis was withdrawn; no attachment was claimed uploaded or replaced.
+All **597 findings and 101 concerns remain open**. The [unchanged full deployed retest artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-exact53b42-loaded-retest-20261019.json) publishes the evidence that could not be added to the full ten-attachment card. Its SHA256 remains `5ec8c78ec0da88b0c2b487d54a2442ae2c055f6121d9813da9b917c714e4f191`. All ten existing attachments remain preserved. Both JSON and gzip submissions returned definite413; a fresh read confirmed ten attachments and the source enforces a ten-file cap. The early byte-size hypothesis was withdrawn; no attachment was claimed uploaded or replaced.
 
 macbook `0c7d8ecb` runs exact authorized PR542 merge `53b42d5077971b192e824c62acae71a59db95e80`, package `6ccadfa13713…`, PID69337/startup `69233661-c671-4998-b0c9-a5fda8684a89`. All438 source files, all52 distribution versions under Python3.14.2,38 compiled templates and two servedJS assets were checked. Configuration `86968d12…` and lease fence290 stayed unchanged. At04:14:37Z the saved handoff `e877ac9c-1ea6-524d-bc60-190a7840dcad` was independently terminal `continuation_delivered`/effectcomplete since00:35:55.909550Z, noerror. Originalfailed527 remains failed/undelivered and was not retried. Current checkout includes544/545; this authorization installed53b only, so later source is not claimed deployed.
 
@@ -2202,7 +2212,7 @@ The completed00:32–00:33 local window had95 ordinary GETs, allHTTP200 on one s
 | `workspace.collect_garbage` | 2 | 2 | 0 | 5804.455 | 8675.767 | 8675.767 | 8675.767 |
 | `workspace.project_provision` | 8 | 2 | 1 | 1725.789 | 6330.114 | 6330.114 | 6330.114 |
 
-The [complete new source artifact](benchmarks/systemic-dispatch-summary-20261019.json) retains a confirmed small repair: summary/status reads were materializing the latest durable turn snapshot and discarding it. Only that unused serialization is skipped. Full detail, durable snapshots, queue/admission/receipt semantics and complete numeric protocol gaps/compaction remain unchanged. Thirty alternating pairs retain identical summary and full detail, with30→0 snapshot serializations; actual-source p50/p95/p99/max are6.552/18.748/51.983/51.983ms before and0.225/0.531/1.713/1.713ms after in this2.576MB synthetic retained-proof fixture. This is measured discarded work, not proof of the sole cause of historic Fleet/health tails.
+The [complete new source artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-dispatch-summary-20261019.json) retains a confirmed small repair: summary/status reads were materializing the latest durable turn snapshot and discarding it. Only that unused serialization is skipped. Full detail, durable snapshots, queue/admission/receipt semantics and complete numeric protocol gaps/compaction remain unchanged. Thirty alternating pairs retain identical summary and full detail, with30→0 snapshot serializations; actual-source p50/p95/p99/max are6.552/18.748/51.983/51.983ms before and0.225/0.531/1.713/1.713ms after in this2.576MB synthetic retained-proof fixture. This is measured discarded work, not proof of the sole cause of historic Fleet/health tails.
 
 Five regressions fail against archived main as expected; candidate118tests+4subtests pass. A separate exact-wheel100iteration mixed source scenario adds normal durable retained snapshots to101 dispatches, retains9600 ordered events and12511 verified cold objects, and records **3 worker warnings and 12 threshold observations**. All failure/timeouts/rejections and startup/phase/byte/journal measurements remain in the artifact. This source is not deployed and is not a performance acceptance pass. A separate SQLite JSON rewrite experiment was slower in both variants and was rejected; its complete results remain recorded.
 
@@ -2214,7 +2224,7 @@ Backup owner18fc/c5a owns held available-data capture, all eightarchives and ind
 
 # Fresh integration-base verification — 2026-10-18
 
-All **596 findings and 100 concerns remain open**. [Complete fresh-base workload, prior CI result, source attestation and residuals](benchmarks/systemic-gc-fresh-main-20261018.json). Original PR545 head `2c9c6ac3` passed all five CI checks, but main changed when the existing fork owner integrated PR544 as `ee21b429`. Root merged that main normally into its own branch as `08c95ccd`, without conflicts, resets or force pushes. Since session/chat integration inputs changed, a separate 100-iteration replay tests the resulting source. Earlier measurements and CI results remain immutable and do not substitute for final-head gates.
+All **596 findings and 100 concerns remain open**. [Complete fresh-base workload, prior CI result, source attestation and residuals](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-gc-fresh-main-20261018.json). Original PR545 head `2c9c6ac3` passed all five CI checks, but main changed when the existing fork owner integrated PR544 as `ee21b429`. Root merged that main normally into its own branch as `08c95ccd`, without conflicts, resets or force pushes. Since session/chat integration inputs changed, a separate 100-iteration replay tests the resulting source. Earlier measurements and CI results remain immutable and do not substitute for final-head gates.
 
 The fresh replay verifies 438 packaged source files, 38 compiled templates, all recorded module hashes, 9,600 ordered active events and 12,511 retained cold object contents. It records **1 worker warnings and 6 threshold observations**. All failure/timeouts/rejection counters, percentiles, maxima, startup observations, bytes/write measures and hash-chained journal evidence remain in the artifact. This is source fixture evidence; it is not a controlled speedup, deployed acceptance or a passing whole-PA result. Final updated-head CI, stable supervisor evidence and independent GitHub revalidation are still required.
 
@@ -2224,7 +2234,7 @@ The fork recovery source repair is integrated under its original owner; its runn
 
 # Bounded GC cursor fetch and coordinated remaining work — 2026-10-18
 
-All **596 findings and 100 concerns remain open**; every prior 594-row entry is unchanged. [Complete numeric probe, failures, 39 existing regressions, exact mixed scenario and reproduction](benchmarks/systemic-gc-bounded-fetch-20261018.json). Source changes only two result fetches: each query already has at most 128 digest parameters, and now fetches those rows together instead of a Python/instrumentation cursor call per row. Both SQL queries, parameters, batch bounds, speculative-positive behavior, publication lock, fresh deletion recheck, reader pins and unlink handling remain unchanged. Instrumented call counts include fetch and iteration; distinct SQL statement counts do not decrease. Data, durability, admission, deadlines and warning thresholds retain their existing semantics.
+All **596 findings and 100 concerns remain open**; every prior 594-row entry is unchanged. [Complete numeric probe, failures, 39 existing regressions, exact mixed scenario and reproduction](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-gc-bounded-fetch-20261018.json). Source changes only two result fetches: each query already has at most 128 digest parameters, and now fetches those rows together instead of a Python/instrumentation cursor call per row. Both SQL queries, parameters, batch bounds, speculative-positive behavior, publication lock, fresh deletion recheck, reader pins and unlink handling remain unchanged. Instrumented call counts include fetch and iteration; distinct SQL statement counts do not decrease. Data, durability, admission, deadlines and warning thresholds retain their existing semantics.
 
 On 4,096 retained cold objects published with real fsync, 30 alternating pairs preserve complete event models and compressed file hashes. Baseline/candidate instrumented SQLite calls: 4,162→66; rows: 4,096→4,096. Wall p50: 128.832→114.734 ms; p95: 180.680→167.881 ms; p99/max: 341.231→212.130 ms. Shared host activity remains uncontrolled; these samples do not establish a universal speedup, the earlier 511 ms tail's cause, deployment or whole-PA acceptance. Two initial harness failures are retained: an exact-string indentation guard before seeding, then incorrect use of default 500-row pagination during final parity. The corrected attempt journals all 60 samples and verifies all 4,096 models/files. **39 existing GC/storage/pruning/retention regressions pass** with guarded disposable data/workspace roots.
 
@@ -2240,7 +2250,7 @@ PR543 merged as exact 0009 with five terminal green head checks and five main ch
 
 # Lock-fixture synchronization and bounded role attribution — 2026-10-18
 
-All **594 findings and98concerns remain open**; every prior593row is unchanged. [Complete intermediate CI failure, deterministic reproduction,22existing tests and fixed-role diagnostic](benchmarks/systemic-ci543-lock-fixture-followup-20261018.json). Application source, dependencies, warning/deadline/admission semantics and immutable53b42 activation proposal are unchanged. The PR includes two test corrections: exact decimal comparison and the lock-entry synchronization below.
+All **594 findings and98concerns remain open**; every prior593row is unchanged. [Complete intermediate CI failure, deterministic reproduction,22existing tests and fixed-role diagnostic](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-ci543-lock-fixture-followup-20261018.json). Application source, dependencies, warning/deadline/admission semantics and immutable53b42 activation proposal are unchanged. The PR includes two test corrections: exact decimal comparison and the lock-entry synchronization below.
 
 Intermediatehead2bbd1d74 CI39172747593 fails a lock-wait test at27.238ms versus its unchanged30ms minimum; other4jobs pass. The test starts a50ms hold timer at taskcreation, before the worker necessarily enters measured_lock. ReportingLock now signals only after measured_lock's wall/deadline clocks start, then the test begins the **same50ms hold and>=30ms assertion**, retaining all idle/lock/queue/absolute budgets and queue/clientwait separation. A new bounded0.5s fixture-entry wait guards synchronization; it changes no production or measured-hold timeout. Actual originaltest/runtime/lock reproduction with controlled dispatch boundary fails baseline and passes correction; real host scheduling gives0.429ms versus50.693ms actual lock waits. This is a private boundary model, not a measurement of CI queue delay. Initial private harness importfailed before either case; original retained, separatev2 adds only currentrepo tosys.path. All **22existing delivery/discovery cases pass in11.08s**. RawCIlogSHAa035c85a060b58087a6f1aaebf7068e343d0e7781a788a00ec9a4023f38fe28c is retainedlocal, no same-head retry. Previous8e197b01 headCI39172904402 was5success but unmerged; only the final correctedhead may pass integration gates.
 
@@ -2252,7 +2262,7 @@ Only fixed SQLverbs and trusted packaged internal callsite labels are recorded, 
 
 # Completed native-call attribution; residuals retained — 2026-10-18
 
-All **593 findings and 97 concerns remain open**, with every row unchanged. The separate [complete100iteration per-SQLite-call numeric diagnostic](benchmarks/systemic-sqlite-call-attribution-20261018.json) finished:438sourcefiles/38templates/29runtime modulehashes match the existing source;9600orderedactive and12511cold content hashes are preserved;0operation failures/timeouts/rejections. The113.445s measurement has **2workerwarnings/11universal500ms observations+3premeasurement slow records**. Its numeric wrappers add overhead, so it is not a paired speedup, rollout or performance acceptance result. The earlier uninstrumented source542stage1warning/8observations and every prior stage remain separate and retained. Earlier artifact's running status is historical, not overwritten.
+All **593 findings and 97 concerns remain open**, with every row unchanged. The separate [complete100iteration per-SQLite-call numeric diagnostic](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-sqlite-call-attribution-20261018.json) finished:438sourcefiles/38templates/29runtime modulehashes match the existing source;9600orderedactive and12511cold content hashes are preserved;0operation failures/timeouts/rejections. The113.445s measurement has **2workerwarnings/11universal500ms observations+3premeasurement slow records**. Its numeric wrappers add overhead, so it is not a paired speedup, rollout or performance acceptance result. The earlier uninstrumented source542stage1warning/8observations and every prior stage remain separate and retained. Earlier artifact's running status is historical, not overwritten.
 
 The527.415ms transcript-message-page warning has525.489ms worker service/174.913ms threadCPU. Its5fetchall calls take433.740ms wall/96.219ms CPU;7execute calls take25.747ms wall/14.407ms CPU. The708.558ms reconcile warning has703.860ms service/61.012ms CPU: oneexecute takes511.184ms wall/4.014ms CPU inside an outermost projection.mutation hold525.182ms. Nested holds overlap and cannot be summed. No busyfailure is recorded; successful busy/native/scheduler/GIL/disk cause and exact statement role remainunverified. This is narrower attribution, not proof that each warning is a different slow query. None of the selected worstworker topcalls overlaps the26retainedGCevents>=10ms (all fit the64event window); shortcollections outside thelast256window remainunknown, so this is not blanketGC exclusion.
 
@@ -2284,7 +2294,7 @@ A separate100iteration disposable source diagnostic with bounded per-SQLite-call
 
 # Fresh slow-tail inventory and exact integration — 2026-10-18
 
-All **592 findings and 96 concerns remain open**. Every prior588row is preserved unchanged; additive overrides link fresh observations to existing row IDs. This documentation-only checkpoint publishes the [complete64-operation numeric tail](benchmarks/systemic-live-log-window-20261018T2153-2215.json) and [all17family phases, exact integration/CI/receipt evidence and unshipped query probe](benchmarks/systemic-live-inventory-followup-20261018.json). The immutable proposed runtime target remains53b42d50; there is no new install, restart or acceptance claim.
+All **592 findings and 96 concerns remain open**. Every prior588row is preserved unchanged; additive overrides link fresh observations to existing row IDs. This documentation-only checkpoint publishes the [complete64-operation numeric tail](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json) and [all17family phases, exact integration/CI/receipt evidence and unshipped query probe](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-live-inventory-followup-20261018.json). The immutable proposed runtime target remains53b42d50; there is no new install, restart or acceptance claim.
 
 **Exact source and coverage:** macbook0c7d8ecb; supported installed CLI `pa logs --all --since 2026-10-18T21:53:00Z --lines 100000 --json`;6385records,0malformed,cap not reached; timestamp range **2026-10-18T21:53:01Z–22:15:09Z**. Streams: stdout2698,structured1549,stderr2138; requested supervisor returned0, a coverage gap. **628rawslowwarning emissions include314structured+314stderr copies**, while all numeric phases occur in314structuredrecords. They are not distinct incidents. All64names already map to rows in the prior inventory. Raw logs remainlocal with SHA256b1825d4a1a4a2c0c9940f1455cf1ced20d08c986f53f92bc813f4846e1b66080; numeric artifact SHA256301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e. The retained JSON source-command display omitted spaces after two options; this sentence records the actual argument separation without changing that artifact or its numeric evidence.
 
@@ -2393,7 +2403,7 @@ Observability concerns: inventory attachment413/correlationd45a9c95 has failed/V
 
 # Owned schema filtering and coordinated dependency evidence — 2026-10-18
 
-All **588 findings and 92 concerns remain open**. Every prior586row, owner and next action is preserved. [Full source/test/prototype/mixed/dependency evidence](benchmarks/systemic-owned-schema-filter-20261018.json) retains all measurements, rejected variants and gaps. PR541 exact head/merge trees and five-success head/main CI are verified; integration is separate from activation.
+All **588 findings and 92 concerns remain open**. Every prior586row, owner and next action is preserved. [Full source/test/prototype/mixed/dependency evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-owned-schema-filter-20261018.json) retains all measurements, rejected variants and gaps. PR541 exact head/merge trees and five-success head/main CI are verified; integration is separate from activation.
 
 The schema encoder filters only its freshly owned JSON-mode model dump without copying the container graph again. Full OpenAPI validation/serialization, null/private-key filtering, array nulls and general/version fallback semantics remain. Live model input stays unchanged and concurrent encodings are independent. **58 tests and 9 subtests pass**, with five existing warnings retained. No readiness, deadline, dependency, permission, durability or admission policy changes.
 
@@ -2421,7 +2431,7 @@ Unshipped native-JSON timing and its concurrency semantic counterexample, instru
 
 # Session selection snapshot and native-WAL coverage — 2026-10-18
 
-All **586 findings and 90 concerns remain open**. Every prior585row/owner/action is preserved; one verifier-integrity gap is added. [Complete source, tests, every prototype/timing and mixed measurement](benchmarks/systemic-session-list-snapshot-20261018.json) and [native-WAL diagnostic including its original failed verifier](benchmarks/systemic-native-wal-diagnostic-20261018.json) retain the full evidence.
+All **586 findings and 90 concerns remain open**. Every prior585row/owner/action is preserved; one verifier-integrity gap is added. [Complete source, tests, every prototype/timing and mixed measurement](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-session-list-snapshot-20261018.json) and [native-WAL diagnostic including its original failed verifier](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-native-wal-diagnostic-20261018.json) retain the full evidence.
 
 Active/chats/all sidebar views now select using a read-only metadata type, then decode complete selected rows from the same SQLite read. Metrics, full configuration, selected-session inclusion, pin/human-activity ordering and live runtime precedence remain. Activity workflow filtering and custom Store contracts keep their original paths; full session APIs remain complete. Unselected JSON is opaque, not validated by this sidebar. Raw SQLite rows/bytes are still read and response bytes are unchanged: this bounds decode/model work, **not scan, memory or payload-size acceptance**.146tests and7subtests pass, including exact summary/full response, filters, snapshot consistency, live precedence, selected decoder/error and extension contracts.
 
@@ -2451,7 +2461,7 @@ PR540 exacthead54c176/strictmergef1d5/newmainCI39166580290 are all independently
 
 # Corrected scalar-default source and complete residuals — 2026-10-18
 
-All **585 findings and 89 concerns remain open**. Every retained row, owner and action is preserved. [Complete source, test, paired timing, mixed workload and callback evidence](benchmarks/systemic-schema-scalar-source-20261018.json) includes every measured operation, route, phase, byte counter and residual, with source/merge/deployment states separate.
+All **585 findings and 89 concerns remain open**. Every retained row, owner and action is preserved. [Complete source, test, paired timing, mixed workload and callback evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-schema-scalar-source-20261018.json) includes every measured operation, route, phase, byte counter and residual, with source/merge/deployment states separate.
 
 The local source skips a TypeAdapter only for exact None/bool/int/str defaults without configured custom JSON encoders, within the existing framework-version fences. It uses the same native JSON conversion. Custom encoders, subclasses and all other values retain upstream behavior. The rejected unconditional prototype and custom-encoder counterexample remain in prior evidence. No request validation, readiness/admission, warning/deadline, durability or dependency policy changes. **52 tests and 9 subtests pass**, including 15 new scalar/fallback/full-schema contracts; a wheel builds without installation.
 
@@ -2508,7 +2518,7 @@ All previous three preboot slow calls, five background threshold observations, f
 
 # Concurrent integration, mobile CI and remaining schema CPU — 2026-10-18
 
-All **583 findings and 87 concerns remain open**. The prior580rows, owners, actions and evidence are preserved. [Full integration and CI evidence](benchmarks/systemic-pr537-integration-followup-20261018.json) and [every schema probe/counterexample](benchmarks/systemic-schema-scalar-default-probe-20261018.json) separate current verification from historical measurements.
+All **583 findings and 87 concerns remain open**. The prior580rows, owners, actions and evidence are preserved. [Full integration and CI evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-pr537-integration-followup-20261018.json) and [every schema probe/counterexample](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-schema-scalar-default-probe-20261018.json) separate current verification from historical measurements.
 
 PR537 head `7766a227` passed five checks, stable supervisor eight observations and independent current-base/rules/review/attribution checks. Backup PR536 merged `9e0173f0` at20:21:34Z between the final `af14` base check and PR537 merge `a264b5c1` at20:21:43Z. The strict postmerge equality/parent proof **failed and remains unfulfilled**. A separate read-only audit confirms all1,070tracked path/mode/blob entries equal the disjoint536+537union; it does not retroactively establish a current-base gate or atomically solve the head-only merge API's base race. The existing backup owner has a durable queued coordination prompt, not claimed consumed; ownership and data-recovery limits are unchanged.
 
@@ -2526,7 +2536,7 @@ The earlier health mixed fixture remains its exact7766/af14source, not relabeled
 
 # Fresh-health reference batching source evidence — 2026-10-18
 
-All **580 findings and 84 concerns remain open**. Every earlier row, owner, action and failure is retained; current-status overrides point to the [complete source and mixed evidence](benchmarks/systemic-health-reference-source-20261018.json). PR535 is now integrated as `af14c179`, with all five head and new main checks successful. The original PR533 main failure remains recorded; the readiness repair changes only its test.
+All **580 findings and 84 concerns remain open**. Every earlier row, owner, action and failure is retained; current-status overrides point to the [complete source and mixed evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-health-reference-source-20261018.json). PR535 is now integrated as `af14c179`, with all five head and new main checks successful. The original PR533 main failure remains recorded; the readiness repair changes only its test.
 
 Fresh transcript health iterated one observed cursor step per cold reference. The repair uses bounded batches of128rows with the **same DISTINCT query and complete set**. Fresh missing-file and integrity checks remain uncached; GC, writes, locking, retention, warning thresholds and deadlines are unchanged. The actual function body matches the earlier successful prototype. That probe reduced observed execute/fetch calls12,515→102 for the same12,511rows; these are fetch steps, not fewer SQL queries. Its four worker warnings and concurrent CPU regression remain published below.
 
@@ -2613,7 +2623,7 @@ Fresh supported card metadata at19:41:28Z shows acceptancefalse under unchanged 
 
 # Rejected GC hypothesis and current integration boundary — 2026-10-18
 
-The [bounded positive-reference aggregate experiment](benchmarks/systemic-gc-positive-aggregate-probe-20261018.json) is **not implemented**. It tested one aggregate row per128hash page, leaving the fresh locked deletion/pin/unlink proof unchanged. All42timing cases and both helper failures are preserved. Earlier rejected fetch-all evidence remains unchanged.
+The [bounded positive-reference aggregate experiment](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-gc-positive-aggregate-probe-20261018.json) is **not implemented**. It tested one aggregate row per128hash page, leaving the fresh locked deletion/pin/unlink proof unchanged. All42timing cases and both helper failures are preserved. Earlier rejected fetch-all evidence remains unchanged.
 
 | Disposable workload | Trials/method | Baseline wall p50 / p95 / max ms | Aggregate wall p50 / p95 / max ms |
 | --- | ---: | ---: | ---: |
@@ -2632,7 +2642,7 @@ All **578 findings and82concerns remain open**. No product GC edit, install, res
 
 # Exact-source mixed result and remaining violations — 2026-10-18
 
-All **578 findings / 82 concerns remain open**. [Full result, 7,274 verified journal records, logical I/O counters, runtime windows and reproduction source](benchmarks/systemic-fleet-config-mixed-20261018.json) retain the one completed exact547 candidate scenario. Prior artifacts and every coverage row are unchanged.
+All **578 findings / 82 concerns remain open**. [Full result, 7,274 verified journal records, logical I/O counters, runtime windows and reproduction source](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-fleet-config-mixed-20261018.json) retain the one completed exact547 candidate scenario. Prior artifacts and every coverage row are unchanged.
 
 The 100-iteration fixture ran65.862s on Darwin25.6.0/arm64/Python3.14.2,10CPU/24GiB (Mac16,13), with30sessions carrying128KiB diagnostics and128KiB unrelated configuration proofs each. All9,600active transcript events remain ordered and all12,511retained cold payloads pass independent compressed-content-hash verification. All2,900HTTP responses returned200;2,879worker submissions completed with zero failures/timeouts/cancellations/rejections/slow-worker warnings. This is source-fixture evidence, not live performance acceptance.
 
@@ -2693,7 +2703,7 @@ Exact547headCI39157944577 passed all5jobs at attempt1 and supervisor observed st
 
 # Fleet configuration decoding and remaining acceptance — 2026-10-18
 
-All **578 findings and 82 concerns remain open**. The prior 576 rows, owners, actions and historical evidence are unchanged. [Complete source comparison, phase probes and CI history](benchmarks/systemic-fleet-config-20261018.json) retain every measured sample and limitation.
+All **578 findings and 82 concerns remain open**. The prior 576 rows, owners, actions and historical evidence are unchanged. [Complete source comparison, phase probes and CI history](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-fleet-config-20261018.json) retain every measured sample and limitation.
 
 Fleet's read-only session summary still decoded unrelated configuration proofs after the earlier metrics projection repair. It now reuses the existing guarded three-key startup projection and the same bounded selection, count and ordering query. Full session APIs (including `include_metrics=False`) retain complete configuration; durable prompt, admission, recovery, receipt and transcript behavior are unchanged. Malformed, duplicate-key and legacy JSON decoding keeps its existing behavior. The presenter matches complete reads exactly in the fixture.
 
@@ -2713,7 +2723,7 @@ The completed current2e read-only window still has four Fleet≥500ms requests, 
 
 # Current process verification and residual inventory — 2026-10-18
 
-All **576 findings and80concerns remain open**. Original570rows, owners and actions are preserved. The [complete artifact](benchmarks/systemic-current-process-20261018.json) contains exact-process proof, failed receipt, all21runtime sections,95GET outcomes, cached maintenance, control overlays and helper failure history.
+All **576 findings and80concerns remain open**. Original570rows, owners and actions are preserved. The [complete artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-current-process-20261018.json) contains exact-process proof, failed receipt, all21runtime sections,95GET outcomes, cached maintenance, control overlays and helper failure history.
 
 The correlated operator authorization permits separate process verification without restarting. The failed PR527 handoff stays failed; original strict handoff gate remains unfulfilled. While awaiting the response, another build became active: source2e285481/packagefb90a5db/PID14454/startupba25d624. It contains527 and has matching438installed source files/52unchangedversions/38compiled templates; original527head/main and currentmain CI are terminalgreen. These observations are not a causal PR527 before/after comparison.
 
@@ -3117,7 +3127,7 @@ Correlated operator authorization permits separate process verification without 
 
 # Main526 browser polling follow-up — 2026-10-18
 
-All **570 findings and79concerns remain open**. Every prior569row, owner and action is unchanged. The [complete artifact](benchmarks/systemic-main526-browser-20261018.json) preserves the redacted failed shard, exact-source polling probe, all test outputs and activation stop.
+All **570 findings and79concerns remain open**. Every prior569row, owner and action is unchanged. The [complete artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-main526-browser-20261018.json) preserves the redacted failed shard, exact-source polling probe, all test outputs and activation stop.
 
 PR526 merged exactea9918d7 after stable supervisor and independent5SUCCESS/0reviews0threads/currentrules/CLEAN; source/merge trees equal. Its mainCI39146283029 attempt1 failed one browser test while polling the login URL after a sign-in click: CDP reported “Inspected target navigated or closed”. Other4checks passed. No526install/restart or workflowretry.
 
@@ -3127,7 +3137,7 @@ Every earlier latency outlier, failed/negative/unknown stage, peer/log/backup/re
 
 # Full ancestry boundary discovery — 2026-10-18
 
-All **569 findings and78concerns remain open**. Every prior568row, owner and action is preserved. The [complete artifact](benchmarks/systemic-ancestor-boundaries-20261018.json) retains source, full test/benchmark commands and failures, exact wheel and all mixed outcomes.
+All **569 findings and78concerns remain open**. Every prior568row, owner and action is preserved. The [complete artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-ancestor-boundaries-20261018.json) retains source, full test/benchmark commands and failures, exact wheel and all mixed outcomes.
 
 Imported forks previously copied the ready tip’s full ancestry for membership, then copied their exact boundary ancestry again. The repair uses the existing pinned indexed membership for discovery and retains exact boundary sets, canonical fallback and history bounds. At30k retained commits,20alternating pairs transfer59999→29999hashes/4.02→2.01MB; p50wall440.654→395.967ms, p95596.576→425.759ms and medianthreadCPU422.712→382.839ms. ObservedSQLcalls15→21; canonical result sets match each trial. This synthetic warm-index fixture does not establish production or whole-path speedup. Initial path-alias guard and test-import failures remain alongside the expected old-source regression failure. Five targeted contracts pass; broader suite99tests plus5subtests passes241.00s (overlapping, not104distinctcontracts); full mixed results are retained below.
 
@@ -3135,7 +3145,7 @@ Mixed workerwarnings: {"Slow off-loop operation": 1}. Thresholdviolations: {"/ap
 
 # PR525 actual loaded inventory — 2026-10-18
 
-All **568 findings and77concerns remain open**. Every prior row, owner and action is unchanged. The [complete artifact](benchmarks/systemic-525-loaded-20261018.json) retains integration/installation/strict activation proof and all returned runtime sections separately.
+All **568 findings and77concerns remain open**. Every prior row, owner and action is unchanged. The [complete artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-525-loaded-20261018.json) retains integration/installation/strict activation proof and all returned runtime sections separately.
 
 All95 timed GETs returned200 with stable build; one Fleet page took738.203ms. The initial untimed observer fence failed before samples; it is preserved, with no duplicate timed samples. Cached maintenance took42213.485ms, object collection7203.064ms with13948SQLcalls, full projection VACUUM8023.222ms, first migration/health11109.834ms and final health4179.475ms. Workspace provisioning records2failures/7submissions, cause unknown. OpenAPI1715.659ms and session-save4408.177ms remain. No whole-path speedup or acceptance claim; every earlier failed/negative/unknown stage and all linked ownership remain.
 
@@ -3418,7 +3428,7 @@ Futureactivationhelper selectors nowusefrozen explicitsessionbindings;3puretests
 
 # Startup definition hashing repair — 2026-10-18
 
-All **567 findings and76concerns remain open**. Every prior566row, owner and action is unchanged. The [complete source artifact](benchmarks/systemic-schema-remapping-20261018.json) retains sources, original failed/unexercised probes, corrected mechanism counts, all commands/exit codes, test failures/corrections and final measurements. The complete actual PR524 inventory below remains distinct from this uninstalled source.
+All **567 findings and76concerns remain open**. Every prior566row, owner and action is unchanged. The [complete source artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-schema-remapping-20261018.json) retains sources, original failed/unexercised probes, corrected mechanism counts, all commands/exit codes, test failures/corrections and final measurements. The complete actual PR524 inventory below remains distinct from this uninstalled source.
 
 Pydantic traverses the same definition under several candidate names while resolving schema collisions. The FastAPI0.136.3/Pydantic2.13.4 call-local generator keeps one hashable representation per schema within a pass, then clears every memo entry before upstream mutates the schemas. Strong references prevent identity reuse. Original hash/dedup/order/error behavior, full OpenAPI validation, security, routes, readiness, deadlines and warning thresholds remain. Unknown Pydantic versions use the original generator; framework globals are unchanged.
 
@@ -3432,7 +3442,7 @@ No production restart, defaults/configuration/dependency changes or selfacceptan
 
 # PR524 actual loaded inventory — 2026-10-18
 
-All **566 findings and75concerns remain open**. Every prior565row, owner and action is retained; the durable helper-identifier concern is now included. Exact source/package/newPID/config/lease were verified. The [complete artifact](benchmarks/systemic-524-loaded-20261018.json) separates integration, installation, activation and retest evidence.
+All **566 findings and75concerns remain open**. Every prior565row, owner and action is retained; the durable helper-identifier concern is now included. Exact source/package/newPID/config/lease were verified. The [complete artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-524-loaded-20261018.json) separates integration, installation, activation and retest evidence.
 
 All95GETs returned200/stable, but3threshold violations remain (Agent twice, max554.895ms; Fleetoverview613.791ms). Cached maintenance35849.515ms includes GC7151.908ms/13816SQLcalls and VACUUM8623.590ms. Workspace provision has1failure/7submissions with cause unknown. All prior failed/negative/unknown stages remain. No warning/deadline/default/data/integrity/reclamation/acceptance weakening.
 
@@ -3666,7 +3676,7 @@ One small sequential window of95 timed GETs plus2untimed build fences. Five HTML
 
 # Remove unused prior-card reconstruction from versioned appends — 2026-10-18
 
-All **565 findings and74concerns remain open**. Every prior563row, owner and action is unchanged. The [full artifact](benchmarks/systemic-append-prior-20261018.json) retains the source, complete pair data, test stages, rejected SQL alternative, failed probe/assessment, earlier startup diagnostics and new mixed-load evidence.
+All **565 findings and74concerns remain open**. Every prior563row, owner and action is unchanged. The [full artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-append-prior-20261018.json) retains the source, complete pair data, test stages, rejected SQL alternative, failed probe/assessment, earlier startup diagnostics and new mixed-load evidence.
 
 EventLog.append_event unconditionally reconstructed prior card state from retained indexed event history. For non-create events with a supplied causal_card_version, that result was discarded: only duplicate-create detection and omitted-version derivation consume it. Keep index readiness, duplicate-create lookups, absent/empty-version fallback, ref/parent fence, object durability, index advancement and full projection unchanged.
 
@@ -3735,7 +3745,7 @@ Normal PA scheduler independent acceptance17d034a6 remains unsatisfied. Exactbfe
 
 # PR523 actual activation and remaining latency — 2026-10-18
 
-All **563 findings and 72 concerns remain open**. Every prior row, owner and action is preserved. The [complete actual-build artifact](benchmarks/systemic-523-loaded-20261018.json) records sourcebfe0a81a/package5fd609b1/PID79888/startupbffb5ec0/config86968/lease290, independent integration checks and distinct installation/loaded proofs. Both exact-head/main CI passed5/5 without retries. Normal PA scheduler independent acceptance17d034a6 remains unsatisfied.
+All **563 findings and 72 concerns remain open**. Every prior row, owner and action is preserved. The [complete actual-build artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-523-loaded-20261018.json) records sourcebfe0a81a/package5fd609b1/PID79888/startupbffb5ec0/config86968/lease290, independent integration checks and distinct installation/loaded proofs. Both exact-head/main CI passed5/5 without retries. Normal PA scheduler independent acceptance17d034a6 remains unsatisfied.
 
 The once-only95 ordinary GETs all returned200 with stable build fences, but runtime628.164ms, Fleet612.692ms and Home706.045ms exceeded500ms. Status p95=137.811ms; runtime p95=225.639ms. Fleet returned1,120,902 decoded bytes. One small sequential window, five HTML samples give p95=p99=max; first not guaranteed cold. Decoded response bytes are not wire bytes. Local sample checkpoint persistence adds observer work outside timers. No own tests/fixtures overlapped GETs, host/background uncontrolled and no pressure capture; separate runtime and cached-maintenance snapshots followed in a parallel read-only batch. Process totals/maxima, bounded all-call percentile windows and slow-only retained records are distinct. Family all-call percentiles cannot be inferred. Parent phases include children; wall-minusCPU is not disk/GIL attribution, and zero busy failures does not exclude successful busy waits. Every prior negative result, unknown child exit, older nested/log/rotation gaps, workspace failure, peer/backup/receipt and coverage obligation remains open.
 
@@ -3978,7 +3988,7 @@ Whole-card acceptance remains open. Runtime counts and slow-only observations ar
 
 # OpenAPI JSON filtering CPU repair — 2026-10-18
 
-All **563 findings and 72 concerns remain open**. Every previous562 row, owner and action is unchanged. The [source artifact](benchmarks/systemic-openapi-json-20261018.json) contains both profiles, every prototype/source timing, commands/exit codes, exact source snapshots, parity hash, test log and guarded temporary roots. This source is not deployed; the actual PR522 loaded evidence and complete runtime inventory are preserved immediately below.
+All **563 findings and 72 concerns remain open**. Every previous562 row, owner and action is unchanged. The [source artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-openapi-json-20261018.json) contains both profiles, every prototype/source timing, commands/exit codes, exact source snapshots, parity hash, test log and guarded temporary roots. This source is not deployed; the actual PR522 loaded evidence and complete runtime inventory are preserved immediately below.
 
 FastAPI’s final generic encoder traversed an already JSON-serialized OpenAPI model dump. The version-fenced, call-local replacement keeps complete OpenAPI validation and Pydantic JSON serialization, then preserves the framework’s recursive null/private-key filtering. Array nulls remain; other objects/options use the public encoder. Framework globals, route/auth/validation contracts, readiness, deadlines and warning thresholds are unchanged.
 
@@ -3992,7 +4002,7 @@ Next: supervised review/integration and safe exact activation, then continue sha
 
 # PR522 actual activation and remaining latency — 2026-10-18
 
-All **562 findings and 71 concerns remain open**; every existing row, owner and next action is preserved. The [complete loaded-build artifact](benchmarks/systemic-522-loaded-20261018.json) records exact source de576ebb, package6439e272, new PID76726/startup2acd7a30 and unchanged configuration/lease290. Head and main CI each passed all5 checks without retries; integration and installed/loaded proofs remain distinct.
+All **562 findings and 71 concerns remain open**; every existing row, owner and next action is preserved. The [complete loaded-build artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-522-loaded-20261018.json) records exact source de576ebb, package6439e272, new PID76726/startup2acd7a30 and unchanged configuration/lease290. Head and main CI each passed all5 checks without retries; integration and installed/loaded proofs remain distinct.
 
 The once-only95 ordinary sequential GETs all returned HTTP200 with stable build fences, but Agent659.990ms and Fleet632.784ms exceeded500ms. Status p95=186.025ms, runtime129.334ms; Fleet returned1,096,583 decoded bytes and overview1,019,876. Single sequential95GET window, all200/stable but Agent659.990ms/Fleet632.784ms violate500ms. Not acceptance or a causal paired comparison. No own tests or fixtures overlapped GETs; host/background uncontrolled, no pressure capture. Per-sample persistence adds work outside timers. Five HTML p95=p99=max, first not guaranteed cold, decoded bytes not wire bytes. Runtime/cachedmaintenance were separate following parallel read-only snapshots. Per-process maxima differ from bounded windows. Zero busy failures does not exclude successful busy waits. Parent phases include children; wall-minusCPU is not disk/GIL attribution. All prior CI failures, negative experiments, old unknown child exit, log gaps, workspace failures, peer/backup/receipt/coverage gaps remain open.
 
@@ -4235,7 +4245,7 @@ Whole-card acceptance remains open. Runtime counts and slow-only observations ar
 
 # Startup reconciliation inventory repair — 2026-10-18
 
-All **562 findings and71 concerns remain open**. Every prior560 row remains unchanged. The [source and complete measurement artifact](benchmarks/systemic-reconciliation-inventory-20261018.json) retains the targeted improvement, all mixed-workload outliers, both test stages and the original coroutine warning.
+All **562 findings and71 concerns remain open**. Every prior560 row remains unchanged. The [source and complete measurement artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-reconciliation-inventory-20261018.json) retains the targeted improvement, all mixed-workload outliers, both test stages and the original coroutine warning.
 
 Startup completion recovery copied the newest1000 full dispatch records before filtering. The new explicit reader applies the same newest window before eligibility filtering and returns full detached candidate records. Recovery parsing, transcript lookup, saves and outbox behavior retain their contracts; generic dispatch listing is unchanged. Candidate copies occur outside the indexed lock. Dynamic legacy adapters use the existing list contract unless the optional reader is explicitly declared.
 
@@ -4302,7 +4312,7 @@ The activated6b7 GET window remains95HTTP200 with zero threshold violations, but
 
 # PR521 actual activation and remaining latency — 2026-10-18
 
-All **560 findings and 69 concerns remain open**. Every existing row is unchanged. The [complete loaded-build artifact](benchmarks/systemic-521-loaded-20261018.json) records server source6b7ec220, package8abdf60e, new PID72162/startup8fd8d8da and unchanged configuration/lease290. The earlier failed head, all CI failures, the install sequencing error and all historical negative measurements remain preserved.
+All **560 findings and 69 concerns remain open**. Every existing row is unchanged. The [complete loaded-build artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-521-loaded-20261018.json) records server source6b7ec220, package8abdf60e, new PID72162/startup8fd8d8da and unchanged configuration/lease290. The earlier failed head, all CI failures, the install sequencing error and all historical negative measurements remain preserved.
 
 The once-only95 ordinary sequential GET window returned95 HTTP200 with no500ms violations and stable build fences. Status p95=148.432ms, runtime192.304ms, Agent max196.133ms, Fleet max475.639ms. Fleet still returned1,245,872 decoded bytes; overview max1,017,514 bytes. These small samples do not establish a causal speedup or whole-PA acceptance. Five HTML samples have p95=p99=max; the first sample is not guaranteed cold, decoded bytes are not wire bytes, and observer persistence adds work outside request timers. No own fixture or test overlapped this window.
 
@@ -4542,7 +4552,7 @@ Whole-card acceptance remains open. Runtime counts and slow-only observations ar
 
 # Startup inventory compatibility correction — 2026-10-18
 
-All **560 findings and 69 concerns remain open**. The previous 559 rows remain unchanged. The [correction artifact](benchmarks/systemic-startup-config-correction-20261018.json) preserves all eight failures from original PR521 head3618/CI39125018198, the native before/after regressions, expanded tests, and corrected-source measurements. The failed head was never merged or deployed; its CI was not retried.
+All **560 findings and 69 concerns remain open**. The previous 559 rows remain unchanged. The [correction artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-startup-config-correction-20261018.json) preserves all eight failures from original PR521 head3618/CI39125018198, the native before/after regressions, expanded tests, and corrected-source measurements. The failed head was never merged or deployed; its CI was not retried.
 
 The optional reader lookup fabricated a callable on dynamic legacy adapters, producing an empty startup inventory. The corrected helper checks that the reader is declared before binding it; legacy adapters retain their existing list_sessions contract. Three unchanged recovery tests failed before and passed after. The expanded suite passes151 tests in72.80s, including the full live-event module; the workspace GC protection case passes in8.04s. Two adapter contracts were added, with no assertion or deadline relaxation.
 
@@ -4550,11 +4560,11 @@ The guarded SQL is unchanged. A separate20-pair fixture measures the corrected h
 
 Actual c43f still has three threshold violations in its95-GET window,35.414s cached maintenance and an unexplained workspace failure. The instrumented mixed fixture still has six threshold violations and an unknown child exit status after the parent verifier failed. All native busy/IO/GIL/GC, startup/schema, history/sync, endpoint/provider/peer, log-loss/receipt/retention, browser and backup concerns retain their owners and next actions. Normal PA scheduler acceptance remains independent and unsatisfied.
 
-The [complete disposable sample/lock journals and fixture log](benchmarks/systemic-all-holder-journals-20261018.json) retain every sourcefixture sample and lock event; losslessgzip manifests include originalSHA256s. Parentverifierfailed/childexituncaptured remain explicit.
+The [complete disposable sample/lock journals and fixture log](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-all-holder-journals-20261018.json) retain every sourcefixture sample and lock event; losslessgzip manifests include originalSHA256s. Parentverifierfailed/childexituncaptured remain explicit.
 
 # Startup configuration repair and complete lock-holder evidence — 2026-10-18
 
-All **559 findings and 68 concerns remain open**. Every preceding558row/owner/action is preserved. The [full source/measurement/failure artifact](benchmarks/systemic-startup-config-20261018.json) and [lossless full lock journal](benchmarks/systemic-all-holder-locks-20261018.jsonl.gz) distinguish actualc43f observations, instrumentedfixture outcomes, a rejectedrepair and the finalstartup source repair. No warning/deadline/default/dependency/configuration change, selfacceptance orDone.
+All **559 findings and 68 concerns remain open**. Every preceding558row/owner/action is preserved. The [full source/measurement/failure artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-startup-config-20261018.json) and [lossless full lock journal](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-all-holder-locks-20261018.jsonl.gz) distinguish actualc43f observations, instrumentedfixture outcomes, a rejectedrepair and the finalstartup source repair. No warning/deadline/default/dependency/configuration change, selfacceptance orDone.
 
 The existing startup read already excluded diagnosticmetrics. It still materialized unrelated configuration proofs. A newexplicitread-only startup inventory selects configuration/durable_runtime/provisioning while preserving everyclosed/archivedID, status/controlmode/provenance/binding/ordering and snapshot input. General APIs returnfullconfig; recovery stillre-fetches acompletecurrent session before creatingorsavingruntime. Duplicate selectedkeys/scalar/root/malformedJSON pass through theexistingdecoder to preserve Pythonlast-key/legacy/error behavior. NoSQLstatusfilter ornewadmission policy.
 
@@ -4623,7 +4633,7 @@ Actualc43f95GETwindowstillhas3targetviolations/35.414smaintenance, workspacefail
 
 # Exact combined PR519/520 loaded inventory — 2026-10-18
 
-All **558 findings and 67 concerns remain open**. The [full raw artifact](benchmarks/systemic-c43f-loaded-20261018.json) records actual loadedc43f15ca/package9092/PID65909/startup75dd5b9d with unchangedconfig86968/lease290. All558existingrows/owners/actions remain unchanged; status overrides record deployment separately from acceptance. OriginalCI519failure causes, allolderwindows and negativeGCexperiments remain open and retained.
+All **558 findings and 67 concerns remain open**. The [full raw artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-c43f-loaded-20261018.json) records actual loadedc43f15ca/package9092/PID65909/startup75dd5b9d with unchangedconfig86968/lease290. All558existingrows/owners/actions remain unchanged; status overrides record deployment separately from acceptance. OriginalCI519failure causes, allolderwindows and negativeGCexperiments remain open and retained.
 
 The declared95ordinarysequentialGET window completed95HTTP200/stablebuild, but **three >=500ms violations** remain: runtime561.834ms, Agent1076.758ms and Fleet652.048ms. Agent context598.1wall/87.5CPU/server749.9wall/125.2CPU, Fleetcontext463.1wall/184.7CPU/server589.4wall/238.4CPU; runtimehasno perrequestphase split. Agent118889decodedbytes, Fleet1096580bytes and Fleetoverview1013248bytes maxima are retained. Full helper wall includes transport/auth/decode. This is not a controlled wholepathspeedup or cold-start acceptance; five-pagep95=p99=max, firstnotguaranteedcold, decodedbytesnotwire. No ownfixture/test/probe overlapped95GETwindow; normalhost/background uncontrolled/nohostpressurecapture. Every sample/error/status/UTC/correlation/timing/bytecount/SHA checkpoint remains.
 
@@ -4873,7 +4883,7 @@ Whole-card acceptance remains open. Runtime counts and slow-only observations ar
 
 # Browser startup readiness and retained merge-CI failures — 2026-10-18
 
-All **558 findings and 67 concerns remain open**. Every preceding556row is preserved unchanged. The [complete raw source/native/CI evidence](benchmarks/systemic-browser-navigation-20261018.json) separates a confirmed initial-browser readiness defect from three original CI failures whose causes remain unverified. This source repair is not installed; actualrunningf7/package3346 is unchanged.
+All **558 findings and 67 concerns remain open**. Every preceding556row is preserved unchanged. The [complete raw source/native/CI evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-browser-navigation-20261018.json) separates a confirmed initial-browser readiness defect from three original CI failures whose causes remain unverified. This source repair is not installed; actualrunningf7/package3346 is unchanged.
 
 A native private Chromium profile and bounded loopback-only header barrier reproduced initialattachment returning a completed **about:blank** document while the requested page's response headers were withheld. Synthetic protocol evidence also shows the old readiness helper can accept an oldcomplete document after a newloader acknowledgement. The sameURLnativeheld-header reload did **not** reproduce earlycompletion, so that outcome is not claimed fixed or causally attributed. OriginalCIhadnoURL/body/readyState/loadercapture; do not infer that the originalWorkshopnull orvisualizationnodefailure was this exactinitialrace.
 
@@ -4889,7 +4899,7 @@ No newunchangedcore100iteration workload was rerun: the currentdiagnosticfixture
 
 # Fleet diagnostic hydration repair and retained experiments — 2026-10-18
 
-All **556 findings and 65 concerns remain open**. Every preceding555row is preserved unchanged; the new finding records a separate Fleet/background activity caller of diagnostic session hydration. The [complete numeric artifact](benchmarks/systemic-workshop-summary-20261018.json) retains every source/prototype/mixed sample, error, warning, durable-root audit and journal proof. Currentrunningf7 does not contain this local repair.
+All **556 findings and 65 concerns remain open**. Every preceding555row is preserved unchanged; the new finding records a separate Fleet/background activity caller of diagnostic session hydration. The [complete numeric artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-workshop-summary-20261018.json) retains every source/prototype/mixed sample, error, warning, durable-root audit and journal proof. Currentrunningf7 does not contain this local repair.
 
 Fleet/Workshop bounded session selection fetched and parsed diagnostic metrics unused by its presentation. The new opt-in read-only summary excludes only that column, reusing the existing startup projection fields. Complete default reads and full re-fetches remain unchanged. All lifecycle, recovery, config, binding, provenance, sorting, total/omission counts and old extension interfaces are preserved. A160session/128KiBdiagnostic fixture returns80rows: diagnostic characters transferred/materialized percall fall10,485,760 to0. Twenty alternating actualsource pairs show full p95187.837ms vs summary26.414ms, with exact complete nonmetrics model/count/order equality and preserved fullgetdiagnostics. This is not proof of sole cause for live Fleet515mscontextCPU.
 
@@ -4952,7 +4962,7 @@ All previous555rows/nativeSQLbusy/WAL/fsync/disk/GIL/GC/retention/fullfreshhealt
 
 # Exact PR518 loaded inventory — 2026-10-18
 
-All **555 findings and 64 concerns remain open**. PR518 is merged and actually loaded as f7e87710/package3346/PID58866/startupc3bee533, with unchanged configuration and leased workspace. The [complete raw artifact](benchmarks/systemic-f7e8-loaded-20261018.json) separates installation, loaded proof, each request window, the later full runtime snapshot and cached startup phases. Every preceding row/owner/action and failed stage is preserved unchanged; current status overrides supersede only deployment stages.
+All **555 findings and 64 concerns remain open**. PR518 is merged and actually loaded as f7e87710/package3346/PID58866/startupc3bee533, with unchanged configuration and leased workspace. The [complete raw artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-f7e8-loaded-20261018.json) separates installation, loaded proof, each request window, the later full runtime snapshot and cached startup phases. Every preceding row/owner/action and failed stage is preserved unchanged; current status overrides supersede only deployment stages.
 
 The single95 ordinary sequential GET window completed with95HTTP200 and stable build, but **three >=500ms violations**: status506.658ms and Fleet694.389/576.001ms. Fleet maximum includes567.4ms contextwall/515.1ms contextCPU and636ms serverwall/560ms CPU; the second has496.7/146.9ms context. These individual phase observations do not partition disk/GIL/busy or explain the status outlier. Each raw timestamp, helper wall, ServerTiming, correlation, decoded bytes and SHA checkpoint is retained. Five-page p95=p99=max; first not guaranteed cold; decoded bytes are not wire bytes; observer persistence adds work outside timers. No own fixture/test/probe overlapped this window. No host-pressure capture was made.
 
@@ -5208,7 +5218,7 @@ Whole-card acceptance remains open. Runtime counts and slow-only observations ar
 
 # GC publication-lock evidence — 2026-10-18
 
-All **555 findings and64concerns remain open**. Every554preceding row is unchanged; explicit current status overrides separate prior integration and activation from historical stage labels. The [complete artifact](benchmarks/systemic-gc-prefilter-20261018.json) preserves every new trial, lock event, timing, byte/count, source/root proof, journal and failure. This prefilter is a local candidate, not yet integrated or deployed. PR517 benchmark correction is separately integrated with five green head/main checks; running product remainsbcd5.
+All **555 findings and64concerns remain open**. Every554preceding row is unchanged; explicit current status overrides separate prior integration and activation from historical stage labels. The [complete artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-gc-prefilter-20261018.json) preserves every new trial, lock event, timing, byte/count, source/root proof, journal and failure. This prefilter is a local candidate, not yet integrated or deployed. PR517 benchmark correction is separately integrated with five green head/main checks; running product remainsbcd5.
 
 The candidate reads each bounded live-hash batch outside the append publication lock and can only keep bytes based on that speculation. Every possible deletion still requires the original fresh locked query and reader-pin check. Stale positive rows can only defer byte collection until a later pass. Initial pin check is unchanged; later wholly-live batches may continue scanning under a new pin, without unlink. No refcount/audit/transaction/durability/SQLpredicate/batchlimit/threshold/default change.
 
@@ -5324,7 +5334,7 @@ All prior measured and unmeasured families remain open: nativebusy/WAL/fsync/dis
 
 # Current loaded bcd5 inventory and measurement correction — 2026-10-18
 
-All **554 findings and 63 concerns remain open**. The full JSON preserves every preceding553 row unchanged; this stage appends an explicit measurement-boundary finding and the [complete numeric artifact](benchmarks/systemic-bcd5-boundaries-20261018.json). Earlier candidate/integration/deployment labels below are historical stages. PR516 is now merged and loaded, independently verified at exact source/package/PID/startup/config/lease; that does not establish performance acceptance.
+All **554 findings and 63 concerns remain open**. The full JSON preserves every preceding553 row unchanged; this stage appends an explicit measurement-boundary finding and the [complete numeric artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-bcd5-boundaries-20261018.json). Earlier candidate/integration/deployment labels below are historical stages. PR516 is now merged and loaded, independently verified at exact source/package/PID/startup/config/lease; that does not establish performance acceptance.
 
 The single planned95ordinary sequential GET window returned95HTTP200, with **three >=500ms requests**: Agent2 (max687.949ms) and Fleet1 (max677.954ms). Every attempt, error/status, UTC timestamp, helperwall/ServerTiming wall+CPU, decoded bytes, correlation and partial SHA archive is retained. The build stayed bcd5/PID53309/startup7164/package2c2c. This small sample is not a cold-start or fleet acceptance distribution; decoded bytes are not wire bytes and five-page p95=p99=max. Observer persistence adds work outside request timers.
 
@@ -5591,7 +5601,7 @@ The test-only correction pauses the actual iterator and yields the same orphan w
 
 # Current GC path evidence — 2026-10-18
 
-All **553 findings and 62 concerns remain open**. This stage adds a small path-representation repair and an expanded cold-object workload. The full JSON preserves every preceding row unchanged and links every raw stage in [the GC artifact](benchmarks/systemic-gc-paths-20261018.json). Commit, integration, activation and acceptance are separate facts; the candidate is not yet integrated or deployed at measurement time.
+All **553 findings and 62 concerns remain open**. This stage adds a small path-representation repair and an expanded cold-object workload. The full JSON preserves every preceding row unchanged and links every raw stage in [the GC artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-gc-paths-20261018.json). Commit, integration, activation and acceptance are separate facts; the candidate is not yet integrated or deployed at measurement time.
 
 The path-only prototype used 12,511 retained objects and 30 alternating pairs through the actual worker runtime. Method p95 fell from 526.122 to 431.967 ms; median CPU fell from 414.587 to 306.149 ms. Maximum wall time worsened from 537.722 to 624.070 ms. All 98 real executed SQL trace statements matched. A separate bulk-fetch prototype worsened p95/max and was rejected; its original empty SQL trace is explicitly invalid evidence. The patch keeps the existing 128-path batch, publication lock, reader pins, fresh live-reference query and unlink behavior. Python semantics references: [Path.glob](https://docs.python.org/3.14/library/pathlib.html#pathlib.Path.glob), [glob.iglob](https://docs.python.org/3.14/library/glob.html#glob.iglob).
 
@@ -5857,7 +5867,7 @@ Allprevious551-row/sourcefixture/live9e5/backup/log/peer/receipt/independentacce
 
 # Loaded PR514 retest and bounded retention subphases — 2026-10-18
 
-All **551 rows remain open**: the original545rows/60concerns/140slow names/181baselineoperations/115baselineroutes/6pagefamilies/14startuprecords are preserved, with6new maintenance-subphase rows. The full numeric/raw stage is [systemic-retention-phases-20261018.json](benchmarks/systemic-retention-phases-20261018.json). [Every returned operation, route and retained slow-record name/count/percentiles/max](benchmarks/systemic-retention-phases-20261018.md) is listed separately from process maxima and the95sample window.
+All **551 rows remain open**: the original545rows/60concerns/140slow names/181baselineoperations/115baselineroutes/6pagefamilies/14startuprecords are preserved, with6new maintenance-subphase rows. The full numeric/raw stage is [systemic-retention-phases-20261018.json](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-retention-phases-20261018.json). [Every returned operation, route and retained slow-record name/count/percentiles/max](benchmarks/systemic-retention-phases-20261018.md) is listed separately from process maxima and the95sample window.
 
 PR514 exactmerge9e5c7c55 is actually loaded onmacbook0c7d8ecb/PID40587/startupc24bcd97, package583f5faf, unchangedconfig86968/lease290. Protectedhead checks and exactmain39110469459 are5terminalsuccess. Originalmainfailure (missingstatus/541ms outcome_read) remainsunattributed: isolatedtest+12filetests passed and exactlyone failed-shard same-head retry passed; originalfailure/localresponses/retrylog retained. Installation verified437files/52unchangedversions/38compiledtemplates. Restart9887errornull; owncontinuationreceipt mayremainqueued whilethisturnruns, not groundsforanotherrestart.
 
@@ -5886,7 +5896,7 @@ Currentnewcollector isnotintegrated/installed/deployed. Next: protectedreview/su
 
 # PR 513 activation and cold-reference query repair — 2026-10-18
 
-**All 545 findings and 60 concerns remain open.** The [full matrix](performance-coverage.json) preserves every previous row, owner and action. The [new evidence artifact](benchmarks/systemic-reference-index-20261018.json) contains every request, runtime family, maintenance phase, native comparison, test, sample journal and retained failure. Older checkpoints below remain historical evidence.
+**All 545 findings and 60 concerns remain open.** The [full matrix](performance-coverage.json) preserves every previous row, owner and action. The [new evidence artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-reference-index-20261018.json) contains every request, runtime family, maintenance phase, native comparison, test, sample journal and retained failure. Older checkpoints below remain historical evidence.
 
 PR 513 is integrated as `6d2febce` from head `cea5b15c`, watch `e9c3f52a`. Independent protected-merge validation and five successful checks each on head CI 39108399380 and main CI 39108646308 are recorded separately. Immutable installation verifies 437 source files, VCS identity, 38 compiled templates, 52 unchanged dependency versions and unchanged configuration. Server capture independently proves source `6d2`, package `8003`, new PID 35604, startup `63967eed`, configuration `86968`, lease 290 and handoff `36489b59` with no error. Its continuation can remain queued while this turn runs. Installation, activation and acceptance are separate states.
 
@@ -5975,7 +5985,7 @@ Backup card0331/session18fc/dispatchc5/fence308 retains missing cold object5cbb 
 
 # Loaded PR512 retest and remaining mirror inventory calls — 2026-10-18
 
-**All 544 rows and 59 concerns remain open.** [Full matrix](performance-coverage.json); [every new sample, runtime family, maintenance phase, paired comparison and test result](benchmarks/systemic-mirror-inventory-20261018.json). Earlier checkpoints below remain historical evidence.
+**All 544 rows and 59 concerns remain open.** [Full matrix](performance-coverage.json); [every new sample, runtime family, maintenance phase, paired comparison and test result](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-mirror-inventory-20261018.json). Earlier checkpoints below remain historical evidence.
 
 PR512 is protected-integrated as `5fb32b7a` from exact `d439dca0` / watch `43ef5d07`; head and main CI each have five terminal successes and matching source/merge trees. Immutable installation verifies 437 source files, 38 compiled templates and 52 unchanged dependency versions/configuration. Server capture independently proves the exact source/package, new PID31674/startup411d, unchanged configuration/lease290 and handoff8a with no error. Its own continuation remains queued while running; no duplicate restart or repairer acceptance.
 
@@ -6068,7 +6078,7 @@ Backup0331/session18fc owns capture/verification, missingcold5cbb/pending source
 
 # Loaded maintenance phases and retention inventory repair — 2026-10-18
 
-**All 544 evidence rows / 59 concerns remain open.** [Full matrix](performance-coverage.json); [all new samples, runtime/maintenance phases, source comparison, mixed fixture and test evidence](benchmarks/systemic-prune-inventory-20261018.json). Earlier checkpoints below remain retained history.
+**All 544 evidence rows / 59 concerns remain open.** [Full matrix](performance-coverage.json); [all new samples, runtime/maintenance phases, source comparison, mixed fixture and test evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-prune-inventory-20261018.json). Earlier checkpoints below remain retained history.
 
 PR511 is protected-integrated as e6b88f02 from exact e76c340a/watch04868197, with matching trees and five successful head and main checks each. Exact immutable installation verifies437sourcefiles/VCS,38compiledtemplates and52unchangedversions/config. Server capture now proves sourcee6b8/package66e89/PID28400/startupddfb. Installed and loaded proofs remain distinct; no duplicate restart or production fault.
 
@@ -6136,7 +6146,7 @@ Backup0331/session18fc/c5/fence308 retains capture/verification/missingcold5cbb/
 
 # Corrected build activation and bounded maintenance phase evidence — 2026-10-18
 
-**All543 evidence rows /59 concerns remain open.** [Full matrix](performance-coverage.json); [all new samples, phase results, parity and retained failures](benchmarks/systemic-maintenance-phases-20261018.json). Older checkpoints below remain historical; this stage supersedes their current-build labels.
+**All543 evidence rows /59 concerns remain open.** [Full matrix](performance-coverage.json); [all new samples, phase results, parity and retained failures](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-maintenance-phases-20261018.json). Older checkpoints below remain historical; this stage supersedes their current-build labels.
 
 PR510 is protected-integrated asaa58 from exact5ec/watch27587faf with five head and five main checks successful and matching trees. Server-capturedaa58/packagec0f2/PID24980/startup08bea/config86968/lease290 proves actual activation; installed437files/38templates/52unchangedversions was verified separately. The original rollback counterexample was independently repeated by the backup owner against exactaa58: both audit modes now preserve events/refcounts/evidence/bytes after failure. This is narrow source verification, not production fault injection or backup/performance acceptance. It does not explain the older missing cold object or failed backup.
 
@@ -6217,7 +6227,7 @@ The previously durable maintenance overlay is now included: distinct first/final
 
 # Activated806b retest, complete current runtime and startup diagnostic inventory — 2026-10-18
 
-**All540 evidence rows /56 concerns remain open.** [Full matrix](performance-coverage.json); [all raw numeric samples, phases, source identities and retained failures](benchmarks/systemic-startup-inventory-20261018.json). This checkpoint supersedes older current-status labels below; every earlier finding, owner and outlier remains.
+**All540 evidence rows /56 concerns remain open.** [Full matrix](performance-coverage.json); [all raw numeric samples, phases, source identities and retained failures](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-startup-inventory-20261018.json). This checkpoint supersedes older current-status labels below; every earlier finding, owner and outlier remains.
 
 PR508 is protected-integrated as806b from exactc4f8/watch977033e5. Head/main CI each have five terminal successes and matching trees; the original85be workflow/job discrepancy later converged but its cause and both earlier browser failures remain unresolved. Normal immutable installation preserved52 dependency versions/configuration. The managed restart resumed this exact session/workspace; server-captured806b/packagef72/PID19594/startup70723695/config86968/lease290 prove activation. Installed metadata was checked separately. No duplicate merge/restart, backup action or repairer acceptance.
 
@@ -6294,7 +6304,7 @@ The card remains Active, independent_agent_v1/17d034a6 unchanged; normal PA sche
 
 # Native maintenance SQL coverage and retained CI ambiguity — 2026-10-18
 
-**All539 evidence rows /55 concerns remain open.** [Full matrix](performance-coverage.json); [new phase measurements, original contracts, mixed sample arrays and CI observations](benchmarks/systemic-maintenance-sql-observations-20261018.json). Every earlier stage below remains historical evidence, including all140 slow names,181 baseline operations,115 baseline routes, six shells,14 startup records and every previous owner/outlier/gap.
+**All539 evidence rows /55 concerns remain open.** [Full matrix](performance-coverage.json); [new phase measurements, original contracts, mixed sample arrays and CI observations](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-maintenance-sql-observations-20261018.json). Every earlier stage below remains historical evidence, including all140 slow names,181 baseline operations,115 baseline routes, six shells,14 startup records and every previous owner/outlier/gap.
 
 The source now uses the existing numeric `ObservedConnection` for native maintenance integrity checks, planner optimization, WAL checkpoints and VACUUM. Previously this connection was plain SQLite, so its calls were missing from worker SQL counters. The100 ms busy timeout, progress interruption, integrity checks, SQL, rollback, returned status, warning thresholds and deadlines are unchanged. Existing bounded observation buffers retain numbers, not SQL text, parameters or result payloads. Connection opening/closing, successful native busy waits versus CPU/GIL/disk, physical I/O and complete writer attribution remain unresolved; statement wall time includes waiting and lazy row production. An exception counter does not count every busy checkpoint result.
 
@@ -6324,7 +6334,7 @@ The canonical card remains Active under17d034a6 / independent_agent_v1; PA's nor
 
 # Retention batching, additional startup evidence and open coverage — 2026-10-18
 
-**All 538 evidence rows / 54 concerns remain open.** [Complete matrix](performance-coverage.json); [all numeric stages, source identities, original failures and evidence hashes](benchmarks/systemic-retention-batching-20261018.json). These status labels supersede older checkpoint labels below. Every earlier finding and owner remains required.
+**All 538 evidence rows / 54 concerns remain open.** [Complete matrix](performance-coverage.json); [all numeric stages, source identities, original failures and evidence hashes](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-retention-batching-20261018.json). These status labels supersede older checkpoint labels below. Every earlier finding and owner remains required.
 
 PR507 is integrated as **1705a665** from watched da41473e / watch174c955b. The supervisor's current exact-head gate was green; independent checks verified five terminal successes, zero reviews/threads with complete pagination, attributed commits, current protection and CLEAN merge state before normal head-CAS merge. Head/merge trees match; actual headCI39098821473 and mainCI39099338638 each have five terminal successes. An initial unchanged browser test failed at native Tab focus/line117; its original log SHAa4b1bc41…, isolated unmodified candidate41.01 s/baseline502435.88 s passes and one same-head failed-shard retry remain. The cause is unresolved. This differs from PR505's DOM.resolveNode reload/line172 failure, which also remains open. Green reruns do not erase either failure.
 
@@ -6371,7 +6381,7 @@ Backup0331/b527 retains its separate acceptance. Missing cold5cbb18fdcfb4 remain
 
 # Combined 5024 activation, deployed retest and bounded ancestry membership — 2026-10-18
 
-**All 530 evidence rows / 49 concerns remain open.** [Complete matrix](performance-coverage.json); [all new raw numeric samples, phases, counters and evidence hashes](benchmarks/systemic-ancestry-membership-20261018.json). This checkpoint supersedes historical current-status labels below. Every previous finding, owner, outlier and gap remains.
+**All 530 evidence rows / 49 concerns remain open.** [Complete matrix](performance-coverage.json); [all new raw numeric samples, phases, counters and evidence hashes](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-ancestry-membership-20261018.json). This checkpoint supersedes historical current-status labels below. Every previous finding, owner, outlier and gap remains.
 
 PR505 merged as **62551f44** from watched 0c244 after protected stable-green revalidation. The existing backup owner integrated PR506 as **5024f789**, with 62551 as its first parent; all five backup files match their reviewed head. Combined main CI39097201323 has five terminal successful checks. The owner's 98 tests/16 subtests are separate source evidence. Exact immutable 5024 was installed with frozen, unchanged dependencies and configuration; 437 source files, 38 compiled templates and package b538 were verified. Managed handoff da59 resumed this exact session/workspace. Immutable owner proof confirms **loaded 5024/package b538/PID7531/startup a3a94866/config86968/unique lease290**. No reinstall, repeated restart, production backup or repairer acceptance occurred in this stage.
 
@@ -6433,7 +6443,7 @@ Every remaining family remains owned and open in the matrix:
 
 # Exact134044 retest and build-time template compilation — 2026-10-18
 
-**All527 evidence rows /47 concerns remain open.** [Complete matrix](performance-coverage.json); [every new numeric stage, raw sample and evidence hash](benchmarks/systemic-template-cache-20261018.json). This checkpoint supersedes historical current-status labels below while preserving every prior finding, owner, outlier and gap.
+**All527 evidence rows /47 concerns remain open.** [Complete matrix](performance-coverage.json); [every new numeric stage, raw sample and evidence hash](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-template-cache-20261018.json). This checkpoint supersedes historical current-status labels below while preserving every prior finding, owner, outlier and gap.
 
 PR504 is merged134044 with matching source/merge trees and allfive head/main CI checks successful. Normal frozen installation verified436files/VCS, zero dependency version changes and unchanged configuration. Immutable owner proof now confirms **source134044/packagef29/PID1621/startupc5ec**, uniquelease290. Its80ordinary sequential GETs returned80HTTP200 but **Agent1/5max668.973ms and overview1/5max634.979ms** remain threshold failures. Fleet0/5slow/max452.699 is a small window, not complete acceptance. The slowAgent correlationddd4040b has shell293.7/template224.1/context97.9/server616.1/helper668.973ms. Complete raw timing/decodedbytes/correlations/errors/buildfences and reportd82ea21b revision7 are retained. Fresh bounded runtime snapshot contains **96operations/31routes**, with all counts/percentiles/processmaxima and bytes retained separately; fixtures overlapped, no fullfleet/log audit claimed.
 
@@ -6464,7 +6474,7 @@ All140retainedslow names/181baselineoperations/115routes/unexercisedbranches, fu
 
 # Loaded a90 retest and one Fleet watch snapshot — 2026-10-18
 
-The systemic card remains **open:526 evidence rows /46 concerns**. [Complete matrix](performance-coverage.json); [every new raw observation, profile and workload stage](benchmarks/systemic-fleet-watch-snapshot-20261018.json). All historical findings, failures, owners, unmeasured branches and retention gaps remain. This checkpoint supersedes historical current-status labels below.
+The systemic card remains **open:526 evidence rows /46 concerns**. [Complete matrix](performance-coverage.json); [every new raw observation, profile and workload stage](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-fleet-watch-snapshot-20261018.json). All historical findings, failures, owners, unmeasured branches and retention gaps remain. This checkpoint supersedes historical current-status labels below.
 
 PR503 merged exacta90 with equal head/merge trees after stable supervisor evidence and independent checks; allfive actualmainCI39093652500 checks passed. Normal frozen-dependency installation verified all436sourcefiles/VCS identity, zero dependencyversionchanges and unchanged config86968. Managed handoff15bc75d8 resumed this exact session/worktree. Owner API verifies **sourcea90/PID96628/startup6a40/packageb20** and uniquelease290. This proves local activation, not performance acceptance.
 
@@ -6484,7 +6494,7 @@ The broader158test run left eight empty checkout admissionlockfiles with mtimes 
 
 # Loaded b808 retest and Fleet dispatch-copy repair — 2026-10-18
 
-The systemic card remains **open: 524 evidence rows / 44 concerns**. [Full matrix](performance-coverage.json); [all numeric stages and raw samples](benchmarks/systemic-fleet-dispatch-20261018.json). All prior owners, failures, unmeasured branches and retention gaps remain. This checkpoint supersedes earlier current-status labels, which remain historical below.
+The systemic card remains **open: 524 evidence rows / 44 concerns**. [Full matrix](performance-coverage.json); [all numeric stages and raw samples](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-fleet-dispatch-20261018.json). All prior owners, failures, unmeasured branches and retention gaps remain. This checkpoint supersedes earlier current-status labels, which remain historical below.
 
 Protected PR500/502 and concurrent501 are integrated in **b808b039**; exact merge CI39091636456 passed all five checks and70focused merged tests passed. A normal frozen-dependency installation changed only PA's Git source, with zero dependency version changes and unchanged config86968d. All436installed source files matched immutableGit. Managed handoff689e2c99 restarted the same session: owner API verifies **PID92567 / startup185b37c9 / sourceb808 / package89ae**, with the same unique lease290. This proves local activation, not performance acceptance. Native PA tools were absent in this resumed turn; the supported authenticated owner API was used without fallbackcredential lookup.
 
@@ -6518,7 +6528,7 @@ Previous object-read mixed candidate retains9,600ordered events/zero worker warn
 
 # Loaded309 and immutable-object read checkpoint — 2026-10-18
 
-The systemic card remains **open:520rows/42concerns**, all140 retained slow names,181 baseline operations,115routes and every prior owner/outlier preserved. [Full matrix](performance-coverage.json); [complete numeric stages/activation/coverage](benchmarks/systemic-object-read-20261018.json). This section supersedes older current-status labels; historical failures remain below.
+The systemic card remains **open:520rows/42concerns**, all140 retained slow names,181 baseline operations,115routes and every prior owner/outlier preserved. [Full matrix](performance-coverage.json); [complete numeric stages/activation/coverage](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-object-read-20261018.json). This section supersedes older current-status labels; historical failures remain below.
 
 Protected PR499 is merged309751f5 from watched67425383; head/main CI5success each and95merged integration tests/22subtests passed. The merge includes backupPR498/8045, so its tree differs from PR499head; this is explicitly retained. Exact immutable309 was installed with frozen unchanged dependency versions/config86968, all436source files/VCS/hash verified. Owner API verifies newPID81657/startup3a55a396/loadedsource309/packagecad7. This proves local activation, not whole-family acceptance. Existing backupdispatchc5a697e5 received the requested authority/loaded-build reply as acceptedqueued prompta8e9cb73; consumption not asserted. Backup independentrequirementb5271340 remains scheduler-owned, including the prior12.78scardwrite and2.265ssource failure. No productionbackup/deletion/newworker was performed.
 
@@ -6536,7 +6546,7 @@ Independent systemicrequirement17d034a6 remains unchanged: integratedonly, activ
 
 # Startup schema repair and complete coverage checkpoint — 2026-10-17
 
-The systemic card remains **open: 520 evidence rows/42 concerns**, retaining all 140 slow names,181 baseline runtime operations,115 baseline routes,6 page families and every prior failure/owner. These are evidence records, not distinct incidents or independent causes. [Complete matrix](performance-coverage.json); [new numeric evidence and all phase/coverage details](benchmarks/systemic-startup-schema-20261017.json). Earlier sections below remain historical; this checkpoint supersedes their current-status labels.
+The systemic card remains **open: 520 evidence rows/42 concerns**, retaining all 140 slow names,181 baseline runtime operations,115 baseline routes,6 page families and every prior failure/owner. These are evidence records, not distinct incidents or independent causes. [Complete matrix](performance-coverage.json); [new numeric evidence and all phase/coverage details](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-startup-schema-20261017.json). Earlier sections below remain historical; this checkpoint supersedes their current-status labels.
 
 Confirmed startup amplification: schema discovery constructed3,952 Pydantic adapters, including adapters immediately discarded before rendering. The candidate uses call-local FastAPI 0.136.3 bindings to read metadata during discovery and skip those discarded adapters; original validation/serialization/rendering remains intact. Other framework versions use the public generator. The complete481-path, 792,712-byte schema has identical canonical SHA d4e0c89c. Three cold samples per mode: baseline p50/p95/p99/max3442.814/3781.848/3781.848/3781.848ms; candidate1175.659/1452.912/1452.912/1452.912ms,3952→142adapters. First pair overlapped end of scoped tests; host load is uncontrolled and three-sample tails equalmax. A serialization experiment showed no clear benefit and was removed, with evidence retained.
 
@@ -6568,7 +6578,7 @@ Database89957d94's accepted originalPR471 scope stays closed. Backup0331d21a has
 
 # Transcript/backend continuation checkpoint — 2026-10-17
 
-The systemic card remains open: **510inventory rows/41concerns**. These are path/evidence records, not independent incidents or root causes. All140retained log slow names,181baseline runtime entries,115baseline route groups and prior evidence/owners remain. [Full matrix](performance-coverage.json); [numeric stage history](benchmarks/systemic-transcript-backend-20261017.json).
+The systemic card remains open: **510inventory rows/41concerns**. These are path/evidence records, not independent incidents or root causes. All140retained log slow names,181baseline runtime entries,115baseline route groups and prior evidence/owners remain. [Full matrix](performance-coverage.json); [numeric stage history](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-transcript-backend-20261017.json).
 
 PR496 merged646aff54 from exactwatched4c35fb15 after stable6observations and independent5terminalsuccess head checks, complete review/rules/attribution and CLEAN/head-CAS merge. Head/merge trees matchca16cc02. **Subsequent mainCI39053124584 failed** the unchanged40ms loop assertion at301.933ms; no retry hides it. Source is uninstalled. Review caught effective ref-budget phase selection; new ref metrics are now observation-only, preserving previous deadline behavior before activation.
 
@@ -6588,7 +6598,7 @@ Existinghandofff6c4e9e1 continuation remains queued at last read; the normal ses
 
 # Ref-phase and parent-proof checkpoint — 2026-10-17
 
-The systemic card remains open: **501findings/34concerns**, including all140retained slow names. Every earlier row, outlier and owner remains. [Full matrix](performance-coverage.json); [new numeric evidence](benchmarks/systemic-ref-phases-20261017.json).
+The systemic card remains open: **501findings/34concerns**, including all140retained slow names. Every earlier row, outlier and owner remains. [Full matrix](performance-coverage.json); [new numeric evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-ref-phases-20261017.json).
 
 PR495 mergedf36d4b38 from exactwatchedf4efd94c after stable10observations and independent5terminalsuccess checks,0requiredapprovals/threads, complete review pagination, attributed commits and CLEAN state. Head/merge trees match62b48efe. Both head and mainCI are5/5green. Activation remains unverified.
 
@@ -6607,7 +6617,7 @@ Mixed stages and exact hashes are retained in the numeric artifact as they finis
 
 # Current continuation checkpoint — 2026-10-17
 
-The systemic card remains open. The matrix now retains **499 findings**, including **140 slow names** and **32 concerns**. All prior rows, stage failures and owners remain. Detailed measurements: [read-repair artifact](benchmarks/systemic-read-repair-20261017.json); [full matrix](performance-coverage.json).
+The systemic card remains open. The matrix now retains **499 findings**, including **140 slow names** and **32 concerns**. All prior rows, stage failures and owners remain. Detailed measurements: [read-repair artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-read-repair-20261017.json); [full matrix](performance-coverage.json).
 
 PR492 merged as4811cca after stable-green and independent head checks; head/main CI each passed5checks. Installed startup source4297 is independently fingerprinted. The merge also contains concurrent main changes, so its entire tree is not deployed. The unchanged asset build ID is not proof of loaded Python source. The new follow-up source below is not installed.
 
@@ -6634,7 +6644,7 @@ The following sections retain the preceding checkpoint verbatim as historical ev
 
 The card remains open. This consolidates the prior449-row repository matrix and both durable card deltas (452 rows), then accounts for every additional live operation/route and control-plane concern. Every unresolved row retains its owner and next action. Source, merge, loaded build and acceptance are distinct.
 
-Full matrix: [performance-coverage.json](performance-coverage.json), 492 rows. Fresh numeric source: [resume artifact](benchmarks/systemic-resume-20261017.json). Original log/fixture stage evidence: [systemic-inventory-v4.json](benchmarks/systemic-inventory-v4.json).
+Full matrix: [performance-coverage.json](performance-coverage.json), 492 rows. Fresh numeric source: [resume artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-resume-20261017.json). Original log/fixture stage evidence: [systemic-inventory-v4.json](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-inventory-v4.json).
 
 Fresh owner API confirms macbook0c7d8ecb, PID51003, loaded1.5.9+5caf83e4325a. Status3990.910ms/runtime104.714ms are individual client reads. All154 runtime operations and all observed registered routes are retained, including failures and outliers. Runtime percentiles use bounded windows; counters/maxima can span process lifetime. Loop maximum1064316ms is not attributed to CPU: host suspension remains possible. No peer log coverage or fleet-wide acceptance is claimed.
 
@@ -6917,14 +6927,14 @@ Exact618 activation and first retests (2026-10-29)
 
 Original handoff completed once; source `a58b7847`, package `266fa107`, actual PID 72906. Installed 918 tests and 9 subtests, 19 private stages and 13 additional stages passed. Mixed workload retained 9,600 ordered events with no worker warnings, but maintenance took 794.077 ms. Live ordinary 95 requests had zero failures/500 ms violations (max 93.081 ms); summary, encoding and cached Fleet checks passed. All five full 10-session lists failed the unchanged 2 MiB bound: Content-Length 2,630,430; complete JSON/schema unverified. No rerun, threshold change, shortened page or dropped durable data.
 
-The complete new [activation artifact](benchmarks/systemic-installed618-activation-20261029.json) and adjacent full raw bundle preserve every prior row/field/failure. New owner inventory retains all 102 operations, 21 prefix families and 32 route groups with counters, bytes and separate bounded percentiles/lifetime maxima. Natural maintenance was 6.376 s; projection VACUUM 3.839 s overlaps first session lock hold by 3.315 s and paired lock wait by 3.315 s. The shared lock chain and overlap are confirmed; successful native busy waiting versus physical I/O/scheduling remains unseparated. Workspace GC 1.684 s and sync reconcile 589 ms remain. All 708 findings/164 concerns and broader real-path/peer/log/acceptance obligations stay open; independent acceptance remains scheduler-owned.
+The complete new [activation artifact](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-installed618-activation-20261029.json) and adjacent full raw bundle preserve every prior row/field/failure. New owner inventory retains all 102 operations, 21 prefix families and 32 route groups with counters, bytes and separate bounded percentiles/lifetime maxima. Natural maintenance was 6.376 s; projection VACUUM 3.839 s overlaps first session lock hold by 3.315 s and paired lock wait by 3.315 s. The shared lock chain and overlap are confirmed; successful native busy waiting versus physical I/O/scheduling remains unseparated. Workspace GC 1.684 s and sync reconcile 589 ms remain. All 708 findings/164 concerns and broader real-path/peer/log/acceptance obligations stay open; independent acceptance remains scheduler-owned.
 
 
 Workspace GC hydration source repair (2026-10-29)
 
 GC now filters cleaned leases before decoding their retained proofs, and checks cheap retain conditions before reading card completion. Default list history, card filtering, order, defensive cleaned-state guard, final completion/fencing/Git/dirty/unpushed checks stay intact. In 90 alternating pairs (610 synthetic cleaned leases plus 42 retained; three shapes), every result matched: proof-heavy ASCII/Unicode p95 fell from 260.334/417.584 ms to 0.672/0.674 ms. This does not establish the live 1.684 s GC cause or production population sizes.
 
-99 scoped safety tests pass after restoring expected flags only in seven inspected private mocked fixtures; the original 92-pass/7-failure run and initial probe syntax failure before imports remain retained. The unchanged mixed scenario kept 9,600 ordered events and zero worker warnings, but maintenance 896.333 ms still violates 500 ms; it does not exercise the changed GC branch or report that module hash. The targeted comparison verifies the actual imported candidate; existing Git cleanup/fencing tests remain separate. Source is not installed. [Complete evidence and prior history](benchmarks/systemic-workspace-gc-hydration-20261029.json) retains all 708 findings/164 concerns open. PR619 is integrated with five first-success checks on both head and main; its documentation required no rollout.
+99 scoped safety tests pass after restoring expected flags only in seven inspected private mocked fixtures; the original 92-pass/7-failure run and initial probe syntax failure before imports remain retained. The unchanged mixed scenario kept 9,600 ordered events and zero worker warnings, but maintenance 896.333 ms still violates 500 ms; it does not exercise the changed GC branch or report that module hash. The targeted comparison verifies the actual imported candidate; existing Git cleanup/fencing tests remain separate. Source is not installed. [Complete evidence and prior history](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-workspace-gc-hydration-20261029.json) retains all 708 findings/164 concerns open. PR619 is integrated with five first-success checks on both head and main; its documentation required no rollout.
 
 
 Main620 first CI failure and cancellation-fixture correction (2026-10-29)
@@ -6968,7 +6978,7 @@ The supported24h log scan returned427558records, cap1000000not reached, stderr20
 
 Logging status now reports2402failures/5683571droppedB, additional6/42811B over historical2396/5640760. Zero current rotation/compression/prune/pump counters do not resolve past loss. Current stdout/stderr arepipes; pumpFD linkage, rotated ownership, older retention and peer logs/builds remain unverified. Peer Fleet/PR/sync failures and all realKernel/provider/MCP/placement/admission/startup/drain/concurrency acceptance remain open.
 
-[Complete current evidence](benchmarks/systemic-current88-log-diagnostics-20261031.json) embeds the byte-identical64295402-byte full621 gzip bundle as base64, with explicit decode instructions, plus all current numeric results/helpers/corrections and private receipt/log/XML custody hashes. Nothing is replaced by counts or a summary. All708 original ledger rows/164 concerns and every field remain unchanged; two observed required624operations and one confirmed diagnostic concern extend coverage to711rows/165concerns. Independent17d acceptance remains scheduler-owned/unaccepted. Accepted backup0331/b527 andDB89957 original scopes stay closed.
+[Complete current evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-current88-log-diagnostics-20261031.json) embeds the byte-identical64295402-byte full621 gzip bundle as base64, with explicit decode instructions, plus all current numeric results/helpers/corrections and private receipt/log/XML custody hashes. Nothing is replaced by counts or a summary. All708 original ledger rows/164 concerns and every field remain unchanged; two observed required624operations and one confirmed diagnostic concern extend coverage to711rows/165concerns. Independent17d acceptance remains scheduler-owned/unaccepted. Accepted backup0331/b527 andDB89957 original scopes stay closed.
 
 
 Workspace recovery read reductions (2026-10-31)
@@ -6987,7 +6997,7 @@ Source100mixed preserves9600ordered events/0warnings/failures/timeouts/rejection
 
 Privateactualpeer-routing proof withallopenfakecircuits makes0networkcalls yetrecords timed_out1/timeout_error becauseEndpointUnavailable inheritsTimeoutError. This explains an instrumentation ambiguity, not the causes of899nativefailures; no counts are removed/reclassified and no peerrefresh/networkfault/provider is launched. A precise future cause diagnostic remains open.
 
-[Complete source, first-failure, integration and comparison evidence](benchmarks/systemic-workspace-recovery-reads-20261031.json) embeds the entire65713179-byte previous protectedbundle as byte-identicalbase64gzip, allolderlayers/currentinputs, actual625CIlogs/numericartifacts and localcustody. All711priorrows/165concerns/fields remain unchanged; threeexplicitfindings extend to714rows/168concerns, allOPEN. Exact17d independentacceptance and allrealKernel/provider/MCP/placement/admission/startup/drain/concurrency/peer/log/payload/sharedmaintenance obligations remain open. AcceptedbackupDBoriginalscopes stayclosed; no installation/restart/cleanup/default/model/policychange or completionclaim.
+[Complete source, first-failure, integration and comparison evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-workspace-recovery-reads-20261031.json) embeds the entire65713179-byte previous protectedbundle as byte-identicalbase64gzip, allolderlayers/currentinputs, actual625CIlogs/numericartifacts and localcustody. All711priorrows/165concerns/fields remain unchanged; threeexplicitfindings extend to714rows/168concerns, allOPEN. Exact17d independentacceptance and allrealKernel/provider/MCP/placement/admission/startup/drain/concurrency/peer/log/payload/sharedmaintenance obligations remain open. AcceptedbackupDBoriginalscopes stayclosed; no installation/restart/cleanup/default/model/policychange or completionclaim.
 
 
 Workspace own SQLite observations and actual PR626 verification (2026-10-31)
@@ -7006,7 +7016,7 @@ The prospective source change uses the existing `ObservedConnection` factory for
 
 A separate 90-pair encoding prototype preserves complete JSON schema, selection, order and values and reduces response bytes, but worsens all p95 times: ASCII 4.155→4.934, Unicode 6.042→8.594 and structured 38.319→47.714 ms. It remains unadopted. Its first helper lacked the pytest harness before fixtures or measurements; the full original body, failure and harness-path-only correction are retained.
 
-[Complete source, activation, retest, inventory, comparison and custody evidence](benchmarks/systemic-workspace-sql-observations-20261031.json) embeds the entire 67,614,947-byte prior bundle and every older layer unchanged. All 714 prior rows, 168 concerns, fields and ten attachments remain preserved. The explicit workspace SQL coverage gap extends the ledger to 715 rows and 169 concerns, all open. Scheduler-owned independent acceptance revision `17d034a6` and the full real Kernel/provider/MCP/placement/admission/startup/drain/concurrency/page/API, shared maintenance, payload, peer, log and receipt obligations remain open. Accepted backup and database original scopes remain closed. No self-verification, Done transition, cleanup, replay, default or policy change is authorized by this evidence.
+[Complete source, activation, retest, inventory, comparison and custody evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-workspace-sql-observations-20261031.json) embeds the entire 67,614,947-byte prior bundle and every older layer unchanged. All 714 prior rows, 168 concerns, fields and ten attachments remain preserved. The explicit workspace SQL coverage gap extends the ledger to 715 rows and 169 concerns, all open. Scheduler-owned independent acceptance revision `17d034a6` and the full real Kernel/provider/MCP/placement/admission/startup/drain/concurrency/page/API, shared maintenance, payload, peer, log and receipt obligations remain open. Accepted backup and database original scopes remain closed. No self-verification, Done transition, cleanup, replay, default or policy change is authorized by this evidence.
 
 
 Installed PR627 outcomes (2026-10-31)
@@ -7033,7 +7043,7 @@ Additional retentionUnicodep957.980→9.098ms/observeron.404→.409ms ADVERSE re
 
 Peer causes/builds/logs, historical dropped logs/FDrotation/retention, fullrealKernel/provider/MCP/placement/admission/startup/drain/concurrency/pageAPI acceptance remain open. Original accepted backup0331/b527 andDB89957scopes stayclosed. Tenattachments/privateunknownreceipt/notification custody unchanged.
 
-[Full numeric outcomes, all operation/route rows, comparisons, first failures and complete prior evidence](benchmarks/systemic-installed627-outcomes-20261031.json). All 715 rows and 169 concerns remain open under the unchanged independent acceptance requirement.
+[Full numeric outcomes, all operation/route rows, comparisons, first failures and complete prior evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-installed627-outcomes-20261031.json). All 715 rows and 169 concerns remain open under the unchanged independent acceptance requirement.
 
 
 Workspace connection ownership source follow-up (2026-10-31)
@@ -7054,7 +7064,7 @@ Native627GC1404.046ms/85.334SQLms118calls48rows, session-save798mslockchain, ful
 
 All716rows170concerns remainOPEN. Exact17dindependent scheduleracceptance unaccepted; originalbackup0331/b527andDB89957acceptedscopes stayclosed. No selfverifier/Done/cleanup/oldreceipt/effectreplay/model/default/config/GC/powerclockchanges.
 
-[Complete source evidence, actual PR628 integration and all private populations](benchmarks/systemic-workspace-connection-ownership-20261031.json). Existing worker ownership bounds normal returned handles and reduces repeated opens; it does not establish the cause of native GC stalls or whole-PA performance acceptance.
+[Complete source evidence, actual PR628 integration and all private populations](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-workspace-connection-ownership-20261031.json). Existing worker ownership bounds normal returned handles and reduces repeated opens; it does not establish the cause of native GC stalls or whole-PA performance acceptance.
 
 
 Fresh log inventory and integrated resource repair (2026-10-31)
@@ -7077,7 +7087,7 @@ Exact17dindependent policy unpaused/unaccepted; cardWaiting, verification_pendin
 
 Complete74107650Bparent andallolderfullsource/activation/failure layers preserved unchanged. Newcapture/preparationmatching-order failure andmissingdriver beforeinventory retained; no capture rerun or retrospectiveattribution. Raw native/card/privateprompt/writer/log/XML/ZIP/quarantine bodies LOCAL/hash-onlypublic.
 
-[Every retained slow-operation/source quantile, page family, access count, numeric phase and coverage gap](benchmarks/systemic-current627-log-inventory-20261031.json). PR629 is integrated; the running service remains PR627. All 716 findings and 170 concerns remain open.
+[Every retained slow-operation/source quantile, page family, access count, numeric phase and coverage gap](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-current627-log-inventory-20261031.json). PR629 is integrated; the running service remains PR627. All 716 findings and 170 concerns remain open.
 
 
 Installed PR630 outcomes (2026-11-01)
@@ -7102,7 +7112,7 @@ Complete75893497Bparent and allolderfullsource/activation/failure layers byte-id
 
 All716rows170concerns remainOPEN under17d independent_agent_v1 scheduler-owned acceptance. Originalacceptedbackup/DB scopes remainclosed; allpeer/logloss/FDrotation/retention/unknownreceipts/attachment413/missingobject/work/notification/fullrealKernel/provider/MCP/placement/admission/startup/drain/concurrency/pageAPI concerns remain. No selfverifier/fabricatedmilestones/Done/CASloops/worktreecleanup.
 
-[Complete numeric outcomes, every operation/route row, comparison and prior evidence](benchmarks/systemic-installed630-outcomes-20261101.json).
+[Complete numeric outcomes, every operation/route row, comparison and prior evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-installed630-outcomes-20261101.json).
 
 
 Shared-card full-watch source repair (2026-11-01)
@@ -7169,7 +7179,7 @@ Fresh exactowner runtime collection retains all101operations/20prefixfamilies/31
 
 Complete83609437B/faaab553 parent embeds COMPLETE80804555B and ALL older first failures/adverse/source/activation stages; every new actual outcome/helper/fullnumeric inventory added losslessly. Native/private prompts/writers/answers/control/logXMLZIP LOCAL/hash-only. All717rows171concerns remain OPEN,10attachments preserved,17d independent_agent_v1 scheduler acceptance unaccepted. Accepted original backup0331/DB89957 scopes stayCLOSED; no staleOct17retry/manualbackup/restore/forcedpeerrefresh/secretsfallback/cleanup/selfverifier/Done/policychanges.
 
-[Full installed outcomes and complete prior byte custody](benchmarks/systemic-installed633-20261101.json).
+[Full installed outcomes and complete prior byte custody](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-installed633-20261101.json).
 
 
 Bounded maintenance SQLite call attribution (2026-11-01)
@@ -7192,7 +7202,7 @@ All717rows171concerns remain OPEN, original110slow+181runtime115routes and later
 
 Complete86395926B parent is embedded byte-for-byte, preserving all79 older roots/fields/populations/firstfailures. Current integration, probes, unadopted variants, source bodies, helpers and actual reports are added. Raw private prompts/answers/writers/native/control/status/logXMLZIP stay LOCAL/hash-only; helper allowlist only. Current observations are not a deployed repair or whole-PA performance acceptance.
 
-[Complete source outcomes and prior byte custody](benchmarks/systemic-sqlite-attribution635-20261101.json).
+[Complete source outcomes and prior byte custody](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-sqlite-attribution635-20261101.json).
 
 The copied-context contract was subsequently strengthened to execute real SQLite reads on the other thread and after scope exit; the same77targeted tests passed. Runtime source modules remain byte-identical to the first measured source stage, so the mixed and overhead populations remain applicable. [Complete follow-up test/helper/outcome custody](benchmarks/systemic-sqlite-attribution635-20261101-context-contract.json). Earlier contract versions remain in the complete bundle.
 
@@ -7212,7 +7222,7 @@ The fresh owner inventory retains every96 operation/20 prefix-family/32 route/12
 
 A separate unshipped audit-selection prototype retains150 alternating pairs and full selected-value/order parity. It improves sparse/no-audit100000-row reads, but regresses tiny,10116-row dense and100000-row dense cases. It is unadopted, lacks complete rollback/race/custom-connection proof and does not explain the native retention stall. Earlier retention-batch/reference-page adverse variants remain intact.
 
-[Complete first installed635 outcomes, numeric inventory and custody](benchmarks/systemic-installed635-20261101.json) links a92862337-byte lossless bundle embedding the complete90988085-byte parent and all82 older layers byte-for-byte. It adds all actual handoff/continuation/settlement/outcome/helper inputs and retained local tooling failures. Private prompts, answers, writers, native/control/status records and logs/XML/ZIP/wheel remain local with hashes; the accidental native-metadata tool display is explicitly recorded as a custody exception. Earlier stale helper prose naming633 is corrected by the actual635 build proofs without altering first results.
+[Complete first installed635 outcomes, numeric inventory and custody](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-installed635-20261101.json) links a92862337-byte lossless bundle embedding the complete90988085-byte parent and all82 older layers byte-for-byte. It adds all actual handoff/continuation/settlement/outcome/helper inputs and retained local tooling failures. Private prompts, answers, writers, native/control/status records and logs/XML/ZIP/wheel remain local with hashes; the accidental native-metadata tool display is explicitly recorded as a custody exception. Earlier stale helper prose naming633 is corrected by the actual635 build proofs without altering first results.
 
 **All717 rows and171 concerns remain open**, with all10 attachments and prior watch lineage retained. Peer/build/log-loss/FD-rotation/older-retention, unknown receipts/attachment413, missing-object/work/screenshot gaps and full real Kernel/provider/MCP/placement/admission/startup/drain/concurrency/page/API acceptance remain. Accepted backup0331 and database89957 original scopes stay closed. Exact17d independent-agent acceptance remains scheduler-owned and unaccepted; integration, activation and passing subsets do not complete this card.
 
@@ -7234,7 +7244,7 @@ The new `selection.resume_receipt` and `selection.resume_scope` operations valid
 
 PR643 merge `9a282853` is captured by startup `41491c6a`/PID58393/package9dcd; independent439source/440RECORD checks and51unchanged dependencies match. One supported retry of SAME cleanup control9bb/session0337 failed safely at provisioning because strict native conversation restoration exhausted resume/load. No prompt acknowledgment, queued turn, new session or cleanup success; individual native cause is unknown. Earlier scalar initial-prompt wording is corrected: current and retained preinstall full controls contain empty objects. All prior claims and failures remain retained.
 
-New bounded source instrumentation exposes at most3 allowlisted method/outcome/duration/category/JSON-RPC-code rows through the existing durable failure event and supported diagnostic projection. No raw provider messages/data/identity/cwd/configuration or prompts. This source does not repair the unknown native cause and is undeployed. No further installation/restart or production retry in this continuation. Full live inventory of104operations/29route groups and all current slow/failed observations is retained in [stage evidence](benchmarks/systemic-native-restore-diagnostics-20261107.json). Five slow worker observations and peer tails remain; no whole-PA acceptance. All731prior rows are exact-value preserved; new total732rows/179concerns remains OPEN with independent17d acceptance.
+New bounded source instrumentation exposes at most3 allowlisted method/outcome/duration/category/JSON-RPC-code rows through the existing durable failure event and supported diagnostic projection. No raw provider messages/data/identity/cwd/configuration or prompts. This source does not repair the unknown native cause and is undeployed. No further installation/restart or production retry in this continuation. Full live inventory of104operations/29route groups and all current slow/failed observations is retained in [stage evidence](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-native-restore-diagnostics-20261107.json). Five slow worker observations and peer tails remain; no whole-PA acceptance. All731prior rows are exact-value preserved; new total732rows/179concerns remains OPEN with independent17d acceptance.
 
 
 ## Targeted workspace materialization repair — 2026-11-07

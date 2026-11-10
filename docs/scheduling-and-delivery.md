@@ -118,3 +118,46 @@ ten-minute deliveries through PA's real authority/target input paths into a dura
 agent queue. Run with `SCHEDULING_REAL_CLOCK=1`; ordinary CI skips it. The
 recipient is a disposable quiesced runtime and transport, so this verifies queue
 acceptance without starting a model or claiming deployed-recipient acceptance.
+
+## Loops and session reminders
+
+`/loops` registers in the normal PA navigation; `/schedules` remains a compatible
+alias. Notification loops reuse this ledger and command API. The page also reads
+backup schedules, health collection policy, goal wakeups and PR watches through
+their existing APIs and links to those subsystems' controls. These policies are
+not copied into the notification ledger. Source failures remain visible.
+
+`additional_destinations` adds up to fifteen targets to the existing primary
+`destination`. One trigger increments the occurrence count once, with an independent
+durable delivery identity, retry and acceptance receipt for each target. Correcting
+a destination updates undelivered records by delivery position; removing a position
+cancels its pending/failed deliveries. Adding a target applies to future triggers.
+Accepted deliveries remain terminal. Coalescing counts trigger occurrences once.
+
+The `cancel` command requires version CAS and a stable idempotency key. It records
+a terminal cancellation without deleting the schedule/history. Pause is resumable;
+cancellation is terminal. Delete hides the record and cancels unclaimed deliveries.
+Already claimed deliveries may finish after pause, cancel or delete. Existing
+ledgers gain a cancellation column without rewriting their stored specifications.
+
+List responses add lifecycle state and provider discovery status. Optional
+`session_id` and `pending_only` filters run before keyset pagination. Association
+matches an explicit `context_refs.session`/`session_id` or an exact agent-session
+delivery target; event filters alone do not imply reminder ownership. MCP schedule
+creation records its PA-bound source session when no source was supplied. Older
+schedules without a source retain that uncertainty. `/api/schedules/{id}` supplies
+an owner-scoped detail view for links beyond the first page.
+
+The chat header alarm uses the owning local ledger and displays all pending pages.
+Active one-time/repeating/event/webhook schedules and outstanding deliveries count;
+paused, cancelled, completed, expired and idle manual schedules do not. It refreshes
+on session changes, lifecycle events, tab focus and every fifteen visible seconds.
+Errors display discovery unavailable; a remote owner's ledger is never inferred
+from local records. Provider-owned reminder discovery and actions are unsupported
+by the currently integrated ACP client/provider adapters (including Codex). PA
+neither scans provider private files nor interprets slash commands as an automation
+inventory. The page/dialog explicitly show this gap rather than claiming no such
+provider automations exist. No agent, model or permission defaults change.
+
+Compatibility with PR #707: only a reminder include is added to the chat toolbar;
+composer/menu behavior is left to that PR. New modal state is scoped per widget.
