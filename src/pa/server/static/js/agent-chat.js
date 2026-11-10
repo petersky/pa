@@ -619,11 +619,13 @@
       const button = self.root.querySelector(entry[0]);
       if (button) button.addEventListener("click", function () {
         if (!self.sessionId) return;
-        const sessionId = self.sessionId;
+        const sessionId = self.sessionId, generation = self.subscriptionGeneration, apiBase = self.apiBase;
         self.api("/sessions/" + encodeURIComponent(sessionId) + "/title", {
           method: "PUT", body: JSON.stringify({title: renameInput && renameInput.value, automatic: entry[1]})
         }).then(function (snap) {
-          if (self.sessionId === sessionId) self.updateTitle(snap.session.title);
+          if (self._isCurrentSessionRequest(sessionId, generation) && self.apiBase === apiBase) {
+            self.updateTitle(snap.session.title, ((snap.session.config_json || {}).naming || {}).version);
+          }
           refreshSessionList(self.sessionId, true);
         }).catch(function (error) { self.addBubble("system", error.message, null, {forceVisible: true}); });
       });
@@ -1272,7 +1274,8 @@
         child.hasAttribute("data-acw-load-older") ||
         child.hasAttribute("data-acw-load-older-status") ||
         child.hasAttribute("data-acw-load-newer") ||
-        child.hasAttribute("data-acw-load-newer-status")
+        child.hasAttribute("data-acw-load-newer-status") ||
+        child.hasAttribute("data-acw-history-notice")
       ) return;
       messages.push(child.cloneNode(true));
     });
@@ -1614,6 +1617,11 @@
     if (this.drafts && ownerInstanceId) this.drafts.setInstance(ownerInstanceId);
     if (this.drafts) this.drafts.switchSession(sessionId);
     this.sessionId = sessionId;
+    // Selection owns the header even while owner resolution is pending.
+    this.lastSnapshot = null;
+    this._titleSession = sessionId;
+    this._titleVersion = 0;
+    if (this.els.title) this.els.title.textContent = "Loading conversation…";
     this.closePending = false;
     this.ownerInstanceId = ownerInstanceId || "";
     this.root.dataset.sessionId = sessionId;
@@ -2038,7 +2046,7 @@
     if (version != null) this._titleVersion = version;
     if (typeof title !== "string" || !title.trim()) return;
     if (this.els.title) this.els.title.textContent = title;
-    if (this.lastSnapshot && this.lastSnapshot.session) this.lastSnapshot.session.title = title;
+    if (this.lastSnapshot && this.lastSnapshot.session && this.lastSnapshot.session.id === this.sessionId) this.lastSnapshot.session.title = title;
     const item = sessionListItem(this.sessionId);
     if (item) {
       const label = item.querySelector("[data-agent-session-title]");
@@ -2365,6 +2373,8 @@
   };
 
   AgentChatWidget.prototype.applySnapshot = function (snap) {
+    // All callers, including delayed action responses, must retain identity.
+    if (!snap || (snap.session && snap.session.id && snap.session.id !== this.sessionId)) return;
     if (this.issues) this.issues.ready();
     if (this.threads) this.threads.ready(snap);
     const self = this;
@@ -2585,6 +2595,7 @@
     if (this.messageRowCount > rows.length && rows.length) {
       if (keepOldest) {
         this.hasNewer = true;
+        this.historyPreserveWindow = true;
         if (firstRemovedSeq) {
           this.transcriptEvents = this.transcriptEvents.filter(function (event) {
             return (event.payload.source_first_seq || event.seq) < firstRemovedSeq;
@@ -2673,6 +2684,7 @@
     });
     unique.sort(function (a, b) { return (a.seq || 0) - (b.seq || 0); });
     this.transcriptEvents = this._boundedEvents(unique, !!options.keepOldest);
+    if (options.keepOldest && this.hasNewer) this.historyPreserveWindow = true;
     const retained = this.transcriptEvents;
     // Reconciliation can return identical history after a provider exits.
     // Keep interactive iframe browsing contexts alive across those polls.
@@ -2703,7 +2715,8 @@
         !child.hasAttribute("data-acw-load-older") &&
         !child.hasAttribute("data-acw-load-older-status") &&
         !child.hasAttribute("data-acw-load-newer") &&
-        !child.hasAttribute("data-acw-load-newer-status")
+        !child.hasAttribute("data-acw-load-newer-status") &&
+        !child.hasAttribute("data-acw-history-notice")
       ) child.remove();
     });
     this.messageRowCount = 0;
@@ -2740,7 +2753,9 @@
       return;
     }
     const self = this;
-    this.historyPreserveWindow = true;
+    // Fetching older rows does not remove the tail. Keep appending live text
+    // until retention actually evicts newer rows.
+    this.historyPreserveWindow = !!this.hasNewer;
     this._renderHistoryNotice();
     const requestSessionId = this.sessionId;
     const requestGeneration = this.subscriptionGeneration;
@@ -2816,6 +2831,7 @@
       self.loadingOlder = false;
       self.updateOlderControl();
       self._resumeHistoryAtTail();
+      self._renderHistoryNotice();
     });
   };
 

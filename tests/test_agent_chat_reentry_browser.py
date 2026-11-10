@@ -59,6 +59,7 @@ async def test_recent_reentry_failed_history_live_preview_anchors_and_thread_iso
             assert (await texts()).count(f"Newest fixture message {number}") == 1
 
         await wait_for(f"!!{w}.olderError && {w}.externalEventTransport")
+        assert await page.evaluate(f"{w}.els.messages.contains({w}.els.historyNotice)")
         assert await page.evaluate("window.historyPaint.connectedWhilePending")
         assert not await page.evaluate("window.historyPaint.falseEmpty")
         assert (await texts()) == []
@@ -103,7 +104,7 @@ async def test_recent_reentry_failed_history_live_preview_anchors_and_thread_iso
         assert not any(r["before"] is not None for r in app.state.history_requests)
         before_prepend = await page.evaluate(f"{w}._captureHistoryAnchor()")
         await manager.scroll(scope, selector="[data-acw-messages]", delta_y=-80)
-        await wait_for(f"!{w}.loadingOlder && {w}.historyPreserveWindow")
+        await wait_for(f"!{w}.loadingOlder && {w}.historyUserIntent")
         assert len([r for r in app.state.history_requests if r["before"] is not None]) == 1
         # At the absolute top the older row may fill space previously occupied
         # by the paging button. The original message must retain its position.
@@ -166,28 +167,26 @@ async def test_recent_reentry_failed_history_live_preview_anchors_and_thread_iso
         assert seqs == sorted(set(seqs))
         assert await page.evaluate("document.querySelector('[data-acw-input]').value") == "Unsent source draft"
 
-        # Buffered character-sized live chunks form one readable preview while
-        # reading older history, then move into one bubble on a normal scroll
-        # back to the tail. Exercise the same long-lived widget at both widths.
+        # A window containing the tail renders fragmented live text in the
+        # transcript while preserving the reader anchor at both widths.
         for number, width in ((6, 1280), (7, 390)):
             await manager.resize(scope, width=width, height=1000)
             await page.evaluate(f"{w}.els.messages.scrollTop=0")
             await manager.scroll(scope, selector="[data-acw-messages]", delta_y=-80)
-            await wait_for(f"!{w}.loadingOlder && {w}.historyPreserveWindow")
+            await wait_for(f"!{w}.loadingOlder && {w}.historyUserIntent")
             anchor = await page.evaluate(f"{w}._captureHistoryAnchor()")
             await client.post("/fixture/append?fragmented=true")
             expected = f"Newest fixture message {number}"
-            await wait_for("document.querySelector('[data-acw-live-preview]').textContent===" + json.dumps(expected))
+            await wait_for("[...document.querySelectorAll('.acw-bubble-agent')].some(e=>e.dataset.markdown===" + json.dumps(expected) + ")")
             held_anchor = await page.evaluate(f"{w}._captureHistoryAnchor()")
             assert held_anchor["seq"] == anchor["seq"]
             assert abs(held_anchor["offset"]-anchor["offset"]) < 3
-            assert await page.evaluate("""(()=>{const p=document.querySelector('[data-acw-live-preview]');
-              return p.clientWidth>250 && p.scrollWidth<=p.clientWidth+1 && p.getBoundingClientRect().height<50;})()""")
-            assert expected not in await texts()
+            assert await page.evaluate("document.querySelector('[data-acw-history-notice]').hidden")
+            assert (await texts()).count(expected) == 1
             await manager.scroll(scope, selector="[data-acw-messages]", delta_y=100000)
             await latest(number)
             await wait_for(f"!{w}.historyPreserveWindow && document.querySelector('[data-acw-history-notice]').hidden")
-            assert await page.evaluate(f"{w}.isNearBottom()")
+            await wait_for(f"{w}.isNearBottom()")
             assert await page.evaluate("document.querySelector('[data-acw-input]').value") == "Unsent source draft"
             await manager.click(scope, selector="#other")
             await wait_for(f"{w}.sessionId==='other-fixture' && !{w}.recentBootstrap")
@@ -201,7 +200,7 @@ async def test_recent_reentry_failed_history_live_preview_anchors_and_thread_iso
         await page.evaluate(f"{w}.els.messages.scrollTop=0")
         await manager.scroll(scope, selector="[data-acw-messages]", delta_y=-80)
         await wait_for(f"{w}.loadingOlder")
-        await manager.click(scope, selector="[data-acw-latest]")
+        await page.evaluate(f"{w}.els.latest.click()")
         await latest(7)
         await asyncio.sleep(.7)
         assert await page.evaluate(f"!{w}.historyPreserveWindow && !{w}.loadingOlder && {w}.isNearBottom()")

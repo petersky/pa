@@ -227,6 +227,12 @@
     </aside>
 
     <div class="acw-messages scroll-region" data-acw-messages>
+  <section class="acw-history-notice" data-acw-history-notice hidden aria-label="History recovery">
+    <div><span data-acw-history-notice-text role="status" aria-live="polite"></span>
+      <button type="button" class="ghost small" data-acw-latest>Jump to latest</button></div>
+    <pre data-acw-live-preview hidden aria-label="Live preview; history may be incomplete"></pre>
+  </section>
+
       <button type="button" class="ghost small acw-load-older" data-acw-load-older hidden>
         <span class="acw-history-spinner" data-acw-history-spinner aria-hidden="true" hidden></span>
         <span data-acw-load-older-label>Load older messages</span>
@@ -243,11 +249,6 @@
     </div>
   </div>
 
-  <section class="acw-history-notice" data-acw-history-notice hidden aria-label="History recovery">
-    <div><span data-acw-history-notice-text role="status" aria-live="polite"></span>
-      <button type="button" class="ghost small" data-acw-latest>Jump to latest</button></div>
-    <pre data-acw-live-preview hidden aria-label="Live preview; history may be incomplete"></pre>
-  </section>
   <section class="acw-recovery" data-acw-recovery aria-label="Session recovery" hidden>
     <span data-acw-recovery-action role="status" aria-live="polite" aria-atomic="true"></span>
     <button type="button" class="ghost small" data-acw-restart hidden>Resume session</button>

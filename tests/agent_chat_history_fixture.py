@@ -19,10 +19,10 @@ from tests.test_agent_chat_history_reconstruction import FINAL_TEXT, fixture_eve
 def main():
     with tempfile.TemporaryDirectory(prefix="pa-chat-fixture-") as directory:
         store = CardProjection(Path(directory) / "fixture.db")
-        session = AgentSession(id="history-fixture", agent_name="codex", status="idle", purpose="chat")
+        session = AgentSession(id="history-fixture", title="Conversation A", agent_name="codex", status="idle", purpose="chat")
         store.append_transcript_events(fixture_events())
         store.save_session(session)
-        store.save_session(AgentSession(id="other-fixture", agent_name="codex", status="idle", purpose="chat"))
+        store.save_session(AgentSession(id="other-fixture", title="Conversation B", agent_name="codex", status="idle", purpose="chat"))
         manager = MagicMock()
         manager.store = store
         manager.get.return_value = None
