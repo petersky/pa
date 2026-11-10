@@ -203,3 +203,11 @@ def test_drop_active_cli_defaults_to_a_dry_run(tmp_path, monkeypatch):
         applied = CliRunner().invoke(card_cli.card_app, ["drop-active", "--apply"])
         assert applied.exit_code == 0, applied.output
         assert kernel.ctx.store.get_card(stuck.id).lane == "done"
+
+
+def test_goal_supervisor_follows_the_independence_setting(tmp_path):
+    kernel, _ = _app(tmp_path / "default")
+    supervisor = kernel.ctx.require_service("goal_supervisor")
+    assert supervisor.verifier_independence() == "relaxed"
+    strict, _ = _app(tmp_path / "strict", completion_verifier_independence="strict")
+    assert strict.ctx.require_service("goal_supervisor").verifier_independence() == "strict"

@@ -136,12 +136,16 @@ class GoalSupervisor:
         stalled_cycles: int = 6,
         lease_ttl_seconds: int = 90,
         default_provider: str | None = None,
+        verifier_independence: Callable[[], str] | None = None,
     ) -> None:
         if stalled_cycles <= no_progress_cycles:
             raise ValueError("stalled_cycles must exceed no_progress_cycles")
         self.service = service
         self.store = store
         self.instance_id = instance_id
+        # "strict" (the default when unwired) also demands a different instance and provider;
+        # "relaxed" accepts a different session and service principal (single-user instances).
+        self.verifier_independence = verifier_independence
         self.notifications = notification_service
         self.dispatch_store = dispatch_store
         self.dispatch = dispatch
@@ -2266,6 +2270,8 @@ class GoalSupervisor:
                 if verifier_binding is not None
                 else None
             )
+            mode = getattr(self, "verifier_independence", None)
+            relaxed = (mode() if callable(mode) else mode) == "relaxed"
             independent = bool(
                 verifier_binding is not None
                 and verifier_binding.work_package_id == package.id
@@ -2282,9 +2288,14 @@ class GoalSupervisor:
                         else "executor"
                     )
                     and verifier_binding.session_id != identity.session_id
-                    and verifier_binding.target_instance_id
-                    != identity.target_instance_id
-                    and verifier_binding.provider_id != identity.provider_id
+                    and (
+                        relaxed
+                        or (
+                            verifier_binding.target_instance_id
+                            != identity.target_instance_id
+                            and verifier_binding.provider_id != identity.provider_id
+                        )
+                    )
                     and verifier_binding.assigned_service_principal
                     != identity.assigned_service_principal
                     for dependency, identity in executor_bindings
