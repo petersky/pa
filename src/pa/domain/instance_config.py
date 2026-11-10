@@ -59,6 +59,9 @@ class InstanceConfig(BaseModel):
     # full hour is failed. True restores the old behaviour: fail every
     # reservation that is not running after one hour.
     dispatch_capacity_reservation_hard_expiry: bool = False
+    # Worker re-executions allowed for one dispatch before it fails recoverably;
+    # 0 restores the old unlimited behaviour.
+    dispatch_max_stage_attempts: int = Field(default=5, ge=0, le=100)
     relay_enabled: bool = False
     cloud_endpoint: str = ""
     cloud_token: str = ""

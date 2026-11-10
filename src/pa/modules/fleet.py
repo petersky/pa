@@ -82,6 +82,7 @@ from pa.execution.dispatch import (
     CapacityAdmission,
     CompletionOutbox,
     ConcurrentCardDispatch,
+    DispatchCancelRequested,
     DispatchCapacityExhausted,
     DispatchCompareConflict,
     DispatchEvent,
@@ -7005,7 +7006,46 @@ async def _synchronize_target_goal_execution_identity(
         )
 
 
+async def _commit_dispatch_stage(
+    ctx: AppContext,
+    ledger: DispatchStore,
+    record: DispatchRecord,
+    state: str | None = None,
+    message: str = "",
+    *,
+    detail: dict[str, Any] | None = None,
+    events: list[DispatchEvent] | None = None,
+) -> DispatchRecord:
+    """Field-level worker commit; adopts the durable result into ``record``.
+
+    The worker's snapshot spans network calls. Writing it back whole would
+    revert a cancel or an acknowledged completion committed meanwhile, so only
+    the worker-owned fields and the forward stage change are applied.
+    """
+    committed = await _offload_ctx(
+        ctx,
+        "dispatch.record_write",
+        lambda: ledger.commit_worker_stage(
+            record, state, message, detail=detail, events=events
+        ),
+    )
+    for field in DispatchRecord.model_fields:
+        setattr(record, field, getattr(committed, field))
+    return committed
+
+
 async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
+    """Run one dispatch; a cancel committed mid-stage stops it at the next boundary."""
+    ctx = app.state.ctx
+    try:
+        await _process_remote_dispatch_stages(app, record)
+    except DispatchCancelRequested:
+        await _dispatch_cancelled(
+            ctx, ctx.require_service("dispatch_store"), record
+        )
+
+
+async def _process_remote_dispatch_stages(app, record: DispatchRecord) -> None:
     """Advance one persisted dispatch through independently auditable stages."""
     request = _dispatch_request(app)
     ctx = app.state.ctx
@@ -7027,15 +7067,15 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
 
     if await _dispatch_cancelled(ctx, ledger, record):
         return
-    await _offload_ctx(
+    await _commit_dispatch_stage(
         ctx,
-        "dispatch.record_write",
-        ledger.transition,
+        ledger,
         record,
         "checking_sync",
         "Checking realm convergence.",
     )
     card = None
+    launch_events: list[DispatchEvent] = []
     if record.card_id:
         sync_evidence = await _wait_for_dispatch_sync_health(
             request, record.realm_id, record.target_instance_id
@@ -7070,9 +7110,9 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
             )
         prior_card_version = record.card_version
         if prior_card_version and prior_card_version != card.updated_at.isoformat():
-            record.events.append(
+            launch_events.append(
                 DispatchEvent(
-                    seq=(record.events[-1].seq + 1 if record.events else 1),
+                    seq=1,
                     state=record.state,
                     message="Card changed while queued; launching the latest authoritative snapshot without changing target or execution contract.",
                     detail={
@@ -7101,14 +7141,13 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
                         "recoverable": False,
                     },
                 )
-        await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
+        await _commit_dispatch_stage(ctx, ledger, record, events=launch_events)
     if await _dispatch_cancelled(ctx, ledger, record):
         return
 
-    await _offload_ctx(
+    await _commit_dispatch_stage(
         ctx,
-        "dispatch.record_write",
-        ledger.transition,
+        ledger,
         record,
         "materializing",
         "Materializing the exact dispatch context on the target.",
@@ -7253,7 +7292,7 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         if negotiated_progress in SUPPORTED_PROGRESS_VERSIONS
         else None
     )
-    await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
+    await _commit_dispatch_stage(ctx, ledger, record)
     await _synchronize_target_goal_execution_identity(
         request,
         record,
@@ -7263,10 +7302,9 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         return
 
     payload = dict(record.request_payload)
-    await _offload_ctx(
+    await _commit_dispatch_stage(
         ctx,
-        "dispatch.record_write",
-        ledger.transition,
+        ledger,
         record,
         "provisioning",
         "Provisioning the target workspace and execution environment.",
@@ -7330,11 +7368,10 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
     # crash from this point forward can then bind governance and resume exactly
     # this session instead of trying to allocate another one.
     record.session_id = session_id
-    await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
-    await _offload_ctx(
+    await _commit_dispatch_stage(ctx, ledger, record)
+    await _commit_dispatch_stage(
         ctx,
-        "dispatch.record_write",
-        ledger.transition,
+        ledger,
         record,
         "starting_session",
         "Provider session allocated; validating configuration and linkage.",
@@ -7467,7 +7504,7 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
                 "recoverable": False,
             },
         )
-    await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
+    await _commit_dispatch_stage(ctx, ledger, record)
     await _synchronize_target_goal_execution_identity(
         request,
         record,
@@ -7485,10 +7522,9 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         ).text
     prompt_result: dict[str, Any] | None = None
     if message:
-        await _offload_ctx(
+        await _commit_dispatch_stage(
             ctx,
-            "dispatch.record_write",
-            ledger.transition,
+            ledger,
             record,
             "delivering_prompt",
             "Delivering and awaiting durable prompt acceptance.",
@@ -7594,12 +7630,11 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         # The dispatch ledger and session transcript are the authoritative audit
         # history. Never mirror lifecycle notices into curated Memory.
         record.knowledge_recorded_at = datetime.now(UTC)
-        await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
+        await _commit_dispatch_stage(ctx, ledger, record)
     if record.state != "completed":
-        await _offload_ctx(
+        await _commit_dispatch_stage(
             ctx,
-            "dispatch.record_write",
-            ledger.transition,
+            ledger,
             record,
             "running",
             "Prompt accepted by the intended remote session."
@@ -14376,6 +14411,7 @@ def retry_dispatch(
         # Legacy records predate reservations. Preserve their retry behavior;
         # every newly admitted record carries capacity metadata.
         record.cancel_requested = False
+        record.stage_attempts = 0
         record.last_error = None
         record.error_code = None
         if record.session_id:
@@ -15418,6 +15454,8 @@ class FleetModule(Module):
             ),
             lifecycle_recovery=lambda: _reconcile_goal_dispatch_reservations(ctx),
             stall_notifier=lambda record: notify_dispatch_failed(ctx, record),
+            instance_id=ctx.settings.instance_id,
+            max_stage_attempts=ctx.settings.dispatch_max_stage_attempts,
         )
         dispatch_worker.start()
         ctx.register_service("dispatch_worker", dispatch_worker)

@@ -472,6 +472,17 @@ _DEFINITIONS = (
         apply="restart",
     ),
     _s(
+        "dispatch_max_stage_attempts",
+        "int",
+        5,
+        'How many times one dispatch may be (re)started by the worker before it is failed recoverably (0 = unlimited).',
+        "Execution",
+        46,
+        'A dispatch whose stage crashes the process is no longer retried forever; it fails with a notification and can be retried from Fleet Operations. 0 restores unlimited re-execution.',
+        apply="restart",
+        validator="range:0:100",
+    ),
+    _s(
         "completion_auto_verify_stalled_seconds",
         "int",
         24 * 60 * 60,
