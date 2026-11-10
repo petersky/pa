@@ -1329,8 +1329,8 @@
       holder.innerHTML = entry.unsequencedHtml;
       while (holder.firstChild) {
         const row = holder.firstChild;
-        const user = row.querySelector(".acw-bubble-user");
-        if (user && this._isDuplicateUserBubble(user.dataset.markdown || "")) row.remove();
+        const promptId = row.dataset && row.dataset.promptId;
+        if (promptId && this._userRowForPrompt(promptId)) row.remove();
         else this.els.messages.appendChild(row);
       }
       this.messageRowCount = this.els.messages.querySelectorAll(".acw-msg").length;
@@ -2191,18 +2191,71 @@
     return images.length === 1 ? "Attached image: " + images[0].name : "Attached " + images.length + " images";
   }
 
-  AgentChatWidget.prototype._isDuplicateUserBubble = function (text) {
-    // Compare against dataset.markdown (raw prompt), not textContent — markdown
-    // rendering drops newlines (`<br>` / `<p>`), which made every multi-line
-    // optimistic bubble look unique and paint a second copy from SSE.
-    if (typeof text !== "string" || !this.els.messages) return false;
-    const rows = this.els.messages.querySelectorAll(".acw-msg-user .acw-bubble");
-    if (!rows.length) return false;
-    const last = rows[rows.length - 1];
-    const lastText = Object.prototype.hasOwnProperty.call(last.dataset, "markdown")
-      ? last.dataset.markdown
-      : (last.textContent || "");
-    return lastText === text;
+  // User bubbles are identified by prompt id, never by their text: the same
+  // words sent twice are two messages, and a queued prompt's bubble is painted
+  // before the turn that runs it. A bubble with no source sequence is an
+  // optimistic one that the server has not echoed yet.
+  AgentChatWidget.prototype._userRowForPrompt = function (promptId) {
+    if (!promptId || !this.els.messages) return null;
+    const rows = this.els.messages.querySelectorAll(".acw-msg-user");
+    for (let index = rows.length - 1; index >= 0; index -= 1) {
+      if (rows[index].dataset.promptId === promptId) return rows[index];
+    }
+    return null;
+  };
+
+  AgentChatWidget.prototype._optimisticUserRowFor = function (promptId, text) {
+    const row = this._userRowForPrompt(promptId);
+    if (row) return row;
+    if (promptId || typeof text !== "string" || !this.els.messages) return null;
+    // Legacy events carry no prompt id. Only an optimistic bubble without one can
+    // be their echo; compare the raw prompt, not textContent: markdown rendering
+    // drops newlines (`<br>` / `<p>`), which made every multi-line optimistic
+    // bubble look unique and paint a second copy from SSE.
+    const bubbles = this.els.messages.querySelectorAll(".acw-msg-user .acw-bubble");
+    for (let index = bubbles.length - 1; index >= 0; index -= 1) {
+      const bubble = bubbles[index], candidate = bubble.parentNode;
+      if (!candidate || candidate.dataset.sourceSeq || candidate.dataset.promptId) continue;
+      const raw = Object.prototype.hasOwnProperty.call(bubble.dataset, "markdown")
+        ? bubble.dataset.markdown : (bubble.textContent || "");
+      if (raw === text) return candidate;
+    }
+    return null;
+  };
+
+  // The server's user_message for a prompt either finds the bubble already on
+  // screen (adopt it) or nothing (the caller paints it). Adopting sequences the
+  // optimistic bubble and moves it to where the turn really began: it was
+  // painted mid-turn, above output of the turn that was running.
+  AgentChatWidget.prototype._adoptUserBubble = function (promptId, text, event) {
+    const row = this._optimisticUserRowFor(promptId, text);
+    if (!row) return false;
+    if (row.dataset.sourceSeq) return true;
+    row.dataset.sourceSeq = String(event.payload && event.payload.source_first_seq || event.seq);
+    const stamp = row.querySelector("time");
+    if (stamp && event.created_at) {
+      stamp.dateTime = event.created_at;
+      stamp.textContent = new Date(event.created_at).toLocaleTimeString();
+    }
+    const rows = this.els.messages.querySelectorAll(".acw-msg[data-source-seq]");
+    let anchor = null;
+    for (let index = rows.length - 1; index >= 0; index -= 1) {
+      if (rows[index] !== row) { anchor = rows[index]; break; }
+    }
+    if (anchor && anchor.parentNode === row.parentNode && anchor.nextSibling !== row) {
+      row.parentNode.insertBefore(row, anchor.nextSibling);
+    }
+    return true;
+  };
+
+  // A queued prompt that is withdrawn before it runs leaves nothing in the
+  // transcript, so its optimistic bubble must go too. Once the server has
+  // sequenced a bubble it is history and stays.
+  AgentChatWidget.prototype._discardOptimisticUserBubble = function (promptId) {
+    const row = this._userRowForPrompt(promptId);
+    if (!row || row.dataset.sourceSeq) return;
+    row.remove();
+    this.messageRowCount = Math.max(0, (this.messageRowCount || 1) - 1);
   };
 
   AgentChatWidget.prototype.setStatus = function (state) {
@@ -3196,6 +3249,7 @@
     const payload = event.payload || {};
     const created = event.created_at;
     this.renderingEvent = event;
+    if (type === "queue_removed") this._discardOptimisticUserBubble(payload.id);
 
     switch (type) {
       case "user_message":
@@ -3204,8 +3258,8 @@
         }
         if (!replay) this.refreshQueue();
         const userText = payload.message || imageSummary(payload.images);
-        // Skip duplicate if we already painted an optimistic bubble for this text.
-        if (!this._isDuplicateUserBubble(userText)) {
+        // Adopt the optimistic bubble painted for this prompt id instead of a second copy.
+        if (!this._adoptUserBubble(payload.id, userText, event)) {
           this.addBubble("user", payload.message || "", created, {
             system: payload.source === "system",
             images: payload.images || [],
@@ -4684,7 +4738,9 @@
   AgentChatWidget.prototype.markSubmissionAccepted = function (result, displayText, submittedImages, draftRawText, promptId) {
     result = result || {};
     const rawText = draftRawText == null ? displayText : draftRawText;
-    if (!this._isDuplicateUserBubble(displayText)) {
+    promptId = promptId || result.prompt_id;
+    // The server's echo can beat this response; never paint a prompt id twice.
+    if (!(promptId && this._userRowForPrompt(promptId))) {
       this.addBubble("user", displayText, new Date().toISOString(), {
         promptId: promptId,
         images: (submittedImages || []).map(function (image) {
@@ -4697,7 +4753,14 @@
         }),
       });
     }
-    if (result.status !== "completed") this.setTurnActive(true);
+    // POST /prompt reports where the prompt went (started, or queued behind a busy
+    // or paused session); only a prompt that really started means work is under
+    // way. A duplicate retry says nothing about the present, and the receipt
+    // lookup reports a lifecycle status instead of "started".
+    const startedNow = result.status
+      ? result.status === "executing"
+      : result.started === true && result.duplicate !== true;
+    if (startedNow) this.setTurnActive(true);
     this.scrollToBottom();
     if (this.drafts && promptId) {
       this.drafts.observeAcceptance(promptId, !!result.queued);
