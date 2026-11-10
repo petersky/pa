@@ -421,6 +421,7 @@
     this.turnStartedAt = null;
     this.turnTimerId = null;
     this.queuePaused = false;
+    this.queueNotice = "";
     this.prompting = false;
     this.submissionPending = false;
     this.submissionState = "idle";
@@ -3293,7 +3294,18 @@
         this.finalizeStreams(created);
         this.finalizeActivity();
         if (!replay) this.setTurnActive(false);
-        if (!replay) this.queuePaused = !!payload.pause_queue;
+        if (!replay) {
+          // A user Stop holds the queue: show it paused with a working Resume
+          // immediately, then confirm against the server (which also reports
+          // prompts Stop returned to the queue before the provider got them).
+          // An internal interrupt (pause_queue false) must not clear a pause
+          // the user set earlier.
+          this.queuePaused = payload.queue_paused !== undefined
+            ? !!payload.queue_paused
+            : (this.queuePaused || !!payload.pause_queue);
+          this.renderQueue((this.lastSnapshot && this.lastSnapshot.queue) || [], this.lastSnapshot);
+          this.refreshQueue();
+        }
         break;
       case "usage_update":
         if (payload.usage) this.renderMetrics({ usage: payload.usage });
@@ -4054,9 +4066,10 @@
         snap.connected === false ? "Queued messages wait for reconnection." :
         queue.some(function (q) { return q.display && q.display.is_next; }) ? "Next eligible message is queued." :
         queue.length ? "Queued messages wait for eligibility to be confirmed." : "Queue is empty.";
-      if (status.textContent !== waiting) status.textContent = waiting;
+      const text = this.queueNotice ? this.queueNotice + " " + waiting : waiting;
+      if (status.textContent !== text) status.textContent = text;
     }
-    this.els.queue.hidden = !queue.length && !this.queuePaused;
+    this.els.queue.hidden = !queue.length && !this.queuePaused && !this.queueNotice;
     const meta = this.root.querySelector("[data-acw-queue-meta]");
     if (meta) {
       const parts = [];
@@ -4077,9 +4090,9 @@
       if (!Number.isInteger(from) || from < 0 || from >= queue.length || to < 0 || to >= queue.length || from === to) return;
       const ids = queue.map(function (q) { return q.id; });
       ids.splice(to, 0, ids.splice(from, 1)[0]);
-      self.api("/sessions/" + self.sessionId + "/queue/reorder", {
+      self.queueAction(self.api("/sessions/" + self.sessionId + "/queue/reorder", {
         method: "POST", body: JSON.stringify({ prompt_ids: ids }),
-      }).then(function () { self.refreshQueue(); });
+      }));
     }
     queue.forEach(function (item, index) {
       const li = document.createElement("li");
@@ -4106,9 +4119,12 @@
       li.querySelector('[data-queue-action="up"]').addEventListener("click", function () { reorder(index, index - 1); });
       li.querySelector('[data-queue-action="down"]').addEventListener("click", function () { reorder(index, index + 1); });
       li.querySelector("[data-remove]").addEventListener("click", function () {
-        self.api("/sessions/" + self.sessionId + "/queue/" + item.id, { method: "DELETE" }).then(function () {
-          self.refreshQueue();
-        });
+        // A prompt that started between render and click is already gone:
+        // that is the outcome the user asked for, so just refresh.
+        self.queueAction(
+          self.api("/sessions/" + self.sessionId + "/queue/" + item.id, { method: "DELETE" }),
+          { goneCode: "already_started" }
+        );
       });
       li.addEventListener("dragstart", function (e) {
         e.dataTransfer.setData("text/plain", String(index));
@@ -5498,7 +5514,11 @@
 
   AgentChatWidget.prototype.cancel = function () {
     if (!this.sessionId) return;
-    this.api("/sessions/" + this.sessionId + "/cancel", { method: "POST", body: "{}" });
+    const self = this;
+    this.api("/sessions/" + this.sessionId + "/cancel", { method: "POST", body: "{}" }).then(function (result) {
+      if (result && typeof result.queue_paused === "boolean") self.queuePaused = result.queue_paused;
+      self.refreshQueue();
+    }, function () { /* the live stream reports the turn state either way */ });
   };
 
   AgentChatWidget.prototype.closeSession = function () {
@@ -5555,9 +5575,26 @@
 
   AgentChatWidget.prototype.queueControl = function (action) {
     if (!this.sessionId) return;
-    this.api("/sessions/" + this.sessionId + "/queue/" + action, { method: "POST", body: "{}" }).then(
-      this.refreshQueue.bind(this)
-    );
+    this.queueAction(this.api("/sessions/" + this.sessionId + "/queue/" + action, { method: "POST", body: "{}" }));
+  };
+
+  // Every queue mutation refreshes the authoritative queue afterwards, whether
+  // or not it succeeded, and a failure is shown instead of silently dropped.
+  AgentChatWidget.prototype.queueAction = function (request, options) {
+    const self = this;
+    this.queueNotice = "";
+    return request.then(function (result) {
+      self.refreshQueue();
+      return result;
+    }, function (error) {
+      self.refreshQueue();
+      if (options && options.goneCode && apiErrorCode(error) === options.goneCode) return null;
+      self.queueNotice = "Queue update failed: " + ((error && error.message) || "request failed") + ".";
+      const status = self.root && self.root.querySelector && self.root.querySelector("[data-acw-queue-status]");
+      if (status) status.textContent = self.queueNotice;
+      if (self.els && self.els.queue) self.els.queue.hidden = false;
+      return null;
+    });
   };
 
   AgentChatWidget.prototype.putOption = function (kind, body) {

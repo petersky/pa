@@ -181,6 +181,29 @@ def _is_automatic_source(source: str) -> bool:
     return normalized.startswith(_AUTOMATIC_PROMPT_PREFIXES)
 
 
+def _insert_by_priority(
+    queue: list[QueuedPrompt], item: QueuedPrompt, *, front: bool = False
+) -> None:
+    """Insert one prompt by priority without reshuffling the existing order.
+
+    A user may have reordered the queue across priority classes; sorting the
+    whole list on every enqueue would silently undo that. ``front`` places the
+    item before the first entry it outranks or ties with; otherwise it goes
+    after the last entry that outranks or ties with it.
+    """
+    if front:
+        index = next(
+            (i for i, queued in enumerate(queue) if queued.priority >= item.priority),
+            len(queue),
+        )
+    else:
+        index = max(
+            (i + 1 for i, queued in enumerate(queue) if queued.priority <= item.priority),
+            default=0,
+        )
+    queue.insert(index, item)
+
+
 def _prompt_authority(source: str, action: PromptAction) -> tuple[int, str]:
     """Return deterministic durable ordering; lower values run first."""
     normalized = (source or "api").strip().casefold()
@@ -322,6 +345,20 @@ class AgentSessionRuntime:
         self._queue_paused = False
         self._in_flight: QueuedPrompt | None = None
         self._draining_prompt: QueuedPrompt | None = None
+        # Stop bumps the epoch; a turn that began earlier and has not reached
+        # the provider yet must not be delivered (see _run_prompt).
+        self._cancel_epoch = 0
+        self._draining_cancel_epoch = 0
+        # Dequeued by the drain but not yet owning a turn / not yet handed to
+        # the provider. Both are reset whenever the drain pops an item.
+        self._draining_started = False
+        self._delivery_started = False
+        self._delivered_prompt_id: str | None = None
+        # A turn lost to a dead connection stays recoverable (checkpointed as
+        # in_flight) until recovery requeues it on a fresh runtime.
+        self._interrupted: QueuedPrompt | None = None
+        self._recent_started_ids: deque[str] = deque(maxlen=64)
+        self._backlog_overflowed = False
         self._restart_receipts: dict[str, RestartHandoff] = {}
         self._drain_task: asyncio.Task[None] | None = None
         self._subscribers: list[asyncio.Queue[dict[str, Any]]] = []
@@ -399,8 +436,15 @@ class AgentSessionRuntime:
             self._save_session_preserving_external_browser,
         )
 
-    def _checkpoint_runtime(self, *, lifecycle: str | None = None) -> None:
-        """Persist recoverable execution ownership before an API acknowledges it."""
+    def _checkpoint_runtime(
+        self, *, lifecycle: str | None = None, event_cursor: int | None = None
+    ) -> None:
+        """Persist recoverable execution ownership before an API acknowledges it.
+
+        ``event_cursor`` lets a caller checkpoint *before* publishing an event
+        while still recording the sequence number that event will receive.
+        """
+        in_flight = self._in_flight or self._interrupted
         config = dict(self.session.config_json or {})
         previous = dict(config.get(_DURABLE_RUNTIME_KEY) or {})
         config[_DURABLE_RUNTIME_KEY] = {
@@ -408,10 +452,8 @@ class AgentSessionRuntime:
             "lifecycle": lifecycle or previous.get("lifecycle") or "admitted",
             "queue_paused": self._queue_paused,
             "queued_prompts": [item.model_dump(mode="json") for item in self._queue],
-            "in_flight": (
-                self._in_flight.model_dump(mode="json") if self._in_flight else None
-            ),
-            "last_event_cursor": self._seq,
+            "in_flight": in_flight.model_dump(mode="json") if in_flight else None,
+            "last_event_cursor": self._seq if event_cursor is None else event_cursor,
             "pending_permissions": list(self._permission_requests.values()),
             "pending_elicitations": list(self._elicitation_requests.values()),
             "pending_interaction": previous.get("pending_interaction"),
@@ -499,8 +541,26 @@ class AgentSessionRuntime:
             payload=payload,
         )
         self._transcript_buffer.append(te)
-        if len(self._transcript_buffer) > 4096:
+        if len(self._transcript_buffer) > 4096 and not self._backlog_overflowed:
+            # Make the hold visible and durable before refusing more events.
+            # The pause event itself may exceed the limit (the flag stops it
+            # from recursing); events after it are refused.
+            newly_paused = not self._queue_paused
             self._queue_paused = True
+            if newly_paused:
+                self._backlog_overflowed = True
+                try:
+                    self._append_transcript(
+                        "queue_paused", {"reason": "transcript_backlog_exceeded"}
+                    )
+                    self._checkpoint_runtime(lifecycle="paused")
+                except Exception:
+                    logger.exception(
+                        "Could not persist the transcript-backlog queue pause for %s",
+                        self.session_id,
+                    )
+                finally:
+                    self._backlog_overflowed = False
             raise RuntimeError(
                 "Transcript persistence backlog exceeded 4096 events; session paused"
             )
@@ -1229,6 +1289,26 @@ class AgentSessionRuntime:
                 lifecycle="prompting" if self._in_flight else "ready"
             )
 
+    def _restore_queue(self, queued_prompts: list[QueuedPrompt]) -> None:
+        """Restore persisted prompts, keeping their durable (possibly manual) order.
+
+        Only legacy entries written before priorities existed are classified
+        and sorted; otherwise sorting would undo an explicit reorder.
+        """
+        legacy = False
+        for item in queued_prompts:
+            item.session_id = self.session_id
+            if "priority" not in item.model_fields_set:
+                legacy = True
+                item.priority, item.turn_reason = _prompt_authority(
+                    item.source, "append"
+                )
+        self._queue = (
+            sorted(queued_prompts, key=lambda item: item.priority)
+            if legacy
+            else list(queued_prompts)
+        )
+
     async def start(
         self,
         *,
@@ -1366,13 +1446,7 @@ class AgentSessionRuntime:
             await self._save_session_preserving_external_browser_async()
         self._queue_paused = queue_paused
         if queued_prompts:
-            for item in queued_prompts:
-                item.session_id = self.session_id
-                if "priority" not in item.model_fields_set:
-                    item.priority, item.turn_reason = _prompt_authority(
-                        item.source, "append"
-                    )
-            self._queue = sorted(queued_prompts, key=lambda item: item.priority)
+            self._restore_queue(queued_prompts)
         self._append_transcript(
             "session_started",
             {
@@ -1617,20 +1691,36 @@ class AgentSessionRuntime:
             # Provider admission performs async work before _in_flight is set.
             # Keep ownership visible to receipt replay throughout that interval.
             self._draining_prompt = item
+            self._draining_cancel_epoch = self._cancel_epoch
+            self._draining_started = False
+            self._delivery_started = False
             self._queue.remove(item)
-            self._append_transcript(
-                "queue_dequeued",
-                {
-                    "id": item.id,
-                    "message": item.message,
-                    "source": item.source,
-                    "priority": item.priority,
-                    "turn_reason": item.turn_reason,
-                    "supersedes": item.supersedes,
-                },
-            )
+            self._recent_started_ids.append(item.id)
             try:
-                await self._run_prompt(item)
+                # Inside the guarded region so a failure here (for example a
+                # transcript backlog overflow) requeues the popped item.
+                self._append_transcript(
+                    "queue_dequeued",
+                    {
+                        "id": item.id,
+                        "message": item.message,
+                        "source": item.source,
+                        "priority": item.priority,
+                        "turn_reason": item.turn_reason,
+                        "supersedes": item.supersedes,
+                    },
+                )
+                result = await self._run_prompt(item)
+                if result == "connection_lost":
+                    # The interrupted prompt stays recoverable (checkpointed as
+                    # in_flight); stop draining so nothing overwrites that
+                    # until session recovery takes over.
+                    break
+                if result == "cancelled":
+                    # Not a completed turn: no restart receipt is delivered and
+                    # no publication fence is established. The prompt itself is
+                    # back at the head of the queue.
+                    continue
                 await self._refresh_restart_receipt(item)
                 receipt = self._restart_continuation_receipt(item)
                 if receipt is not None:
@@ -1666,15 +1756,33 @@ class AgentSessionRuntime:
                 break
             except Exception as exc:
                 logger.exception("Queued prompt failed for session %s", self.session_id)
-                self._append_transcript(
-                    "error",
-                    {"message": str(exc), "queued_prompt_id": item.id},
-                )
-                if not any(queued.id == item.id for queued in self._queue):
+                # The provider already received (and finished) this prompt: the
+                # failure is in post-turn bookkeeping. Requeueing it would send
+                # the same prompt to the agent twice.
+                delivered = self._delivered_prompt_id == item.id
+                try:
+                    self._append_transcript(
+                        "error",
+                        {
+                            "message": str(exc),
+                            "queued_prompt_id": item.id,
+                            "delivered": delivered,
+                        },
+                    )
+                except Exception:
+                    logger.exception("Could not record queued prompt failure")
+                if not delivered and not any(
+                    queued.id == item.id for queued in self._queue
+                ):
                     self._queue.insert(0, item)
-                await self._checkpoint_runtime_async(
-                    lifecycle="recoverable_interrupted"
-                )
+                try:
+                    await self._checkpoint_runtime_async(
+                        lifecycle="ready" if delivered else "recoverable_interrupted"
+                    )
+                except Exception:
+                    logger.exception("Could not checkpoint after queued prompt failure")
+                if delivered:
+                    continue
                 break
             finally:
                 self._restart_receipts.pop(item.id, None)
@@ -1724,8 +1832,7 @@ class AgentSessionRuntime:
             },
         )
         if not any(queued.id == item.id for queued in self._queue):
-            self._queue.insert(0, item)
-            self._queue.sort(key=lambda queued: queued.priority)
+            _insert_by_priority(self._queue, item, front=True)
         await self._checkpoint_runtime_async(lifecycle="admission_blocked")
         self._flush_transcript()
         block = (self.session.config_json or {}).get("execution_selection_block")
@@ -1823,11 +1930,9 @@ class AgentSessionRuntime:
             admission_pending=_durable_admission,
             admission_action=action if _durable_admission else None,
         )
-        if action in {"prepend", "interrupt"}:
-            self._queue.insert(0, item)
-        else:
-            self._queue.append(item)
-        self._queue.sort(key=lambda queued: queued.priority)
+        _insert_by_priority(
+            self._queue, item, front=action in {"prepend", "interrupt"}
+        )
         if _durable_admission:
             # Persist work before publishing acceptance. The per-item fence is
             # also restored after a crash, so no provider can overtake this save.
@@ -1837,6 +1942,17 @@ class AgentSessionRuntime:
                 self._queue = [queued for queued in self._queue if queued.id != item.id]
                 raise
             return item
+        # Persist before publishing acceptance: a failed checkpoint must leave
+        # no queue_enqueued event, otherwise a retry with the same prompt id
+        # would be reported as a duplicate of something that was never queued.
+        position = self._queue.index(item)
+        if not _is_automatic_source(source):
+            self._record_human_activity()
+        try:
+            self._checkpoint_runtime(lifecycle="queued", event_cursor=self._seq + 1)
+        except Exception:
+            self._queue = [queued for queued in self._queue if queued.id != item.id]
+            raise
         self._append_transcript(
             "queue_enqueued",
             {
@@ -1844,7 +1960,7 @@ class AgentSessionRuntime:
                 "message": message,
                 "images": [image.public_dict() for image in item.images],
                 "action": action,
-                "position": self._queue.index(item),
+                "position": position,
                 "source": source,
                 "priority": item.priority,
                 "turn_reason": item.turn_reason,
@@ -1852,13 +1968,6 @@ class AgentSessionRuntime:
                 "acceptance_result": item.acceptance_result,
             },
         )
-        if not _is_automatic_source(source):
-            self._record_human_activity()
-        try:
-            self._checkpoint_runtime(lifecycle="queued")
-        except Exception:
-            self._queue = [queued for queued in self._queue if queued.id != item.id]
-            raise
         self._flush_transcript()
         # The checkpoint above already includes human activity, the complete
         # queue and the assigned transcript cursor. Flushing only schedules
@@ -2014,7 +2123,16 @@ class AgentSessionRuntime:
         )
         if not wait and not _from_queue:
             # Chat UI / SSE path: accept immediately and run the turn in the background.
-            if self._queue_paused:
+            # Only an idle runtime with nothing waiting may start a prompt ahead
+            # of the queue. A non-empty queue, an active drain or a prompt that
+            # was dequeued but has not started a turn yet means this prompt
+            # waits its turn (FIFO by priority) like every other.
+            if (
+                self._queue_paused
+                or self._queue
+                or self._draining_prompt is not None
+                or (self._drain_task is not None and not self._drain_task.done())
+            ):
                 self.enqueue(
                     message,
                     images=images,
@@ -2037,6 +2155,11 @@ class AgentSessionRuntime:
                     "images": [image.public_dict() for image in item.images],
                     "action": "run",
                     "position": 0,
+                    "source": item.source,
+                    "priority": item.priority,
+                    "turn_reason": item.turn_reason,
+                    "supersedes": item.supersedes,
+                    "acceptance_result": item.acceptance_result,
                 },
             )
             self._flush_transcript()
@@ -2110,6 +2233,13 @@ class AgentSessionRuntime:
                 await self._finish_prompt_admission(item)
         if not self.connection:
             raise RuntimeError("Session not connected")
+        # A Stop issued after this point and before the provider receives the
+        # prompt must win. The drain captured the epoch when it dequeued us.
+        cancel_epoch = (
+            self._draining_cancel_epoch
+            if self._draining_prompt is item
+            else self._cancel_epoch
+        )
         item.cwd = self._validated_cwd(item.cwd)
         item.agent_env = self._merged_agent_env(item.agent_env)
         try:
@@ -2122,6 +2252,8 @@ class AgentSessionRuntime:
             logger.exception("Could not renew workspace lease for %s", self.session_id)
         async with self._prompt_lock:
             self._require_execution_context_active()
+            if self._cancel_epoch != cancel_epoch:
+                return await self._decline_cancelled_prompt(item)
             collaboration = getattr(self.manager, "collaboration_service", None)
             from pa.execution.selection_settings import apply_pending
 
@@ -2160,13 +2292,20 @@ class AgentSessionRuntime:
                 raise PromptAdmissionBlocked(
                     "Automatic prompt held: the queue was paused or its authorization changed during admission"
                 )
-            self._in_flight = item
-            self._turn_started_at = datetime.now(UTC)
-            self._turn_agent_events = []
-            self._turn_streamed = False
-            await self._supersede_obsolete_final_input_fallbacks(item)
-            await self._checkpoint_runtime_async(lifecycle="prompting")
             try:
+                # Everything from here to the provider call is inside the guard:
+                # a failure must clear _in_flight (and its checkpoint) instead
+                # of leaving the item both in flight and queued.
+                self._interrupted = None
+                self._delivered_prompt_id = None
+                self._delivery_started = False
+                self._draining_started = True
+                self._in_flight = item
+                self._turn_started_at = datetime.now(UTC)
+                self._turn_agent_events = []
+                self._turn_streamed = False
+                await self._supersede_obsolete_final_input_fallbacks(item)
+                await self._checkpoint_runtime_async(lifecycle="prompting")
                 composition = await self._offload(
                     "agent.prompt_compose",
                     compose_session_prompt,
@@ -2251,6 +2390,12 @@ class AgentSessionRuntime:
                 config["prompt_audit"] = audit_history[-50:]
                 self.session.config_json = config
                 await self._save_session_preserving_external_browser_async()
+                if self._cancel_epoch != cancel_epoch:
+                    # Stop arrived during admission/composition: nothing has been
+                    # shown or sent yet, so hand the prompt back untouched.
+                    return await self._decline_cancelled_prompt(
+                        item, selection_attempt
+                    )
                 if first_attempt:
                     if not self.session.title and item.source != "system":
                         fallback = clean_title(" ".join(item.message.split())[:80])
@@ -2293,6 +2438,12 @@ class AgentSessionRuntime:
                 try:
                     await self._offload("sqlite.recovery_delivery_guard",
                         self.store.require_session_delivery_allowed, self.session_id)
+                    if self._cancel_epoch != cancel_epoch:
+                        # Last chance: the provider has not seen this prompt, so
+                        # honour Stop and keep the prompt (the finally below
+                        # records the selection attempt as not completed).
+                        return await self._decline_cancelled_prompt(item)
+                    self._delivery_started = True
                     stop_reason = await self.connection.prompt(
                         composition.text,
                         images=item.images,
@@ -2302,10 +2453,15 @@ class AgentSessionRuntime:
                         cwd=item.cwd,
                     )
                     protocol_completed, selection_stop_reason = True, stop_reason
+                    self._delivered_prompt_id = item.id
                 except Exception as exc:
                     from pa.acp.errors import classify_acp_failure, format_acp_error
 
                     if self._is_connection_loss(exc):
+                        # The prompt may not have reached the agent. Keep it in
+                        # the durable checkpoint as in_flight so session
+                        # recovery re-sends it (with the resume preamble) once.
+                        self._interrupted = item
                         await self._finish_turn_state()
                         await self._notify_connection_lost(item, exc)
                         await self._drain_transcripts()
@@ -2347,7 +2503,17 @@ class AgentSessionRuntime:
                 self._flush_transcript()
                 await self._drain_transcripts()
                 final_text = assemble_final_assistant_message(self._turn_agent_events)
-                needs_input = await self._surface_final_input_fallback(final_text, item)
+                try:
+                    needs_input = await self._surface_final_input_fallback(
+                        final_text, item
+                    )
+                except Exception:
+                    # Optional notification; never fail (and requeue) a turn
+                    # the provider has already completed.
+                    logger.exception(
+                        "Could not surface final input fallback for %s", item.id
+                    )
+                    needs_input = False
                 metrics = dict(self.session.metrics_json or {})
                 metrics["turns"] = int(metrics.get("turns") or 0) + 1
                 self.session.metrics_json = metrics
@@ -2492,6 +2658,44 @@ class AgentSessionRuntime:
                         logger.exception(
                             "Could not persist execution-selection outcome evidence"
                         )
+
+    async def _decline_cancelled_prompt(
+        self, item: QueuedPrompt, selection_attempt=None
+    ) -> str:
+        """End a turn Stop pre-empted before the provider received the prompt.
+
+        The prompt is returned to the head of the queue (never lost, never
+        delivered) and the turn state is cleared.
+        """
+        if not any(queued.id == item.id for queued in self._queue):
+            self._queue.insert(0, item)
+        if selection_attempt:
+            try:
+                from pa.execution.selection_audit import finish_prompt
+
+                await self._offload(
+                    "selection.prompt_outcome",
+                    finish_prompt,
+                    self,
+                    selection_attempt,
+                    completed=False,
+                    latency_ms=0.0,
+                    stop_reason=None,
+                )
+            except Exception:
+                logger.exception("Could not persist execution-selection outcome evidence")
+        self._append_transcript(
+            "queue_reordered",
+            {
+                "ids": [queued.id for queued in self._queue],
+                "order": "manual",
+                "reason": "cancelled_before_delivery",
+                "prompt_id": item.id,
+            },
+        )
+        await self._finish_turn_state()
+        self._flush_transcript()
+        return "cancelled"
 
     async def _surface_final_input_fallback(
         self, final_text: str, item: QueuedPrompt
@@ -2715,8 +2919,26 @@ class AgentSessionRuntime:
         self._flush_transcript()
         self.manager.request_recovery(self.session_id)
 
+    def _awaiting_provider_delivery(self) -> bool:
+        """A prompt is dequeued or in flight but the provider has not got it yet."""
+        return (
+            self._in_flight is not None or self._draining_prompt is not None
+        ) and not self._delivery_started
+
+    def has_work_to_hold(self) -> bool:
+        """True when a Stop has queued (or about-to-be-delivered) prompts to hold."""
+        return bool(self._queue) or self._awaiting_provider_delivery()
+
     async def cancel(self, *, pause_queue: bool = True) -> None:
+        """Interrupt the current turn.
+
+        ``pause_queue=True`` is a user Stop: the queue (including a prompt Stop
+        pre-empts before the provider got it) is held until the user resumes.
+        Agent-internal interrupts pass ``pause_queue=False`` and keep draining.
+        """
         self._restart_receipts.clear()
+        self._cancel_epoch += 1
+        newly_paused = pause_queue and not self._queue_paused
         if pause_queue:
             self._queue_paused = True
         if self.connection:
@@ -2724,8 +2946,15 @@ class AgentSessionRuntime:
                 await self.connection.cancel()
             except Exception:
                 logger.exception("Cancel failed for session %s", self.session_id)
-        self._append_transcript("cancelled", {"pause_queue": pause_queue})
-        await self._checkpoint_runtime_async(lifecycle="ready")
+        self._append_transcript(
+            "cancelled",
+            {"pause_queue": pause_queue, "queue_paused": self._queue_paused},
+        )
+        if newly_paused:
+            self._append_transcript("queue_paused", {"reason": "stop"})
+        await self._checkpoint_runtime_async(
+            lifecycle="paused" if self._queue_paused and self._queue else "ready"
+        )
         self._flush_transcript()
         await self._drain_transcripts()
 
@@ -2767,7 +2996,13 @@ class AgentSessionRuntime:
 
     async def release_provider(self, *, reason: str) -> None:
         """Release an idle process without ending the durable conversation."""
-        if self.prompting or self._queue or self._pending_permissions or self._pending_elicitations:
+        if (
+            self.prompting
+            or self._queue
+            or self._draining_prompt is not None
+            or self._pending_permissions
+            or self._pending_elicitations
+        ):
             raise RuntimeError("Session still has active provider obligations")
         self.session.status = "available"
         self._append_transcript("provider_released", {"reason": reason})
@@ -2790,12 +3025,50 @@ class AgentSessionRuntime:
             self._flush_transcript()
         return removed
 
+    def prompt_started(self, prompt_id: str) -> bool:
+        """True when a prompt left the queue because its turn started or ended."""
+        return (
+            prompt_id in self._recent_started_ids
+            or (self._in_flight is not None and self._in_flight.id == prompt_id)
+            or (self._draining_prompt is not None and self._draining_prompt.id == prompt_id)
+        )
+
     def reorder_queue(self, prompt_ids: list[str]) -> list[QueuedPrompt]:
+        """Apply an explicit order to the queued prompts.
+
+        Duplicate ids keep their first position and unknown ids (already
+        dequeued, or never queued) are ignored, so a stale client can never
+        duplicate or resurrect a prompt. Queued prompts not named keep their
+        relative order after the named ones. The explicit order is
+        authoritative, including across priority classes: later enqueues are
+        placed by priority around it without reshuffling it.
+        """
         by_id = {q.id: q for q in self._queue}
-        ordered = [by_id[i] for i in prompt_ids if i in by_id]
-        remaining = [q for q in self._queue if q.id not in prompt_ids]
+        ordered: list[QueuedPrompt] = []
+        ignored: list[str] = []
+        seen: set[str] = set()
+        for prompt_id in prompt_ids:
+            if prompt_id in seen:
+                continue
+            seen.add(prompt_id)
+            if prompt_id in by_id:
+                ordered.append(by_id[prompt_id])
+            else:
+                ignored.append(prompt_id)
+        remaining = [q for q in self._queue if q.id not in seen]
         self._queue = ordered + remaining
-        self._append_transcript("queue_reordered", {"ids": [q.id for q in self._queue]})
+        self._append_transcript(
+            "queue_reordered",
+            {
+                "ids": [q.id for q in self._queue],
+                "order": "manual",
+                "ignored_ids": ignored,
+                "policy": (
+                    "Explicit order is kept across priority classes; new prompts "
+                    "are inserted by priority without reordering existing ones."
+                ),
+            },
+        )
         self._checkpoint_runtime(lifecycle="queued" if self._queue else "ready")
         self._flush_transcript()
         return list(self._queue)
@@ -3019,6 +3292,16 @@ class AgentSessionRuntime:
             }})
         return rows
 
+    def _starting_prompt_dump(self) -> dict[str, Any] | None:
+        draining = getattr(self, "_draining_prompt", None)
+        if (
+            draining is None
+            or self._in_flight is not None
+            or getattr(self, "_draining_started", False)
+        ):
+            return None
+        return draining.model_dump(mode="json")
+
     def snapshot(self, *, include_transcript: bool = True) -> dict[str, Any]:
         """Return runtime state, optionally including the bounded durable transcript.
 
@@ -3065,6 +3348,8 @@ class AgentSessionRuntime:
             "in_flight": self._in_flight.model_dump(mode="json")
             if self._in_flight
             else None,
+            # Dequeued but not yet in a turn: not in the queue, not in flight.
+            "starting": self._starting_prompt_dump(),
             "models": conn.models if conn else None,
             "modes": conn.modes if conn else None,
             "config_options": conn.config_options if conn else None,
@@ -3141,7 +3426,7 @@ class AgentSessionRuntime:
             prompting=False,
             queue_paused=self._queue_paused,
             queued_prompts=list(self._queue),
-            in_flight=self._in_flight,
+            in_flight=self._in_flight or self._interrupted,
         )
 
     async def close(
@@ -3516,7 +3801,13 @@ class AgentSessionManager:
                 ):
                     oldest_pending_admission = created_at
             runtime = self.get(session.id)
-            if admissions and runtime and not runtime._queue and not runtime._in_flight:
+            if (
+                admissions
+                and runtime
+                and not runtime._queue
+                and not runtime._in_flight
+                and not runtime._interrupted
+            ):
                 contradictory_states += 1
             if (
                 session.purpose == "chat"
@@ -5916,7 +6207,7 @@ class AgentSessionManager:
                         "source": "recovery",
                     }
                 )
-            queued.insert(0, interrupted)
+            _insert_by_priority(queued, interrupted, front=True)
         for item in queued:
             item.cwd = session.cwd
             merged_env = dict(item.agent_env or {})
