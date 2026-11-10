@@ -54,3 +54,39 @@ def test_current_benchmark_retention_budget():
     assert sum(p.stat().st_size for p in files) < 10 * 1024 * 1024
     assert all('.gz' not in p.name for p in files)
     assert all(p.stat().st_size <= 128 * 1024 for p in files if p.suffix == '.json')
+
+
+@pytest.mark.parametrize('fail', [False, True])
+def test_build_cleans_source_and_attests_only_its_wheel(tmp_path, monkeypatch, fail):
+    from contextlib import contextmanager
+    import json
+    import hashlib
+    roots = []
+    @contextmanager
+    def source(*args):
+        import tempfile
+        with tempfile.TemporaryDirectory(dir=tmp_path) as directory:
+            roots.append(Path(directory))
+            yield Path(directory), 'a' * 40, 123
+    monkeypatch.setattr(module, 'exported_source', source)
+    def build_command(command, *, cwd, check):
+        directory = Path(command[-1])
+        directory.mkdir()
+        (directory / 'current.whl').write_bytes(b'wheel')
+        if fail:
+            raise subprocess.CalledProcessError(1, command)
+    monkeypatch.setattr(module.subprocess, 'run', build_command)
+    output = tmp_path / 'output'
+    output.mkdir()
+    (output / 'previous.whl').write_bytes(b'rollback')
+    if fail:
+        with pytest.raises(subprocess.CalledProcessError):
+            module.build(tmp_path, 'HEAD', output)
+        assert not (output / 'current.whl').exists()
+    else:
+        module.build(tmp_path, 'HEAD', output)
+        manifest = json.loads((output / 'current.whl.attestation.json').read_text())
+        assert manifest['source_commit'] == 'a' * 40
+        assert manifest['wheels'] == {'current.whl': hashlib.sha256(b'wheel').hexdigest()}
+    assert all(not root.exists() for root in roots)
+    assert (output / 'previous.whl').read_bytes() == b'rollback'
