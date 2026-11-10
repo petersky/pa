@@ -83,6 +83,9 @@ def init_intake_schema(conn) -> None:
             ON intake_link_challenges(expires_at);
         """
     )
+    from pa.intake.telegram_push_store import init_schema
+
+    init_schema(conn)
 
 
 def _clean_payload(payload: dict[str, Any]) -> dict[str, Any]:

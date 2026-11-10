@@ -158,6 +158,76 @@ superseded states are labeled separately. Polling and fleet live-update events
 refresh state while non-sensitive drafts are retained by notification and field
 ID in session storage; sensitive drafts remain memory-only.
 
+## Stall notifications
+
+Most states where an agent is stuck used to leave no trace outside the card.
+`pa.notifications.stall.notify_stall(ctx, kind=..., subject_ids=..., title=...,
+body=..., severity=..., dedupe_key=...)` is the one call that creates a
+deduplicated notification for them. `severity` maps to priority
+(`info`->low, `warning`->normal, `error`->high, `critical`->urgent), and the
+`capability` field carries `stall:<kind>` so channels know what replies make
+sense. It never raises. A repeat call coalesces into the unresolved notification;
+after the owner resolves it the call is a no-op unless `reopen_resolved=True`.
+
+| Kind | Meaning | Default replies |
+| --- | --- | --- |
+| `prompt_failed` | a prompt/turn ended in an error | retry, take over, dismiss |
+| `connection_lost` | provider connection dropped mid-turn | retry, take over, dismiss |
+| `recovery_blocked` | session cannot be recovered automatically | retry, take over, dismiss |
+| `hung_turn` | no progress for too long | resume, take over, dismiss |
+| `verification_failed` | independent verification rejected the work | retry, take over, dismiss |
+| `acceptance_needed` | card waits for human acceptance | accept, dismiss |
+| `pr_closed` | supervised PR closed unmerged | dismiss |
+| `dispatch_failed` | a dispatch failed | retry, dismiss |
+| `completion_undeliverable` | finished work could not reach the card's authority | dismiss |
+| `schedule_failed` | scheduled prompt failed terminally (8 attempts) | retry, dismiss |
+| `manual_review` | post-turn evaluation escalated to a human | take over, dismiss |
+| `other` | anything else | dismiss |
+
+Wired today: dispatch worker failure, completion outbox giving up
+(`transport_exhausted`/`permanent_failure`), terminal scheduled-prompt failure and
+the post-turn `escalate_for_manual_review` action. The session queue, drain and
+recovery sites and the PR supervisor adopt the same call.
+
+## Telegram push and replies
+
+High-priority notifications (and every HIGH interaction: permission requests,
+elicitation, operator input, final-output fallback, goal approvals) can also be
+pushed to the owner's Telegram chat through the intake transport and bot token.
+It is off by default.
+
+Settings (all under *Channel intake*): `telegram_push_enabled` (false),
+`telegram_owner_chat_id`, `telegram_owner_user_id`, `telegram_owner_principal`
+(`user:local`), `telegram_push_min_priority` (`high`), `telegram_renotify_hours`
+(4, 0 disables), `telegram_renotify_max` (3), `telegram_push_rate_limit_per_hour`
+(20). Push also needs `telegram_bot_token`; replies additionally need the signed
+webhook (`telegram_webhook_secret` and `telegram_webhook_url`).
+
+Outbound: one concise message per notification (title, card/session, a redacted
+excerpt up to 700 characters, numbered choices and the valid replies, a `[#token]`
+and a link when `instance_url` is set). Sensitive interactions show no content.
+Sending runs on a background thread, so a Telegram outage never affects creating
+the in-app notification; failed first pushes are retried for an hour by the
+maintenance sweep, and unanswered ones are re-sent every N hours up to M times.
+
+Inbound: a reply is acted on only when it comes from the owner chat AND owner
+user. It binds to the notification whose pushed message it replies to, or whose
+`#token` starts the text; anything else is ordinary intake. Each Telegram update
+id is claimed once, and the action uses idempotency key `telegram:<update_id>`, so
+replays are harmless and a second answer gets "already answered". Replies call the
+same services as the web UI as `telegram_owner_principal` (or the principal a
+`/link` binding gives the owner user):
+
+* any text answers an operator question, elicitation or final-output fallback;
+  a number, option name, `approve` or `reject` picks a choice (`approve` never
+  selects an "always" grant); `cancel`; `retry` re-sends a failed answer delivery;
+* `take over` sets the session to human control, `resume` resumes its queue,
+  `retry` retries the session, the dispatch (fleet retry route) or the schedule
+  occurrence, `dismiss` resolves a stall notice;
+* `accept` is not performed: PA records a human acceptance only for a signed-in
+  browser session, so the reply points at the card unless an `accept_handler` is
+  installed on the `telegram_replies` service.
+
 ## Extension points
 
 Add a `NotificationType` without changing interaction delivery. Producers call
