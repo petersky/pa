@@ -26,6 +26,11 @@ The receipt records `closed_owner_empty_directories_only` and the missing
 checkpoint owner IDs. No session, checkpoint, lease ownership or queue is repaired
 or rewritten to make it eligible. Fixture files still require explicit idle proof.
 
+Both selected and ordinary Git worktree collection retain known durable queued
+or in-flight work and pending owner controls even after expiry, including when
+the provider runtime is offline. The checkpoint is read again immediately before
+native removal. Collection never drains, clears or rewrites those records.
+
 The server saves an intent receipt on the selected lease before unlinking exact
 inventoried files and removing empty directories. Read `workspace_leases` after
 any interrupted response; do not resend an uncertain mutation. A `disposing`
