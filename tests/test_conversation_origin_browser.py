@@ -228,7 +228,9 @@ async def test_fork_copy_fresh_source_navigation_reload_and_narrow_layout(operat
         assert forks.await_count == 1
         assert not ctx.store.list_transcript_events_before(copy_id, limit=100)
         # Empty new-thread path shares navigation only; no inherited history.
-        await wait_for("!document.querySelector('[data-thread-empty]').disabled")
+        # Session readiness enables the button before the separate thread-list
+        # request reveals its parent navigation. Wait for both before clicking.
+        await wait_for("!document.querySelector('[data-thread-navigation]').hidden && !document.querySelector('[data-thread-empty]').disabled")
         await manager.click(scope, selector="[data-thread-empty]")
         await wait_for("document.querySelector('[data-conversation-origin]').dataset.strategy === 'empty'")
         empty_id = calls[-1]["session_id"]
