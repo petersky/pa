@@ -66,6 +66,21 @@ async def test_loops_and_session_alarm(operator_server,tmp_path,width):
             assert await page.evaluate("document.querySelector('#records').textContent.includes('cancelled')")
             assert await page.evaluate("document.documentElement.scrollWidth <= innerWidth")
             assert await page.evaluate("document.querySelectorAll('#records article button').length") == 6  # Delete and History only.
+            await page.evaluate("""document.getElementById('name').value='UI loop';
+                document.getElementById('payload').value='UI reminder';
+                document.getElementById('source-session').value='viz-session';
+                document.getElementById('additional-destinations').value=JSON.stringify([{kind:'agent_session',target:'viz-session'}]);
+                document.getElementById('editor').requestSubmit();""")
+            await wait("[...document.querySelectorAll('#records article')].some(a=>a.querySelector('h2').textContent==='UI loop')")
+            action = """(([name,label])=>{const article=[...document.querySelectorAll('#records article')].find(a=>a.querySelector('h2').textContent===name);[...article.querySelectorAll('button')].find(b=>b.textContent===label).click();})"""
+            await page.evaluate(action + "(['UI loop','Edit'])")
+            await page.evaluate("document.getElementById('name').value='Edited UI loop';document.getElementById('editor').requestSubmit()")
+            await wait("[...document.querySelectorAll('#records h2')].some(a=>a.textContent==='Edited UI loop')")
+            for label,state in [('Pause','paused'),('Resume','active'),('Cancel','cancelled')]:
+                await page.evaluate(action + "(['Edited UI loop','"+label+"'])")
+                await wait("[...document.querySelectorAll('#records article')].some(a=>a.querySelector('h2').textContent==='Edited UI loop'&&a.querySelector('pre').textContent.includes('State: "+state+"'))")
+            await page.evaluate(action + "(['Edited UI loop','Delete'])")
+            await wait("![...document.querySelectorAll('#records h2')].some(a=>a.textContent==='Edited UI loop')")
         finally:
             await manager.close()
             await browser.close()
