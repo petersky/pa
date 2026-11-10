@@ -74,7 +74,7 @@ def seed(folder, population, members, payload_bytes):
             materialization_plan={'summary':'Synthetic retained plan '+str(i), 'input': 'x'*payload_bytes},
             placement_decision={'tie_breaking_reason':'Synthetic fixture; no admission'},
             request_payload={'private_prompt':'PRIVATE_SENTINEL','execution_selection':{'synthetic':True}},
-            card_snapshot={'body':'PRIVATE_SENTINEL'}, events=[{'state':'queued','message':'Synthetic unlaunched record'}])
+            card_snapshot={'body':'PRIVATE_SENTINEL'}, events=[{'seq':1,'state':'queued','message':'Synthetic unlaunched record'}])
         records.append(store.put(record))
     # Independent expected positions for the synthetic waiting rows, no queue controls.
     waiting = sorted((r for r in records if r.state=='waiting_capacity'), key=lambda r:(-r.requested_priority,r.scheduling_class_sequence,r.created_at,r.dispatch_id))
@@ -83,7 +83,7 @@ def seed(folder, population, members, payload_bytes):
 
 
 async def profile(folder, *, population, members, payload_bytes, iterations, progress):
-    folder.mkdir(); start=time.perf_counter(); store, registry, records, names=seed(folder,population,members,payload_bytes)
+    progress['phase']='setup'; folder.mkdir(); start=time.perf_counter(); store, registry, records, names=seed(folder,population,members,payload_bytes)
     setup_ms=(time.perf_counter()-start)*1000; runtime=AsyncRuntime()
     ctx=SimpleNamespace(settings=SimpleNamespace(data_dir=folder), services={'dispatch_store':store,'fleet_registry':registry,'async_runtime':runtime})
     app=FastAPI();app.state.ctx=ctx;app.include_router(fleet.router,prefix='/api')

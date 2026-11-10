@@ -28,3 +28,14 @@ def test_reference_selection_names_projection_and_limits():
     assert [x['dispatch_id'] for x in full]==list(map(str,reversed(range(6))))
     assert 'turn_end' in full[0] and full[0]['target_instance_name']=='Old target'
     assert benchmark.expected_rows(records,{}, {'target_instance_id':'absent'})==[]
+
+
+def test_seed_events_are_valid_and_private_fields_stay_private(tmp_path):
+    store,registry,records,names=benchmark.seed(tmp_path,24,4,1024)
+    try:
+        assert len(records)==24 and all(r.events[0].seq==1 for r in records)
+        expected=benchmark.expected_rows(records,names,{'limit':500,'view':'full'})
+        actual=[benchmark.fleet.canonicalize_dispatch_public(type('Ctx',(),{'services':{'fleet_registry':registry}})(),r) for r in store.list(limit=500)]
+        assert actual==expected
+        assert 'PRIVATE_SENTINEL' not in benchmark.json.dumps(actual)
+    finally:store.close()
