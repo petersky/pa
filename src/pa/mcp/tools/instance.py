@@ -250,6 +250,9 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         expected_updated_at; optional merged_pr_number admits cleanup-only
         primary GitHub revalidation. Recover uncertain effects with workspace_leases.
         This distinct route fails closed on servers without selected cleanup.
+        For a confirmed missing leased branch only, expected_actual_branch plus
+        expected_native_id admit cleanup-only reconciliation of the same session
+        branch prefix. No lease/provider rebind; all origin/custody guards remain.
         """
         runtime = ctx.require_service("async_runtime")
         return await runtime.run_blocking(
@@ -271,6 +274,8 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         idle/lease/HEAD proof and no open files. No reset, index or ref edits.
         After an uncertain response call status with the identical arguments;
         never repeat preserve. Selected cleanup still requires a clean tree.
+        The target may carry expected_actual_branch and expected_native_id for
+        exact closed-idle cleanup-only branch reconciliation; no refs are changed.
         """
         runtime = ctx.require_service('async_runtime')
         return await runtime.run_blocking('mcp.workspace_preserve_selected_untracked_http',

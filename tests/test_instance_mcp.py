@@ -52,7 +52,9 @@ def test_workspace_collect_selected_uses_distinct_route_and_exact_targets() -> N
     ctx = SimpleNamespace(settings=settings, require_service=lambda _:runtime)
     InstanceModule().register_mcp(mcp,ctx)
     targets=[{"lease_id":"a"*64,"expected_fence":12,"expected_head":"b"*40,
-              "expected_updated_at":"2026-11-08T00:00:00Z","merged_pr_number":359}]
+              "expected_updated_at":"2026-11-08T00:00:00Z","merged_pr_number":359,
+              "expected_actual_branch":"pa/session-final-review", "expected_native_id":"native-fixture",
+              "expected_owner_updated_at":"2026-08-23T05:45:15Z"}]
     asyncio.run(mcp.functions['workspace_collect_selected'](targets=targets))
     assert runtime.run_blocking.call_args.args[3:5] == ('POST', '/api/workspaces/collect-selected')
     assert runtime.run_blocking.call_args.kwargs['json'] == {'targets':targets}

@@ -107,7 +107,12 @@ class UntrackedPreservation:
 
     def operate(self, *, target, relative_path: str, attachment_path: Path,
                 attachment_sha256: str, principal: str, action: str) -> dict:
-        fingerprint = {'target': target.model_dump(mode='json'), 'relative_path': relative_path,
+        target_identity = target.model_dump(mode='json')
+        # Keep existing preservation operation identities byte-for-byte stable.
+        for optional in ('expected_actual_branch', 'expected_native_id', 'expected_owner_updated_at'):
+            if target_identity.get(optional) is None:
+                target_identity.pop(optional, None)
+        fingerprint = {'target': target_identity, 'relative_path': relative_path,
                        'attachment_sha256': attachment_sha256, 'principal': principal}
         key = hashlib.sha256(json.dumps(fingerprint, sort_keys=True).encode()).hexdigest()
         root = self.manager.root / 'preserved-untracked' / key
@@ -137,7 +142,7 @@ class UntrackedPreservation:
                 self.manager._assert_managed_path(Path(lease.cache_path))
                 if tree.is_symlink():
                     raise WorkspaceProvisioningError('Selected preservation worktree is unsafe')
-                self.manager._verify_worktree(Path(lease.cache_path), tree, lease)
+                self.manager._verify_selected_worktree(lease, target)
                 index = Path(self.manager._git('-C', str(tree), 'rev-parse', '--path-format=absolute',
                                                '--git-path', 'index').stdout.strip())
                 if index.is_symlink() or index.with_name('index.lock').exists():
@@ -161,6 +166,7 @@ class UntrackedPreservation:
                 _no_open_files(directory)
                 # Recheck immediately before the sole worktree mutation.
                 self.manager.selected_cleanup_leases([target])
+                self.manager._verify_selected_worktree(lease, target)
                 if _snapshot(directory, expected, single_file=single_file) != snapshot:
                     raise WorkspaceProvisioningError('Untracked directory changed during preservation')
                 if (self.manager._git('-C', str(tree), 'rev-parse', 'HEAD').stdout.strip() != target.expected_head
