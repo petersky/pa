@@ -2817,7 +2817,7 @@ class CardProjection:
             tags=data.tags,
             preferred_instance=data.preferred_instance,
             preferred_capabilities=data.preferred_capabilities,
-            completion_requirement=(data.completion_requirement.model_copy(update={"revision": str(uuid4())}) if data.completion_requirement else None),
+            completion_requirement=(data.completion_requirement.model_copy(update={"revision": str(uuid4()), "prior_revisions": []}) if data.completion_requirement else None),
             execution_preferences=data.execution_preferences,
             created_by_principal=principal_id,
             created_by_instance=instance_id,
@@ -3710,6 +3710,8 @@ class CardProjection:
         integration_evidence: CompletionEvidence | None = None,
         actor_session_id: str | None = None,
         actor_dispatch_id: str | None = None,
+        owner_channel: str | None = None,
+        channel_references: list[str] | None = None,
     ) -> Card | None:
         card = self.get_card(card_id, realm_id=realm_id)
         if not card:
@@ -3747,7 +3749,13 @@ class CardProjection:
             requirement = bind_verification_authority(requirement, instance_id)
             if requirement.schema_version != 1:
                 raise CompletionConflict("unsupported_completion_requirement")
-            requirement = requirement.model_copy(update={"revision": str(uuid4())})
+            from pa.domain.completion import requirement_covers
+            previous = card.completion_requirement
+            inherited = (
+                [*previous.prior_revisions, previous.revision][-20:]
+                if previous and previous.revision and requirement_covers(previous, requirement) else []
+            )
+            requirement = requirement.model_copy(update={"revision": str(uuid4()), "prior_revisions": inherited})
             updates["completion_requirement"] = requirement.model_dump(mode="json")
             if card.lane == CardLane.DONE and updates.get("lane") not in {CardLane.ACTIVE, CardLane.WAITING}:
                 raise CompletionConflict("completion_requirement_change_requires_reopen")
@@ -3783,7 +3791,10 @@ class CardProjection:
             if direct_human and principal_id.startswith("user:"):
                 if data.expected_version is None:
                     raise CompletionConflict("completion_override_requires_version")
-                receipts.append(CompletionEvidence(requirement_revision=requirement.revision, subject_revision=card.updated_at.isoformat(), actor=principal_id, instance_id=instance_id, recorded_at=now, idempotency_key=idempotency_key or str(uuid4()), outcome="human_override", actor_kind="human"))
+                # An owner reaching PA over an authenticated channel (for example a Telegram reply bound
+                # to the owner) is the same human override; the receipt records which channel it was.
+                channel = [f"channel:{owner_channel}", *(channel_references or [])] if owner_channel else []
+                receipts.append(CompletionEvidence(requirement_revision=requirement.revision, subject_revision=card.updated_at.isoformat(), actor=principal_id, instance_id=instance_id, recorded_at=now, idempotency_key=idempotency_key or str(uuid4()), outcome="human_override", actor_kind="human", references=channel))
             elif not completion_state(requirement, receipts)["accepted"]:
                 raise CompletionConflict(completion_state(requirement, receipts)["reason_code"])
             updates["completion_requirement"] = requirement.model_dump(mode="json")

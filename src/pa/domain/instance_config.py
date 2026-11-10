@@ -236,6 +236,22 @@ class InstanceConfig(BaseModel):
     )
     backup_verification_level: Literal["quick", "full"] = "full"
     completion_auto_verify_stalled_seconds: int = Field(default=24 * 60 * 60, ge=0, le=365 * 24 * 60 * 60)
+    # `active` is a deliberate milestone, not a default one: a declaration only keeps it when it is
+    # explicitly selected (CompletionRequirement.include_active). True restores the old behaviour.
+    completion_active_milestone_default: bool = False
+    # relaxed: a verifier is independent when it is a different session and a different service
+    # principal. strict: it must also run on a different instance and provider (the old rule).
+    completion_verifier_independence: Literal["relaxed", "strict"] = "relaxed"
+    # How many times a failed verification is fed back to the executor before PA stops and tells
+    # the owner. 0 restores the old behaviour (a failed verification is silently terminal).
+    completion_verifier_reengage_max: int = Field(default=1, ge=0, le=10)
+    # While a verification already ran for this requirement revision, wait until the newest integrated
+    # change is this old before verifying again, so a burst of merges is verified once, at its end.
+    completion_verification_quiet_seconds: int = Field(default=120, ge=0, le=24 * 60 * 60)
+    # Notify the owner when a card waits for their acceptance. False disables the notification.
+    completion_notify_acceptance_needed: bool = True
+    # Notify the owner when verification stays pending this long with nothing in flight (0 disables).
+    completion_verification_pending_notify_seconds: int = Field(default=2 * 60 * 60, ge=0, le=365 * 24 * 60 * 60)
     backup_compression: bool = True
     backup_io_limit_mib_per_second: float | None = Field(default=None, gt=0, le=10_000)
     backup_concurrency: Literal[1] = 1

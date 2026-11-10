@@ -1710,6 +1710,35 @@ class GoalSupervisorTests(unittest.TestCase):
             )
 
     def test_verifier_requires_separate_session_target_and_provider(self) -> None:
+        """Strict mode (and a supervisor wired without a mode) keeps the full separation."""
+        for mode in (None, "strict"):
+            with self.subTest(mode=mode):
+                outcomes = self._independence_outcomes(mode)
+                self.assertEqual(
+                    outcomes,
+                    {
+                        "missing real session": False,
+                        "same session": False,
+                        "same target": False,
+                        "same provider": False,
+                        "truly separate": True,
+                    },
+                )
+
+    def test_relaxed_verifier_needs_only_a_separate_session_and_principal(self) -> None:
+        """Single-user instances: same instance or provider is fine, the same session is not."""
+        self.assertEqual(
+            self._independence_outcomes(lambda: "relaxed"),
+            {
+                "missing real session": False,
+                "same session": False,
+                "same target": True,
+                "same provider": True,
+                "truly separate": True,
+            },
+        )
+
+    def _independence_outcomes(self, mode) -> dict[str, bool]:
         criterion = GoalCriterion(
             description="independently verified",
             verification_method="focused suite",
@@ -1813,6 +1842,9 @@ class GoalSupervisorTests(unittest.TestCase):
         supervisor = object.__new__(GoalSupervisor)
         supervisor.service_principal = "service:goal-supervisor:instance-a"
         supervisor.instance_id = "instance-a"
+        if mode is not None:
+            supervisor.verifier_independence = mode
+        outcomes: dict[str, bool] = {}
 
         def ingest_evidence_snapshot(
             current: Goal,
@@ -1861,21 +1893,18 @@ class GoalSupervisorTests(unittest.TestCase):
                     datetime.now(UTC),
                 )
                 self.assertTrue(changed)
-                if label == "truly separate":
-                    self.assertEqual(
-                        current.criteria[0].verdict,
-                        CriterionVerdict.SATISFIED,
-                    )
-                    self.assertEqual(
-                        current_verifier.state,
-                        WorkPackageState.VERIFIED,
-                    )
-                else:
+                independent = (
+                    current.criteria[0].verdict == CriterionVerdict.SATISFIED
+                    and current_verifier.state == WorkPackageState.VERIFIED
+                )
+                if not independent:
                     self.assertEqual(
                         current.criteria[0].verdict,
                         CriterionVerdict.PENDING,
                     )
                     self.assertIn("not independent", current_verifier.result_summary)
+                outcomes[label] = independent
+        return outcomes
 
     def test_operator_approval_survives_as_durable_correlated_interaction(
         self,

@@ -1680,6 +1680,7 @@ class GoalsModule(Module):
             dispatch=dispatch,
             governance=governance,
             default_provider=ctx.settings.agent_provider,
+            verifier_independence=lambda: ctx.settings.completion_verifier_independence,
         )
         ctx.register_service("goal_supervisor", supervisor)
         self._supervisor_stop: asyncio.Event | None = None

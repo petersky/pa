@@ -17,9 +17,13 @@ Security model (all enforced here, before any action):
   as the configured owner principal, so authorization and audit are unchanged.
 * Sensitive interactions are never answered over Telegram.
 
-Card acceptance is deliberately not performed from here: PA only records a human
-acceptance for a signed-in browser session. The ``accept`` reply therefore points
-the owner to the card, unless an ``accept_handler`` is installed.
+Card acceptance is the web UI's human override (a signed-in browser session). A Telegram
+reply is authenticated differently (owner chat and user, bound to one notification, replay
+safe), so it uses a parallel owner-channel path into the same store call: the receipt is
+the same ``human_override`` by the owner principal, with ``channel:telegram`` and the
+notification and update ids recorded in its references. Only an ``acceptance_needed``
+notification for a card whose requirement revision still matches can be accepted; anything
+stale is refused. A deployment can replace ``accept_handler``.
 """
 
 from __future__ import annotations
@@ -74,8 +78,8 @@ def _norm(text: str) -> str:
 class TelegramReplyRouter:
     def __init__(self, ctx) -> None:
         self.ctx = ctx
-        # Optional hook for deployments that can record a human acceptance.
-        self.accept_handler: Callable[[Notification, str, str], Awaitable[str | None]] | None = None
+        # Records a human acceptance; returns a reply, ``(reply, code)``, or None to fall back to the link.
+        self.accept_handler: Callable[[Notification, str, str], Awaitable[Any]] | None = self.accept_card
 
     # -- entry point ---------------------------------------------------------
 
@@ -458,9 +462,11 @@ class TelegramReplyRouter:
 
     async def _accept(self, notification: Notification, principal: str, key: str) -> tuple[str, str]:
         if self.accept_handler is not None:
-            message = await self.accept_handler(notification, principal, key)
-            if message:
-                return message, "accepted"
+            result = await self.accept_handler(notification, principal, key)
+            if isinstance(result, tuple):
+                return result
+            if result:
+                return result, "accepted"
         link = ""
         base = str(getattr(self.ctx.settings, "instance_url", "") or "").rstrip("/")
         if base and notification.card_id:
@@ -470,6 +476,60 @@ class TelegramReplyRouter:
             "done from Telegram." + link,
             "accept_unavailable",
         )
+
+    async def accept_card(
+        self, notification: Notification, principal: str, key: str
+    ) -> tuple[str, str] | None:
+        """Accept the card an ``acceptance_needed`` notification is about, as the owner."""
+        from pa.domain.models import CardLane, CardUpdate
+        from pa.domain.completion import CompletionConflict
+        from pa.domain.projection import CardVersionConflict
+
+        if stall_kind_of(notification) != StallKind.ACCEPTANCE_NEEDED or not notification.card_id:
+            return None
+        store = self.ctx.store
+        card = await asyncio.to_thread(store.get_card, notification.card_id, realm_id=notification.realm_id)
+        if card is None:
+            return None
+        if not principal.startswith("user:"):
+            return "Telegram replies can only accept as a PA user account.", "accept_refused"
+        requirement = card.completion_requirement
+        if card.lane == CardLane.DONE:
+            return "That card is already done. Nothing was changed.", "already"
+        requested = (notification.deduplication_key or "").rsplit(":", 1)[-1]
+        if (
+            requirement is None
+            or requirement.revision != requested
+            or card.completion_status["reason_code"] != "acceptance_pending"
+        ):
+            return (
+                "That acceptance request is out of date: the card or its requirement changed. "
+                "Review it in PA.",
+                "accept_stale",
+            )
+        try:
+            await asyncio.to_thread(
+                store.update_card,
+                card.id,
+                CardUpdate(lane=CardLane.DONE, expected_version=card.updated_at),
+                realm_id=card.realm_id,
+                principal_id=principal,
+                instance_id=self.ctx.settings.instance_id,
+                idempotency_key=key,
+                direct_human=True,
+                owner_channel="telegram",
+                channel_references=[f"notification:{notification.id}", f"telegram-update:{key}"],
+            )
+        except CardVersionConflict:
+            return "The card changed while you were answering. Review it in PA.", "accept_stale"
+        except CompletionConflict as exc:
+            return sanitize_text(f"Not accepted: {exc.code}", limit=300), "accept_refused"
+        service = self.ctx.require_service("notifications")
+        try:
+            await asyncio.to_thread(service.resolve, notification, principal_id=principal, idempotency_key=key)
+        except NotificationConflict:
+            pass  # the acceptance is recorded; the notice was already closed
+        return f"Accepted. {sanitize_text(card.title, limit=120)} is done.", "accepted"
 
     async def _retry(
         self, notification: Notification, principal: str, key: str, app: Any

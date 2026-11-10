@@ -62,6 +62,26 @@ Completion remains idempotent. Replaying the same acknowledged mutation returns
 the recorded disposition result, while a stale authority card version or a
 mismatched mutation, target, card, realm, or session is still rejected.
 
+## Last mile: getting finished cards to Done
+
+- `active` is an opt-in milestone. A declared requirement keeps it only with `include_active: true`
+  (or `completion_active_milestone_default=true`). `pa card drop-active` (dry-run; `--apply` to edit)
+  removes the default `active` from open requirements through the card API and completes cards that
+  then satisfy their requirement.
+- An edit that asks for nothing more than before (authority, pause, dropped milestone) keeps the receipts
+  of the earlier revision (`prior_revisions`); any change to criteria, mode, principals, policy or lineage does not.
+- A verifier that finishes without accepting has its findings fed back to the executor, at most
+  `completion_verifier_reengage_max` times per requirement revision, with a `verification_failed`
+  notification; the final failure stops and notifies. A newer merged head during a run is reported to the
+  verifier (`verification_newer_head_pending`) and verified once the run ends, after
+  `completion_verification_quiet_seconds` of quiet.
+- `completion_verifier_independence` (`relaxed` default, `strict`) governs goal verifiers: relaxed needs a
+  different session and service principal, strict also a different instance and provider. A session never
+  verifies or accepts its own work.
+- The owner is notified (`acceptance_needed`, with an accept action) when a merged card waits for acceptance, and
+  when verification stays pending with nothing in flight for `completion_verification_pending_notify_seconds`.
+  Replying `accept` on Telegram records the same human override as the web UI, with `channel:telegram` on the receipt.
+
 ## Autonomous verification
 
 An explicitly declared `independent_agent_v1` verification policy uses the same
