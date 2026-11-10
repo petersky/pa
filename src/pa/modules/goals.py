@@ -40,6 +40,9 @@ from pa.goals.governance import (
     GoalGovernanceService,
 )
 from pa.goals.models import (
+    GOAL_ACTION_CHOICES,
+    GOAL_ALWAYS_PERMITTED_ACTIONS,
+    GOAL_AUTONOMY_CHOICES,
     AssignedServiceGoalAuditCreate,
     AssignedServiceGoalEvidenceCreate,
     AssignedServiceGoalProposalCreate,
@@ -61,6 +64,7 @@ from pa.goals.models import (
     RequestOperatorAction,
     ReviseStrategyAction,
     TransitionGoalAction,
+    default_goal_policy,
 )
 from pa.goals.projection import find_goal_event_by_idempotency
 from pa.goals.providers import list_goal_adapter_capabilities
@@ -1029,6 +1033,10 @@ def create_goal_explicit(
         expected_version=expected_version,
         policy_revision=policy_revision,
     )
+    if "policy" not in body.model_fields_set:
+        # No policy supplied: use the plan-and-ask-before-dispatch default rather
+        # than the observe-only model default, which can never advance a goal.
+        body.policy = default_goal_policy()
     result = _run(lambda: _service(request).create(body, ctx))
     _wake_supervisor(request)
     return result.model_dump(mode="json")
@@ -1169,10 +1177,53 @@ def transition_goal(
         lambda: _governed_goal_mutation(
             request,
             goal_id,
-            "transition_goal",
+            # Deliberate stop controls are safety controls: governance never lets a
+            # goal's own permitted/prohibited action lists block them.
+            "pause_goal"
+            if body.state in {GoalState.PAUSED, GoalState.ABANDONED}
+            else "transition_goal",
             ctx,
             lambda: _service(request).transition(goal_id, body, ctx),
             operation_payload=body,
+        )
+    )
+    _wake_supervisor(request)
+    return result.model_dump(mode="json")
+
+
+@router.post("/goals/{goal_id}/work-packages/{package_id}/retry")
+def retry_goal_work_package(
+    request: Request,
+    goal_id: str,
+    package_id: str,
+    expected_version: int,
+    policy_revision: int,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    actor: Annotated[str, Header(alias="X-PA-Actor")] = "user:local",
+    authority: Annotated[str | None, Header(alias="X-PA-Authority-Instance")] = None,
+    fencing_token: Annotated[
+        int | None, Header(alias="X-PA-Goal-Fencing-Token")
+    ] = None,
+):
+    """Operator retry of a blocked or failed work package (and its goal)."""
+
+    ctx = _ctx(
+        request,
+        expected_version,
+        policy_revision,
+        idempotency_key,
+        actor,
+        authority,
+        fencing_token,
+    )
+    result = _run(
+        lambda: _governed_goal_mutation(
+            request,
+            goal_id,
+            "transition_goal",
+            ctx,
+            lambda: _service(request).retry_work_package(goal_id, package_id, ctx),
+            operation_payload={"retry_work_package": package_id},
         )
     )
     _wake_supervisor(request)
@@ -1627,6 +1678,10 @@ def _goals_context(request: Request) -> dict:
     realm_id = request.app.state.ctx.settings.primary_realm
     return {
         "goals": goals,
+        "owner_may_audit": request.app.state.ctx.settings.goal_owner_may_audit,
+        "autonomy_choices": GOAL_AUTONOMY_CHOICES,
+        "action_choices": GOAL_ACTION_CHOICES,
+        "always_permitted_actions": GOAL_ALWAYS_PERMITTED_ACTIONS,
         "autonomy": {item.id: governance.get_state(item.id) for item in goals},
         "governance_policy": governance.effective_policy(realm_id),
         "portfolio_review": governance.get_latest_review(realm_id),
@@ -1648,7 +1703,11 @@ class GoalsModule(Module):
         return "Durable goals, evidence, autonomy, provider adapters, and governance"
 
     def on_load(self, ctx: AppContext) -> None:
-        service = GoalService(ctx.store, ctx.settings.instance_id)
+        service = GoalService(
+            ctx.store,
+            ctx.settings.instance_id,
+            allow_owner_audit=ctx.settings.goal_owner_may_audit,
+        )
         ctx.register_service("goal_service", service)
         governance = GoalGovernanceService(
             ctx.store,
@@ -1681,6 +1740,9 @@ class GoalsModule(Module):
             governance=governance,
             default_provider=ctx.settings.agent_provider,
             verifier_independence=lambda: ctx.settings.completion_verifier_independence,
+            no_progress_seconds=ctx.settings.goal_drifting_after_seconds,
+            stalled_seconds=ctx.settings.goal_stalled_after_seconds,
+            owner_may_audit=ctx.settings.goal_owner_may_audit,
         )
         ctx.register_service("goal_supervisor", supervisor)
         self._supervisor_stop: asyncio.Event | None = None

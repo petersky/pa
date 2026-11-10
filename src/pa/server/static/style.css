@@ -5385,6 +5385,10 @@ a.ghost:hover {
 .goal-editor form,
 .goal-inline-form { display: grid; gap: 0.75rem; margin-block: 1rem; }
 .goal-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+.goal-policy-fields { display: grid; gap: 0.5rem; border: 1px solid var(--pa-border); border-radius: 0.5rem; padding: 0.75rem 1rem; }
+.goal-policy-fields legend { font-weight: 600; padding-inline: 0.25rem; }
+.goal-action-choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.35rem 1rem; }
+.goal-action-choices label { display: flex; gap: 0.5rem; align-items: center; font-weight: 400; }
 .goal-portfolio { margin-bottom: 1rem; }
 .goal-portfolio > header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .goal-portfolio > header strong { font-size: 1.05rem; }

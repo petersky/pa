@@ -515,6 +515,47 @@ class GoalPolicy(BaseModel):
     effective_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+# What the Goals page offers when shaping a goal's policy. request_operator (the
+# supervisor asking a human) and revise_goal (the operator's own edit control) are
+# always included: without them a goal cannot ask for approval or be edited.
+GOAL_AUTONOMY_CHOICES: tuple[tuple[int, str], ...] = (
+    (1, "Observe only: the supervisor can only ask you; you approve every step"),
+    (2, "Propose: the supervisor proposes each step and you approve it"),
+    (
+        3,
+        "Plan on its own, ask before dispatching agents (recommended): it creates "
+        "work packages itself and asks you before any agent is started",
+    ),
+    (4, "Plan and dispatch on its own: it also starts agents without asking"),
+)
+GOAL_ACTION_CHOICES: tuple[tuple[str, str], ...] = (
+    ("create_work_package", "Plan work (create work packages)"),
+    ("dispatch_work_package", "Start agents on that work"),
+    ("record_evidence", "Record evidence"),
+    ("revise_strategy", "Revise the strategy"),
+    ("audit_goal", "Record the completion audit"),
+    ("transition_goal", "Change the goal's lifecycle state"),
+)
+GOAL_ALWAYS_PERMITTED_ACTIONS: tuple[str, ...] = ("request_operator", "revise_goal")
+
+
+def default_goal_policy() -> GoalPolicy:
+    """Policy for a goal created without one: it can plan and ask before dispatch.
+
+    The bare GoalPolicy() (observe-only, nothing permitted) can never advance a
+    goal on its own, which is the wrong default for a goal an operator creates to
+    have work done.
+    """
+
+    return GoalPolicy(
+        autonomy_level=3,
+        permitted_actions=[
+            *GOAL_ALWAYS_PERMITTED_ACTIONS,
+            *(name for name, _label in GOAL_ACTION_CHOICES),
+        ],
+    )
+
+
 class GoalLease(BaseModel):
     holder_instance_id: GoalReferenceId | None = None
     fencing_token: int = Field(default=0, ge=0)
@@ -547,6 +588,9 @@ class GoalAudit(BaseModel):
     auditor_instance_id: GoalReferenceId | None = None
     verifier_service_id: GoalReferenceId | None = None
     independent: bool = True
+    # Set by the service (never accepted from a caller) when the goal's own owner
+    # recorded this audit under the instance's single-user setting.
+    owner_attested: bool = False
     verdict: CriterionVerdict
     criterion_verdicts: dict[GoalReferenceId, CriterionVerdict]
     evidence_ids: list[GoalReferenceId] = Field(default_factory=list)
@@ -907,6 +951,17 @@ class GoalSupervision(BaseModel):
     next_wakeup_at: datetime | None = None
     controller_session_id: GoalReferenceId | None = None
     replacement_session_ids: list[GoalReferenceId] = Field(default_factory=list)
+    # Durable record of supervision cycles that raised. A goal whose cycle keeps
+    # failing is retried with backoff and escalated to the owner instead of being
+    # retried silently every poll forever.
+    # Set when the supervisor itself stopped the goal because a human has to act
+    # (plan rejected or unappliable, required work failed). The supervisor holds
+    # still until an operator resumes the goal, which clears it.
+    parked_reason: str = Field(default="", max_length=2000)
+    consecutive_failures: int = Field(default=0, ge=0)
+    last_failure_at: datetime | None = None
+    last_failure_reason: str = Field(default="", max_length=2000)
+    retry_after: datetime | None = None
 
 
 class Goal(BaseModel):

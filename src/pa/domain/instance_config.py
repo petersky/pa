@@ -253,6 +253,16 @@ class InstanceConfig(BaseModel):
     )
     backup_verification_level: Literal["quick", "full"] = "full"
     completion_auto_verify_stalled_seconds: int = Field(default=24 * 60 * 60, ge=0, le=365 * 24 * 60 * 60)
+    # Durable goals.
+    # Seconds without real progress (heartbeat, checkpoint, queue movement) before
+    # a goal's in-flight work package is reported as drifting / stalled and blocked.
+    # 0 restores the previous behaviour, which counted 30 s supervision cycles
+    # (about 90 s / 180 s).
+    goal_drifting_after_seconds: int = Field(default=2 * 60 * 60, ge=0, le=30 * 24 * 60 * 60)
+    goal_stalled_after_seconds: int = Field(default=8 * 60 * 60, ge=0, le=30 * 24 * 60 * 60)
+    # Let the signed-in owner record the completion audit on a single-user instance
+    # (never when the audit would be by the executing service).
+    goal_owner_may_audit: bool = False
     # `active` is a deliberate milestone, not a default one: a declaration only keeps it when it is
     # explicitly selected (CompletionRequirement.include_active). True restores the old behaviour.
     completion_active_milestone_default: bool = False
