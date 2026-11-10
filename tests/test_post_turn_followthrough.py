@@ -613,3 +613,23 @@ def test_cancelled_turn_reaches_the_owner_as_a_manual_review_notification(tmp_pa
         assert asyncio.run(worker.run_once()) == 0
     reset_store()
     reset_instance_agent()
+
+
+def test_stale_whole_record_put_keeps_evaluator_evidence(tmp_path):
+    """Any holder of a pre-evaluation snapshot (worker, outbox, reconciler) can
+    still put() it without erasing what the authority wrote meanwhile."""
+    store, record = _record_with(tmp_path, [_snapshot(stop_reason="max_tokens")])
+    stale = DispatchRecord(
+        **{
+            **record.model_dump(),
+            "turn_end_snapshots": [],
+            "post_turn_evaluations": [],
+            "post_turn_context_digests": {},
+        }
+    )
+    stale.attempts += 1
+    store.put(stale)
+    kept = store.get("dispatch-1")
+    assert kept.attempts == stale.attempts
+    assert len(kept.turn_end_snapshots) == 1
+    assert len(kept.post_turn_evaluations) == 1
