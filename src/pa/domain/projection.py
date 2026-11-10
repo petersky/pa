@@ -3710,6 +3710,8 @@ class CardProjection:
         integration_evidence: CompletionEvidence | None = None,
         actor_session_id: str | None = None,
         actor_dispatch_id: str | None = None,
+        owner_channel: str | None = None,
+        channel_references: list[str] | None = None,
     ) -> Card | None:
         card = self.get_card(card_id, realm_id=realm_id)
         if not card:
@@ -3789,7 +3791,10 @@ class CardProjection:
             if direct_human and principal_id.startswith("user:"):
                 if data.expected_version is None:
                     raise CompletionConflict("completion_override_requires_version")
-                receipts.append(CompletionEvidence(requirement_revision=requirement.revision, subject_revision=card.updated_at.isoformat(), actor=principal_id, instance_id=instance_id, recorded_at=now, idempotency_key=idempotency_key or str(uuid4()), outcome="human_override", actor_kind="human"))
+                # An owner reaching PA over an authenticated channel (for example a Telegram reply bound
+                # to the owner) is the same human override; the receipt records which channel it was.
+                channel = [f"channel:{owner_channel}", *(channel_references or [])] if owner_channel else []
+                receipts.append(CompletionEvidence(requirement_revision=requirement.revision, subject_revision=card.updated_at.isoformat(), actor=principal_id, instance_id=instance_id, recorded_at=now, idempotency_key=idempotency_key or str(uuid4()), outcome="human_override", actor_kind="human", references=channel))
             elif not completion_state(requirement, receipts)["accepted"]:
                 raise CompletionConflict(completion_state(requirement, receipts)["reason_code"])
             updates["completion_requirement"] = requirement.model_dump(mode="json")
