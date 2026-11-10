@@ -4782,30 +4782,25 @@ class DispatchStore:
         recoverable: bool = True,
         detail: dict[str, Any] | None = None,
     ) -> DispatchRecord:
-        def mutate(current: DispatchRecord) -> bool:
-            # A settled outcome (cancel, completion) is never overwritten by a
-            # worker that failed while holding a stale snapshot.
-            if (
-                current.state in TERMINAL_DISPATCH_STATES | {"acknowledged", "completion_pending"}
-                or current.acknowledged_at is not None
-            ) and current.state != "failed":
-                return False
-            current.last_error = message
-            current.error_code = code
-            current.recoverable = recoverable
-            self.apply_transition(current, "failed", message, detail=detail)
-            return True
-
         with measured_lock(self._lock):
-            if record.dispatch_id not in self._records:
-                record.last_error = message
-                record.error_code = code
-                record.recoverable = recoverable
-                return self.transition(record, "failed", message, detail=detail)
-            fresh = self.mutate_current(record.dispatch_id, mutate=mutate)
-        for field in DispatchRecord.model_fields:
-            setattr(record, field, getattr(fresh, field))
-        return fresh
+            stored = self._records.get(record.dispatch_id)
+            if stored is not None and stored.state != "failed" and (
+                stored.state in TERMINAL_DISPATCH_STATES | {"acknowledged", "completion_pending"}
+                or stored.acknowledged_at is not None
+            ):
+                # A settled outcome (cancel, completion) is never overwritten by
+                # a worker that failed while holding a stale snapshot.
+                settled = self._snapshot(stored)
+                for field in DispatchRecord.model_fields:
+                    setattr(record, field, getattr(settled, field))
+                return settled
+            # The caller may have staged other field edits on ``record`` (for
+            # example a rejected admission verdict); they are persisted with the
+            # failure, exactly as before.
+            record.last_error = message
+            record.error_code = code
+            record.recoverable = recoverable
+            return self.transition(record, "failed", message, detail=detail)
 
     def expire_capacity_reservations(
         self,

@@ -1258,7 +1258,10 @@ class ProgressService:
                     self.instance_id,
                 )
                 for record, payload in pending:
-                    if self._backing_off(record.authority_instance_id):
+                    # Custom readers may yield opaque targets; only a known
+                    # authority can be backed off.
+                    authority = getattr(record, "authority_instance_id", None)
+                    if authority and self._backing_off(authority):
                         continue
                     await self._send(record, payload)
             except asyncio.CancelledError:
