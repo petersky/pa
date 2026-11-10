@@ -104,6 +104,15 @@ class EndpointHealthRegistry:
         with self._lock:
             return {key: dict(value) for key, value in self._states.items()}
 
+    def circuit_open(self, endpoint: str) -> bool:
+        """True while a known-down endpoint's backoff window has not elapsed."""
+        with self._lock:
+            state = self._states.get(endpoint.rstrip("/")) or {}
+        return (
+            state.get("state") == "down"
+            and float(state.get("next_probe_at") or 0.0) > time.time()
+        )
+
     def _save(self) -> None:
         atomic_write_json(
             self.path,

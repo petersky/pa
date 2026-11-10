@@ -152,6 +152,54 @@ class CardDispositionContractTests(unittest.TestCase):
         self.assertEqual(decision.status, "applied")
         self.assertEqual(decision.applied_lane, CardLane.DONE)
 
+    def _merged_watch(self, watch_id: str = "watch-1") -> PRWatch:
+        state = {
+            "state": "merged",
+            "head_sha": HEAD,
+            "confirmed_head_sha": HEAD,
+            "merge_commit_sha": MERGE,
+            "stable_green_evidence": {"green": True, "head_sha": HEAD},
+        }
+        return linked_watch(status=PRWatchStatus.MERGED, state=state).model_copy(
+            update={"id": watch_id}
+        )
+
+    def test_closed_or_retired_sibling_does_not_block_the_integrated_pr(self) -> None:
+        # "Current integration PR" == the watch the disposition evidence names.
+        for status in (PRWatchStatus.CLOSED, PRWatchStatus.RETIRED):
+            with self.subTest(status=status):
+                sibling = linked_watch(status=status).model_copy(
+                    update={"id": "watch-old", "pr_number": 16}
+                )
+                decision = decide_card_disposition(
+                    done_disposition(),
+                    current_lane=CardLane.WAITING,
+                    watches=[sibling, self._merged_watch()],
+                )
+                self.assertEqual(decision.status, "applied", decision.reason)
+                self.assertEqual(decision.applied_lane, CardLane.DONE)
+
+    def test_active_sibling_or_named_closed_pr_still_blocks_done(self) -> None:
+        active = linked_watch(status=PRWatchStatus.ACTIVE).model_copy(
+            update={"id": "watch-open", "pr_number": 18}
+        )
+        decision = decide_card_disposition(
+            done_disposition(),
+            current_lane=CardLane.WAITING,
+            watches=[active, self._merged_watch()],
+        )
+        self.assertEqual(decision.applied_lane, CardLane.WAITING)
+        self.assertIn("watch-open", decision.reason)
+        # Naming the closed watch as the integration keeps it a blocker.
+        closed = linked_watch(status=PRWatchStatus.CLOSED)
+        decision = decide_card_disposition(
+            done_disposition(watch_id="watch-1"),
+            current_lane=CardLane.WAITING,
+            watches=[closed],
+        )
+        self.assertEqual(decision.applied_lane, CardLane.WAITING)
+        self.assertIn("not merged", decision.reason)
+
     def test_exact_head_and_merge_commit_must_match(self) -> None:
         state = {
             "state": "merged",

@@ -713,6 +713,14 @@ class PRSupervisor:
     CAPABILITY_PROBE_SECONDS = 15 * 60
     CAPABILITY_ERROR_RETRY_SECONDS = 60
     CAPABILITY_HEARTBEAT_SECONDS = 60
+    # Best-effort peer replication runs off the supervision loop. A peer that
+    # fails is skipped (circuit open) with exponential backoff; queued posts are
+    # coalesced per (peer, watch) and dropped after bounded attempts.
+    REPLICATION_PEER_BASE_BACKOFF_SECONDS = 30.0
+    REPLICATION_PEER_MAX_BACKOFF_SECONDS = 300.0
+    REPLICATION_MAX_ATTEMPTS = 5
+    REPLICATION_QUEUE_LIMIT = 512
+    REPLICATION_IDLE_WAIT_SECONDS = 30.0
 
     def __init__(
         self,
@@ -731,8 +739,14 @@ class PRSupervisor:
         async_runtime: AsyncRuntime | None = None,
         rng: random.Random | None = None,
         eligibility_journal_hook=None,
+        endpoint_health=None,
+        notifications=None,
     ) -> None:
         self.eligibility_journal_hook = eligibility_journal_hook
+        # Callables returning the fleet EndpointHealthRegistry / NotificationService
+        # (resolved lazily: those services may start after this one).
+        self._endpoint_health = endpoint_health
+        self._notifications = notifications
         self.settings = settings
         self.domain_store = domain_store
         self.store = supervisor_store or PRSupervisorStore(
@@ -794,6 +808,10 @@ class PRSupervisor:
         self._lease_suppressed: dict[str, str] = {}
         self._lease_authority = self._lease_authority_key()
         self._worker_heartbeat: Callable[[], None] | None = None
+        self._replication_pending: dict[tuple[str, str, str], list[Any]] = {}
+        self._replication_task: asyncio.Task | None = None
+        self._replication_wake = asyncio.Event()
+        self._peer_down: dict[str, tuple[float, int]] = {}
         self._loop_supervisor = BackgroundTaskSupervisor(
             "pr-supervisor",
             self._run_loop,
@@ -830,9 +848,17 @@ class PRSupervisor:
         self._stopping = True
         await self._loop_supervisor.close()
         self._task = None
+        await self.stop_replication()
         self._clear_all_lease_state()
         if self._owns_http_client:
             await self.http_client.aclose()
+
+    async def stop_replication(self) -> None:
+        replication = self._replication_task
+        self._replication_task = None
+        if replication and not replication.done():
+            replication.cancel()
+            await asyncio.gather(replication, return_exceptions=True)
 
     async def _run_loop(self, heartbeat: Callable[[], None] | None = None) -> None:
         self._worker_heartbeat = heartbeat
@@ -924,6 +950,9 @@ class PRSupervisor:
         await self._prune_lease_state(capability)
         await self._renew_due_local_leases(capability)
         await self._reconcile_merged_cards()
+        # The reconcile pass is time-bounded, but renew again so a slow pass can
+        # never push a held lease past its renewal window.
+        await self._renew_due_local_leases(capability)
         due = await self._offload("sqlite.pr_supervisor_due_read", self.store.list_due)
         if not due:
             return
@@ -1975,6 +2004,9 @@ class PRSupervisor:
                     head_sha=snapshot.head_sha,
                     payload={"url": snapshot.url},
                 )
+                # Tell the agent and a human before the watch goes terminal: an
+                # effect may only be authorized for an actionable, leased watch.
+                await self._notify_closed(watch, snapshot)
                 terminal = await self._offload(
                     "sqlite.pr_supervisor_watch_write",
                     self.store.set_terminal,
@@ -2157,6 +2189,87 @@ class PRSupervisor:
                     "stale_fences",
                 )
 
+    async def _notify_closed(self, watch: PRWatch, snapshot: PRSnapshot) -> None:
+        """Once per watch: prompt the originating session and raise a notification."""
+        try:
+            current = await self._offload(
+                "sqlite.pr_supervisor_watch_read", self.store.get_watch, watch.id
+            )
+            current = current or watch
+            if watch.policy.auto_notify and current.originating_session_id:
+                gate = GateResult(
+                    reasons=["pull request closed without merge"],
+                    fingerprint=f"closed:{snapshot.head_sha}",
+                )
+                prompt = build_executor_prompt_rendered(
+                    current,
+                    snapshot,
+                    gate,
+                    green=False,
+                    closed=True,
+                    provider=current.originating_agent or "default",
+                )
+                event_key = (
+                    f"{current.id}:closed:{current.originating_session_id}"
+                    ":pull_request_closed"
+                )
+                state = await self._dispatch_authorized_effect(
+                    current, event_key, prompt, effect_kind="pull_request_closed"
+                )
+                logger.info(
+                    "PR supervisor closed-PR prompt watch=%s state=%s", watch.id, state
+                )
+        except Exception as exc:  # noqa: BLE001 - never block retirement on delivery
+            logger.warning(
+                "PR supervisor closed-PR prompt failed watch=%s: %s",
+                watch.id,
+                type(exc).__name__,
+            )
+        try:
+            await self._offload(
+                "sqlite.notification_write", self._raise_closed_notification, watch
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "PR supervisor closed-PR notification failed watch=%s: %s",
+                watch.id,
+                type(exc).__name__,
+            )
+
+    def _raise_closed_notification(self, watch: PRWatch) -> None:
+        provider = self._notifications
+        service = provider() if callable(provider) else provider
+        if service is None:
+            return
+        from pa.domain.notifications import (
+            NotificationCreate,
+            NotificationSeverity,
+            NotificationType,
+        )
+
+        service.create(
+            NotificationCreate(
+                realm_id=watch.realm_id,
+                type=NotificationType.PR_EVENT,
+                severity=NotificationSeverity.WARNING,
+                title=f"PR #{watch.pr_number} was closed without merging",
+                body=(
+                    f"{watch.repository}#{watch.pr_number} was closed on GitHub "
+                    "without being merged. The linked card was not completed."
+                ),
+                summary="Pull request closed without merge.",
+                card_id=watch.card_id,
+                session_id=watch.originating_session_id,
+                project_id=watch.project_id,
+                pr_number=watch.pr_number,
+                watch_id=watch.id,
+                source_url=watch.pr_url,
+                deduplication_key=f"pr-supervisor:{watch.id}:closed-unmerged",
+            ),
+            principal_id="instance:pr-supervisor",
+            instance_id=self.settings.instance_id,
+        )
+
     async def _notify(
         self,
         watch: PRWatch,
@@ -2217,7 +2330,9 @@ class PRSupervisor:
             await self._audit(
                 watch,
                 "effect_delivery_result",
-                f"{event_key}:delivery:{state}:{uuid4()}",
+                # Idempotent per (effect, outcome): a poll that re-observes the
+                # same deduplicated/queued outcome must not append a new row.
+                f"{event_key}:delivery:{state}",
                 head_sha=snapshot.head_sha,
                 fingerprint=effect_fingerprint,
                 payload={
@@ -2249,7 +2364,8 @@ class PRSupervisor:
             await self._audit(
                 watch,
                 "effect_delivery_result",
-                f"{event_key}:delivery:error:{uuid4()}",
+                f"{event_key}:delivery:error:"
+                f"{hashlib.sha256(str(exc).encode()).hexdigest()[:12]}",
                 head_sha=snapshot.head_sha,
                 fingerprint=effect_fingerprint,
                 payload={
@@ -2319,7 +2435,11 @@ class PRSupervisor:
         prompt = str(payload.get("prompt") or "")
         effect_kind = str(payload.get("effect_kind") or "")
         event_key = str(payload.get("event_key") or "")
-        if effect_kind not in {"action_required", "green_for_agent_merge"}:
+        if effect_kind not in {
+            "action_required",
+            "green_for_agent_merge",
+            "pull_request_closed",
+        }:
             raise RuntimeError("unsupported_pr_watch_effect")
         if (
             not prompt
@@ -2568,8 +2688,25 @@ class PRSupervisor:
             "sqlite.pr_supervisor_completion_due_read",
             self.store.list_card_completion_due,
         )
+        budget = float(
+            getattr(self.settings, "pr_supervisor_reconcile_budget_seconds", 5.0)
+        )
+        deadline = self._monotonic() + budget
         for watch in watches:
+            if self._worker_heartbeat:
+                self._worker_heartbeat()
             await self._complete_merged_card(watch)
+            # One evaluation per card: share the outcome with its other merged watches.
+            siblings = await self._offload(
+                "sqlite.pr_supervisor_watch_write",
+                self.store.propagate_card_completion,
+                watch.id,
+            )
+            for sibling in siblings:
+                await self._replicate(sibling)
+            if self._monotonic() >= deadline:
+                # Remaining cards stay due and are picked up on the next pass.
+                break
 
     @staticmethod
     def _card_completion_retry(watch: PRWatch, reason: str) -> dict[str, Any]:
@@ -2591,6 +2728,33 @@ class PRSupervisor:
         )
         await self._replicate(deferred)
 
+    async def _orphan_card_completion(self, watch: PRWatch, reason: str) -> None:
+        """Terminal state for a merged watch whose card no longer exists."""
+        state = dict(watch.state)
+        attempts = int((state.pop("card_completion_retry", None) or {}).get("attempts", 0)) + 1
+        state["card_completion_orphan"] = {
+            "reason": reason[:1000],
+            "attempts": attempts,
+            "orphaned_at": utcnow().isoformat(),
+        }
+        orphaned = await self._offload(
+            "sqlite.pr_supervisor_watch_write", self.store.set_terminal,
+            watch.id, PRWatchStatus.MERGED, state=state,
+        )
+        self._forget_watch(watch.id)
+        await self._audit(
+            orphaned or watch,
+            "card_completion_orphaned",
+            f"{watch.id}:card-completion:orphaned",
+            payload={"error": reason, "attempts": attempts},
+        )
+        await self._offload(
+            "sqlite.pr_supervisor_metric",
+            self.store.increment_metric,
+            "card_completion_orphaned",
+        )
+        await self._replicate(orphaned)
+
     async def _complete_merged_card(self, watch: PRWatch | None) -> None:
         if not watch or not watch.card_id or watch.state.get("card_lane") == "done":
             return
@@ -2601,6 +2765,15 @@ class PRSupervisor:
             realm_id=watch.realm_id,
         )
         if not card:
+            previous = int(
+                (watch.state.get("card_completion_retry") or {}).get("attempts", 0)
+            )
+            limit = int(
+                getattr(self.settings, "pr_supervisor_orphan_card_max_attempts", 8)
+            )
+            if previous + 1 >= limit:
+                await self._orphan_card_completion(watch, "linked card is missing")
+                return
             await self._defer_card_completion(watch, "linked card is missing")
             await self._audit(
                 watch,
@@ -3280,55 +3453,109 @@ class PRSupervisor:
                         ttl=self.CAPABILITY_TTL_SECONDS, now=utcnow()).model_copy(update={"history_seconds": history_seconds})
 
     async def _replicate(self, watch: PRWatch | None) -> None:
+        """Queue best-effort replication; never wait on a peer."""
         if not watch:
             return
-        urls = self._fleet_urls()
-        if not urls:
-            return
-        payload = {"watch": watch.model_dump(mode="json")}
-        results = await asyncio.gather(
-            *(
-                self._post_json(f"{url}/api/pr-supervisor/replicas", payload)
-                for url in urls
-            ),
-            return_exceptions=True,
+        self._enqueue_peer_post(
+            "/api/pr-supervisor/replicas",
+            watch.id,
+            {"watch": watch.model_dump(mode="json")},
         )
-        failures = sum(1 for result in results if isinstance(result, Exception))
-        if failures:
-            await self._offload(
-                "sqlite.pr_supervisor_metric",
-                self.store.increment_metric,
-                "replication_errors",
-                failures,
-            )
 
     async def _broadcast_retirement(self, watch: PRWatch) -> None:
-        urls = self._fleet_urls()
-        if not urls:
-            return
         retired_at = watch.retired_at or watch.updated_at
-        event_key = f"{watch.id}:retired:{retired_at.isoformat()}"
-        results = await asyncio.gather(
-            *(
-                self._post_json(
-                    f"{url}/api/pr-supervisor/retirements",
-                    {
-                        "watch": watch.model_dump(mode="json"),
-                        "event_key": event_key,
-                    },
-                )
-                for url in urls
-            ),
-            return_exceptions=True,
+        self._enqueue_peer_post(
+            "/api/pr-supervisor/retirements",
+            watch.id,
+            {
+                "watch": watch.model_dump(mode="json"),
+                "event_key": f"{watch.id}:retired:{retired_at.isoformat()}",
+            },
         )
-        failures = sum(1 for result in results if isinstance(result, Exception))
-        if failures:
-            await self._offload(
-                "sqlite.pr_supervisor_metric",
-                self.store.increment_metric,
-                "replication_errors",
-                failures,
+
+    def _enqueue_peer_post(self, path: str, watch_id: str, payload: dict[str, Any]) -> None:
+        urls = self._fleet_urls()
+        if not urls or self._stopping:
+            return
+        for url in sorted(urls):
+            key = (url, path, watch_id)
+            # Latest state wins; re-inserting keeps enqueue order across keys so a
+            # watch's replica is still delivered before its retirement.
+            self._replication_pending.pop(key, None)
+            self._replication_pending[key] = [payload, 0]
+        while len(self._replication_pending) > self.REPLICATION_QUEUE_LIMIT:
+            self._replication_pending.pop(next(iter(self._replication_pending)))
+        task = self._replication_task
+        if task is None or task.done():
+            self._replication_task = asyncio.create_task(
+                self._drain_replication(), name="pr-supervisor-replication"
             )
+        self._replication_wake.set()
+
+    def _peer_circuit_open(self, url: str) -> bool:
+        down = self._peer_down.get(url)
+        if down and down[0] > self._monotonic():
+            return True
+        provider = self._endpoint_health
+        registry = provider() if callable(provider) else provider
+        check = getattr(registry, "circuit_open", None)
+        return bool(check and check(url))
+
+    def _peer_failed(self, url: str) -> None:
+        failures = self._peer_down.get(url, (0.0, 0))[1] + 1
+        delay = min(
+            self.REPLICATION_PEER_MAX_BACKOFF_SECONDS,
+            self.REPLICATION_PEER_BASE_BACKOFF_SECONDS * 2 ** (failures - 1),
+        )
+        self._peer_down[url] = (self._monotonic() + delay, failures)
+
+    async def _drain_replication(self) -> None:
+        pending = self._replication_pending
+        while pending and not self._stopping:
+            self._replication_wake.clear()
+            by_peer: dict[str, list[tuple[str, str, str]]] = {}
+            for key in list(pending):
+                if not self._peer_circuit_open(key[0]):
+                    by_peer.setdefault(key[0], []).append(key)
+            if not by_peer:
+                # Every queued peer is known down: wait for new work or the
+                # earliest circuit to close instead of dialing a dead host.
+                wait = self.REPLICATION_IDLE_WAIT_SECONDS
+                try:
+                    await asyncio.wait_for(self._replication_wake.wait(), wait)
+                except TimeoutError:
+                    pass
+                continue
+            await asyncio.gather(
+                *(self._drain_peer(url, keys) for url, keys in by_peer.items()),
+                return_exceptions=True,
+            )
+
+    async def _drain_peer(self, url: str, keys: list[tuple[str, str, str]]) -> None:
+        pending = self._replication_pending
+        for key in keys:
+            entry = pending.get(key)
+            if entry is None:
+                continue
+            try:
+                await self._post_json(f"{url}{key[1]}", entry[0])
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001 - peers are best effort
+                self._peer_failed(url)
+                await self._offload(
+                    "sqlite.pr_supervisor_metric",
+                    self.store.increment_metric,
+                    "replication_errors",
+                )
+                if pending.get(key) is entry:
+                    entry[1] += 1
+                    if entry[1] >= self.REPLICATION_MAX_ATTEMPTS:
+                        pending.pop(key, None)
+                return  # peer is failing; do not spend a timeout per queued item
+            self._peer_down.pop(url, None)
+            if pending.get(key) is entry:
+                pending.pop(key, None)
 
     def _fleet_urls(self) -> set[str]:
         urls = set(self.settings.peers)

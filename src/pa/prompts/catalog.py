@@ -545,6 +545,18 @@ committed/pushed and all existing repository cleanup rules are satisfied.""",
 )
 
 _register(
+    key="pr_supervisor.action.closed",
+    purpose="Tell an executor its pull request was closed without being merged.",
+    scope="pr-supervisor",
+    version=1,
+    template="""GitHub reports this PR was closed without being merged, so the supervisor has
+stopped watching it. Do not assume the work landed or mark the card Done. Check why it
+was closed (superseded, abandoned, or closed by mistake). If the change is still
+wanted, reopen the PR or open a replacement and register it for supervision;
+otherwise record why the work is being dropped and update the card accordingly.""",
+)
+
+_register(
     key="pr_supervisor.executor",
     purpose="Wrap a supervisor action with trusted watch context and redacted untrusted GitHub data.",
     scope="pr-supervisor",

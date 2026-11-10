@@ -33,6 +33,8 @@ class InstanceConfig(BaseModel):
     fleet_owner: str = "local"
     fleet_owner_url: str = ""
     pr_supervisor_authority_url: str = ""
+    pr_supervisor_reconcile_budget_seconds: float = Field(default=5.0, ge=0.5, le=60)
+    pr_supervisor_orphan_card_max_attempts: int = Field(default=8, ge=1, le=100)
     instance_url: str = ""
     host: str = ""
     web_listeners: list[str] = Field(default_factory=list)

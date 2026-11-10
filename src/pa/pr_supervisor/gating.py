@@ -274,11 +274,14 @@ def build_executor_prompt_rendered(
     *,
     green: bool,
     merged: bool = False,
+    closed: bool = False,
     provider: str = "default",
 ) -> RenderedPrompt:
     action_key = (
         "pr_supervisor.action.merged"
         if merged
+        else "pr_supervisor.action.closed"
+        if closed
         else "pr_supervisor.action.green"
         if green
         else "pr_supervisor.action.required"
@@ -286,7 +289,13 @@ def build_executor_prompt_rendered(
     action = PROMPTS.render(action_key, provider=provider)
     reasons = "\n".join(f"- {reason}" for reason in gate.reasons)
     if not reasons:
-        reasons = "- all gate conditions satisfied" if green else "- merged"
+        reasons = (
+            "- all gate conditions satisfied"
+            if green
+            else "- closed without merge"
+            if closed
+            else "- merged"
+        )
     return PROMPTS.render(
         "pr_supervisor.executor",
         {
