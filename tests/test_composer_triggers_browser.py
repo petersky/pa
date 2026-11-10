@@ -68,6 +68,51 @@ async def test_slash_and_dollar_menus_complete_text_without_running_anything(ope
         assert await page.evaluate(menu_open)
         assert await page.evaluate(titles) == ["/pa:mode", "/rename", "/review"]  # skills never appear under "/"
 
+        # Outside dismissal works across the shell and keeps inside interactions intact.
+        await page.evaluate("document.querySelector('[data-acw-title]').click()")
+        assert not await page.evaluate(menu_open)
+        for selector in ('.acw-settings-menu', '.acw-session-menu', '.acw-send-menu'):
+            await page.evaluate(f"document.querySelector('{selector}').open = true")
+            await page.evaluate(f"document.querySelector('{selector}').dispatchEvent(new MouseEvent('click', {{bubbles:true}}))")
+            assert await page.evaluate(f"document.querySelector('{selector}').open")
+            await page.evaluate("document.querySelector('[data-acw-title]').click()")
+            assert not await page.evaluate(f"document.querySelector('{selector}').open")
+        # Newly inserted card menus need no per-node binding; disclosures stay open.
+        await page.evaluate("""document.body.insertAdjacentHTML('beforeend',
+            '<details data-card-action-menu id="menu-test"><summary>Actions</summary><button>Inside</button></details>' +
+            '<details id="disclosure-test" open><summary>Evidence</summary>Reference</details>')""")
+        await page.evaluate("document.querySelector('#menu-test').open = true; document.querySelector('#menu-test button').click()")
+        assert await page.evaluate("document.querySelector('#menu-test').open")
+        await page.evaluate("document.querySelector('[data-acw-title]').click()")
+        assert not await page.evaluate("document.querySelector('#menu-test').open")
+        assert await page.evaluate("document.querySelector('#disclosure-test').open")
+        await page.evaluate("""const m = document.querySelector('#menu-test'); m.open = true;
+            m.querySelector('button').focus();
+            m.querySelector('button').dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}));""")
+        assert await page.evaluate("!document.querySelector('#menu-test').open && document.activeElement.matches('#menu-test summary')")
+        await page.evaluate("document.querySelector('#menu-test').remove(); document.querySelector('#disclosure-test').remove()")
+        assert not await page.evaluate("!!document.querySelector('[data-acw-clear-draft]')")
+        # Verify real CSS at desktop and phone widths, including the autosize fallback.
+        for width in (1280, 390):
+            await page.resize(width, 900)
+            dimensions = await page.evaluate("""(() => {
+                const w = document.querySelector('[data-agent-chat]')._acw;
+                w.setTurnActive(true);
+                const i = w.els.input; i.value = Array(20).fill('long draft').join('\\n');
+                const supports = CSS.supports; CSS.supports = () => false;
+                w.autosizeInput(); CSS.supports = supports;
+                const stop = w.els.stop, attach = document.querySelector('[data-acw-attach]');
+                const a = stop.getBoundingClientRect(), b = attach.getBoundingClientRect(), c = i.getBoundingClientRect();
+                const style = getComputedStyle(i);
+                return {label: stop.getAttribute('aria-label'), text: stop.textContent.trim(),
+                    above: a.bottom <= b.top, left: a.right <= c.left, scroll: i.scrollHeight > i.clientHeight,
+                    capped: c.height <= parseFloat(style.lineHeight) * 6 + 24,
+                    fits: c.right <= innerWidth, queue: w.els.send.textContent};
+            })()""")
+            assert dimensions == dict(label="Stop response", text="", above=True, left=True,
+                                      scroll=True, capped=True, fits=True, queue="Queue")
+        await page.resize(1280, 900)
+
         await page.evaluate(f"{type_text}(['$', 1])")
         assert await page.evaluate(titles) == ["$google-drive:google-docs", "$seed"]
 

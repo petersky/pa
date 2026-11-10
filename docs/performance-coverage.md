@@ -2,6 +2,10 @@
 > snapshots are now linked to their original Git revision. Earlier statements about
 > retaining all stages describe that revision. See [current retention policy](benchmarks/README.md).
 
+## Current bounded performance work
+
+[One current compact report](performance-current.json) records the transcript GC read-batching repair and aggregate validation. Speculative reads increase128→1024 filenames while every fresh deletion proof and publication-lock hold remains bounded to128 candidates. The final mixed fixture median improves220.611→190.429ms and p95275.935→215.031ms across12 alternating pairs;61 regressions pass. New disposable fixtures are removed on success/failure, with no raw captures or mirrored histories retained. All755 findings/185 concerns remain open; this is source validation, not deployed or whole-card acceptance.
+
 ## Automatic maintenance startup ordering — 2026-11-08
 
 **753 findings / 185 concerns remain open.** [Complete source and workload evidence](benchmarks/systemic-maintenance-startup-order-20261108.json) preserves every earlier row and failure. The extra concern records fixture sibling-task ownership, separately from the unresolved HTTP timeout.

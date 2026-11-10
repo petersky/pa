@@ -2972,7 +2972,8 @@ a.acw-mention:hover, a.acw-mention:focus-visible { border-color: var(--pa-accent
   resize: none;
   field-sizing: content;
   min-height: 2.4rem;
-  max-height: min(16rem, 40dvh);
+  line-height: 1.5;
+  max-height: calc(6lh + 1rem + 2px);
   overflow-y: auto;
   width: 100%;
 }
@@ -3148,8 +3149,6 @@ a.acw-mention:hover, a.acw-mention:focus-visible { border-color: var(--pa-accent
   display: inline-flex;
   align-items: stretch;
 }
-
-.acw-send-group > [data-acw-stop] { margin-right: 0.35rem; }
 
 .acw-send-group > .primary {
   border-top-right-radius: 0;
@@ -5710,12 +5709,12 @@ a.ghost:hover {
 .acw-composer > * { grid-column: 1 / -1; }
 .acw-composer > :not(textarea, .acw-composer-actions, label, input) { margin-bottom: .3rem; }
 .acw-composer > textarea { grid-column: 2; grid-row: 5; }
-.acw-composer-actions, .acw-composer-draft-actions { display: contents; }
-.acw-attach { grid-column: 1; grid-row: 5; display: grid; place-items: center; width: 2.4rem; height: 2.4rem; padding: .55rem; }
+.acw-composer-actions { display: contents; }
+.acw-composer-draft-actions { grid-column: 1; grid-row: 5; display: flex; flex-direction: column; gap: .25rem; align-items: center; }
+.acw-attach, .acw-stop { display: grid; place-items: center; width: 2.4rem; height: 2.4rem; padding: .55rem; }
 .acw-send-group { grid-column: 3; grid-row: 5; }
-.acw-send-group > [data-acw-stop]:disabled { display: none; }
-[data-acw-clear-draft] { grid-column: 1 / span 2; grid-row: 6; justify-self: start; margin-top: .25rem; }
-[data-acw-clear-draft][hidden], .acw-draft-status[hidden] { display: none; }
+.acw-stop:disabled { display: none; }
+.acw-draft-status[hidden] { display: none; }
 .acw-draft-status { grid-column: 2 / -1; grid-row: 6; margin-top: .25rem; }
 .acw-composer > [data-acw-working] { grid-row: 1; }
 .acw-composer > .acw-command-menu { grid-row: 2; }
@@ -5771,3 +5770,5 @@ a.ghost:hover {
   }
   .chat-modal { padding: max(0.6rem, env(safe-area-inset-top)) max(0.6rem, env(safe-area-inset-right)) max(0.6rem, env(safe-area-inset-bottom)) max(0.6rem, env(safe-area-inset-left)); }
 }
+
+.acw-stop svg { width: 100%; height: 100%; }

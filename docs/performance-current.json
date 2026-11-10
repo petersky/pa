@@ -1,0 +1,63 @@
+{
+  "contract": "pa.performance-current/v1",
+  "observed_at": "2026-11-10",
+  "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+  "session_id": "d7689970-034c-4580-940c-a7667f49766d",
+  "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+  "lease_fence": 411,
+  "source_base": "eba17a3fb23f72b3c2987cbc965b344dd88fd39a",
+  "fix": "Transcript GC probes up to1024 filenames per speculative SQL read; each deletion proof and publication-lock hold still covers at most128 candidates. Fresh positive-reference and reader-pin checks remain authoritative.",
+  "stage": "source validated; integration pending; no install or restart",
+  "validation": {
+    "passed": 61,
+    "failed": 0,
+    "elapsed_seconds": 7.055,
+    "scope": "GC path semantics, publication/rollback races, reader pins during read-ahead and between protected deletion batches, candidate bounds, pruning, connection ownership, mirror retention, payload integrity, benchmark cleanup on success/failure"
+  },
+  "measurements": {
+    "scope": "Alternating warm private probe-size comparisons on the final algorithm; both variants retain128-candidate deletion proof bound. Synthetic catalog/file membership, not payload decoding, native/full maintenance or fleet acceptance. Percentiles have small bounded sample populations.",
+    "mostly_live": {
+      "live_files_preserved": 24576,
+      "orphans_removed_per_call": 64,
+      "alternating_pairs": 12,
+      "probe128": {"samples":12,"p50_ms":220.611,"p95_ms":275.935,"p99_ms":275.935,"max_ms":275.935},
+      "probe1024": {"samples":12,"p50_ms":190.429,"p95_ms":215.031,"p99_ms":215.031,"max_ms":215.031},
+      "expected_read_queries_per_call": {"probe128":193,"probe1024":25}
+    },
+    "deletion_heavy": {
+      "live_files_preserved": 1,
+      "orphans_removed_per_call": 1024,
+      "alternating_pairs": 4,
+      "probe128": {"samples":4,"p50_ms":176.223,"p95_ms":260.592,"p99_ms":260.592,"max_ms":260.592},
+      "probe1024": {"samples":4,"p50_ms":140.102,"p95_ms":188.887,"p99_ms":188.887,"max_ms":188.887},
+      "expected_read_queries_per_call": {"probe128":9,"probe1024":2}
+    },
+    "oracles": "Every retained file byte-checked; exact catalog count/ref_count sum, orphan removal counts, SQLite quick_checkok. Separate test observes1024/1 read probes and eight128/one1 fresh deletion proofs for1025 orphans."
+  },
+  "smallest_failure_evidence": "Initial benchmark stopped at its final assertion because sqlite3.Row objects were compared directly with tuples. Corrected the fixture comparison; that failed run is not a passing measurement. No raw failure log retained.",
+  "storage": {
+    "free_kib_at_resume": 16304380,
+    "free_kib_after_validation": 15875696,
+    "minimum_fixture_free_bytes": 4294967296,
+    "fixture_bounds": {"live_files_max":32768,"orphan_files_max":1024,"pairs_max":20},
+    "temporary_fixtures_removed": true,
+    "retained_raw_captures": 0,
+    "policy": "One current compact report; aggregate measurements only. Reuse existing uv environment/cache. Temporary databases/files removed by context managers, tested on success/failure. No source copies, per-poll files, raw API/transcript/DB captures, duplicate histories, environments or wheels. Free-space deltas are not exclusive physical-reclamation claims."
+  },
+  "runtime_observed": {
+    "version": "1.9.0",
+    "source_revision": "74af78947bcbd8a6ab7f748c641593d138286ba6",
+    "package_identity": "sha256:132d466fd913c5f3e9ed134cc866668046e549708b1e6ed535530763ae62bc89",
+    "pid": 32958,
+    "startup_id": "e4d86ff0-947f-4643-9e14-f1761352383b",
+    "sync_consistent": true
+  },
+  "acceptance": {
+    "accepted": false,
+    "findings_open": 755,
+    "concerns_open": 185,
+    "requirement": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+    "residuals": "This reduces one confirmed maintenance read-amplification path. Full VACUUM/health/reclamation semantics are unchanged; native maintenance/foreground stalls, peers/providers, logs/retention, startup/drain, uncovered branches and independent acceptance remain open. Old ambiguous receipt/report effects and unrelated approvals were not replayed."
+  },
+  "reproduce": "uv run --frozen python scripts/benchmark_transcript_gc.py; use --objects 1 --orphans 1024 --pairs 4 for deletion-heavy comparison"
+}
