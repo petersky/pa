@@ -232,6 +232,7 @@ class GoalSupervisor:
         self.failure_notify_after = max(1, failure_notify_after)
         self._conflict_streaks: dict[str, int] = {}
         self._outbox: list[tuple[StallKind, str, str, str]] = []
+        self._effects = 0
         self._wakeup = threading.Event()
 
     def wake(self) -> None:
@@ -562,6 +563,7 @@ class GoalSupervisor:
     ) -> Any:
         """Reserve, revalidate, apply, and release one side effect."""
 
+        self._effects += 1
         state = self.governance.get_state(goal.id)
         state, reservation_decision = self.governance.authorize_action(
             goal.id,
@@ -777,10 +779,62 @@ class GoalSupervisor:
             ttl_seconds=self.lease_ttl_seconds,
         )
 
+    # Fields that change every cycle without meaning anything; they are excluded
+    # when deciding whether a cycle changed the goal at all.
+    _VOLATILE_SUPERVISION = {
+        "cycle",
+        "last_cycle_at",
+        "next_wakeup_at",
+        "event_cursor",
+        "no_progress_cycles",
+    }
+
+    @classmethod
+    def _stable_state(cls, goal: Goal, summary: str) -> str:
+        def strip(value: Any) -> Any:
+            if isinstance(value, dict):
+                return {
+                    key: strip(item)
+                    for key, item in value.items()
+                    if key != "updated_at"
+                }
+            if isinstance(value, list):
+                return [strip(item) for item in value]
+            return value
+
+        payload = strip(
+            {
+                "criteria": [item.model_dump(mode="json") for item in goal.criteria],
+                "evidence": [item.model_dump(mode="json") for item in goal.evidence],
+                "proposals": [item.model_dump(mode="json") for item in goal.proposals],
+                "work_packages": [
+                    item.model_dump(mode="json") for item in goal.work_packages
+                ],
+                "operator_interactions": [
+                    item.model_dump(mode="json") for item in goal.operator_interactions
+                ],
+                "supervision": goal.supervision.model_dump(
+                    mode="json", exclude=cls._VOLATILE_SUPERVISION
+                ),
+                "linked_card_ids": list(dict.fromkeys(goal.linked_card_ids)),
+                "linked_dispatch_ids": list(dict.fromkeys(goal.linked_dispatch_ids)),
+                "assumptions": goal.assumptions,
+                "risks": goal.risks,
+                "strategy_revision": goal.strategy_revision,
+                "state": goal.state.value,
+                "summary": summary,
+            }
+        )
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+
     def _cycle(self, source: Goal) -> Goal:
         goal = source.model_copy(deep=True)
         now = self.now()
         self._outbox = []
+        self._effects = 0
+        baseline = self._stable_state(source, source.progress_summary)
         durably_admitted_packages = {
             package.id
             for package in source.work_packages
@@ -810,6 +864,17 @@ class GoalSupervisor:
         meaningful = self._detect_drift(goal, now) or meaningful
         meaningful = self._park_dead_ends(goal) or meaningful
         meaningful = self._advance_goal_state(goal) or meaningful
+
+        quiet = (
+            not self._effects
+            and not self._outbox
+            and source.supervision.consecutive_failures == 0
+            and self._stable_state(goal, self._summary(goal)) == baseline
+        )
+        if quiet:
+            # Nothing meaningful changed (a running dispatch still running, a goal
+            # still waiting): do not write a full-goal checkpoint event every poll.
+            return self._consume_wakeup(source, source, consumed_wakeup)
 
         goal.supervision.consecutive_failures = 0
         goal.supervision.retry_after = None
@@ -852,18 +917,23 @@ class GoalSupervisor:
         outbox, self._outbox = self._outbox, []
         for kind, dedupe_key, title, body in outbox:
             self._notify(checkpointed, kind, dedupe_key, title, body)
-        if consumed_wakeup:
-            checkpointed = self.service.schedule_wakeup(
-                checkpointed.id,
-                None,
-                self._context(
-                    checkpointed,
-                    f"goal-supervisor:wakeup-consumed:{goal.id}:"
-                    f"{source.wakeup.wake_at.isoformat() if source.wakeup else source.version}",
-                ),
-                outcome_reason="due wakeup consumed after durable supervision checkpoint",
-            )
-        return checkpointed
+        return self._consume_wakeup(source, checkpointed, consumed_wakeup)
+
+    def _consume_wakeup(
+        self, source: Goal, current: Goal, consumed_wakeup: bool
+    ) -> Goal:
+        if not consumed_wakeup:
+            return current
+        return self.service.schedule_wakeup(
+            current.id,
+            None,
+            self._context(
+                current,
+                f"goal-supervisor:wakeup-consumed:{current.id}:"
+                f"{source.wakeup.wake_at.isoformat() if source.wakeup else source.version}",
+            ),
+            outcome_reason="due wakeup consumed after durable supervision checkpoint",
+        )
 
     def _ensure_plan_proposal(self, goal: Goal, now: datetime) -> bool:
         """Create one deterministic bounded proposal for uncovered ACTIVE criteria."""
@@ -3263,6 +3333,8 @@ class GoalSupervisor:
 
     @staticmethod
     def _summary(goal: Goal) -> str:
+        if goal.supervision.parked_reason:
+            return goal.supervision.parked_reason
         counts: dict[str, int] = {}
         for package in goal.work_packages:
             counts[package.state.value] = counts.get(package.state.value, 0) + 1

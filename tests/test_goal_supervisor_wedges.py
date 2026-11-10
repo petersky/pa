@@ -46,6 +46,7 @@ from pa.goals.models import (
     GoalRevision,
     GoalState,
     GoalTransition,
+    GoalWakeup,
     ProposalStatus,
     WorkPackageState,
 )
@@ -1203,6 +1204,75 @@ class CompletionAuditTests(unittest.TestCase):
             self.assertEqual(blocked.state, GoalState.BLOCKED)
             self.assertIn("did not accept", blocked.supervision.parked_reason)
             self.assertEqual(len(h.notifications.stalls("verification_failed")), 1)
+
+
+class QuietGoalsDoNotChurnTests(unittest.TestCase):
+    """A8: an unchanged goal must not write a full-goal event every poll."""
+
+    @staticmethod
+    def _events(h: Harness, goal_id: str, kind: str) -> int:
+        return sum(
+            item.get("event_type") == kind for item in h.service.events(goal_id)
+        )
+
+    def test_goal_waiting_on_approval_is_parked_until_answered(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(tmp)
+            goal = h.create_goal(GoalPolicy())  # every step needs approval
+            waiting = h.run(goal.id)
+            self.assertEqual(waiting.state, GoalState.WAITING_OPERATOR)
+            events = len(h.service.events(goal.id))
+
+            for _ in range(200):  # more than an hour and a half of polling
+                h.advance(30)
+                h.supervisor.run_once()
+
+            self.assertEqual(len(h.service.events(goal.id)), events)
+            h.answer(waiting)
+            self.assertEqual(len(h.supervisor.run_once()), 1, "answer wakes the goal")
+
+    def test_silent_running_dispatch_stops_writing_checkpoints(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(tmp, no_progress_seconds=2 * 3600, stalled_seconds=8 * 3600)
+            goal = h.create_goal(
+                GoalPolicy(autonomy_level=4, permitted_actions=FULL_ACTIONS)
+            )
+            for _ in range(4):
+                current = h.run(goal.id)
+                if current.work_packages and current.work_packages[0].dispatch_ids:
+                    break
+            dispatch_id = h.get(goal.id).work_packages[0].dispatch_ids[-1]
+            h.records.records[dispatch_id] = dispatch_record(
+                dispatch_id, "running", session_id="s1"
+            )
+            for _ in range(12):  # settle: the first observations are real changes
+                h.advance(30)
+                h.supervisor.run_once(goal.id)
+            checkpoints = self._events(h, goal.id, "goal.supervision_checkpointed")
+
+            for _ in range(100):
+                h.advance(30)
+                h.supervisor.run_once(goal.id)
+
+            self.assertEqual(
+                self._events(h, goal.id, "goal.supervision_checkpointed"), checkpoints
+            )
+
+    def test_a_due_wakeup_is_still_consumed_by_a_quiet_cycle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(tmp)
+            goal = h.create_goal(GoalPolicy())
+            goal = h.run(goal.id)  # now waiting for approval
+            goal = h.service.schedule_wakeup(
+                goal.id,
+                GoalWakeup(wake_at=h.clock[0] + timedelta(minutes=5), reason="check"),
+                h.ctx(goal, "wakeup"),
+            )
+            h.advance(600)
+
+            h.supervisor.run_once(goal.id)
+
+            self.assertIsNone(h.get(goal.id).wakeup)
 
 
 if __name__ == "__main__":
