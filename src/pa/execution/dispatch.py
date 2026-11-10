@@ -5357,8 +5357,11 @@ class DispatchWorker:
         | None = None,
         terminal: Callable[[DispatchRecord, str], Awaitable[None]] | None = None,
         lifecycle_recovery: Callable[[], Awaitable[None]] | None = None,
+        stall_notifier: Callable[[DispatchRecord], Any] | None = None,
     ) -> None:
         self.store, self.handler = store, handler
+        # Tells the owner a dispatch failed; called off-loop and never allowed to raise.
+        self.stall_notifier = stall_notifier
         self.concurrency, self.async_runtime = max(1, concurrency), async_runtime
         # This bounded control lane cannot be consumed by transcript/progress traffic.
         self._control_runtime = (
@@ -5671,6 +5674,15 @@ class DispatchWorker:
                         "Dispatch %s terminal lifecycle callback failed",
                         record.dispatch_id,
                     )
+            if self.stall_notifier:
+                try:
+                    await self._offload(
+                        "dispatch.stall_notify", self.stall_notifier, failed
+                    )
+                except Exception:
+                    logger.exception(
+                        "Dispatch %s failure notification failed", record.dispatch_id
+                    )
 
 
 class CompletionOutbox:
@@ -5688,9 +5700,12 @@ class CompletionOutbox:
         async_runtime: AsyncRuntime | None = None,
         disposition_notifier: Callable[[str, dict[str, Any]], Awaitable[Any] | Any]
         | None = None,
+        stall_notifier: Callable[[DispatchRecord], Any] | None = None,
     ) -> None:
         self.store = store
         self.token = token
+        # Tells the owner a completion could not be delivered; never allowed to raise.
+        self.stall_notifier = stall_notifier
         self.retry_seconds = retry_seconds
         self.retry_max_seconds = max(retry_seconds, retry_max_seconds)
         self.max_attempts = max(1, max_attempts)
@@ -6040,3 +6055,16 @@ class CompletionOutbox:
         except httpx.HTTPError as exc:
             self._schedule_retry(record, str(exc))
             await self._offload("dispatch.record_write", self.store.put, record)
+        if self.stall_notifier and record.completion_delivery_class in {
+            "transport_exhausted",
+            "permanent_failure",
+        }:
+            try:
+                await self._offload(
+                    "dispatch.stall_notify", self.stall_notifier, record
+                )
+            except Exception:
+                logger.exception(
+                    "Dispatch %s completion-failure notification failed",
+                    record.dispatch_id,
+                )

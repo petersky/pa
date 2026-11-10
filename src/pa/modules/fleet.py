@@ -59,6 +59,12 @@ from pa.domain.models import (
     FleetInstance,
     RealmRole,
 )
+from pa.notifications.stall import (
+    StallKind,
+    notify_completion_undeliverable,
+    notify_dispatch_failed,
+    notify_stall,
+)
 from pa.domain.notifications import (
     InteractionChoice,
     InteractionKind,
@@ -12136,6 +12142,24 @@ async def execute_post_turn_action(
             # Wait, refresh, and escalation remain condition records. Operator
             # input is executable above and resumes the same session.
             result = {"recorded": True, "condition": action.parameters}
+            if action.name == FollowupActionName.ESCALATE_FOR_MANUAL_REVIEW:
+                # The evaluator asked for a human: say so outside the card page.
+                await asyncio.to_thread(
+                    notify_stall,
+                    request.app.state.ctx,
+                    kind=StallKind.MANUAL_REVIEW,
+                    subject_ids={
+                        "realm_id": record.realm_id,
+                        "card_id": record.card_id,
+                        "session_id": record.session_id,
+                        "dispatch_id": record.dispatch_id,
+                        "project_id": record.project_id,
+                    },
+                    title="Manual review requested",
+                    body=str(action.parameters.get("reason") or "The post-turn evaluation escalated this work."),
+                    severity="error",
+                    dedupe_key=action.action_id,
+                )
         action.status = FollowupActionStatus.EXECUTED
         action.executed_at = datetime.now(UTC)
         action.status_reason = "Validated and deterministically executed by PA."
@@ -15308,6 +15332,7 @@ class FleetModule(Module):
                 applied=_goal_dispatch_was_applied(record),
             ),
             lifecycle_recovery=lambda: _reconcile_goal_dispatch_reservations(ctx),
+            stall_notifier=lambda record: notify_dispatch_failed(ctx, record),
         )
         dispatch_worker.start()
         ctx.register_service("dispatch_worker", dispatch_worker)
@@ -15318,6 +15343,7 @@ class FleetModule(Module):
             disposition_notifier=ctx.require_service(
                 "instance_agent"
             ).record_card_disposition_status,
+            stall_notifier=lambda record: notify_completion_undeliverable(ctx, record),
         )
         ctx.register_service("completion_outbox", outbox)
         agent = ctx.require_service("instance_agent")
