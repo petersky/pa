@@ -42,7 +42,7 @@ async def test_canonically_retired_empty_retry_is_not_an_owner_candidate(empty_r
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("case", ["unclosed", "external", "binding", "lease", "turn", "reservation", "runtime", "ownership", "queue"])
+@pytest.mark.parametrize("case", ["unclosed", "external", "binding", "lease", "turn", "reservation", "runtime", "ownership", "queue", "cwd", "artifact", "settings"])
 async def test_empty_retry_exclusion_rejects_any_unretired_or_competing_work(empty_retry, case):
     from pa.domain.models import TranscriptEvent
     r = empty_retry
@@ -57,6 +57,12 @@ async def test_empty_retry_exclusion_rejects_any_unretired_or_competing_work(emp
         sibling.authority_instance_id = "another-authority"
     elif case == "queue":
         sibling.config_json["durable_runtime"] = {"queued_prompts": [{"id": "work"}]}
+    elif case == "cwd":
+        sibling.cwd = str(r.path)
+    elif case == "artifact":
+        sibling.config_json["execution_context"] = {"artifact_workspace": {"path": str(r.path)}}
+    elif case == "settings":
+        sibling.config_json["execution_pending_settings"] = {"state": "pending"}
     elif case == "lease":
         lease, = r.manager.workspace_manager.list()
         r.manager.workspace_manager._save(lease.model_copy(update={"id": "other-lease", "session_id": sibling.id}))

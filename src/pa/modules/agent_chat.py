@@ -4614,7 +4614,7 @@ def _retired_empty_dispatch_retry(mgr, origin, sibling):
     durable = config.get("durable_runtime") or {}
     runtime = mgr.get(sibling.id)
     if (
-        sibling.status != "closed" or sibling.external_session_id or sibling.execution_binding
+        sibling.status != "closed" or sibling.external_session_id or sibling.execution_binding or sibling.cwd
         or sibling.id in mgr._admitting_sessions or (runtime and not runtime._closed)
         or sibling.dispatch_id != origin.dispatch_id
         or sibling.card_id != origin.card_id or sibling.project_id != origin.project_id
@@ -4624,6 +4624,8 @@ def _retired_empty_dispatch_retry(mgr, origin, sibling):
         or sibling.purpose != "automated_run" or sibling.control_mode != "automation"
         or durable.get("queued_prompts") or durable.get("in_flight")
         or (config.get("execution_context") or {}).get("repositories")
+        or (config.get("execution_context") or {}).get("artifact_workspace")
+        or (config.get("execution_pending_settings") or {}).get("state") in {"pending", "failed"}
         or (config.get("provisioning") or {}).get("state") != "failed"
         or mgr.store.pending_restart_continuation(session_id=sibling.id)
         or any(l.session_id == sibling.id for l in mgr.workspace_manager.list())
