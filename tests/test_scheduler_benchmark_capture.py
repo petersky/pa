@@ -1,7 +1,10 @@
 """The bounded report must retain partial grids and every positive operation."""
 import copy
 import importlib.util
+import json
 from pathlib import Path
+
+import pytest
 
 
 def test_scheduler_capture_round_trip_keeps_sparse_samples_and_runtime_windows():
@@ -30,3 +33,26 @@ def test_scheduler_capture_round_trip_keeps_sparse_samples_and_runtime_windows()
             zip(cells["present"], cells["values"])} == expected["runtime"]["operations"]
         assert actual["runtime"]["routes"] == expected["runtime"]["routes"]
         assert actual["runtime"]["window_scope"] == "bounded"
+
+
+def test_report_capacity_fallback_preserves_stage_and_all_old_failures(tmp_path):
+    path = Path(__file__).parents[1] / "scripts" / "benchmark_kernel_scheduler_phases.py"
+    spec = importlib.util.spec_from_file_location("scheduler_storage_contract", path)
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    report = tmp_path / "performance-current.json"
+    failures = {"warnings": [617.527, 676.905], "adverse_foreground_ms": [6.230, 27.302], "unknown": True}
+    original = {"failures": failures, "scheduler_source_reader_comparison": {
+        "group_poll_counters": {"successful": list(range(1000))}, "adverse_control": failures}}
+    report.write_text(json.dumps(original))
+    stage = {"poll_ms": [834.379, 853.375], "warnings": 2}
+    stored = module.write_report_stage(report, "new", stage, limit=800)
+    assert stored["bytes"] <= 800
+    actual = json.loads(report.read_text())
+    assert actual["new"] == stage and actual["failures"] == failures
+    assert actual["scheduler_source_reader_comparison"]["adverse_control"] == failures
+    before = report.read_bytes()
+    oversized = {"numeric_samples": list(range(1000))}
+    with pytest.raises(ValueError) as error:
+        module.write_report_stage(report, "new", oversized, limit=800)
+    assert error.value.stage == oversized
+    assert report.read_bytes() == before

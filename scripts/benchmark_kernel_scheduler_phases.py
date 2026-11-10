@@ -348,6 +348,33 @@ def compact_runs(result):
     return projected
 
 
+def write_report_stage(path, section, result, *, limit=128*1024):
+    """Store aggregates without stdin recovery or discarding older failures.
+
+    Callers reserve space before fixtures. This final guard can replace only a
+    known older successful counter grid with its exact immutable reference.
+    Capacity failures leave the original file unchanged and attach the aggregate
+    to the exception for the caller; they never imply measurement success.
+    """
+    document = json.loads(path.read_text())
+    document[section] = result
+    def encoded(): return json.dumps(document, separators=(",", ":"), sort_keys=True)+"\n"
+    output = encoded()
+    if len(output.encode()) > limit:
+        previous = document.get("scheduler_source_reader_comparison", {})
+        if "group_poll_counters" in previous:
+            previous.pop("group_poll_counters")
+            previous.pop("group_poll_counter_keys", None)
+            previous["older_positive_group_counters"] = "ref:pr722_report#scheduler_source_reader_comparison.group_poll_counters"
+        output = encoded()
+    if len(output.encode()) > limit:
+        error = ValueError(f"Report needs {len(output.encode())} bytes; limit {limit}")
+        error.stage = result
+        raise error
+    path.write_text(output)
+    return {"bytes": len(output.encode()), "sha256": hashlib.sha256(output.encode()).hexdigest()}
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(); parser.add_argument("--factory-overhead", action="store_true")
