@@ -41,6 +41,7 @@ _TOKEN = re.compile(r"\b(?:sk|gh[oprsu]|xox[abprs])-[-A-Za-z0-9_]{8,}\b", re.I)
 _COLD_HASH = re.compile(r"[0-9a-f]{64}")
 _GC_READ_BATCH = 1024
 _GC_DELETE_BATCH = 128
+_HEALTH_REFERENCE_BATCH = 1024
 _WIRE_KEYS = {"headers", "http_headers", "wire", "wire_envelope", "provider_envelope"}
 _AUDIT_TYPES = {
     "session_closed", "turn_completed", "turn_failed", "command_result",
@@ -744,7 +745,9 @@ class TranscriptStorage:
         """Read every reference from one fresh snapshot in bounded JSON pages.
 
         SQLite's text index supplies distinct keyset pages without one observed
-        Python fetch per reference. Malformed non-text catalog values retain the
+        Python fetch per reference. Each page holds at most 1024 values (about
+        67 KiB for ordinary 64-character hashes); no health result is cached.
+        Malformed non-text catalog values retain the
         native row path, including its value types and decoding errors.
         """
         with self._conn() as conn:
@@ -785,7 +788,8 @@ class TranscriptStorage:
                             "SELECT json_group_array(cold_hash) FROM ("
                             "SELECT DISTINCT cold_hash FROM transcript_events "
                             "WHERE cold_hash IS NOT NULL" + predicate +
-                            " ORDER BY cold_hash LIMIT 128)", parameters,
+                            " ORDER BY cold_hash LIMIT ?)",
+                            (*parameters, _HEALTH_REFERENCE_BATCH),
                         ).fetchone()
                     except sqlite3.DataError as exc:
                         # Malformed long references can fit individually but
