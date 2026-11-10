@@ -124,7 +124,7 @@ class VerificationStore:
                     if row['state'] == 'admission_pending' or db.execute("SELECT 1 FROM recoveries WHERE intent=? AND state='pending' LIMIT 1", (row['id'],)).fetchone():
                         raise CompletionConflict('verification_authority_has_pending_work')
                     unadmitted = not row['dispatch_id'] and (row['state'] in {'pending','superseded'} or row['diagnostic'] in {
-                        'verification_principal_unconfigured','waiting_for_integration_or_origin','repair_workflow_pending',
+                        'verification_principal_unconfigured','waiting_for_integration_or_origin','repair_workflow_pending','waiting_for_quiet_head',
                         'verification_realm_authority_required'})
                     if row['id'] not in settled and not unadmitted:
                         raise CompletionConflict('verification_authority_has_pending_work')
@@ -138,6 +138,10 @@ class VerificationStore:
         if row and row['fingerprint'] != fingerprint:
             raise CompletionConflict('idempotency_conflict')
         return json.loads(row['plan']) if row else None
+
+    def recovery_count(self, intent):
+        with self.connection() as db:
+            return db.execute('SELECT count(*) FROM recoveries WHERE intent=?', (intent,)).fetchone()[0]
 
     def recovery(self, intent, dependency, state=None):
         with self.connection() as db:
@@ -354,6 +358,13 @@ class VerificationService:
             self.store.update(key, 'dispatched')
             job = self.store.get(key)
         if not job or job['dispatch_id'] != record.dispatch_id or job['state'] != 'dispatched':
+            # Same declaration, but integration moved on while this verifier ran: say so, remember that
+            # a newer head exists, and let the scheduler verify the latest one when this run is over.
+            stale = next((j for j in self.store.list(card.id, card.realm_id) if j['dispatch_id'] == record.dispatch_id), None)
+            if (stale and stale['id'] != key and stale['packet']['requirement_revision'] == packet['requirement_revision']
+                    and stale['packet']['subject'] != packet['subject']):
+                self.store.update(stale['id'], stale['state'], diagnostic='newer_head:' + key)
+                raise CompletionConflict('verification_newer_head_pending')
             raise CompletionConflict('verification_assignment_not_current')
         if record.session_id in packet['origin_sessions'] or record.dispatch_id in packet['origin_dispatches']:
             raise CompletionConflict('completion_self_acceptance_forbidden')
@@ -421,7 +432,7 @@ class VerificationService:
                 await self.call(self.store.update, old['id'], 'dispatched', dispatch_id=record.dispatch_id, diagnostic_phase='verification_intent_write')
                 old = await self.call(self.store.get, old['id'], diagnostic_phase='verification_intent_read')
             unadmitted = not old['dispatch_id'] and (old['state'] == 'pending' or old['diagnostic'] in {
-                'verification_principal_unconfigured', 'waiting_for_integration_or_origin', 'repair_workflow_pending',
+                'verification_principal_unconfigured', 'waiting_for_integration_or_origin', 'repair_workflow_pending', 'waiting_for_quiet_head',
                 'verification_realm_authority_required'})
             if (not record and not old['dispatch_id'] and old['state'] == 'blocked'
                     and old['diagnostic'] == 'HTTPStatusError' and not checked_absence):
@@ -634,6 +645,8 @@ class VerificationService:
                     return
                 await self.call(self.store.update, key, 'failed', diagnostic='verification_ended_without_acceptance', diagnostic_phase='verification_intent_write')
                 await self.retry_after_provider_recovery(job, record)
+                if (await self.call(self.store.get, key, diagnostic_phase='verification_intent_read'))['state'] == 'failed':
+                    await self.verification_failed(card, job, record)
             elif job['state'] == 'failed':
                 await self.call(self.store.update, key, 'dispatched', diagnostic_phase='verification_intent_write')
             return
@@ -653,6 +666,13 @@ class VerificationService:
             # An accepted verifier has finished its job; whether its session has been retired is the
             # lifecycle policy's business and must not hold back verification of a later revision.
             if old['state'] != 'accepted' and not (await self.origin_readiness(record))['ready']:
+                return
+        quiet = self.ctx.settings.completion_verification_quiet_seconds
+        if quiet and any(o['id'] != key and o['dispatch_id'] and o['packet']['requirement_revision'] == packet['requirement_revision']
+                         for o in await self.call(self.store.list, card.id, card.realm_id, diagnostic_phase='verification_intent_read')):
+            newest = max((e.recorded_at for e in card.completion_evidence if e.outcome == 'integrated' and e.recorded_at), default=None)
+            if newest and (datetime.now(UTC) - newest).total_seconds() < quiet:
+                await self.call(self.store.update, key, 'blocked', diagnostic='waiting_for_quiet_head', diagnostic_phase='verification_intent_write')
                 return
         if card.realm_id != self.ctx.settings.primary_realm:
             await self.call(self.store.update, key, 'blocked', diagnostic='verification_realm_authority_required', diagnostic_phase='verification_intent_write')
@@ -686,6 +706,77 @@ class VerificationService:
             await self.call(self.store.update, key, 'blocked', diagnostic=type(exc).__name__, diagnostic_phase='verification_intent_write')
             return
         await self.call(self.store.update, key, 'dispatched', dispatch_id=result['dispatch_id'], diagnostic_phase='verification_intent_write')
+
+    @staticmethod
+    def _findings(record):
+        """The verifier's own verdict, bounded and sanitized; never raw transcript text."""
+        from pa.execution.progress import sanitize_text
+        payload = record.card_disposition_payload if isinstance(record.card_disposition_payload, dict) else {}
+        parts = [str(payload.get('outcome') or '').strip(), str(record.card_disposition_reason or '').strip(),
+                 str(record.last_error or '').strip() if record.state != 'completed' else '']
+        text = '\n'.join(dict.fromkeys(part for part in parts if part))
+        return sanitize_text(text, limit=3000) or 'The verifier ended without accepting and gave no findings.'
+
+    async def verification_failed(self, card, job, record):
+        """Feed a failed verification back instead of leaving the card silently stuck.
+
+        Once per failed intent: tell the owner, and when the verifier reached a verdict (a completed
+        run, not a crash) hand its findings to the executor for at most
+        ``completion_verifier_reengage_max`` corrections per requirement revision. The corrected work
+        is integrated and verified afresh under a new intent; this never accepts anything itself.
+        """
+        key, packet = job['id'], job['packet']
+        if await self.call(self.store.recovery, key, 'failure-handled', diagnostic_phase='verification_recovery_read'):
+            return
+        if not record.session_id and not record.prompt_acknowledged_at:
+            return  # Pre-session selection failure: provider recovery owns it, there is no verdict.
+        ledger = self.ctx.services['dispatch_store']
+        findings = self._findings(record)
+        limit = self.ctx.settings.completion_verifier_reengage_max
+        scope = 'reengage:' + card.id + ':' + packet['requirement_revision']
+        used = await self.call(self.store.recovery_count, scope, diagnostic_phase='verification_recovery_read')
+        reengaged = None
+        if record.state == 'completed' and used < limit:
+            executors = [r for r in await self.call(ledger.list, card_id=card.id, realm_id=card.realm_id, limit=101,
+                                                    diagnostic_phase='verification_dispatch_read')
+                         if r.dispatch_id in packet['origin_dispatches'] and not (r.idempotency_key or '').startswith('verification')]
+            if executors:
+                executor = max(executors, key=lambda r: r.created_at)
+                from pa.prompts import PROMPTS
+                message = PROMPTS.render("completion.verification_failed",
+                                         {'attempt': str(used + 1), 'limit': str(limit), 'findings': findings}).text
+                body = {'card_id': card.id, 'target_instance_id': self.ctx.settings.instance_id,
+                        'authority_instance_id': self.ctx.settings.instance_id, 'message': message}
+                await self.call(self.store.recovery, scope, str(used + 1), 'pending', diagnostic_phase='verification_recovery_write')
+                try:
+                    reengaged = await self.health.local_api({'principal_id': executor.principal_id}, 'POST', '/api/fleet/dispatch',
+                                                            body=body, key='verification-reengage:' + key)
+                except Exception as exc:  # noqa: BLE001 - the owner is told below; the key makes a retry safe
+                    self.last_error = type(exc).__name__
+                    await self.call(self.store.recovery, scope, str(used + 1), 'failed', diagnostic_phase='verification_recovery_write')
+                else:
+                    await self.call(self.store.recovery, scope, str(used + 1), 'dispatched', diagnostic_phase='verification_recovery_write')
+        await self.call(self.store.recovery, key, 'failure-handled', 'done', diagnostic_phase='verification_recovery_write')
+        final = reengaged is None
+        self.notify_verification_failed(card, record, findings, final=final, used=used, limit=limit)
+
+    def notify_verification_failed(self, card, record, findings, *, final, used, limit):
+        from pa.notifications.stall import StallKind, notify_stall
+        if not self.ctx.services.get('notifications'):
+            return None
+        if final:
+            title = 'Verification failed: ' + card.title
+            body = ('Independent verification did not accept this card' +
+                    (f' after {used} automatic correction(s).' if used else '.') +
+                    ' PA has stopped retrying. Findings:\n' + findings)
+            severity = 'error'
+        else:
+            title = 'Verification failed, executor re-engaged: ' + card.title
+            body = f'Independent verification did not accept this card. The executor was asked to correct it ({used + 1} of {limit}). Findings:\n' + findings
+            severity = 'warning'
+        return notify_stall(self.ctx, kind=StallKind.VERIFICATION_FAILED,
+            subject_ids={'realm_id': card.realm_id, 'card_id': card.id, 'session_id': record.session_id, 'dispatch_id': record.dispatch_id},
+            title=title, body=body, severity=severity, dedupe_key=f'{card.id}:{record.dispatch_id}')
 
     async def provider_dependency(self):
         selection = self.ctx.services.get('execution_selection')

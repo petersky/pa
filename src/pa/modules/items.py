@@ -192,6 +192,9 @@ def _completion_conflict_detail(request: Request, code: str) -> dict:
     detail = {"code": code, "message": code.replace("_", " ").capitalize() + "."}
     if code == 'verification_pending':
         detail['message'] = 'Done was not saved: PA is arranging independent verification of this card’s declared requirements.'
+    if code == 'verification_newer_head_pending':
+        detail['message'] = ('A newer integrated change arrived while you were verifying. Stop: do not retry. '
+                             'PA verifies the latest head by itself when this run ends.')
     if code in {"acceptance_pending", "completion_owner_unconfigured"}:
         detail["message"] = "Done was not saved: this card still requires completion acceptance."
         if not _direct_human_card_action(request):

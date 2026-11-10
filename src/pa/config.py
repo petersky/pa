@@ -300,6 +300,9 @@ class Settings(BaseSettings):
     # How many times a failed verification is fed back to the executor before PA stops and tells
     # the owner. 0 restores the old behaviour (a failed verification is silently terminal).
     completion_verifier_reengage_max: int = Field(default=1, ge=0, le=10)
+    # While a verification already ran for this requirement revision, wait until the newest integrated
+    # change is this old before verifying again, so a burst of merges is verified once, at its end.
+    completion_verification_quiet_seconds: int = Field(default=120, ge=0, le=24 * 60 * 60)
     # Notify the owner when a card waits for their acceptance. False disables the notification.
     completion_notify_acceptance_needed: bool = True
     # Notify the owner when verification stays pending this long with nothing in flight (0 disables).
