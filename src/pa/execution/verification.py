@@ -139,6 +139,16 @@ class VerificationStore:
             raise CompletionConflict('idempotency_conflict')
         return json.loads(row['plan']) if row else None
 
+    def idle_since(self, card_id, realm, revision, now, idle):
+        """When this card began waiting with nothing in flight; None (and forgotten) when busy."""
+        with self.connection() as db:
+            db.execute("CREATE TABLE IF NOT EXISTS idle_pending(card_id TEXT NOT NULL, realm TEXT NOT NULL, revision TEXT NOT NULL, since REAL NOT NULL, PRIMARY KEY(card_id,realm,revision))")
+            if not idle:
+                db.execute('DELETE FROM idle_pending WHERE card_id=? AND realm=? AND revision=?', (card_id, realm, revision))
+                return None
+            db.execute('INSERT OR IGNORE INTO idle_pending VALUES(?,?,?,?)', (card_id, realm, revision, now))
+            return db.execute('SELECT since FROM idle_pending WHERE card_id=? AND realm=? AND revision=?', (card_id, realm, revision)).fetchone()[0]
+
     def recovery_count(self, intent):
         with self.connection() as db:
             return db.execute('SELECT count(*) FROM recoveries WHERE intent=?', (intent,)).fetchone()[0]
@@ -543,7 +553,60 @@ class VerificationService:
                 return False
         return set(packet['origin_sessions']) <= observed_sessions
 
+    async def announce_pending(self, card):
+        """Tell the owner about a finished card that is stuck behind a completion gate.
+
+        acceptance_needed: once per card per requirement revision, as soon as the work is merged and
+        nothing is running; the owner can accept from the notification. verification_pending: only if
+        verification stays pending with nothing in flight for completion_verification_pending_notify_seconds.
+        Dismissed notifications are not raised again for the same revision.
+        """
+        req = card.completion_requirement
+        if not req or card.lane != CardLane.WAITING or not self.ctx.services.get('notifications'):
+            return
+        if (req.verification_authority_instance_id or card.created_by_instance) != self.ctx.settings.instance_id:
+            return  # exactly one instance in the fleet speaks for a card
+        status = card.completion_status
+        reason = status['reason_code']
+        if reason not in {'acceptance_pending', 'verification_pending'} or 'integrated' in status['missing']:
+            return
+        settings = self.ctx.settings
+        from pa.notifications.stall import StallKind, notify_stall
+        records = await self.call(self.ctx.services['dispatch_store'].list, card_id=card.id, realm_id=card.realm_id,
+                                  limit=101, diagnostic_phase='verification_dispatch_read')
+        busy = any(r.state not in TERMINAL_DISPATCH_STATES for r in records)
+        subjects = {'realm_id': card.realm_id, 'card_id': card.id}
+        if reason == 'acceptance_pending':
+            if busy or not settings.completion_notify_acceptance_needed:
+                return
+            notify_stall(self.ctx, kind=StallKind.ACCEPTANCE_NEEDED, subject_ids=subjects, severity='error',
+                title='Ready for your acceptance: ' + card.title,
+                body=f'The work on this card is merged and nothing is running. Still needed: {", ".join(status["missing"])}. '
+                     f'Criteria: {req.criteria or "none recorded"}. Reply accept to complete it.',
+                dedupe_key=f'{card.id}:{req.revision}')
+            return
+        threshold = settings.completion_verification_pending_notify_seconds
+        if not threshold:
+            return
+        jobs = await self.call(self.store.list, card.id, card.realm_id, diagnostic_phase='verification_intent_read')
+        busy = busy or any(j['state'] in {'admission_pending'} for j in jobs)
+        since = await self.call(self.store.idle_since, card.id, card.realm_id, req.revision, time.time(), not busy,
+                                diagnostic_phase='verification_intent_write')
+        if since is None or time.time() - since < threshold:
+            return
+        current = jobs[-1] if jobs else None
+        why = (current['diagnostic'] or current['state']) if current else 'no verification has been scheduled'
+        notify_stall(self.ctx, kind=StallKind.OTHER, subject_ids=subjects, severity='warning',
+            actions=['dismiss'], title='Verification is not progressing: ' + card.title,
+            body=f'This card has been waiting for independent verification with nothing running for over '
+                 f'{threshold // 60} minutes. Current state: {why}.',
+            dedupe_key=f'verification-pending:{card.id}:{req.revision}')
+
     async def process(self, card):
+        try:
+            await self.announce_pending(card)
+        except Exception as exc:  # noqa: BLE001 - alerting never blocks verification
+            self.last_error = getattr(exc, 'code', type(exc).__name__)
         req = card.completion_requirement
         if req and req.verification_policy == 'independent_agent_v1' and not await self.call(self.owns_authority, card, diagnostic_phase='verification_authority_read'):
             return

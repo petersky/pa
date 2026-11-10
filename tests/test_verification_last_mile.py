@@ -207,3 +207,91 @@ async def test_a_burst_of_merges_waits_for_the_quiet_period_only_after_an_earlie
     system.ctx.settings.completion_verification_quiet_seconds = 0  # the setting restores immediate re-verification
     await system.service.process(system.ctx.store.get_card(card.id))
     assert system.service.store.list()[-1]['dispatch_id'] and len(dispatches(system)) == 2
+
+
+# ------------------------------------------------------------------- pending notifications
+
+def declared_card(system, **requirement):
+    """A merged card that only the owner can finish (declared policy, owner acceptance)."""
+    from pa.domain.models import CardCreate
+    card = system.ctx.store.create_card(CardCreate(title='Ship the importer', lane='waiting', completion_requirement={
+        'mode': 'explicit_acceptance', 'criteria': 'Importer handles the sample file',
+        'milestones': ['integrated', 'verified'], 'acceptance_principals': ['user:local'], **requirement}),
+        instance_id=system.ctx.settings.instance_id)
+    origin(system, card.id)
+    return system.ctx.store.update_card(card.id, CardUpdate(expected_version=card.updated_at),
+        principal_id='instance:pr-supervisor', integration_evidence=CompletionEvidence(
+            requirement_revision=card.completion_requirement.revision, subject_revision='a' * 40, outcome='integrated'),
+        idempotency_key='integrated')
+
+
+@pytest.mark.asyncio
+async def test_a_merged_card_waiting_for_acceptance_notifies_the_owner_once_per_revision(system):
+    notices = system.ctx.services['notifications'] = Recorder()
+    card = declared_card(system)
+    assert card.completion_status['reason_code'] == 'acceptance_pending'
+    await system.service.process(card)
+    await system.service.process(card)
+    [first, repeat] = notices.created
+    assert first.capability == 'stall:acceptance_needed' and first.card_id == card.id
+    assert [a.id for a in first.actions] == ['accept', 'dismiss'] and first.priority.value == 'high'
+    assert first.deduplication_key == repeat.deduplication_key == f'stall:acceptance_needed:{card.id}:{card.completion_requirement.revision}'
+    edited = system.ctx.store.update_card(card.id, CardUpdate(expected_version=card.updated_at, field_intent=['completion_requirement'],
+        completion_requirement=card.completion_requirement.model_copy(update={'criteria': 'Importer handles two files'})))
+    await system.service.process(edited)
+    assert notices.created[-1].deduplication_key.endswith(edited.completion_requirement.revision)
+    assert notices.created[-1].deduplication_key != first.deduplication_key
+
+
+@pytest.mark.asyncio
+async def test_no_acceptance_notice_while_work_runs_or_when_disabled_or_owned_elsewhere(system):
+    notices = system.ctx.services['notifications'] = Recorder()
+    card = declared_card(system)
+    running = origin(system, card.id, session_id='still-working')
+    running.state = 'running'
+    system.ctx.services['dispatch_store'].put(running)
+    await system.service.process(card)
+    assert not notices.created
+    running.state = 'completed'
+    system.ctx.services['dispatch_store'].put(running)
+    system.ctx.settings.completion_notify_acceptance_needed = False
+    await system.service.process(card)
+    assert not notices.created
+    system.ctx.settings.completion_notify_acceptance_needed = True
+    system.ctx.settings.instance_id = 'someone-else'
+    await system.service.process(card)
+    assert not notices.created
+
+
+@pytest.mark.asyncio
+async def test_verification_pending_notifies_only_after_the_threshold_with_nothing_in_flight(system):
+    import time
+    notices = system.ctx.services['notifications'] = Recorder()
+    card, _ = ordinary(system, acceptance_principals=[])
+    assert card.completion_status['reason_code'] == 'verification_pending'
+    await system.service.process(card)
+    assert not notices.created  # just became idle: below the 2 h threshold
+    revision = card.completion_requirement.revision
+    with system.service.store.connection() as db:  # age the idle stretch by three hours
+        db.execute('UPDATE idle_pending SET since=?', (time.time() - 3 * 3600,))
+    await system.service.process(card)
+    [notice] = notices.created
+    assert notice.title.startswith('Verification is not progressing') and 'verification_principal_unconfigured' in notice.body
+    assert notice.deduplication_key.endswith(f'verification-pending:{card.id}:{revision}')
+    notices.created.clear()
+    system.ctx.settings.completion_verification_pending_notify_seconds = 0
+    await system.service.process(card)
+    assert not notices.created
+
+
+@pytest.mark.asyncio
+async def test_verification_in_flight_resets_the_pending_clock(system):
+    import time
+    notices = system.ctx.services['notifications'] = Recorder()
+    card, _ = ordinary(system)
+    await system.service.process(card)  # dispatches a verifier: busy
+    system.service.store.idle_since(card.id, card.realm_id, card.completion_requirement.revision, time.time() - 9 * 3600, True)
+    await system.service.process(card)
+    assert not [n for n in notices.created if n.capability != 'stall:acceptance_needed']
+    again = system.service.store.idle_since(card.id, card.realm_id, card.completion_requirement.revision, time.time(), True)
+    assert time.time() - again < 60  # the busy cycle forgot the old idle stretch
