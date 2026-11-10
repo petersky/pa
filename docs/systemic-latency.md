@@ -112,8 +112,11 @@ so explicit scenario samples and counter deltas define acceptance.
 
 The same script with `PYTHONPATH=.dev/systemic-baseline/src` measures base
 `4697ed583f6a5eceead72217d07ba2ebaf4ccc83`, which already contains PR #471.
-Disposable baseline source can be extracted with `git archive`; no other active
-session's worktree is used.
+Use the selective `exported_source` context in `scripts/build_verified.py` for
+baseline package source; run the required benchmark script from the current checkout
+with that temporary source on `PYTHONPATH`. The context removes source on exit.
+See [retention policy](benchmarks/README.md); historical evidence links below are
+as-of references in Git history, not files promised in the current checkout.
 
 `scripts/benchmark_database_api.py` separately covers cold transcript objects,
 concurrent card/session writes and response projections. The systemic fixture
@@ -547,7 +550,7 @@ observations. Neither diagnostic retains SQL, arguments, payloads or transcripts
 Measured lock sections are inclusive and can overlap when nested. Successful
 native SQLite busy wait remains inseparable from other native SQL elapsed time.
 
-The [version-four results](benchmarks/systemic-inventory-v4.json) preserve every
+The [version-four results](https://github.com/petersky/pa/blob/706b75ba8295bf8d5bab80064708d3d871991fa0/docs/benchmarks/systemic-inventory-v4.json) preserve every
 incomplete/failing stage. They include the invalid initial synthetic selection
 receipt, the reproduced fork failure, covered-index rebuild amplification,
 quadratic long-message copying and later residual tails. A 30-iteration measured
