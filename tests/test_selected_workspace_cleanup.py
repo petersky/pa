@@ -285,7 +285,8 @@ async def test_selected_api_does_not_reconcile_unselected_and_holds_admission(tm
     from pa.core.async_runtime import AsyncRuntime
     from pa.modules import instance
     manager, leases = setup(tmp_path)
-    manager.store.get_session.return_value = SimpleNamespace(principal_id='user:local')
+    manager.store.get_session.return_value = SimpleNamespace(principal_id='user:local',
+        config_json={'durable_runtime': {'in_flight': None, 'queued_prompts': []}})
     agent = SimpleNamespace(workspace_manager=manager, store=manager.store,
         _admitting_sessions=set(), list_runtimes=lambda:[])
     runtime = AsyncRuntime(max_workers=2,max_queue=2)
@@ -316,7 +317,8 @@ async def test_caller_cancellation_cannot_release_selected_owner_before_effect_f
     from pa.core.async_runtime import AsyncRuntime
     from pa.modules import instance
     manager, leases=setup(tmp_path)
-    manager.store.get_session.return_value=SimpleNamespace(principal_id='user:local')
+    manager.store.get_session.return_value=SimpleNamespace(principal_id='user:local',
+        config_json={'durable_runtime': {'in_flight': None, 'queued_prompts': []}})
     agent=SimpleNamespace(workspace_manager=manager,store=manager.store,_admitting_sessions=set(),list_runtimes=lambda:[])
     runtime=AsyncRuntime(max_workers=2,max_queue=2);await runtime.start()
     started,release,finished=threading.Event(),threading.Event(),threading.Event()
