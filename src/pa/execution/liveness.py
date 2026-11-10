@@ -11,6 +11,15 @@ dispatch has been silent for ``stale_seconds`` and then:
 * fails the dispatch recoverably, notifies, and optionally re-offers it, if the
   target no longer knows it, reports it dead, or has been unreachable for
   ``lost_seconds``.
+
+A dispatch whose target negotiated the lease protocol carries a lease
+(``lease_expires_at``), renewed by every progress event, heartbeat and confirmed
+probe. For it the lease, not an inferred "last progress time", is the liveness
+signal: nothing is probed while the lease is fresh, and once it has expired the
+same probe runs. A target that confirms the dispatch is still running renews the
+lease (a quiet but healthy long turn is never failed); a target that cannot
+confirm it is failed recoverably once the expiry is ``lease_grace_seconds`` old.
+Dispatches without a lease (older targets) keep the time-based behaviour above.
 """
 
 from __future__ import annotations
@@ -63,6 +72,15 @@ def last_activity(record: DispatchRecord) -> datetime:
     return max(stamp if stamp.tzinfo else stamp.replace(tzinfo=UTC) for stamp in stamps)
 
 
+def lease_expired_for(record: DispatchRecord, now: datetime) -> float | None:
+    """Seconds past the lease expiry (negative while fresh); ``None`` without a lease."""
+    if not record.lease_protocol or record.lease_expires_at is None:
+        return None
+    expires = record.lease_expires_at
+    expires = expires if expires.tzinfo else expires.replace(tzinfo=UTC)
+    return (now - expires).total_seconds()
+
+
 class RunningLivenessSweeper:
     def __init__(
         self,
@@ -77,6 +95,7 @@ class RunningLivenessSweeper:
         stale_seconds: float | Callable[[], float] = 1800.0,
         lost_seconds: float | Callable[[], float] = 21600.0,
         reoffer_enabled: bool | Callable[[], bool] = True,
+        lease_grace_seconds: float | Callable[[], float] = 300.0,
         interval_seconds: float = 60.0,
         offload: Callable[..., Awaitable[Any]] | None = None,
     ) -> None:
@@ -87,6 +106,7 @@ class RunningLivenessSweeper:
         self._stale, self._lost_seconds, self._reoffer_enabled = (
             stale_seconds, lost_seconds, reoffer_enabled,
         )
+        self._lease_grace = lease_grace_seconds
         self.interval_seconds = interval_seconds
         self._offload_call = offload
         self._closing = False
@@ -138,12 +158,20 @@ class RunningLivenessSweeper:
             "dispatch.liveness_read", self.store.running_remote_records, self.instance_id
         )
         outcomes: list[tuple[str, str]] = []
+        lease_grace = max(0.0, float(self._value(self._lease_grace)))
         for record in records:
             silent = (now - last_activity(record)).total_seconds()
-            if silent < stale:
+            expired_for = lease_expired_for(record, now)
+            if expired_for is not None:
+                # The lease is the liveness signal for this dispatch.
+                if expired_for < 0:
+                    continue
+            elif silent < stale:
                 continue
             try:
-                outcome = await self._examine(record, silent, lost_after)
+                outcome = await self._examine(
+                    record, silent, lost_after, expired_for, lease_grace
+                )
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -153,7 +181,14 @@ class RunningLivenessSweeper:
                 outcomes.append((record.dispatch_id, outcome))
         return outcomes
 
-    async def _examine(self, record: DispatchRecord, silent: float, lost_after: float) -> str | None:
+    async def _examine(
+        self,
+        record: DispatchRecord,
+        silent: float,
+        lost_after: float,
+        expired_for: float | None = None,
+        lease_grace: float = 0.0,
+    ) -> str | None:
         status = await self.probe(record)
         if status.completion is not None:
             await self.adopt(record, status.completion)
@@ -176,6 +211,16 @@ class RunningLivenessSweeper:
                 record.dispatch_id, "Target confirmed the dispatch is still running.",
             )
             return "confirmed_running"
+        if expired_for is not None:
+            if expired_for >= lease_grace:
+                why = status.error or "no usable answer"
+                return await self._lost(
+                    record,
+                    f"The target's lease expired {int(expired_for // 60)} minutes ago "
+                    f"without renewal and it could not confirm the dispatch ({why}).",
+                    "remote_dispatch_lease_expired",
+                )
+            return None
         if silent >= lost_after:
             why = status.error or "no usable answer"
             return await self._lost(

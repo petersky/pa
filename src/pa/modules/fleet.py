@@ -97,6 +97,7 @@ from pa.execution.dispatch import (
     DispatchStore,
     DispatchWorker,
     GoalDispatchProvenance,
+    StaleLeaseFence,
     TERMINAL_DISPATCH_STATES,
     completion_request_body,
     goal_admission_validation_proof,
@@ -136,7 +137,10 @@ from pa.execution.profiles import (
     resolve_materialization_plan,
 )
 from pa.execution.progress import (
+    LEASE_FENCE_HEADER,
+    LEASE_PROTOCOL,
     PROGRESS_SCHEMA_VERSION,
+    STALE_LEASE_FENCE_CODE,
     SUPPORTED_PROGRESS_VERSIONS,
     CompletionReportV1,
     DispatchProgressEventV1,
@@ -730,6 +734,11 @@ class DispatchMaterializeBody(BaseModel):
     attachment_digest: str | None = None
     materialization_plan: dict[str, Any] | None = None
     goal_provenance: GoalDispatchProvenance | None = None
+    # Lease handshake: an older target ignores these and answers without
+    # ``lease_protocol``, which leaves the dispatch on status-probe liveness.
+    lease_protocols: list[str] = Field(default_factory=list, max_length=10)
+    lease_fence: int | None = Field(default=None, ge=1)
+    lease_id: str | None = Field(default=None, max_length=200)
 
 
 class AttachmentFinalizeBody(BaseModel):
@@ -786,6 +795,29 @@ def _canonical_dispatch_uuid(value: str | None, field: str) -> str:
     return parsed
 
 
+def _presented_lease_fence(request: Request) -> int | None:
+    """The lease fence a target writer attached; ``None`` from an older target."""
+    raw = request.headers.get(LEASE_FENCE_HEADER, "").strip()
+    try:
+        value = int(raw) if raw else None
+    except ValueError:
+        return None
+    return value if value is not None and value >= 1 else None
+
+
+def _stale_lease_fence_error(exc: StaleLeaseFence) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": STALE_LEASE_FENCE_CODE,
+            "message": "This dispatch was reassigned to a newer lease; stop reporting for it.",
+            "presented_fence": exc.presented,
+            "current_fence": exc.current,
+            "recoverable": False,
+        },
+    )
+
+
 def _dispatch_store(request: Request) -> DispatchStore:
     service = request.app.state.ctx.services.get("dispatch_store")
     if isinstance(service, DispatchStore):
@@ -798,6 +830,7 @@ def _dispatch_store(request: Request) -> DispatchStore:
         reservation_hard_expiry=(
             request.app.state.ctx.settings.dispatch_capacity_reservation_hard_expiry
         ),
+        lease_ttl_seconds=lambda: request.app.state.ctx.settings.dispatch_lease_ttl_seconds,
     )
     request.app.state.ctx.register_service("dispatch_store", service)
     return service
@@ -1837,12 +1870,35 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
         ),
         None,
     )
+    # Only a remote target holds a lease; a local dispatch is implicitly fresh.
+    lease_protocol = (
+        LEASE_PROTOCOL
+        if LEASE_PROTOCOL in body.lease_protocols
+        and body.lease_fence is not None
+        and body.authority_instance_id != settings.instance_id
+        else None
+    )
     if recorded:
         # Local authority/target dispatches already share this admission record.
         # Negotiate on the authenticated materialization offer, even on replay.
         # Never replace an established version with an absent/incompatible offer.
         def preserve_materialization(current: DispatchRecord) -> bool:
-            before = (current.progress_protocol_version, current.goal_provenance, current.attachment_evidence, current.session_retry)
+            before = (current.progress_protocol_version, current.goal_provenance, current.attachment_evidence, current.session_retry,
+                      current.lease_protocol, current.lease_fence, current.lease_superseded_at)
+            if lease_protocol:
+                if body.lease_fence < current.lease_fence and current.lease_protocol:
+                    # A delayed materialize of an older assignment.
+                    raise HTTPException(status_code=409, detail={
+                        "code": STALE_LEASE_FENCE_CODE, "current_fence": current.lease_fence,
+                        "recoverable": False,
+                    })
+                if body.lease_fence > current.lease_fence or not current.lease_protocol:
+                    current.lease_fence = body.lease_fence
+                    current.lease_superseded_at = None
+                    current.lease_superseded_by_fence = None
+                current.lease_protocol = lease_protocol
+                current.lease_id = body.lease_id or current.assignment_lease_id
+                current.lease_holder_instance_id = settings.instance_id
             if current.progress_protocol_version is None and progress_protocol_version is not None:
                 current.progress_protocol_version = progress_protocol_version
             current.goal_provenance = target_provenance
@@ -1853,7 +1909,8 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
                 # authority admits a new retry. Local authority already queued it.
                 if current.authority_instance_id != settings.instance_id:
                     current.state = "materializing"
-            return before != (current.progress_protocol_version, current.goal_provenance, current.attachment_evidence, current.session_retry)
+            return before != (current.progress_protocol_version, current.goal_provenance, current.attachment_evidence, current.session_retry,
+                              current.lease_protocol, current.lease_fence, current.lease_superseded_at)
 
         try:
             recorded = ledger.compare_and_mutate(recorded, preserve_materialization)
@@ -1869,6 +1926,8 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
             "duplicate": True,
             "session_id": recorded.session_id,
             "progress_protocol_version": recorded.progress_protocol_version,
+            "lease_protocol": recorded.lease_protocol,
+            "lease_fence": recorded.lease_fence if recorded.lease_protocol else None,
             "attachment_evidence": recorded.attachment_evidence,
             "materialization_plan": recorded.materialization_plan,
             "execution_identity_digest": (
@@ -1935,6 +1994,10 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
         resume_session_id=body.session_id,
         state="materializing",
         progress_protocol_version=progress_protocol_version,
+        lease_protocol=lease_protocol,
+        lease_fence=body.lease_fence if lease_protocol else 1,
+        lease_id=body.lease_id if lease_protocol else None,
+        lease_holder_instance_id=settings.instance_id if lease_protocol else None,
         attachment_evidence=attachment_evidence,
         materialization_plan=body.materialization_plan,
         goal_provenance=body.goal_provenance,
@@ -1964,6 +2027,8 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
         "resolvable": True,
         "duplicate": False,
         "progress_protocol_version": progress_protocol_version,
+        "lease_protocol": lease_protocol,
+        "lease_fence": body.lease_fence if lease_protocol else None,
         "attachment_evidence": attachment_evidence,
     }
 
@@ -2335,6 +2400,11 @@ def dispatch_target_status(request: Request, dispatch_id: str) -> dict[str, Any]
         "session_id": record.session_id,
         "session_status": session_status,
         "acknowledged": record.acknowledged_at is not None,
+        "lease": {
+            "protocol": record.lease_protocol,
+            "fence": record.lease_fence,
+            "superseded": record.lease_superseded_at is not None,
+        },
         "completion": (
             completion_request_body(record)
             if record.completion_payload is not None
@@ -2352,6 +2422,8 @@ def complete_dispatch(
     envelope = body.model_dump(mode="json")
     duplicate = [False]
 
+    fence = _presented_lease_fence(request)
+
     def acknowledge(current: DispatchRecord) -> bool:
         if (
             current.mutation_id != body.mutation_id
@@ -2360,6 +2432,13 @@ def complete_dispatch(
             raise HTTPException(
                 status_code=409, detail={"code": "idempotency_conflict"}
             )
+        if current.acknowledged_at is None:
+            # A completion from a superseded holder never changes the record; an
+            # acknowledged completion still wins and is replayed below.
+            try:
+                ledger.enforce_lease_fence(current, fence)
+            except StaleLeaseFence as exc:
+                raise _stale_lease_fence_error(exc) from exc
         if (
             body.source_instance_id != current.target_instance_id
             or body.card_id != current.card_id
@@ -3347,6 +3426,13 @@ def ingest_dispatch_progress(
             detail={"code": "unknown_dispatch", "recoverable": True},
         )
     caller = request.headers.get("X-PA-Origin-Instance-ID", "").strip()
+    fence = _presented_lease_fence(request)
+    try:
+        # A superseded holder gets a distinguishable 409 before any provenance
+        # verdict, so it stops reporting instead of treating this as transient.
+        ledger.enforce_lease_fence(record, fence)
+    except StaleLeaseFence as exc:
+        raise _stale_lease_fence_error(exc) from exc
     if (
         caller != body.originating_instance_id
         or caller != record.target_instance_id
@@ -3360,11 +3446,14 @@ def ingest_dispatch_progress(
             },
         )
     try:
+        # Progress and heartbeats renew the holder's lease in the same commit.
         result = (
-            ledger.ingest_heartbeat(body, delivered=True)
+            ledger.ingest_heartbeat(body, delivered=True, lease_fence=fence)
             if body.kind == ProgressKind.HEARTBEAT
-            else ledger.ingest_progress(body, delivered=True)
+            else ledger.ingest_progress(body, delivered=True, lease_fence=fence)
         )
+    except StaleLeaseFence as exc:
+        raise _stale_lease_fence_error(exc) from exc
     except ValueError as exc:
         raise HTTPException(
             status_code=409,
@@ -7280,6 +7369,9 @@ async def _process_remote_dispatch_stages(app, record: DispatchRecord) -> None:
         "execution_contract": record.request_payload.get("execution_contract"),
         "session_id": record.resume_session_id if record.resume_requested else None,
         "progress_versions": SUPPORTED_PROGRESS_VERSIONS,
+        "lease_protocols": [LEASE_PROTOCOL],
+        "lease_fence": record.lease_fence,
+        "lease_id": record.assignment_lease_id,
         "attachment_manifest": [
             item.model_dump(mode="json") for item in materialized_attachments
         ],
@@ -7365,6 +7457,15 @@ async def _process_remote_dispatch_stages(app, record: DispatchRecord) -> None:
     record.progress_protocol_version = (
         int(negotiated_progress)
         if negotiated_progress in SUPPORTED_PROGRESS_VERSIONS
+        else None
+    )
+    # The lease is negotiated, never assumed: an older target answers without
+    # it and the dispatch stays on status-probe liveness.
+    record.lease_protocol = (
+        LEASE_PROTOCOL
+        if materialized.get("lease_protocol") == LEASE_PROTOCOL
+        and materialized.get("lease_fence") == record.lease_fence
+        and record.target_instance_id != record.authority_instance_id
         else None
     )
     await _commit_dispatch_stage(ctx, ledger, record)
@@ -7908,6 +8009,29 @@ async def _dispatch_terminal(app, record: DispatchRecord, outcome: str) -> None:
     ):
         await _offload_ctx(ctx, "dispatch.expiry_notify", notify_dispatch_failed, ctx, record)
         await _reoffer_lost_dispatch(app, record)
+
+
+def _announce_superseded(ctx: AppContext):
+    """Put a transcript note in the session whose dispatch the authority reassigned."""
+
+    async def announce(dispatch_id: str, detail: dict[str, Any]) -> None:
+        ledger = ctx.services.get("dispatch_store")
+        agent = ctx.services.get("instance_agent")
+        record = ledger.get(dispatch_id) if ledger else None
+        if record is None or not record.session_id or agent is None:
+            return
+        await agent.record_dispatch_superseded(record.session_id, {
+            "dispatch_id": dispatch_id,
+            "authority_instance_id": record.authority_instance_id,
+            "held_fence": record.lease_fence,
+            "current_fence": detail.get("current_fence"),
+            "message": (
+                "The authority reassigned this dispatch to another lease or target. "
+                "This session is no longer reporting progress or completion for it."
+            ),
+        })
+
+    return announce
 
 
 def _authority_peer_post(ctx: AppContext):
@@ -15731,6 +15855,7 @@ class FleetModule(Module):
             read_only=auxiliary,
             deferred_read_only=auxiliary,
             reservation_hard_expiry=settings.dispatch_capacity_reservation_hard_expiry,
+            lease_ttl_seconds=lambda: ctx.settings.dispatch_lease_ttl_seconds,
         )
         ctx.register_service("dispatch_store", dispatch_store)
         from pa.fleet.workshop_transitions import workshop_transition_publisher
@@ -15838,6 +15963,7 @@ class FleetModule(Module):
             ).record_card_disposition_status,
             stall_notifier=lambda record: notify_completion_undeliverable(ctx, record),
             peer_post=_authority_peer_post(ctx),
+            superseded_notifier=_announce_superseded(ctx),
             retry_max_seconds=lambda: ctx.settings.completion_delivery_retry_max_seconds,
             max_attempts=ctx.settings.completion_delivery_max_attempts,
             notify_after_attempts=ctx.settings.completion_delivery_notify_after_attempts,
@@ -15891,6 +16017,7 @@ class FleetModule(Module):
             stale_seconds=lambda: ctx.settings.dispatch_stale_running_seconds,
             lost_seconds=lambda: ctx.settings.dispatch_lost_remote_seconds,
             reoffer_enabled=lambda: ctx.settings.dispatch_reoffer_lost_remote,
+            lease_grace_seconds=lambda: ctx.settings.dispatch_lease_grace_seconds,
             offload=lambda operation, call, *args, **kwargs: _offload_ctx(
                 ctx, operation, call, *args, **kwargs
             ),
@@ -15904,6 +16031,7 @@ class FleetModule(Module):
             async_runtime=async_runtime,
             session_manager=agent,
             peer_post=_authority_peer_post(ctx),
+            superseded_notifier=_announce_superseded(ctx),
             retry_max_seconds=lambda: ctx.settings.progress_delivery_retry_max_seconds,
         )
         ctx.register_service("progress_service", progress_service)

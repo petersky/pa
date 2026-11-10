@@ -47,6 +47,12 @@ MAX_FINAL_REPORT_BYTES = 64_000
 PROGRESS_HEARTBEAT_SECONDS = 15.0
 PROGRESS_RETRY_SECONDS = 3.0
 DERIVED_PROGRESS_COALESCE_SECONDS = 60.0
+# Dispatch lease protocol (negotiated in the materialize handshake). The fence
+# header travels on every target -> authority write; a 409 with the code below
+# tells a superseded holder to stop reporting.
+LEASE_PROTOCOL = "dispatch-lease/v1"
+LEASE_FENCE_HEADER = "X-PA-Lease-Fence"
+STALE_LEASE_FENCE_CODE = "stale_lease_fence"
 PROGRESS_LIVE_SECONDS = 45
 PROGRESS_DELAYED_SECONDS = 120
 
@@ -699,6 +705,19 @@ def derived_checkpoint(
     return None
 
 
+def stale_lease_detail(response: Any) -> dict[str, Any] | None:
+    """The ``stale_lease_fence`` detail of an authority 409, else ``None``."""
+    if getattr(response, "status_code", None) != 409:
+        return None
+    try:
+        detail = response.json().get("detail")
+    except (ValueError, AttributeError):
+        return None
+    if isinstance(detail, dict) and detail.get("code") == STALE_LEASE_FENCE_CODE:
+        return detail
+    return None
+
+
 @dataclass(frozen=True, slots=True)
 class ProgressDeliveryTarget:
     """Immutable routing fields needed to deliver one persisted payload."""
@@ -706,6 +725,9 @@ class ProgressDeliveryTarget:
     dispatch_id: str
     authority_instance_id: str
     authority_url: str
+    # The lease fence this (target) mirror was assigned; None when the lease
+    # protocol was not negotiated, so no fence header is sent.
+    lease_fence: int | None = None
 
 
 class ProgressService:
@@ -723,9 +745,14 @@ class ProgressService:
         heartbeat_seconds: float = PROGRESS_HEARTBEAT_SECONDS,
         peer_post: Callable[..., Awaitable[httpx.Response | None]] | None = None,
         retry_max_seconds: float | Callable[[], float] | None = None,
+        superseded_notifier: Callable[[str, dict[str, Any]], Awaitable[Any] | Any]
+        | None = None,
     ) -> None:
         self.store = store
         self.instance_id = instance_id
+        # Told ``(dispatch_id, detail)`` once when the authority reports that a
+        # newer lease fence superseded this instance's mirror.
+        self.superseded_notifier = superseded_notifier
         # A callable is read at send time so a rotated fleet token is picked up.
         self._token_source = token
         # Reaches the authority through its current endpoints (with failover).
@@ -1237,7 +1264,11 @@ class ProgressService:
             record = await self._offload(
                 "progress.dispatch_read", self.store.by_session, runtime.session_id
             )
-            if record and record.progress_protocol_version == PROGRESS_SCHEMA_VERSION:
+            if (
+                record
+                and record.progress_protocol_version == PROGRESS_SCHEMA_VERSION
+                and getattr(record, "lease_superseded_at", None) is None
+            ):
                 phase = (
                     record.latest_progress.phase
                     if record.latest_progress
@@ -1287,6 +1318,22 @@ class ProgressService:
             except TimeoutError:
                 pass
 
+    async def _superseded(self, dispatch_id: str, detail: dict[str, Any]) -> None:
+        current = detail.get("current_fence")
+        marked = await self._offload(
+            "progress.lease_superseded",
+            self.store.mark_lease_superseded,
+            dispatch_id,
+            current if isinstance(current, int) else None,
+        )
+        if marked is not None and marked.lease_superseded_at and self.superseded_notifier:
+            try:
+                result = self.superseded_notifier(dispatch_id, dict(detail))
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception:
+                logger.exception("Superseded-lease notice failed for %s", dispatch_id)
+
     async def _post(
         self,
         record: Any,
@@ -1323,6 +1370,9 @@ class ProgressService:
             "Idempotency-Key": payload.idempotency_key,
             "X-PA-Origin-Instance-ID": self.instance_id,
         }
+        fence = getattr(record, "lease_fence", None)
+        if getattr(record, "lease_protocol", LEASE_PROTOCOL) and fence:
+            headers[LEASE_FENCE_HEADER] = str(fence)
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
         try:
@@ -1342,6 +1392,14 @@ class ProgressService:
                     record.dispatch_id,
                     payload.idempotency_key,
                 )
+                return
+            stale = stale_lease_detail(response)
+            if stale is not None:
+                # Not a transport failure: a newer assignment owns this dispatch.
+                # Stop reporting (the mirror is marked superseded) instead of
+                # retrying forever.
+                self._note_delivery(record.authority_instance_id, True)
+                await self._superseded(record.dispatch_id, stale)
                 return
             error = f"HTTP {response.status_code}: {response.text[:200]}"
         except Exception as exc:  # noqa: BLE001 - delivery failures remain retryable

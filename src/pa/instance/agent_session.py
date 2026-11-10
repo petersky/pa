@@ -4046,6 +4046,28 @@ class AgentSessionManager:
             [event],
         )
 
+    async def record_dispatch_superseded(
+        self, session_id: str, payload: dict[str, Any]
+    ) -> None:
+        """Note in the transcript that the authority reassigned this dispatch."""
+        runtime = self.get(session_id)
+        if runtime and not getattr(runtime, "_closed", False):
+            runtime._append_transcript("dispatch_superseded", payload)
+            runtime._flush_transcript()
+            await runtime._drain_transcripts()
+            return
+        event = TranscriptEvent(
+            session_id=session_id,
+            seq=self.store.next_transcript_seq(session_id),
+            event_type="dispatch_superseded",
+            payload=payload,
+        )
+        await self._offload(
+            "sqlite.dispatch_superseded_append",
+            self.store.append_transcript_events,
+            [event],
+        )
+
     async def _new_runtime(
         self,
         session: AgentSession,
