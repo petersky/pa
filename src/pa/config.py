@@ -285,6 +285,15 @@ class Settings(BaseSettings):
     telemetry_per_session_enabled: bool = True
     telemetry_ui_refresh_seconds: float = Field(default=5.0, ge=2.0, le=300)
     telemetry_default_report_range: str = "1h"
+    # Workshop page. ``floor`` opens the workshop-floor view (stations with
+    # agents walking between them); ``list`` opens the compact list. Each browser
+    # can still toggle and remembers its own choice.
+    workshop_default_view: Literal["floor", "list"] = "floor"
+    # Show chat (non-card) agents on the Workshop floor.
+    workshop_floor_chat_agents: bool = True
+    # ``auto`` walks agents between stations unless the browser asks for reduced
+    # motion; ``off`` always snaps them and only updates the station counts.
+    workshop_floor_motion: Literal["auto", "off"] = "auto"
 
     # Verified authoritative metadata backups. A blank destination resolves to
     # a private sibling of data_dir, never beneath the live data directory.

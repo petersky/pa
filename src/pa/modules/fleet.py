@@ -3604,6 +3604,9 @@ def _workshop_context(request: Request) -> dict:
         # The page embeds the same slim projection the live client consumes.
         "workshop": workshop_floor_view(build_workshop_snapshot(ctx, overview)),
         "primary_realm": ctx.settings.primary_realm,
+        "workshop_default_view": ctx.settings.workshop_default_view,
+        "workshop_floor_chat_agents": ctx.settings.workshop_floor_chat_agents,
+        "workshop_floor_motion": ctx.settings.workshop_floor_motion,
     }
 
 
