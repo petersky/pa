@@ -48,6 +48,7 @@
     "queue_enqueued", "queue_dequeued", "queue_removed", "queue_reordered",
     "queue_paused", "queue_resumed", "publication_fence_established",
     "session_control_changed", "session_started", "session_closed", "session_recovered",
+    "workspace_lease_reclaimed",
     "session_admission_failed", "session_recovery_audited", "session_recovery_fenced",
     "provider_released", "connection_lost", "model_changed", "mode_changed",
     "current_mode_update", "config_changed", "configuration_changed",
