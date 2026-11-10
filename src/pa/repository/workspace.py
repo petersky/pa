@@ -176,6 +176,8 @@ class WorkspaceCleanupTarget(BaseModel):
                                                pattern=r'^[A-Za-z0-9_./-]+$')
     expected_native_id: str | None = Field(default=None, min_length=1, max_length=200)
     expected_owner_updated_at: datetime | None = None
+    # Explicit post-collection operation; ordinary collection is unchanged.
+    residual_inventory_sha256: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$')
 
     @field_validator("expected_updated_at", "expected_owner_updated_at")
     @classmethod
@@ -633,6 +635,8 @@ class WorkspaceManager:
             if (lease.fencing_token != target.expected_fence
                     or lease.updated_at != target.expected_updated_at):
                 raise WorkspaceProvisioningError("stale cleanup target: " + target.lease_id)
+            if target.residual_inventory_sha256 is not None and lease.state != 'cleaned':
+                raise WorkspaceProvisioningError('Residual disposal requires an already-cleaned lease')
             leases.append(lease)
         return leases
 
@@ -1548,6 +1552,14 @@ class WorkspaceManager:
             if lease.state == "cleaned":
                 if selected is not None:
                     outcomes[lease.id].update(state="already_cleaned", reason=None)
+                    if selected[lease.id].residual_inventory_sha256 is not None:
+                        from pa.repository.residual_cleanup import collect_residual
+                        try:
+                            outcomes[lease.id].update(collect_residual(
+                                self, lease, selected[lease.id], active_session_ids))
+                        except WorkspaceProvisioningError as exc:
+                            outcomes[lease.id].update(state='blocked', reason=str(exc))
+                            result['blocked'] += 1
                 continue
             if (
                 lease.session_id in active_session_ids
