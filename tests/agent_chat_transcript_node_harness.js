@@ -235,14 +235,22 @@ const scenarios = {
   },
   // Item 5
   queue_events_refresh_while_history_is_held() {
-    for (const flag of ['recentBootstrap', 'historyPreserveWindow']) {
-      const w = make({[flag]: true});
-      ['queue_dequeued', 'queue_removed', 'queue_reordered', 'queue_paused', 'queue_resumed'].forEach((type, i) => {
-        const before = w.calls.refreshQueue;
-        w.handleEvent(ev(i + 1, type, {id: 'x'}));
-        assert.ok(w.calls.refreshQueue > before, `${type} must refresh the queue while ${flag}`);
-      });
-    }
+    // Reading older history holds live events back, but the queue panel must keep up.
+    const w = make({historyPreserveWindow: true});
+    ['queue_dequeued', 'queue_removed', 'queue_reordered', 'queue_paused', 'queue_resumed'].forEach((type, i) => {
+      const before = w.calls.refreshQueue;
+      w.handleEvent(ev(i + 1, type, {id: 'x'}));
+      assert.ok(w.calls.refreshQueue > before, `${type} must refresh the queue while older history is read`);
+    });
+    // A non-queue event does not.
+    const before = w.calls.refreshQueue;
+    w.handleEvent(ev(6, 'agent_message_chunk', {message_id: 'm', text: 'x', content_mode: 'delta'}));
+    assert.equal(w.calls.refreshQueue, before);
+    // The short recent-bootstrap hold releases through handleEvent, which refreshes then;
+    // refreshing at hold time too only re-renders the panel under the user's hands.
+    const boot = make({recentBootstrap: true});
+    boot.handleEvent(ev(1, 'queue_dequeued', {id: 'x'}));
+    assert.equal(boot.calls.refreshQueue, 0);
   },
   // Item 7
   closed_direct_stream_is_reopened_with_backoff() {

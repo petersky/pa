@@ -1534,8 +1534,11 @@
       if ((event.type === "user_message" || event.type === "queue_enqueued") && this.drafts) this.drafts.observeAcceptance(p.id, event.type === "queue_enqueued");
       if (["permission_request", "permission_resolved", "turn_completed", "cancelled", "connection_lost", "prompt_failed", "user_message", "queue_enqueued"].includes(event.type)) this.heldControlSeq[controlKey] = event.seq;
     }
-    // The queue panel reads the live snapshot, not the transcript window.
-    if (QUEUE_REFRESH_EVENT_TYPES.indexOf(event.type) >= 0) this.refreshQueue();
+    // The queue panel reads the live snapshot, not the transcript window, so a
+    // reader paging through older history must still see the queue move. Other
+    // holds (recent bootstrap, a sequence gap) are short: the held events are
+    // applied through handleEvent once the tail is loaded, which refreshes then.
+    if (this.historyPreserveWindow && QUEUE_REFRESH_EVENT_TYPES.indexOf(event.type) >= 0) this.refreshQueue();
     if (this.historyPreserveWindow) this.updateNewerControl();
     this._renderHistoryNotice();
   };
