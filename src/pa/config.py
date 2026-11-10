@@ -218,6 +218,17 @@ class Settings(BaseSettings):
     post_turn_evaluation_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
     post_turn_retry_seconds: float = Field(default=15.0, gt=0, le=3600)
     post_turn_escalation_threshold: int = Field(default=2, ge=1, le=10)
+    # Follow-through: a background worker executes the evaluator's recommended
+    # actions that need no approval, within the budget above, and raises a
+    # manual-review notification when it cannot. False restores the previous
+    # record-only behaviour.
+    post_turn_worker_enabled: bool = True
+    # Same-session prompts telling an agent why a Done claim was downgraded to
+    # Waiting, per card. 0 turns the feedback off.
+    post_turn_downgrade_feedback_max: int = Field(default=2, ge=0, le=20)
+    # A card turn that never produced a valid disposition after reconciliation is
+    # moved to Waiting and the owner is notified. False restores the quiet end.
+    completion_missing_disposition_escalates: bool = True
 
     # Developer / debug
     debug: bool = False

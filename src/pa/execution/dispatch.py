@@ -2463,6 +2463,24 @@ class DispatchStore:
                                             record.reconciliation_next_retry_at)
                     for record in selected]
 
+    def post_turn_candidates(
+        self, *, since: datetime, limit: int = 200
+    ) -> list[DispatchRecord]:
+        """Recently active dispatches that carry post-turn evaluations."""
+        self._require_readable()
+        self._yield_to_index_writer()
+        with measured_lock(self._index_lock):
+            selected = sorted(
+                (
+                    record
+                    for record in self._records.values()
+                    if record.post_turn_evaluations and record.updated_at >= since
+                ),
+                key=lambda record: record.updated_at,
+                reverse=True,
+            )[:limit]
+            return [self._snapshot(record) for record in selected]
+
     def waiting_count(self) -> int:
         """Scalar queue health; no record copies, SQL or writer lock."""
         self._require_readable()

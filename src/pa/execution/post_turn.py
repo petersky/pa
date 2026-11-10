@@ -1008,6 +1008,24 @@ class PostTurnEvaluator:
             status = "Attempt ended; waiting on an external integration condition."
             lane_ok = lane == "waiting"
             confidence = 0.86
+        elif disposition_lane == "waiting" and not snapshot.blockers:
+            # The agent itself parked the card. Prompting it again would only
+            # burn the follow-up budget; the waiting condition owns the wake-up.
+            decision = PostTurnDecision.WAITING_ON_EXTERNAL_CONDITION
+            rationale = (
+                "The agent declared the card Waiting with no recorded blocker; "
+                "no automatic continuation is warranted."
+            )
+            actions = [
+                _action(
+                    FollowupActionName.RECORD_TURN_OUTCOME,
+                    {"reason": rationale},
+                    snapshot,
+                )
+            ]
+            status = "Attempt ended; the agent parked the card as Waiting."
+            lane_ok = lane == "waiting"
+            confidence = 0.8
         elif snapshot.blockers or disposition_lane in {"active", "ready", "waiting"}:
             decision = PostTurnDecision.FURTHER_AGENT_WORK_NEEDED
             rationale = "The recorded disposition or blockers show that requested work remains."

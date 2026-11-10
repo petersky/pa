@@ -62,7 +62,13 @@ class CompletionReconciler:
         max_attempts: int = 30,
         retry_max_seconds: float = 300.0,
         rng: random.Random | None = None,
+        escalate_missing_disposition: Callable[[], bool] | None = None,
+        stall_notifier: Callable[[DispatchRecord, str], Any] | None = None,
     ) -> None:
+        # Both default to the old quiet behaviour so bare constructions (tests,
+        # tools) are unchanged; the fleet module wires the settings-driven pair.
+        self.escalate_missing_disposition = escalate_missing_disposition
+        self.stall_notifier = stall_notifier
         self.dispatch_store = dispatch_store
         self.agent = agent
         self.completion_outbox = completion_outbox
@@ -335,7 +341,9 @@ class CompletionReconciler:
             record.reconciliation_recoverable = False
             record.reconciliation_updated_at = datetime.now(UTC)
             await self._save(record)
-            return await self._queue_delivery(session_id, payload)
+            return await self._deliver_without_disposition(
+                record, session_id, payload
+            )
 
         record.completion_payload = payload
         record.card_disposition_error = error
@@ -365,6 +373,50 @@ class CompletionReconciler:
             payload,
         )
         return bool(queued)
+
+    async def _deliver_without_disposition(
+        self, record: DispatchRecord, session_id: str, payload: dict[str, Any]
+    ) -> bool:
+        """Finish a turn that never produced a disposition without hiding it.
+
+        Reconciliation is out of attempts.  The completion is still delivered,
+        but it carries an explicit Waiting disposition (the authority applies it
+        under its usual lane rules, so a newer Done is preserved) and the owner
+        is told, instead of the card silently keeping its lane.
+        """
+        if not (
+            self.escalate_missing_disposition
+            and self.escalate_missing_disposition()
+            and record.card_id
+        ):
+            return await self._queue_delivery(session_id, payload)
+        why = (record.reconciliation_reason or "no valid disposition")[:600]
+        outcome = (
+            "The agent finished a turn but never reported a valid card "
+            f"disposition after reconciliation ({why}). Parked in Waiting for "
+            "review."
+        )[:4000]
+        payload = {
+            **payload,
+            "card_disposition": {
+                "contract": "pa.card-disposition/v1",
+                "lane": CardLane.WAITING.value,
+                "outcome": outcome,
+                "evidence": {},
+            },
+        }
+        payload.pop("card_disposition_error", None)
+        if self.stall_notifier:
+            try:
+                await self._offload(
+                    "reconciliation.stall_notify", self.stall_notifier, record, outcome
+                )
+            except Exception:
+                logger.exception(
+                    "Missing-disposition notification failed for dispatch %s",
+                    record.dispatch_id,
+                )
+        return await self._queue_delivery(session_id, payload)
 
     async def _run(self, heartbeat: Callable[[], None] | None = None) -> None:
         while not self._closing:
@@ -733,8 +785,8 @@ class CompletionReconciler:
             record.reconciliation_recoverable = False
             record.reconciliation_next_retry_at = None
             await self._save(record)
-            await self._queue_delivery(
-                str(record.session_id), record.completion_payload or {}
+            await self._deliver_without_disposition(
+                record, str(record.session_id), record.completion_payload or {}
             )
             return
         record.reconciliation_state = "blocked"
