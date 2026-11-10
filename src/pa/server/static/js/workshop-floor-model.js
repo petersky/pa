@@ -170,29 +170,47 @@
       var order = orders[worker.card_id] || null;
       var relationship = worker.relationship_kind === "reservation" ? "reservation" : "session";
       var chat = relationship === "session" && (worker.purpose === "chat" || !worker.card_id);
+      var connected = bay.connectivity === "connected";
+      var gate = order && order.gantry ? Object.assign({ active: true }, order.gantry) : null;
+      var verification = !!(order && order.lane !== "done" && order.presentation &&
+        VERIFICATION_STATES[order.presentation.state]);
       return {
         id: worker.id, type: "agent", kind: relationship === "reservation" ? "reservation" :
           chat ? "chat" : "session",
-        name: worker.title || worker.id, bayId: bay.id, bayName: bay.name || bay.id,
-        bayConnected: bay.connectivity === "connected",
-        station: worker.station || null, pose: worker.pose || null,
+        name: relationship === "reservation" && order ? "Reservation: " + order.title :
+          worker.title || worker.id,
+        bayId: bay.id, bayName: bay.name || bay.id, bayConnected: connected,
+        // The server places every agent; the same table is the fallback when a
+        // snapshot predates stations.
+        station: worker.station !== undefined ? worker.station : workerStation({
+          relationship: relationship, bay_connected: connected, state: worker.state,
+          dispatch_state: worker.dispatch_state, interaction: worker.interaction,
+          recovery: worker.recovery, connection: worker.connection,
+          verification: verification, gantry: !!gate }),
+        pose: worker.pose || null,
         cardId: worker.card_id || null, cardTitle: order ? order.title : null,
         dispatchId: worker.dispatch_id || null, dispatchState: worker.dispatch_state || null,
         workerState: worker.state, stateLabel: worker.state_label,
         interaction: worker.interaction || null,
-        gate: order && order.gantry ? Object.assign({ active: true }, order.gantry) : null,
-        verification: !!(order && order.lane !== "done" && order.presentation &&
-          VERIFICATION_STATES[order.presentation.state]),
-        prompting: worker.station === "workbench",
+        gate: gate, verification: verification,
+        prompting: worker.state === "working" || worker.station === "workbench",
         restore: null, href: worker.href || null, provider: worker.provider || null,
         progress: worker.latest_progress || null
       };
     }
 
-    function makeCard(order) {
+    function cardStationOf(order) {
+      if (order.station !== undefined) return order.station;
+      var card = order.card || {};
+      return cardStation({ lane: order.lane, has_dispatch: !!(card.dispatch_id || order.dispatch_current),
+        has_session: !!order.session, presentation_state: (order.presentation || {}).state,
+        gantry: !!order.gantry, updated_at: order.updated_at }, now());
+    }
+
+    function makeCard(order, station) {
       return {
         id: "card:" + order.id, type: "card", cardId: order.id, cardTitle: order.title,
-        name: order.title, bayId: null, station: order.station, lane: order.lane,
+        name: order.title, bayId: null, station: station, lane: order.lane,
         gate: order.gantry ? Object.assign({ active: true }, order.gantry) : null,
         bayConnected: true
       };
@@ -200,7 +218,10 @@
 
     // Replace the skeleton from a floor snapshot. Differences from what events
     // already showed are corrections: they snap, they do not walk.
-    function load(snapshot) {
+    function load(snapshot, loadOptions) {
+      // ``keep`` names units a live event just moved: an older snapshot must
+      // not drag them back.
+      var keep = (loadOptions && loadOptions.keep) || {};
       var previous = units;
       var next = {};
       var orders = {};
@@ -218,11 +239,11 @@
         });
       });
       (snapshot.work_orders || []).forEach(function (order) {
-        if (!order.station) return;
         var carried = Object.keys(next).some(function (id) {
           return next[id].cardId === order.id && CARRY_STATIONS[next[id].station];
         });
-        if (!carried) next["card:" + order.id] = makeCard(order);
+        var station = carried ? null : cardStationOf(order);
+        if (station) next["card:" + order.id] = makeCard(order, station);
       });
       var moves = [];
       Object.keys(next).forEach(function (id) {
@@ -232,9 +253,14 @@
         if (!before && unit.dispatchId && previous["dispatch:" + unit.dispatchId]) {
           before = previous["dispatch:" + unit.dispatchId];
         }
+        if (before && keep[unit.id] && before.id === unit.id) {
+          unit.station = before.station;
+          unit.pose = before.pose;
+          unit.interaction = before.interaction;
+          unit.prompting = before.prompting;
+        }
         if (before) {
           unit.restore = before.restore;
-          unit.followed = before.followed;
           if (before.id !== unit.id) {
             // The reservation token became a live session: it walks on.
             var handoff = makeMove(unit, before.station, unit.station, "dispatch_started", "walk");
@@ -461,12 +487,15 @@
       return finish(result);
     }
 
-    function viewModel() {
+    // ``visible`` (optional) hides units a search/filter excludes before station
+    // capacity is applied; density still reflects every agent on the floor.
+    function viewModel(visible) {
       var count = agentsCount();
       var density = count > DENSITY_FULL_MAX ? "slots" : "full";
       var capacity = CAPACITY[density];
       var byKey = {};
       Object.keys(units).forEach(function (id) {
+        if (visible && !visible(units[id])) return;
         var key = stationKey(units[id]);
         (byKey[key] = byKey[key] || []).push(id);
       });

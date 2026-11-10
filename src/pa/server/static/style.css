@@ -3904,6 +3904,53 @@ a.acw-mention:hover, a.acw-mention:focus-visible { border-color: var(--pa-accent
 .workshop[data-workshop-layout="compact"] .workshop-layout { gap: .65rem; }
 .workshop-pagination { display: flex; align-items: center; justify-content: center; gap: .65rem; margin-top: 1rem; }
 .link-button { padding: 0; border: 0; color: var(--pa-accent); background: none; text-decoration: underline; }
+/* Workshop floor: stations, bays and agents that walk between them. */
+.floorplan { display: grid; gap: .8rem; }
+.floor-lane { min-width: 0; padding: .65rem; border: 1px solid var(--pa-border); border-radius: var(--radius); background: color-mix(in srgb, var(--pa-surface) 94%, transparent); }
+.floor-lane > h2, .floor-log > h2 { margin: 0 0 .5rem; font-size: .92rem; }
+.floor-lane-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .65rem; align-items: start; }
+.floor-lane[data-floor-lane="bays"] .floor-lane-body { grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr)); }
+.floor-station { min-width: 0; padding: .5rem; border: 1px dashed var(--pa-border); border-radius: var(--radius); background: var(--pa-bg); }
+.floor-station > h3, .floor-station > h4 { display: flex; align-items: center; justify-content: space-between; gap: .4rem; margin: 0; font-size: .82rem; }
+.floor-count { min-width: 1.4rem; padding: 0 .35rem; border: 1px solid var(--pa-border); border-radius: 1rem; background: var(--pa-surface); font-size: .72rem; font-variant-numeric: tabular-nums; text-align: center; }
+.floor-hint { margin: .1rem 0 .4rem; }
+.floor-station.floor-alert { border-style: solid; border-color: var(--pa-danger, #c53030); }
+.floor-station.floor-alert .floor-count { border-color: var(--pa-danger, #c53030); color: var(--pa-danger, #c53030); font-weight: 700; }
+.floor-slots { display: grid; gap: .4rem; min-height: 2.4rem; margin: 0; padding: 0; list-style: none; }
+.floorplan[data-density="slots"] .floor-slots { grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); min-height: 3.2rem; }
+.floor-unit { position: relative; display: grid; gap: .35rem; min-width: 0; padding: .35rem; border: 1px solid var(--pa-border); border-radius: var(--radius); background: var(--pa-surface); will-change: auto; }
+.floor-unit.walking { z-index: 3; box-shadow: 0 .4rem 1rem color-mix(in srgb, var(--pa-text) 22%, transparent); will-change: transform; }
+.floor-unit.following { outline: 2px solid var(--workshop-brass); outline-offset: 1px; }
+.floor-agent-row { display: flex; align-items: center; gap: .3rem; min-width: 0; }
+.floor-agent-button { display: flex; flex: 1; align-items: center; gap: .45rem; min-width: 0; padding: .2rem; border: 0; color: inherit; background: transparent; text-align: left; }
+.floor-agent-text { display: grid; min-width: 0; }
+.floor-agent-text strong, .floor-agent-text small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.floor-agent-text small { color: var(--pa-text-muted); font-size: .7rem; }
+.floor-follow { padding: .1rem .35rem; font-size: .7rem; }
+.floor-follow[aria-pressed="true"] { border-color: var(--workshop-brass); font-weight: 700; }
+.floor-unit .workshop-worker-figure { color: var(--pa-text-muted); }
+.floor-unit[data-state="working"] .workshop-worker-figure { color: var(--pa-accent); animation: workshop-working 1.4s ease-in-out infinite; }
+.floor-unit[data-kind="reservation"] .workshop-worker-figure { border-style: dashed; border-radius: .25rem; color: var(--workshop-brass); }
+.floor-unit[data-kind="chat"] .workshop-worker-figure { border-radius: 50%; }
+.floor-unit[data-station="infirmary"] .workshop-worker-figure, .floor-unit[data-state="stalled"] .workshop-worker-figure, .floor-unit[data-state="failed"] .workshop-worker-figure { color: var(--pa-danger, #c53030); }
+.floor-station[data-station="bell"] .workshop-worker-figure { color: var(--workshop-brass); }
+.floor-unit[data-pose]:not([data-pose=""]) .workshop-worker-figure::after { position: absolute; top: -.55rem; right: -.65rem; font-size: .7rem; line-height: 1; }
+.floor-unit[data-pose="edit"] .workshop-worker-figure::after { content: "✎"; }
+.floor-unit[data-pose="test"] .workshop-worker-figure::after { content: "▶"; }
+.floor-unit[data-pose="browse"] .workshop-worker-figure::after { content: "◎"; }
+.floor-unit[data-pose="read"] .workshop-worker-figure::after { content: "▤"; }
+.floor-bay { overflow: visible; }
+.floor-bay[data-state="disconnected"] { opacity: .72; filter: grayscale(.85); }
+.floor-bay[data-collapsed="true"] .floor-bay-stations, .floor-bay[data-collapsed="true"] .floor-bay-offline { display: none; }
+.floor-bay-stations { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .5rem; padding: .5rem; }
+.floor-bay-offline { margin: 0; padding: .4rem .6rem; border-bottom: 1px dashed var(--pa-border); font-size: .8rem; font-weight: 700; }
+.workshop-card-chip { display: flex; align-items: center; justify-content: space-between; gap: .4rem; width: 100%; padding: .25rem .4rem; border: 1px solid var(--pa-border); border-radius: .25rem; color: inherit; background: color-mix(in srgb, #f6e05e 14%, var(--pa-surface)); font-size: .76rem; text-align: left; }
+.workshop-card-chip > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.floor-overflow { margin-top: .4rem; }
+.floor-log { padding: .65rem; border: 1px solid var(--pa-border); border-radius: var(--radius); background: color-mix(in srgb, var(--pa-surface) 94%, transparent); }
+.floor-log ol { display: grid; gap: .2rem; margin: 0; padding-left: 1.1rem; color: var(--pa-text-muted); font-size: .78rem; }
+.floor-log ol:empty::before { content: "Nothing has moved yet."; }
+.workshop[data-workshop-layout="floor"] .workshop-scene { padding: .8rem; }
 @keyframes workshop-working { 50% { transform: translateY(-2px); } }
 @media (max-width: 1100px) {
   .workshop-layout { grid-template-columns: 1fr; }
@@ -3937,6 +3984,9 @@ a.acw-mention:hover, a.acw-mention:focus-visible { border-color: var(--pa-accent
 }
 @media (prefers-reduced-motion: reduce) {
   .workshop-worker[data-state="working"] .workshop-worker-figure { animation: none; }
+  /* No bobbing and no walking: agents jump and the station counts change. */
+  .floor-unit[data-state="working"] .workshop-worker-figure { animation: none; }
+  .floor-unit, .floor-unit.walking { transition: none !important; transform: none !important; }
 }
 
 .sr-only {
