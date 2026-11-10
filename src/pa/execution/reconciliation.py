@@ -7,6 +7,7 @@ import copy
 import inspect
 import logging
 import random
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -31,6 +32,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 RECONCILIATION_SOURCE_PREFIX = "card-reconciliation:"
+# A prompted reconciliation whose record has not changed is re-examined this often.
+PROMPTED_RECHECK_SECONDS = 30.0
 RECONCILIATION_TERMINAL_STATES = {
     # Authority completion outcomes consumed by the target outbox. Terminal
     # means no reconciliation work remains, not that the card goal succeeded.
@@ -62,7 +65,17 @@ class CompletionReconciler:
         max_attempts: int = 30,
         retry_max_seconds: float = 300.0,
         rng: random.Random | None = None,
+        session_unavailable_seconds: float | Callable[[], float] = 0.0,
+        stall_notifier: Callable[[DispatchRecord, str], Any] | None = None,
     ) -> None:
+        # How long a prompted reconciliation may wait for a quiesced or
+        # disconnected session before the dispatch's own completion is delivered
+        # without it. 0 waits indefinitely (the previous behaviour).
+        self._session_unavailable_source = session_unavailable_seconds
+        # Tells the owner the reconciliation was abandoned; must not raise.
+        self.stall_notifier = stall_notifier
+        # dispatch_id -> (reconciliation_updated_at, monotonic time last examined)
+        self._prompted_checked: dict[str, tuple[datetime | None, float]] = {}
         self.dispatch_store = dispatch_store
         self.agent = agent
         self.completion_outbox = completion_outbox
@@ -419,6 +432,23 @@ class CompletionReconciler:
 
     async def _recover_prompted(self, record: DispatchRecord | ReconciliationCandidate) -> None:
         """Recover a reconciler turn that finished immediately before restart."""
+        # Only the poll loop's lightweight candidates are throttled; a full
+        # record handed in by a caller is always examined.
+        is_candidate = not isinstance(record, DispatchRecord)
+        updated = getattr(record, "reconciliation_updated_at", None)
+        checked = self._prompted_checked.get(record.dispatch_id)
+        if (
+            is_candidate
+            and updated is not None
+            and checked is not None
+            and checked[0] == updated
+            and time.monotonic() - checked[1] < PROMPTED_RECHECK_SECONDS
+        ):
+            # Unchanged since it was last examined: skip the deep record copy.
+            return
+        self._prompted_checked[record.dispatch_id] = (updated, time.monotonic())
+        if len(self._prompted_checked) > 2048:
+            self._prompted_checked.clear()
         current = await self._offload(
             "reconciliation.dispatch_read",
             self.dispatch_store.get,
@@ -462,6 +492,36 @@ class CompletionReconciler:
                 current,
                 "failed",
                 "The durable reconciliation prompt was no longer queued and no completed turn could be recovered.",
+            )
+        elif self._session_unavailable_too_long(current):
+            # Quiesced or disconnected without a runtime: nothing will run the
+            # reconciliation prompt. Deliver the dispatch's completion with the
+            # reconciliation skipped, and tell the owner.
+            reason = (
+                "The reconciliation session stayed unavailable "
+                f"(status {session.status}); delivered the completion without it."
+            )
+            await self._skip_and_deliver(current, "failed", reason)
+            await self._notify(current, reason)
+
+    def _session_unavailable_too_long(self, record: DispatchRecord) -> bool:
+        source = self._session_unavailable_source
+        limit = float(source() if callable(source) else source)
+        if limit <= 0 or record.reconciliation_updated_at is None:
+            return False
+        waited = (datetime.now(UTC) - record.reconciliation_updated_at).total_seconds()
+        return waited >= limit
+
+    async def _notify(self, record: DispatchRecord, reason: str) -> None:
+        if not self.stall_notifier:
+            return
+        try:
+            await self._offload(
+                "reconciliation.stall_notify", self.stall_notifier, record, reason
+            )
+        except Exception:
+            logger.exception(
+                "Reconciliation notification failed for dispatch %s", record.dispatch_id
             )
 
     async def _recover_transcript_completion(

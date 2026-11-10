@@ -62,6 +62,7 @@ from pa.domain.models import (
 from pa.notifications.stall import (
     StallKind,
     notify_completion_undeliverable,
+    notify_reconciliation_abandoned,
     notify_dispatch_failed,
     notify_stall,
 )
@@ -15513,6 +15514,12 @@ class FleetModule(Module):
             outbox,
             ctx.store,
             lambda: ctx.services.get("pr_supervisor"),
+            session_unavailable_seconds=(
+                lambda: ctx.settings.reconciliation_session_unavailable_seconds
+            ),
+            stall_notifier=lambda record, reason: notify_reconciliation_abandoned(
+                ctx, record, reason
+            ),
         )
         await reconciler.recover()
         reconciler.start()

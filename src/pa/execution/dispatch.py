@@ -189,6 +189,7 @@ class ReconciliationCandidate:
     dispatch_id: str
     reconciliation_state: str
     reconciliation_next_retry_at: datetime | None
+    reconciliation_updated_at: datetime | None = None
 
 
 class GoalDispatchProvenance(BaseModel):
@@ -2485,7 +2486,8 @@ class DispatchStore:
                 )
             )), key=lambda record: record.updated_at, reverse=True)[:limit]
             return [ReconciliationCandidate(record.dispatch_id, record.reconciliation_state,
-                                            record.reconciliation_next_retry_at)
+                                            record.reconciliation_next_retry_at,
+                                            record.reconciliation_updated_at)
                     for record in selected]
 
     def waiting_count(self) -> int:
