@@ -40,6 +40,7 @@ EXPECTED_PROMPT_KEYS = {
     "agent.context.workspace_catalog",
     "agent.message.wrapper",
     "dispatch.remote.default",
+    "pr_supervisor.action.closed",
     "pr_supervisor.action.green",
     "pr_supervisor.action.merged",
     "pr_supervisor.action.required",

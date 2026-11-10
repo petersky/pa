@@ -2203,6 +2203,7 @@ class AgentSessionRuntime:
                         "pr_supervisor.action.required",
                         "pr_supervisor.action.green",
                         "pr_supervisor.action.merged",
+                        "pr_supervisor.action.closed",
                     ):
                         definition = PROMPTS.get(key)
                         if definition.template in item.message:

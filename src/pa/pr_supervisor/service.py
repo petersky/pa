@@ -2004,6 +2004,9 @@ class PRSupervisor:
                     head_sha=snapshot.head_sha,
                     payload={"url": snapshot.url},
                 )
+                # Tell the agent and a human before the watch goes terminal: an
+                # effect may only be authorized for an actionable, leased watch.
+                await self._notify_closed(watch, snapshot)
                 terminal = await self._offload(
                     "sqlite.pr_supervisor_watch_write",
                     self.store.set_terminal,
@@ -2186,6 +2189,87 @@ class PRSupervisor:
                     "stale_fences",
                 )
 
+    async def _notify_closed(self, watch: PRWatch, snapshot: PRSnapshot) -> None:
+        """Once per watch: prompt the originating session and raise a notification."""
+        try:
+            current = await self._offload(
+                "sqlite.pr_supervisor_watch_read", self.store.get_watch, watch.id
+            )
+            current = current or watch
+            if watch.policy.auto_notify and current.originating_session_id:
+                gate = GateResult(
+                    reasons=["pull request closed without merge"],
+                    fingerprint=f"closed:{snapshot.head_sha}",
+                )
+                prompt = build_executor_prompt_rendered(
+                    current,
+                    snapshot,
+                    gate,
+                    green=False,
+                    closed=True,
+                    provider=current.originating_agent or "default",
+                )
+                event_key = (
+                    f"{current.id}:closed:{current.originating_session_id}"
+                    ":pull_request_closed"
+                )
+                state = await self._dispatch_authorized_effect(
+                    current, event_key, prompt, effect_kind="pull_request_closed"
+                )
+                logger.info(
+                    "PR supervisor closed-PR prompt watch=%s state=%s", watch.id, state
+                )
+        except Exception as exc:  # noqa: BLE001 - never block retirement on delivery
+            logger.warning(
+                "PR supervisor closed-PR prompt failed watch=%s: %s",
+                watch.id,
+                type(exc).__name__,
+            )
+        try:
+            await self._offload(
+                "sqlite.notification_write", self._raise_closed_notification, watch
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "PR supervisor closed-PR notification failed watch=%s: %s",
+                watch.id,
+                type(exc).__name__,
+            )
+
+    def _raise_closed_notification(self, watch: PRWatch) -> None:
+        provider = self._notifications
+        service = provider() if callable(provider) else provider
+        if service is None:
+            return
+        from pa.domain.notifications import (
+            NotificationCreate,
+            NotificationSeverity,
+            NotificationType,
+        )
+
+        service.create(
+            NotificationCreate(
+                realm_id=watch.realm_id,
+                type=NotificationType.PR_EVENT,
+                severity=NotificationSeverity.WARNING,
+                title=f"PR #{watch.pr_number} was closed without merging",
+                body=(
+                    f"{watch.repository}#{watch.pr_number} was closed on GitHub "
+                    "without being merged. The linked card was not completed."
+                ),
+                summary="Pull request closed without merge.",
+                card_id=watch.card_id,
+                session_id=watch.originating_session_id,
+                project_id=watch.project_id,
+                pr_number=watch.pr_number,
+                watch_id=watch.id,
+                source_url=watch.pr_url,
+                deduplication_key=f"pr-supervisor:{watch.id}:closed-unmerged",
+            ),
+            principal_id="instance:pr-supervisor",
+            instance_id=self.settings.instance_id,
+        )
+
     async def _notify(
         self,
         watch: PRWatch,
@@ -2351,7 +2435,11 @@ class PRSupervisor:
         prompt = str(payload.get("prompt") or "")
         effect_kind = str(payload.get("effect_kind") or "")
         event_key = str(payload.get("event_key") or "")
-        if effect_kind not in {"action_required", "green_for_agent_merge"}:
+        if effect_kind not in {
+            "action_required",
+            "green_for_agent_merge",
+            "pull_request_closed",
+        }:
             raise RuntimeError("unsupported_pr_watch_effect")
         if (
             not prompt

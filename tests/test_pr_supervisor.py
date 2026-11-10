@@ -2423,6 +2423,78 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(current.state["retirement"]["reason"], "github_close_observed")
         service._broadcast_retirement.assert_awaited_once_with(current)
 
+    async def test_closed_unmerged_pr_prompts_session_once_and_raises_notification(self) -> None:
+        created: list = []
+        fake_notifications = SimpleNamespace(
+            create=lambda data, **kwargs: created.append((data, kwargs))
+        )
+        service = await self.make_service([snapshot(state="closed")])
+        service._notifications = lambda: fake_notifications
+        service._broadcast_retirement = AsyncMock()
+
+        await service.run_once()
+        self.store.schedule_now(watch_id="watch-1")
+        await service.run_once()  # terminal watches are not polled again
+
+        current = self.store.get_watch("watch-1")
+        self.assertEqual(current.status, PRWatchStatus.CLOSED)
+        self.assertEqual(len(self.dispatcher.calls), 1)
+        event_key, prompt = self.dispatcher.calls[0]
+        self.assertTrue(event_key.endswith(":pull_request_closed"))
+        self.assertIn("closed without being merged", prompt)
+        self.assertEqual(len(created), 1)
+        notification, kwargs = created[0]
+        self.assertEqual(notification.watch_id, "watch-1")
+        self.assertEqual(notification.pr_number, 17)
+        self.assertEqual(notification.session_id, "session-1")
+        self.assertEqual(notification.deduplication_key, "pr-supervisor:watch-1:closed-unmerged")
+
+    async def test_closed_pr_notification_is_stored_once_by_real_notification_service(self) -> None:
+        from pa.notifications.service import NotificationService
+
+        store = CardProjection(Path(self.tmp.name) / "cards.db")
+        notifications = NotificationService(SimpleNamespace(settings=self.settings, store=store))
+        notifications._publish = MagicMock()
+        service = await self.make_service([snapshot(state="closed")])
+        service._notifications = lambda: notifications
+        service._broadcast_retirement = AsyncMock()
+
+        await service.run_once()
+        service._raise_closed_notification(self.store.get_watch("watch-1"))  # replay
+
+        stored = store.list_notifications(realm_id="default", principal_id="instance:pr-supervisor")
+        stored = [n for n in stored if n.watch_id == "watch-1"]
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(stored[0].type.value, "pr_event")
+        self.assertEqual(stored[0].coalesced_count, 2)  # replay coalesced into the one row
+
+    async def test_closed_pr_notification_survives_prompt_failure_and_auto_notify_off(self) -> None:
+        created: list = []
+        fake_notifications = SimpleNamespace(create=lambda data, **kwargs: created.append(data))
+        service = await self.make_service([snapshot(state="closed")])
+        service._notifications = fake_notifications
+        service._broadcast_retirement = AsyncMock()
+        service.dispatcher = SimpleNamespace(dispatch=AsyncMock(side_effect=RuntimeError("agent down")))
+
+        await service.run_once()
+
+        self.assertEqual(self.store.get_watch("watch-1").status, PRWatchStatus.CLOSED)
+        self.assertEqual(len(created), 1)
+
+        quiet = watch(policy=self.policy().model_copy(update={"auto_notify": False})).model_copy(
+            update={"id": "watch-quiet", "pr_number": 19, "pr_url": "https://github.com/owner/repo/pull/19"}
+        )
+        await service.register_watch(quiet, replicate=False)
+        service.github = _TerminalRevalidationGitHub(
+            {17: snapshot(state="closed"), 19: snapshot(state="closed").model_copy(update={"number": 19})}
+        )
+        self.dispatcher.calls.clear()
+        service.dispatcher = self.dispatcher
+        self.store.schedule_now(watch_id="watch-quiet")
+        await service.run_once()
+        self.assertEqual(self.dispatcher.calls, [])
+        self.assertEqual(len(created), 2)
+
     async def test_stable_green_exact_head_and_merge_commit_complete_card(self) -> None:
         open_green = snapshot()
         merged = snapshot(state="merged", merge_commit_sha="c" * 40)
