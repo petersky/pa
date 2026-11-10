@@ -1,0 +1,7 @@
+.page-loops input, .page-loops textarea, .page-loops select { max-width: 100%; }
+.page-loops pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.page-loops article { padding-block: 1rem; border-bottom: 1px solid var(--border); }
+.page-loops article button { margin: .25rem; }
+[data-acw-reminders-dialog] { width: min(40rem, 90vw); max-height: 80vh; overflow: auto; padding: 1.5rem; background: var(--bg, Canvas); color: var(--text, CanvasText); border: 1px solid var(--border); border-radius: .75rem; }
+[data-acw-reminders-dialog]::backdrop { background: rgb(0 0 0 / .4); }
+[data-acw-reminders-list] article { margin-block: 1rem; overflow-wrap: anywhere; }

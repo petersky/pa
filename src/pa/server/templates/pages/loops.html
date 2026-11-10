@@ -1,0 +1,32 @@
+{% from "macros/layout.html" import page_layout %}
+{% set main %}<div class="panel" data-loops-page><h1>Loops</h1>
+<p>Automations, schedules, crons, triggers and reminders on this PA instance.</p>
+<p role="status">Provider discovery (including Codex): unsupported by the currently integrated ACP capabilities. Provider-owned automations may exist outside PA; discovery and controls are unavailable here.</p>
+<p>Recipients choose actions, reporting and completion. Session association uses an explicit source session or an exact agent delivery target. Managed subsystem loops appear below with links to their existing controls.</p>
+<section aria-labelledby="managed-loops-title"><h2 id="managed-loops-title">Managed subsystem loops</h2><p>These retain their existing policies and controls. Each source loads independently; unavailable discovery is shown explicitly.</p><div id="managed-loops"></div></section>
+    <h2>Notification loops</h2><form id="editor">
+    <p><label>Originating session ID <input id="source-session"></label></p><input id="csrf" type="hidden" value="{{ csrf_token }}">
+    <p><label>Name <input id="name" required maxlength="200"></label></p>
+    <p><label>Trigger <select id="kind"><option>interval</option><option>once</option><option>cron</option><option>event</option><option>webhook</option><option>manual</option></select></label>
+    <label>Time, seconds, cron expression or event name <input id="trigger-value" value="600"></label>
+    <label>Timezone <input id="timezone" value="UTC"></label></p>
+    <p><label>Destination <select id="destination"><option value="inbox">PA inbox</option><option value="agent_session">Agent session</option><option value="messaging">Configured messaging conversation</option><option value="webhook">HTTPS webhook</option></select></label>
+    <label>Recipient ID or URL <input id="target" required value="{{ principal_id }}"></label>
+    <label><input id="interrupt" type="checkbox">Interrupt agent</label></p>
+    <details><summary>Additional deliveries</summary><p>JSON array of destinations: kind (inbox, agent_session, messaging, webhook), target, optional interrupt.</p><label>Additional destinations <textarea id="additional-destinations">[]</textarea></label></details>
+    <p><label>Payload format <select id="payload-format"><option value="text">Text</option><option value="json">JSON</option></select></label></p>
+    <p><label>Message or payload<br><textarea id="payload" required rows="5" cols="70"></textarea></label></p>
+    <p><label>Missed deliveries <select id="missed"><option value="catch_up">One catch-up</option><option value="skip">Skip missed</option><option value="replay">Bounded replay</option></select></label>
+    <label>Replay limit <input id="replay" type="number" min="1" max="100" value="10"></label>
+    <label><input id="coalesce" type="checkbox">Coalesce undelivered notifications</label></p>
+    <p><label>Expiry <input id="expiry" type="datetime-local"></label>
+    <label>Maximum occurrences <input id="maximum" type="number" min="1"></label></p>
+    <details><summary>Context and event filters</summary>
+    <p>Optional key/value objects. Event filter keys: card, session, state, repo.</p>
+    <label>Context references <textarea id="refs">{}</textarea></label>
+    <label>Event filters <textarea id="filters">{}</textarea></label></details>
+    <p><button type="submit" id="save">Create schedule</button><button type="button" id="new">New schedule</button>
+    <button type="button" id="preview">Preview times</button><button type="button" id="refresh">Refresh</button></p></form>
+    <p>Delivered means accepted by the destination. An in-flight delivery may finish after pause or deletion.</p>
+    <pre id="result" aria-live="polite"></pre><div id="records"></div></div><script src="/schedules-controls.js" defer></script>{% endset %}
+{{ page_layout(main=main, class='page-loops') }}
