@@ -875,7 +875,21 @@ class AgentSessionRuntime:
     async def _on_permission(
         self, _external_session_id: str, request: dict[str, Any]
     ) -> Any:
-        if await self.manager.should_auto_approve_async(self.session.principal_id):
+        approver = self.session.principal_id
+        dispatch_id = getattr(self.session, "dispatch_id", None)
+        if dispatch_id:
+            # A goal-dispatched session acts on the goal owner's behalf, so the
+            # owner's auto-approve preference governs it; the session's own
+            # principal can be an instance or service identity with no preference
+            # and would silently fall back to the global default (prompt).
+            owner = await asyncio.to_thread(
+                goal_owner_principal,
+                getattr(self.manager, "dispatch_store", None),
+                getattr(self.manager, "store", None),
+                dispatch_id,
+            )
+            approver = owner or approver
+        if await self.manager.should_auto_approve_async(approver):
             options = request.get("options") or []
             option_id = None
             for kind in ("allow_always", "allow_once"):
@@ -3538,6 +3552,30 @@ class AgentSessionRuntime:
         )
         self.manager._invalidate_provider_overview()
         return True
+
+
+def goal_owner_principal(dispatch_store: Any, store: Any, dispatch_id: str) -> str | None:
+    """The owner of the durable goal a dispatch was made for, if it was goal-bound."""
+
+    if dispatch_store is None or store is None or not dispatch_id:
+        return None
+    try:
+        record = dispatch_store.get(dispatch_id)
+        provenance = getattr(record, "goal_provenance", None)
+        goal_id = getattr(provenance, "goal_id", None)
+        if not isinstance(goal_id, str) or not goal_id:
+            return None
+        from pa.goals.projection import get_goal_payload
+
+        realm_id = getattr(record, "realm_id", None)
+        payload = get_goal_payload(
+            store, goal_id, realm_id if isinstance(realm_id, str) and realm_id else None
+        )
+        owner = str((payload or {}).get("owner_principal") or "").strip()
+        return owner or None
+    except Exception:  # noqa: BLE001 - fall back to the session's own principal
+        logger.debug("Could not resolve the goal owner for %s", dispatch_id, exc_info=True)
+        return None
 
 
 class AgentSessionManager:
