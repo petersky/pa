@@ -998,8 +998,8 @@ class PRSupervisorStore:
                 # An action_required event key names the *repair* (repair
                 # fingerprint + epoch), not the gate condition that happened to
                 # be observed when it was issued. Unrelated checks/approvals can
-                # change the condition fingerprint, head-independent prompt text
-                # and condition version while the same repair is outstanding.
+                # change the condition fingerprint, condition version and prompt text
+                # while the same repair is outstanding.
                 # Those fields are therefore rebinding-only for action_required;
                 # every destination/policy/kind binding stays immutable.
                 condition_keys = (
