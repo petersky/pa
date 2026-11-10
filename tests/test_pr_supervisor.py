@@ -2244,6 +2244,49 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
             self.store.get_watch("watch-1").owner_instance_id, "instance-b"
         )
 
+    async def test_repeated_repair_effect_under_changed_condition_is_deduplicated(self) -> None:
+        """Same repair identity, new poll fingerprint: no 'different effect' error."""
+        failing = snapshot(conclusion="failure", optional_conclusion="success")
+        changed = snapshot(conclusion="failure", optional_conclusion="skipped")
+        service = await self.make_service([failing, changed, changed, changed])
+
+        await service.run_once()
+        for _ in range(3):
+            self.store.schedule_now(watch_id="watch-1")
+            await service.run_once()
+
+        self.assertEqual(len(self.dispatcher.calls), 1)
+        events = self.store.list_events("watch-1", limit=500)
+        results = [e for e in events if e.event_type == "effect_delivery_result"]
+        self.assertFalse(
+            [e for e in results if e.payload.get("state") == "failed"],
+            [e.payload for e in results],
+        )
+        # One row per (event key, outcome), not one per poll.
+        keys = [e.event_key for e in results]
+        self.assertEqual(len(keys), len(set(keys)))
+        self.assertEqual(
+            len({(e.payload["event_key"], e.payload["state"]) for e in results}),
+            len(results),
+        )
+
+    async def test_unchanged_repair_effect_does_not_grow_delivery_rows_per_poll(self) -> None:
+        failing = snapshot(conclusion="failure")
+        service = await self.make_service([failing])
+
+        await service.run_once()
+        for _ in range(4):
+            self.store.schedule_now(watch_id="watch-1")
+            await service.run_once()
+
+        results = [
+            e
+            for e in self.store.list_events("watch-1", limit=500)
+            if e.event_type == "effect_delivery_result"
+        ]
+        self.assertEqual(len(results), 2, [e.payload["state"] for e in results])
+        self.assertEqual({e.payload["state"] for e in results}, {"queued", "deduplicated"})
+
     async def test_failed_effect_acceptance_can_retry_same_event(self) -> None:
         service = await self.make_service([snapshot(), snapshot()])
         failing = SimpleNamespace(dispatch=AsyncMock(side_effect=["failed", "queued"]))

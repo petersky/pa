@@ -995,10 +995,27 @@ class PRSupervisorStore:
                 # Keep every effect/destination/policy binding immutable, but do
                 # not make an expired worker lease part of the semantic identity.
                 lease_keys = {"owner_instance_id", "fence_token", "lease_version"}
+                # An action_required event key names the *repair* (repair
+                # fingerprint + epoch), not the gate condition that happened to
+                # be observed when it was issued. Unrelated checks/approvals can
+                # change the condition fingerprint, head-independent prompt text
+                # and condition version while the same repair is outstanding.
+                # Those fields are therefore rebinding-only for action_required;
+                # every destination/policy/kind binding stays immutable.
+                condition_keys = (
+                    {
+                        "condition_fingerprint",
+                        "condition_version",
+                        "head_sha",
+                        "content_digest",
+                    }
+                    if semantic.get("effect_kind") == "action_required"
+                    else set()
+                )
                 stable_semantic = {
                     key: value
                     for key, value in semantic.items()
-                    if key not in lease_keys
+                    if key not in lease_keys and key not in condition_keys
                 }
                 prior_stable_semantic = {
                     key: prior.get(key) for key in stable_semantic
@@ -1007,8 +1024,12 @@ class PRSupervisorStore:
                     raise StaleFenceError(
                         f"event key belongs to different effect for watch {watch_id}"
                     )
+                rebound = any(
+                    prior.get(key) != semantic.get(key) for key in condition_keys
+                )
                 if prior.get("state") == "accepted" or (
                     prior.get("state") == "prepared"
+                    and not rebound
                     and datetime.fromisoformat(str(prior["expires_at"])) > now
                 ):
                     return watch, prior

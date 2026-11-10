@@ -2217,7 +2217,9 @@ class PRSupervisor:
             await self._audit(
                 watch,
                 "effect_delivery_result",
-                f"{event_key}:delivery:{state}:{uuid4()}",
+                # Idempotent per (effect, outcome): a poll that re-observes the
+                # same deduplicated/queued outcome must not append a new row.
+                f"{event_key}:delivery:{state}",
                 head_sha=snapshot.head_sha,
                 fingerprint=effect_fingerprint,
                 payload={
@@ -2249,7 +2251,8 @@ class PRSupervisor:
             await self._audit(
                 watch,
                 "effect_delivery_result",
-                f"{event_key}:delivery:error:{uuid4()}",
+                f"{event_key}:delivery:error:"
+                f"{hashlib.sha256(str(exc).encode()).hexdigest()[:12]}",
                 head_sha=snapshot.head_sha,
                 fingerprint=effect_fingerprint,
                 payload={
