@@ -260,7 +260,7 @@ def factory_overhead(*, pairs=3, commits=100):
         except Exception as exc: result.update(failed=True, **inbox.shared.support.minimum_failure(exc))
         result["fixture_storage"] = inbox.shared.support.fixture_bytes(root)
     result.update(temporary_fixture_removed=not root.exists(),
-        scope="Three alternating actual private same-DAG100commit/100occurrence polls, no Kernel/delivery/network. Original connection vs existing numeric observer under same OperationObservation context. Exact complete final get/list/pending/history/status/health bytes and reopened replay counts. Fixture-only stable IDs/clock; no copied databases. Module-local guarded factory, global sqlite3.connect unchanged. Wall/threadCPU/calls/rows/bytes; no raw SQL/results. Direct-component overhead is not a bound on contended Kernel/native overhead or acceptance.",
+        scope=f"{pairs} alternating actual private same-DAG{commits}commit/{commits}occurrence polls, no Kernel/delivery/network. Original connection vs existing numeric observer under same OperationObservation context. Exact complete final get/list/pending/history/status/health bytes and reopened replay counts. Fixture-only stable IDs/clock; no copied databases. Module-local guarded factory, global sqlite3.connect unchanged. Wall/threadCPU/calls/rows/bytes; no raw SQL/results. Direct-component overhead is not a bound on contended Kernel/native overhead or acceptance.",
         script_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
     return result
 
