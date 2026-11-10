@@ -39,6 +39,9 @@ _SECRET_KEY = re.compile(
 _BEARER = re.compile(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}")
 _TOKEN = re.compile(r"\b(?:sk|gh[oprsu]|xox[abprs])-[-A-Za-z0-9_]{8,}\b", re.I)
 _COLD_HASH = re.compile(r"[0-9a-f]{64}")
+_GC_READ_BATCH = 1024
+_GC_DELETE_BATCH = 128
+_HEALTH_REFERENCE_BATCH = 1024
 _WIRE_KEYS = {"headers", "http_headers", "wire", "wire_envelope", "provider_envelope"}
 _AUDIT_TYPES = {
     "session_closed", "turn_completed", "turn_failed", "command_result",
@@ -105,7 +108,7 @@ def _gc_object_entries(root: Path) -> Iterator[tuple[str, str]]:
     Directory reads finish before yielding, as with glob's name lists. Keep
     directory symlinks, native name order and suppressed traversal errors;
     entries ending in .zlib may themselves be directories (unlink must still
-    raise). The consumer retains its original 128-entry protection boundaries.
+    raise). The consumer limits each fresh deletion proof to 128 candidates.
     """
     def names(directory, *, directories_only=False):
         result = []
@@ -635,7 +638,10 @@ class TranscriptStorage:
         # Preserve hidden-name matching without constructing a full Path for
         # every live object, or parsing its parent and stem twice.
         paths = _gc_object_entries(self.objects_dir)
-        while batch := list(islice(paths, 128)):
+        # This speculative read does not authorize deletion. Amortize SQLite
+        # calls for predominantly live directories, then retain the smaller
+        # publication-lock/deletion bound below.
+        while batch := list(islice(paths, _GC_READ_BATCH)):
             digests = [
                 _gc_candidate_hash(directory, name)
                 for directory, name in batch
@@ -655,18 +661,20 @@ class TranscriptStorage:
             candidates = [(path, digest) for path, digest in zip(batch, digests) if digest in unreferenced]
             if not candidates:
                 continue
-            batch, digests = map(list, zip(*candidates))
-            with measured_lock(self._lock, name="transcript.write"), self._conn() as conn:
-                if self._object_readers:
-                    return removed
-                marks = ",".join("?" for _ in digests)
-                live = {row[0] for row in conn.execute(
-                    f"SELECT hash FROM transcript_objects WHERE ref_count>0 AND hash IN ({marks})", digests,
-                ).fetchall()}
-                for path, digest in zip(batch, digests):
-                    if digest not in live:
-                        (self.objects_dir / path[0] / path[1]).unlink(missing_ok=True)
-                        removed += 1
+            for start in range(0, len(candidates), _GC_DELETE_BATCH):
+                protected = candidates[start:start + _GC_DELETE_BATCH]
+                digests = [digest for _, digest in protected]
+                with measured_lock(self._lock, name="transcript.write"), self._conn() as conn:
+                    if self._object_readers:
+                        return removed
+                    marks = ",".join("?" for _ in digests)
+                    live = {row[0] for row in conn.execute(
+                        f"SELECT hash FROM transcript_objects WHERE ref_count>0 AND hash IN ({marks})", digests,
+                    ).fetchall()}
+                    for path, digest in protected:
+                        if digest not in live:
+                            (self.objects_dir / path[0] / path[1]).unlink(missing_ok=True)
+                            removed += 1
         return removed
 
     def metrics(self) -> dict[str, Any]:
@@ -737,7 +745,9 @@ class TranscriptStorage:
         """Read every reference from one fresh snapshot in bounded JSON pages.
 
         SQLite's text index supplies distinct keyset pages without one observed
-        Python fetch per reference. Malformed non-text catalog values retain the
+        Python fetch per reference. Each page holds at most 1024 values (about
+        67 KiB for ordinary 64-character hashes); no health result is cached.
+        Malformed non-text catalog values retain the
         native row path, including its value types and decoding errors.
         """
         with self._conn() as conn:
@@ -778,7 +788,8 @@ class TranscriptStorage:
                             "SELECT json_group_array(cold_hash) FROM ("
                             "SELECT DISTINCT cold_hash FROM transcript_events "
                             "WHERE cold_hash IS NOT NULL" + predicate +
-                            " ORDER BY cold_hash LIMIT 128)", parameters,
+                            " ORDER BY cold_hash LIMIT ?)",
+                            (*parameters, _HEALTH_REFERENCE_BATCH),
                         ).fetchone()
                     except sqlite3.DataError as exc:
                         # Malformed long references can fit individually but

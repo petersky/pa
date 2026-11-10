@@ -35,7 +35,7 @@ that metadata.
 - Browser storage quotas are browser- and profile-specific. If storage is full,
   blocked, or unavailable, PA keeps the current composer in memory, reports the
   limitation beside the composer, and does not block typing or navigation.
-- "Clear draft", durable prompt acceptance, and session close write an empty
+- Durable prompt acceptance and session close write an empty
   revision marker. The marker carries no prompt content and prevents an older
   tab revision from silently reappearing.
 

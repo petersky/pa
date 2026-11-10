@@ -29,6 +29,31 @@ function make(){
 }
 const texts=w=>w.els.messages.querySelectorAll('.acw-bubble-agent').map(b=>b.dataset.markdown);
 (async()=>{
+ // A response from a previous selection cannot rename or reconcile this one.
+ const identity=make();identity.sessionId='B';identity.els.title=new Element();
+ identity.els.title.textContent='B title';identity.lastSnapshot={session:{id:'B',title:'B title'}};
+ identity.applySnapshot({session:{id:'A',title:'A title'},transcript:[]});
+ assert.strictEqual(identity.els.title.textContent,'B title');
+ assert.strictEqual(identity.lastSnapshot.session.id,'B');
+ identity.handleEvent({session_id:'A',seq:1,type:'session_info_update',payload:{title:'A stale'}});
+ assert.strictEqual(identity.els.title.textContent,'B title');
+ // A short tail remains live while an empty older page is delayed and after
+ // exhaustion, even when the reader is scrolled away from its bottom.
+ const short=make();short.isNearBottom=()=>false;short.refreshQueue=noop;
+ Object.assign(short.els,{historyNotice:new Element(),historyNoticeText:new Element(),livePreview:new Element(),latest:new Element()});
+ short.handleEvent({seq:1,type:'agent_message_chunk',payload:{message_id:'answer',text:'Opening ',content_mode:'delta'}});
+ short.hasOlder=true;short.olderCursor=1;let olderDone;
+ short.apiWithTimeout=()=>new Promise(resolve=>olderDone=resolve);
+ short.loadOlderTranscript();
+ short.handleEvent({seq:2,type:'agent_message_chunk',payload:{message_id:'answer',text:'complete ending.',content_mode:'delta'}});
+ short.handleEvent({seq:3,type:'turn_completed',payload:{}});
+ assert.deepStrictEqual(texts(short),['Opening complete ending.']);
+ olderDone({events:[],page:{has_older:false,has_newer:false}});await new Promise(r=>setTimeout(r,0));
+ short._renderHistoryNotice();
+ assert.strictEqual(short.historyPreserveWindow,false);
+ assert.strictEqual(short.els.historyNotice.hidden,true);
+ assert.strictEqual(short.hasOlder,false);
+ assert.strictEqual(short.els.input.value,'UNSENT gap draft');
  const w=make();
  w.renderTranscript(input.events,{scrollBottom:true});
  assert.ok(texts(w).includes(input.expected),'raw 396 chunks render exactly');

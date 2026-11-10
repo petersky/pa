@@ -1,0 +1,147 @@
+{
+  "contract": "pa.performance-current/v1",
+  "observed_at": "2026-11-10",
+  "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+  "session_id": "d7689970-034c-4580-940c-a7667f49766d",
+  "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+  "lease_fence": 411,
+  "source_base": "dbb69de92976c316996f76cfaeecefd69e5f0e3f",
+  "fix": "Fresh transcript health uses bounded1024-reference keyset pages instead of128. One fresh snapshot, native value/error fallback, complete file checks and integrity checks are retained; no health result cache.",
+  "stage": "source validated; integration pending; no install or restart",
+  "validation": {
+    "passed": 70,
+    "failed": 0,
+    "skipped": 0,
+    "elapsed_seconds": 25.293,
+    "scope": "Fresh health completeness across1024 boundaries, exact1024/1/0 pages, concurrent publication/deletion snapshot, cancellation/partial-read errors, nontext/malformed UTF8/SQLite length fallback, missing-file freshness, directory semantics, payload integrity, storage and maintenance; disposable benchmark cleanup after generated-file failure."
+  },
+  "measurements": {
+    "scope": "20 alternating warm private pairs,24576 synthetic references/files; same final query shape with page bound128 or1024. Counts are observed SQLite calls (including cursor operations), pages are expected nonempty plus terminal empty. Health values identical and every retained file byte checked. Not payload decoding, full maintenance, mixed load or deployed acceptance.",
+    "page128": {
+      "reference_sqlite_calls": 392,
+      "expected_pages": 193,
+      "references_ms": {
+        "samples": 20,
+        "p50": 22.924,
+        "p95": 28.126,
+        "p99": 28.334,
+        "max": 28.334
+      },
+      "reference_thread_cpu_ms": {
+        "p50": 21.379,
+        "p95": 24.263,
+        "p99": 24.685,
+        "max": 24.685
+      },
+      "full_fresh_health_ms": {
+        "p50": 162.864,
+        "p95": 173.93,
+        "p99": 180.19,
+        "max": 180.19
+      }
+    },
+    "page1024": {
+      "reference_sqlite_calls": 56,
+      "expected_pages": 25,
+      "references_ms": {
+        "samples": 20,
+        "p50": 20.241,
+        "p95": 24.262,
+        "p99": 26.584,
+        "max": 26.584
+      },
+      "reference_thread_cpu_ms": {
+        "p50": 18.02,
+        "p95": 19.572,
+        "p99": 20.315,
+        "max": 20.315
+      },
+      "full_fresh_health_ms": {
+        "p50": 161.126,
+        "p95": 172.489,
+        "p99": 173.423,
+        "max": 173.423
+      }
+    },
+    "interpretation": "Modest reference-read improvement and near-equal full-health timing, not resolution of the native multi-second maintenance stall. Read-only change; no write amplification improvement claimed."
+  },
+  "rejected_maintenance_yield": {
+    "scope": "Three alternating private existing-WAL pairs,32768 seeded4KiB rows/32704 retained; actual VACUUM plus FULL-synchronous foreground update, followed by complete quiet retry. Existing stop event requested immediately before writer statement after actual VACUUM progress; no product writer hooks.",
+    "baseline_writer_ms": {
+      "samples": 3,
+      "p50": 1509.107,
+      "p95": 1549.651,
+      "p99": 1549.651,
+      "max": 1549.651
+    },
+    "stop_prototype_writer_ms": {
+      "samples": 3,
+      "p50": 1746.345,
+      "p95": 3440.218,
+      "p99": 3440.218,
+      "max": 3440.218
+    },
+    "baseline_vacuum_ms": {
+      "p50": 1849.143,
+      "p95": 2490.388,
+      "max": 2490.388
+    },
+    "stop_prototype_vacuum_ms": {
+      "p50": 1961.876,
+      "p95": 3911.694,
+      "max": 3911.694
+    },
+    "already_compacted_before_stop_handled": 3,
+    "retained_data_and_quiet_retries_ok": 6,
+    "quiet_retry_ms": {
+      "p50": 50.667,
+      "p95": 79.334,
+      "max": 79.334
+    },
+    "decision": "Rejected as a foreground-yield repair: all three cancellations returned after compaction. Quiet checks/reclamation succeeded, but are not early-yield success. Native scheduling/progress/commit attribution and starvation-safe architecture remain open.",
+    "problem_report": "14b4eba7-8c2e-4806-8aae-497748e5886a revision1",
+    "smallest_failure_evidence": "Initial probes exposed writer connection setup occurring before cancellation, an overly strict busy-final-checkpoint assertion, then a disproved assumption that stop implies precommit abort. Failed runs excluded. Only this concise note retained."
+  },
+  "previous_integrated_repair": {
+    "pr": 708,
+    "head": "3149674c054215a6c7912dfdf277ac36c4687538",
+    "merge": "dbb69de92976c316996f76cfaeecefd69e5f0e3f",
+    "head_and_main_checks": "5 terminal success each",
+    "scope": "GC read amplification; source integrated, not deployed or whole-card accepted. Detailed prior source report recoverable in Git history."
+  },
+  "storage": {
+    "free_kib_before": 23664528,
+    "free_kib_after_checks": 20143776,
+    "minimum_fixture_free_bytes": 4294967296,
+    "health_bounds": {
+      "objects_max": 32768,
+      "pairs_max": 30
+    },
+    "maintenance_probe_bounds": {
+      "rows_max": 65536,
+      "pairs_max": 10
+    },
+    "temporary_fixtures_removed": true,
+    "retained_raw_captures": 0,
+    "policy": "Overwrite this one compact report; aggregate stdout only; bounded context-managed temporary fixtures removed on success/failure. Reuse existing uv environment/cache. No raw API/DB/transcript/log mirrors, source copies, duplicate histories, per-poll files, packages or new environments. No broad deletion of existing artifacts; capacity changes do not establish exclusive physical reclamation."
+  },
+  "runtime_observed": {
+    "version": "1.9.0",
+    "source_revision": "74af78947bcbd8a6ab7f748c641593d138286ba6",
+    "package_identity": "sha256:132d466fd913c5f3e9ed134cc866668046e549708b1e6ed535530763ae62bc89",
+    "pid": 32958,
+    "startup_id": "e4d86ff0-947f-4643-9e14-f1761352383b",
+    "sync_consistent": true
+  },
+  "acceptance": {
+    "accepted": false,
+    "findings_open": 755,
+    "concerns_open": 185,
+    "requirement": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+    "residuals": "All broader existing ledger obligations remain open. This observation refines existing maintenance/health concerns without blanketing them closed: full VACUUM foreground stalls, startup/drain, peers/providers/log/retention/coverage gaps and independent acceptance. No activation, policy/default changes or ambiguous receipt replays."
+  },
+  "reproduce": [
+    "uv run --frozen python scripts/benchmark_transcript_health.py",
+    "uv run --frozen python scripts/benchmark_maintenance_yield.py"
+  ]
+}

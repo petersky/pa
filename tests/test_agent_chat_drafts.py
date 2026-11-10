@@ -41,7 +41,7 @@ class AgentChatDraftContractTests(unittest.TestCase):
         style = (SERVER / "static" / "style.css").read_text()
         docs = (ROOT / "docs" / "AGENT_CHAT_DRAFTS.md").read_text()
 
-        self.assertIn("data-acw-clear-draft", widget)
+        self.assertNotIn("data-acw-clear-draft", widget)
         self.assertIn("data-acw-draft-status", widget)
         self.assertIn('role="status" aria-live="polite"', widget)
         self.assertIn("data-pa-instance-id", shell)
@@ -63,7 +63,7 @@ class AgentChatDraftContractTests(unittest.TestCase):
         self.assertIn('"principal_id": get_principal_id(request)', context)
         self.assertIn("@media (max-width: 480px)", style)
         self.assertIn("@media (max-width: 768px)", style)
-        self.assertIn(".acw-composer-actions, .acw-composer-draft-actions { display: contents; }", style)
+        self.assertIn(".acw-composer-actions { display: contents; }", style)
         self.assertIn("65,536", docs)
         self.assertIn("30 days", docs)
         self.assertIn("plaintext", docs)

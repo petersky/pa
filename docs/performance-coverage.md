@@ -2,6 +2,12 @@
 > snapshots are now linked to their original Git revision. Earlier statements about
 > retaining all stages describe that revision. See [current retention policy](benchmarks/README.md).
 
+## Current bounded performance work
+
+[One current compact report](performance-current.json) records fresh transcript health read batching and aggregate validation. Bounded reference pages increase from 128 to 1024; observed SQLite calls fall from 392 to 56 for 24,576 references. Across 20 alternating private pairs, reference-read p95 improves from 28.126 to 24.262 ms; full fresh-health p95 changes only slightly, from 173.930 to 172.489 ms. All 70 targeted regressions pass. PR708's earlier GC repair is integrated, without deployed acceptance.
+
+The existing stop-event prototype did not release a foreground writer early: all three private cancellation trials had already compacted before stop handling returned. No product writer hooks were added. Full VACUUM foreground blocking and its cancellation/starvation-safe repair remain open. Disposable fixtures are removed on success/failure; no raw captures or mirrored histories are retained. All 755 findings and 185 concerns remain open; these measurements do not establish deployed or whole-card acceptance.
+
 ## Automatic maintenance startup ordering — 2026-11-08
 
 **753 findings / 185 concerns remain open.** [Complete source and workload evidence](benchmarks/systemic-maintenance-startup-order-20261108.json) preserves every earlier row and failure. The extra concern records fixture sibling-task ownership, separately from the unresolved HTTP timeout.
