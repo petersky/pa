@@ -2481,6 +2481,33 @@ class DispatchStore:
             )[:limit]
             return [self._snapshot(record) for record in selected]
 
+    def lost_completion_candidates(self, *, limit: int = 1000) -> list[tuple[str, str, str]]:
+        """``(dispatch_id, session_id, prompt_id)`` of running dispatches that may have lost a completion.
+
+        Only identities: no record copies, so the periodic sweep stays cheap. A
+        candidate is a card dispatch still ``running`` with no completion payload
+        and no reconciliation in progress whose initial prompt id is known; the
+        caller checks the session transcript for a finished turn.
+        """
+        self._require_readable()
+        self._yield_to_index_writer()
+        with measured_lock(self._index_lock):
+            found = [
+                (
+                    record.dispatch_id,
+                    record.session_id,
+                    str((record.initial_prompt_operation or {}).get("prompt_id")),
+                )
+                for record in self._records.values()
+                if record.card_id
+                and record.state == "running"
+                and record.session_id
+                and record.completion_payload is None
+                and record.reconciliation_state == "not_requested"
+                and (record.initial_prompt_operation or {}).get("prompt_id")
+            ]
+        return found[:limit]
+
     def waiting_count(self) -> int:
         """Scalar queue health; no record copies, SQL or writer lock."""
         self._require_readable()

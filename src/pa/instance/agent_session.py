@@ -6,6 +6,7 @@ import asyncio
 import inspect
 import logging
 import os
+import time
 from collections import deque
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager, nullcontext
@@ -26,7 +27,7 @@ from pa.acp.configuration import (
     SessionConfigurationRequest,
     normalized_session_config_json,
 )
-from pa.acp.errors import deterministic_recovery_block
+from pa.acp.errors import TurnInactivityTimeout, deterministic_recovery_block
 from pa.acp.environment import (
     COMPLETION_DISPATCH_ENV,
     COMPLETION_SESSION_ENV,
@@ -100,6 +101,9 @@ _RECOVERY_MAX_SECONDS = 300
 _RECOVERY_MAX_ATTEMPTS = 8
 _QUIESCE_POLL_SECONDS = 0.4
 TURN_WAITING_SECONDS = 15.0
+# Spaced retries of a failed card-completion callback before the reconciler's
+# lost-completion sweep takes over.
+COMPLETION_RETRY_DELAYS = (1.0, 5.0, 15.0)
 TRANSCRIPT_WINDOW_LIMIT = 1000
 _TURN_STREAM_EVENT_TYPES = {
     "agent_message_chunk",
@@ -111,6 +115,10 @@ _TURN_STREAM_EVENT_TYPES = {
     "plan",
 }
 PromptAction = Literal["append", "prepend", "interrupt"]
+
+
+class PromptRetryScheduled(RuntimeError):
+    """A provider error that waiting cures; the prompt stays queued for a timed retry."""
 
 
 class PromptAdmissionBlocked(RuntimeError):
@@ -314,6 +322,11 @@ def _live_event_size(event: dict[str, Any]) -> int:
 class AgentSessionRuntime:
     """Owns one ACP subprocess + connection for a single PA session."""
 
+    # Defaults for runtimes built without __init__ (partial test doubles).
+    _retry: dict[str, Any] | None = None
+    _retry_not_before = 0.0
+    _retry_task: asyncio.Task[None] | None = None
+
     def __init__(
         self,
         manager: AgentSessionManager,
@@ -357,6 +370,12 @@ class AgentSessionRuntime:
         # A turn lost to a dead connection stays recoverable (checkpointed as
         # in_flight) until recovery requeues it on a fresh runtime.
         self._interrupted: QueuedPrompt | None = None
+        # Retryable provider errors (rate limit, quota, overload): the failed
+        # prompt stays at the head of the queue and the drain is re-armed on a
+        # timer with exponential backoff. No new delivery before _retry_not_before.
+        self._retry: dict[str, Any] | None = None
+        self._retry_not_before = 0.0
+        self._retry_task: asyncio.Task[None] | None = None
         self._recent_started_ids: deque[str] = deque(maxlen=64)
         self._backlog_overflowed = False
         self._restart_receipts: dict[str, RestartHandoff] = {}
@@ -368,6 +387,7 @@ class AgentSessionRuntime:
         self._pending_permissions: dict[str, asyncio.Future[Any]] = {}
         self._permission_requests: dict[str, dict[str, Any]] = {}
         self._permission_notification_ids: dict[str, str] = {}
+        self._logged_permission_requests: set[str] = set()
         self._pending_elicitations: dict[str, asyncio.Future[Any]] = {}
         self._elicitation_requests: dict[str, dict[str, Any]] = {}
         self._elicitation_notification_ids: dict[str, str] = {}
@@ -477,6 +497,19 @@ class AgentSessionRuntime:
     @property
     def connected(self) -> bool:
         return bool(self.connection and self.connection.connected)
+
+    def provider_quiet_seconds(self) -> float | None:
+        """Seconds since the provider last produced real output this turn.
+
+        ``None`` when unknown. Zero while a human answer is awaited (the agent
+        is not silent, it is blocked on a person).
+        """
+        activity = getattr(self.connection, "activity", None)
+        quiet = getattr(activity, "quiet_seconds", None)
+        if not callable(quiet):
+            return None
+        value = quiet()
+        return float(value) if isinstance(value, (int, float)) else None
 
     @property
     def prompting(self) -> bool:
@@ -873,9 +906,56 @@ class AgentSessionRuntime:
         return InteractionResponse(idempotency_key=retry_key, value=stored)
 
     async def _on_permission(
+        self, external_session_id: str, request: dict[str, Any]
+    ) -> Any:
+        """Resolve one permission request; a failed attempt leaves no phantom state.
+
+        ``PAClient`` retries this on failure, so every attempt must start clean:
+        a half-registered future from a failed notification write would otherwise
+        linger as a pending permission nobody can answer.
+        """
+        request_id = str(request.get("request_id") or uuid4())
+        request["request_id"] = request_id
+        try:
+            return await self._on_permission_once(external_session_id, request)
+        except BaseException:
+            future = self._pending_permissions.pop(request_id, None)
+            if future is not None and not future.done():
+                future.cancel()
+            self._permission_requests.pop(request_id, None)
+            self._permission_notification_ids.pop(request_id, None)
+            raise
+
+    async def _on_permission_unavailable(
+        self, _external_session_id: str, request: dict[str, Any], exc: BaseException
+    ) -> None:
+        """The permission handler keeps failing: tell the owner, keep the request pending."""
+        tool = request.get("tool_call") or {}
+        title = str(tool.get("title") or tool.get("kind") or "a tool call")
+        await self._raise_stall(
+            "other",
+            item=None,
+            title="Agent is waiting for a permission PA cannot show",
+            body=(
+                f"The agent asked permission for {title}, but PA could not record the "
+                f"request ({type(exc).__name__}: {exc}). The agent is still waiting; PA "
+                "keeps retrying and will show the request as soon as it can."
+            ),
+            dedupe_key=f"{self.session_id}:permission:{request.get('request_id')}",
+        )
+
+    async def _on_permission_once(
         self, _external_session_id: str, request: dict[str, Any]
     ) -> Any:
-        if await self.manager.should_auto_approve_async(self.session.principal_id):
+        try:
+            auto_approve = await self.manager.should_auto_approve_async(
+                self.session.principal_id
+            )
+        except Exception:
+            # Cannot read the preference: ask a human rather than guess "allow".
+            logger.exception("Could not read the auto-approve preference")
+            auto_approve = False
+        if auto_approve:
             options = request.get("options") or []
             option_id = None
             for kind in ("allow_always", "allow_once"):
@@ -905,7 +985,10 @@ class AgentSessionRuntime:
         future: asyncio.Future[Any] = loop.create_future()
         self._pending_permissions[request_id] = future
         self._permission_requests[request_id] = request
-        self._append_transcript("permission_request", request)
+        logged = self.__dict__.setdefault("_logged_permission_requests", set())
+        if request_id not in logged:
+            logged.add(request_id)
+            self._append_transcript("permission_request", request)
         notification_service = getattr(self.manager, "notification_service", None)
         notification_id = None
         if notification_service:
@@ -1067,6 +1150,7 @@ class AgentSessionRuntime:
             self._pending_permissions.pop(request_id, None)
             self._permission_requests.pop(request_id, None)
             self._permission_notification_ids.pop(request_id, None)
+            self.__dict__.setdefault("_logged_permission_requests", set()).discard(request_id)
             await self._checkpoint_runtime_async(
                 lifecycle="prompting" if self._in_flight else "ready"
             )
@@ -1369,6 +1453,7 @@ class AgentSessionRuntime:
             mcp_private_env=self.mcp_private_env,
             startup_trace=self.startup_trace,
         )
+        self.connection.on_permission_unavailable = self._on_permission_unavailable
         persisted = dict(
             ((self.session.config_json or {}).get("configuration") or {}).get("requested")
             or {}
@@ -1632,6 +1717,31 @@ class AgentSessionRuntime:
             return
         self._drain_task = asyncio.create_task(self._drain_queue())
 
+    def _arm_retry_timer(self) -> None:
+        """(Re)start the timer that re-drains the queue when the backoff ends."""
+        if self._closed:
+            return
+        delay = max(0.0, self._retry_not_before - time.monotonic())
+        current = self._retry_task
+        if current is not None and not current.done():
+            current.cancel()
+        self._retry_task = asyncio.create_task(self._retry_after(delay))
+
+    async def _retry_after(self, delay: float) -> None:
+        await asyncio.sleep(delay)
+        if self._closed:
+            return
+        self._retry_not_before = 0.0
+        self._start_drain()
+
+    def _clear_retry(self) -> None:
+        self._retry = None
+        self._retry_not_before = 0.0
+        task = self._retry_task
+        self._retry_task = None
+        if task is not None and not task.done() and task is not asyncio.current_task():
+            task.cancel()
+
     async def _drain_queue(self) -> None:
         self._restart_receipts.clear()
         while (
@@ -1645,6 +1755,11 @@ class AgentSessionRuntime:
             except ValueError:
                 return
             if self.manager.quiescing:
+                break
+            if time.monotonic() < self._retry_not_before:
+                # Backing off after a retryable provider error. Nothing (not even
+                # a fresh enqueue) may hammer the provider before the timer fires.
+                self._arm_retry_timer()
                 break
             # Inspect queue order before doing I/O. A receipt behind an eligible
             # user prompt must never delay that prompt. Restart the scan after
@@ -1745,6 +1860,21 @@ class AgentSessionRuntime:
                         },
                     )
                     await self._checkpoint_runtime_async(lifecycle="paused_for_review")
+            except PromptRetryScheduled as exc:
+                # Not an error to alarm about: the provider asked us to wait.
+                logger.warning(
+                    "Prompt %s will be retried for session %s: %s",
+                    item.id,
+                    self.session_id,
+                    exc,
+                )
+                if not any(queued.id == item.id for queued in self._queue):
+                    self._queue.insert(0, item)
+                try:
+                    await self._checkpoint_runtime_async(lifecycle="queued")
+                except Exception:
+                    logger.exception("Could not checkpoint retry wait")
+                break
             except PromptAdmissionBlocked as exc:
                 logger.info(
                     "Prompt %s is blocked before provider delivery for session %s: %s",
@@ -2471,17 +2601,68 @@ class AgentSessionRuntime:
                         provider_id=self.session.agent_name,
                         stage="prompt",
                     )
-                    self._append_transcript(
-                        "prompt_failed",
-                        {
-                            "id": item.id,
-                            "error": format_acp_error(exc)[:1000],
-                            "failure": classified,
-                        },
-                    )
+                    plan = self._plan_prompt_retry(item, classified)
+                    failure_event: dict[str, Any] = {
+                        "id": item.id,
+                        "error": format_acp_error(exc)[:1000],
+                        "failure": classified,
+                    }
+                    will_retry = plan is not None and not plan.give_up
+                    if plan is not None:
+                        failure_event["retryable"] = will_retry
+                        failure_event["attempt"] = plan.attempt
+                        if will_retry:
+                            failure_event["retry_in_seconds"] = round(plan.delay_seconds, 1)
+                            failure_event["retry_at"] = (
+                                datetime.now(UTC) + timedelta(seconds=plan.delay_seconds)
+                            ).isoformat()
+                        else:
+                            failure_event["gave_up_after_attempts"] = plan.attempt
+                    self._append_transcript("prompt_failed", failure_event)
                     self._flush_transcript()
                     await self._drain_transcripts()
+                    if will_retry:
+                        await self._begin_retry_wait(item, classified, plan)
+                        raise PromptRetryScheduled(
+                            f"{classified.get('code')}: retrying in {int(plan.delay_seconds)}s "
+                            f"(attempt {plan.attempt})"
+                        ) from exc
+                    if plan is not None:
+                        self._clear_retry()  # a manual retry starts a fresh cycle
+                    await self._raise_stall(
+                        "prompt_failed",
+                        item=item,
+                        title="Prompt failed",
+                        body=(
+                            f"The agent turn ended with an error"
+                            + (
+                                f" after {plan.attempt} attempts"
+                                if plan is not None
+                                else ""
+                            )
+                            + f" ({classified.get('code')}): "
+                            f"{classified.get('message') or exc}"
+                        ),
+                        dedupe_key=f"{self.session_id}:{item.id}",
+                    )
                     raise RuntimeError(classified.get("message") or str(exc)) from exc
+                self._clear_retry()
+                interruption = getattr(self.connection, "last_interruption", None)
+                if not isinstance(interruption, dict):
+                    interruption = None
+                if interruption:
+                    await self._raise_stall(
+                        "hung_turn",
+                        item=item,
+                        title="Agent turn made no progress",
+                        body=(
+                            f"The agent produced no output for "
+                            f"{int(interruption.get('idle_seconds') or 0)}s, so PA cancelled "
+                            "the turn (it ended with stop reason "
+                            f"{stop_reason!r}, reason inactivity_timeout)."
+                        ),
+                        dedupe_key=f"{self.session_id}:{item.id}",
+                    )
                 usage = self.connection.last_usage if self.connection else None
                 if usage:
                     metrics = dict(self.session.metrics_json or {})
@@ -2492,14 +2673,17 @@ class AgentSessionRuntime:
                 # terminal event. A page refresh after turn_completed must see
                 # prompting=false and no per-turn start time.
                 await self._finish_turn_state()
-                self._append_transcript(
-                    "turn_completed",
-                    {
-                        "stop_reason": stop_reason,
-                        "usage": usage,
-                        "queued_prompt_id": item.id,
-                    },
-                )
+                completed_event: dict[str, Any] = {
+                    "stop_reason": stop_reason,
+                    "usage": usage,
+                    "queued_prompt_id": item.id,
+                }
+                if interruption:
+                    # The inactivity deadline cancelled this turn: record why, so
+                    # it is never mistaken for an operator Stop or a clean end.
+                    completed_event["reason"] = interruption.get("reason")
+                    completed_event["interruption"] = interruption
+                self._append_transcript("turn_completed", completed_event)
                 self._flush_transcript()
                 await self._drain_transcripts()
                 final_text = assemble_final_assistant_message(self._turn_agent_events)
@@ -2579,6 +2763,8 @@ class AgentSessionRuntime:
                                 final_text, limit=8_000
                             ),
                         }
+                        if interruption:
+                            payload["reason"] = interruption.get("reason")
                         if disposition:
                             payload["card_disposition"] = disposition
                         elif disposition_error:
@@ -2612,20 +2798,7 @@ class AgentSessionRuntime:
                                 "result": payload,
                             }
                         )
-                        if inspect.iscoroutinefunction(self.manager.completion_handler):
-                            result = self.manager.completion_handler(
-                                self.session_id, payload
-                            )
-                        else:
-                            result = await self._offload(
-                                "agent.completion_callback",
-                                self.manager.completion_handler,
-                                self.session_id,
-                                payload,
-                                timeout=30.0,
-                            )
-                        if asyncio.iscoroutine(result):
-                            await result
+                        await self._deliver_completion(payload)
                     except Exception:
                         # Completion delivery is an outbox operation. A transport
                         # failure must never turn successful agent work into a
@@ -2888,6 +3061,127 @@ class AgentSessionRuntime:
         self._turn_streamed = False
         await self._checkpoint_runtime_async(lifecycle="ready")
 
+    async def _deliver_completion(self, payload: dict[str, Any]) -> None:
+        """Hand the finished turn to the card layer, retrying a failed callback.
+
+        A single swallowed failure used to leave the card's dispatch "running"
+        forever. The handler is replay-tolerant, so a few spaced retries are safe;
+        anything still failing is picked up by the reconciler's lost-completion
+        sweep.
+        """
+        handler = self.manager.completion_handler
+        last: BaseException | None = None
+        for attempt in range(len(COMPLETION_RETRY_DELAYS) + 1):
+            if attempt:
+                await asyncio.sleep(COMPLETION_RETRY_DELAYS[attempt - 1])
+            try:
+                if inspect.iscoroutinefunction(handler):
+                    result = handler(self.session_id, payload)
+                else:
+                    result = await self._offload(
+                        "agent.completion_callback",
+                        handler,
+                        self.session_id,
+                        payload,
+                        timeout=30.0,
+                    )
+                if asyncio.iscoroutine(result):
+                    await result
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                last = exc
+                logger.warning(
+                    "Card completion callback failed for session %s (attempt %d/%d): %s",
+                    self.session_id,
+                    attempt + 1,
+                    len(COMPLETION_RETRY_DELAYS) + 1,
+                    exc,
+                )
+        assert last is not None
+        raise last
+
+    def _plan_prompt_retry(self, item: QueuedPrompt, classified: dict[str, Any]):
+        from pa.instance.prompt_retry import plan_retry
+
+        state = self._retry if self._retry and self._retry.get("prompt_id") == item.id else None
+        attempt = int(state["attempts"]) + 1 if state else 1
+        waited = time.monotonic() - float(state["first_failed"]) if state else 0.0
+        return plan_retry(
+            classified, attempt=attempt, waited_seconds=waited, settings=self.settings
+        )
+
+    async def _begin_retry_wait(self, item: QueuedPrompt, classified: dict[str, Any], plan) -> None:
+        """Hold the failed prompt at the head of the queue and re-arm the drain."""
+        previous = self._retry if self._retry and self._retry.get("prompt_id") == item.id else None
+        self._retry = {
+            "prompt_id": item.id,
+            "attempts": plan.attempt,
+            "first_failed": previous["first_failed"] if previous else time.monotonic(),
+            "code": plan.code,
+            "notified": bool(previous and previous.get("notified")),
+        }
+        self._retry_not_before = time.monotonic() + plan.delay_seconds
+        if not any(queued.id == item.id for queued in self._queue):
+            self._queue.insert(0, item)
+        self._arm_retry_timer()
+        if plan.long_wait and not self._retry["notified"]:
+            self._retry["notified"] = True
+            await self._raise_stall(
+                "prompt_failed",
+                item=item,
+                title="Agent is waiting on a provider limit",
+                body=(
+                    f"The provider keeps answering {plan.code} "
+                    f"({classified.get('message') or ''}). PA is still waiting and will "
+                    f"retry in about {int(plan.delay_seconds)}s; the prompt is not lost."
+                ),
+                severity="warning",
+                dedupe_key=f"{self.session_id}:{item.id}",
+            )
+
+    async def _raise_stall(
+        self,
+        kind: str,
+        *,
+        item: QueuedPrompt | None,
+        title: str,
+        body: str,
+        dedupe_key: str,
+        severity: str = "error",
+    ) -> None:
+        """Tell the owner this session is stuck (one deduplicated notification)."""
+        service = getattr(self.manager, "notification_service", None)
+        if service is None:
+            return
+        from pa.notifications.stall import notify_stall
+
+        session = self.session
+        try:
+            await self._offload(
+                "sqlite.notification_write",
+                notify_stall,
+                service,
+                kind=kind,
+                subject_ids={
+                    "realm_id": session.realm_id,
+                    "session_id": session.id,
+                    "card_id": (item.card_id if item else None)
+                    or session.card_id
+                    or session.item_id,
+                    "dispatch_id": session.dispatch_id,
+                    "project_id": (item.project_id if item else None) or session.project_id,
+                },
+                title=title,
+                body=body,
+                severity=severity,
+                dedupe_key=dedupe_key,
+                private_to=None,
+            )
+        except Exception:
+            logger.exception("Could not raise %s stall for session %s", kind, self.session_id)
+
     def _is_connection_loss(self, exc: BaseException) -> bool:
         if isinstance(exc, ConnectionError):
             return True
@@ -2906,18 +3200,50 @@ class AgentSessionRuntime:
             item.id,
             exc,
         )
-        self._append_transcript(
-            "connection_lost",
-            {
-                "message": "Connection to the agent was lost while handling this prompt. It may or may not have reached the agent — if you don't see a response, you may want to retry.",
-                "queued_prompt_id": item.id,
-                "detail": str(exc),
-            },
-        )
+        hung = isinstance(exc, TurnInactivityTimeout)
+        payload: dict[str, Any] = {
+            "message": (
+                "The agent made no progress for too long, so PA stopped it. The "
+                "prompt is kept and will be re-sent when the session recovers."
+                if hung
+                else "Connection to the agent was lost while handling this prompt. It may or may not have reached the agent — if you don't see a response, you may want to retry."
+            ),
+            "queued_prompt_id": item.id,
+            "detail": str(exc),
+        }
+        if hung:
+            payload["reason"] = exc.reason
+            payload["idle_seconds"] = exc.idle_seconds
+        self._append_transcript("connection_lost", payload)
         self.session.status = "recoverable_interrupted"
         await self._checkpoint_runtime_async(lifecycle="recoverable_interrupted")
         self._flush_transcript()
         self.manager.request_recovery(self.session_id)
+        if hung:
+            await self._raise_stall(
+                "hung_turn",
+                item=item,
+                title="Agent turn made no progress",
+                body=(
+                    f"The agent produced no output for {int(exc.idle_seconds)}s and did "
+                    f"not end the cancelled turn within {exc.grace_seconds:g}s, so PA "
+                    "killed the provider. The prompt is queued for recovery and will be "
+                    "re-sent."
+                ),
+                dedupe_key=f"{self.session_id}:{item.id}",
+            )
+        else:
+            await self._raise_stall(
+                "connection_lost",
+                item=item,
+                title="Agent connection lost",
+                body=(
+                    "The connection to the agent dropped mid-turn. PA is recovering the "
+                    f"session and will re-send the prompt. Detail: {exc}"
+                ),
+                severity="warning",
+                dedupe_key=f"{self.session_id}:{item.id}",
+            )
 
     def _awaiting_provider_delivery(self) -> bool:
         """A prompt is dequeued or in flight but the provider has not got it yet."""
@@ -2968,6 +3294,8 @@ class AgentSessionRuntime:
     def resume_queue(self) -> None:
         self.store.require_session_delivery_allowed(self.session_id)
         self._queue_paused = False
+        # An explicit resume is an operator asking for a retry now.
+        self._retry_not_before = 0.0
         self._append_transcript("queue_resumed", {})
         self._checkpoint_runtime(lifecycle="queued" if self._queue else "ready")
         self._flush_transcript()
@@ -3456,6 +3784,7 @@ class AgentSessionRuntime:
         )
         self._closed = True
         self._queue_paused = True
+        self._clear_retry()
         if self._drain_task and not self._drain_task.done():
             self._drain_task.cancel()
         notification_service = getattr(self.manager, "notification_service", None)
@@ -5708,6 +6037,10 @@ class AgentSessionManager:
         for event in events:
             if event.event_type not in {"turn_completed", "prompt_failed"}:
                 continue
+            if event.event_type == "prompt_failed" and (event.payload or {}).get("retryable"):
+                # A rate-limit / quota / overload failure is waiting to be retried:
+                # the prompt is still owed to the provider, so keep it across restart.
+                continue
             prompt_id = (event.payload or {}).get("queued_prompt_id") or (
                 event.payload or {}
             ).get("id")
@@ -5768,11 +6101,13 @@ class AgentSessionManager:
         summary: str,
         body: str,
         severity: str = "error",
+        kind: str = "recovery_blocked",
     ) -> bool:
         """Create one deduplicated HIGH notice about a session (sync, worker-thread safe).
 
-        This is the only place recovery creates a notification, so the shared
-        stall-notification helper can replace it in one step.
+        A thin adapter over the shared ``notify_stall`` helper. It keeps this
+        notice's own dedupe key, capability, type and "open the session" action,
+        so existing clients and stored notices are unchanged.
         """
         service = getattr(self, "notification_service", None)
         if service is None:
@@ -5782,9 +6117,10 @@ class AgentSessionManager:
         from pa.domain.notifications import (
             SESSION_ATTENTION_NOTICE_CAPABILITY,
             NotificationAction,
-            NotificationCreate,
+            NotificationType,
             concise_notification_summary,
         )
+        from pa.notifications.stall import notify_stall
 
         destination = "/agent?" + urlencode({"session": session.id})
         try:
@@ -5793,33 +6129,41 @@ class AgentSessionManager:
             # restart sweep does not bump its coalesced count every boot.
             if callable(finder) and finder(session.realm_id, key) is not None:
                 return False
-            service.create(
-                NotificationCreate(
-                    realm_id=session.realm_id,
-                    principal_id=session.principal_id,
-                    visibility="principal" if session.principal_id else "realm",
-                    type="service_health", severity=severity, priority="high",
-                    capability=SESSION_ATTENTION_NOTICE_CAPABILITY,
-                    title=title[:300],
-                    summary=concise_notification_summary(summary),
-                    body=body,
-                    session_id=session.id,
-                    card_id=session.card_id,
-                    project_id=session.project_id,
-                    dispatch_id=session.dispatch_id,
-                    destination_url=destination,
-                    actions=[NotificationAction(
-                        id="retry", kind="navigate", label="Open session and retry",
-                        href=destination,
-                    )],
-                    deduplication_key=key,
-                ),
-                principal_id=f"instance:{self.settings.instance_id}",
-            )
-            return True
         except Exception:
-            logger.exception("Could not create session attention notice %s", key)
+            logger.exception("Could not look up session attention notice %s", key)
             return False
+        created = notify_stall(
+            service,
+            kind=kind,
+            subject_ids={
+                "realm_id": session.realm_id,
+                "session_id": session.id,
+                "card_id": session.card_id,
+                "project_id": session.project_id,
+                "dispatch_id": session.dispatch_id,
+            },
+            title=title,
+            body=body,
+            summary=concise_notification_summary(summary),
+            severity=severity,
+            priority="high",
+            dedupe_key=key,
+            deduplication_key=key,
+            capability=SESSION_ATTENTION_NOTICE_CAPABILITY,
+            notification_type=NotificationType.SERVICE_HEALTH,
+            actions=[
+                NotificationAction(
+                    id="retry",
+                    kind="navigate",
+                    label="Open session and retry",
+                    href=destination,
+                )
+            ],
+            principal_id=f"instance:{self.settings.instance_id}",
+            private_to=session.principal_id or None,
+            extra_fields={"destination_url": destination},
+        )
+        return created is not None
 
     def _card_title(self, card_id: str | None) -> str:
         if not card_id:
