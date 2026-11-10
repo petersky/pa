@@ -46,7 +46,7 @@ class _Built:
 
 
 def snapshot_payload(snapshot: dict[str, Any]) -> str:
-    return json.dumps(snapshot, default=str)
+    return json.dumps(snapshot, default=str, separators=(",", ":"))
 
 
 def make_snapshot_event(sequence: int, payload: str) -> str:

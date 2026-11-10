@@ -1437,14 +1437,12 @@ WORKSHOP_VIEWS = ("full", "floor")
 _FAILING_CONCLUSIONS = frozenset(
     {"failure", "cancelled", "timed_out", "action_required", "startup_failure", "stale"}
 )
+# Card fields that are not already top-level on the work order (title, lane,
+# updated_at and realm are).
 _SLIM_CARD_KEYS = (
     "id",
-    "title",
-    "realm_id",
-    "lane",
     "project",
     "preferred_instance",
-    "updated_at",
     "dispatch_id",
     "session_id",
     "target_instance_id",
@@ -1464,6 +1462,8 @@ _SLIM_RECONCILIATION_KEYS = (
     "attempts",
     "next_retry_at",
 )
+_SLIM_COMPLETION_KEYS = ("status", "lane_after", "reason", "extraction_error")
+_SLIM_DELIVERY_KEYS = ("pending", "classification", "last_error", "attempts", "next_retry_at")
 _SLIM_PRESENTATION_KEYS = (
     "group",
     "state",
@@ -1564,9 +1564,20 @@ def _slim_order(order: dict[str, Any]) -> dict[str, Any]:
     slim = {
         key: value
         for key, value in order.items()
-        if key not in {"card", "presentation", "card_reconciliation"}
+        if key
+        not in {
+            "card",
+            "presentation",
+            "card_reconciliation",
+            "card_completion",
+            "completion_delivery",
+        }
     }
     slim["card"] = _slim_card(order.get("card"))
+    slim["card_completion"] = _pick(order.get("card_completion"), _SLIM_COMPLETION_KEYS)
+    slim["completion_delivery"] = _pick(
+        order.get("completion_delivery"), _SLIM_DELIVERY_KEYS
+    )
     slim["card_reconciliation"] = _pick(
         order.get("card_reconciliation"), _SLIM_RECONCILIATION_KEYS
     )
