@@ -30,5 +30,7 @@ def test_actual_private_router_auth_full_payload_and_read_durability():
     assert profile['status_counts']['unauthenticated:401']==1
     assert profile['status_counts']['missing:404']==1
     assert profile['status_counts']['bad_boolean:422']==1
+    assert profile['counts']['list:fastapi_serialize']==1
+    assert profile['phase_ms']['fastapi_serialize:wall_ms'][0]>=8
     assert profile['durable_parity'] and not profile['worker_started']
     assert result['temporary_fixture_removed']

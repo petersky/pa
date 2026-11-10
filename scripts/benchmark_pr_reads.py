@@ -19,6 +19,7 @@ from unittest.mock import patch
 
 import httpx
 from fastapi import FastAPI
+import fastapi.routing as fastapi_routing
 from starlette.responses import JSONResponse
 from pa.auth.middleware import AuthMiddleware
 from pa.auth.sessions import SessionManager
@@ -125,6 +126,17 @@ async def profile(folder,*,population,payload_bytes,event_count,iterations,progr
                     phases[name+':wall_ms'].append((time.perf_counter()-wall)*1000)
                     phases[name+':thread_cpu_ms'].append((time.thread_time()-cpu)*1000)
         return run
+    original_serialize=fastapi_routing.serialize_response
+    @wraps(original_serialize)
+    async def serialize(*args,**kwargs):
+        label=selected.get();wall,cpu=time.perf_counter(),time.thread_time()
+        try:return await original_serialize(*args,**kwargs)
+        finally:
+            if label:
+                with lock:
+                    counts[label+':fastapi_serialize']+=1
+                    phases['fastapi_serialize:wall_ms'].append((time.perf_counter()-wall)*1000)
+                    phases['fastapi_serialize:thread_cpu_ms'].append((time.thread_time()-cpu)*1000)
     original_conn=store._conn
     @contextmanager
     def connection(*args,**kwargs):
@@ -170,6 +182,7 @@ async def profile(folder,*,population,payload_bytes,event_count,iterations,progr
         progress['phase']='startup';start=time.perf_counter();await runtime.start();startup_ms=(time.perf_counter()-start)*1000
         with ExitStack() as stack:
             stack.enter_context(patch.object(store,'_conn',connection))
+            stack.enter_context(patch.object(fastapi_routing,'serialize_response',serialize))
             for name in ('_row_to_watch','list_watches','get_watch','list_events','list_dispatches','metrics','watch_inventory','list_watch_page','list_event_page'):
                 stack.enter_context(patch.object(store,name,measured(name,getattr(store,name))))
             stack.enter_context(patch.object(PRWatch,'model_dump',measured('watch_dump',PRWatch.model_dump)))
