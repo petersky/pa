@@ -30,6 +30,40 @@
   const FLYOUT_TOP_TRIGGER = 120;
   const MAX_PLANS = 50;
   const MAX_STREAM_CHARS = 250000;
+  // Every transcript event type the server can append. The server names each SSE
+  // event after its type, and a browser only dispatches a named event to a
+  // listener registered for that exact name, so a type missing here is never
+  // delivered: it leaves a hole in the sequence and forces a history repair.
+  // Types without a dedicated case in handleEvent are harmless no-ops that still
+  // advance the cursor. tests/test_agent_chat_transcript.py checks this list
+  // against every type the server source can emit.
+  const TRANSCRIPT_EVENT_TYPES = [
+    "user_message", "agent_message", "agent_message_chunk", "agent_thought_chunk",
+    "user_message_chunk", "tool_call", "tool_call_update", "session_info_update",
+    "prompt_timing", "prompt_rendered", "prompt_mentions", "prompt_blocked",
+    "prompt_failed", "plan", "usage_update", "available_commands_update",
+    "card_disposition", "command_result", "shell_result", "context_boundary",
+    "collaboration_mode_transition", "browser_attachment_changed",
+    "turn_waiting", "turn_completed", "cancelled",
+    "queue_enqueued", "queue_dequeued", "queue_removed", "queue_reordered",
+    "queue_paused", "queue_resumed", "publication_fence_established",
+    "session_control_changed", "session_started", "session_closed", "session_recovered",
+    "session_admission_failed", "session_recovery_audited", "session_recovery_fenced",
+    "provider_released", "connection_lost", "model_changed", "mode_changed",
+    "current_mode_update", "config_changed", "configuration_changed",
+    "config_option_update", "config_options_update", "permission_request",
+    "permission_resolved", "elicitation_request", "elicitation_resolved",
+    "interaction_request", "interaction_superseded", "error", "message"
+  ];
+  // Queue events change what the queue panel shows even while the transcript
+  // itself is held back for older-history reading.
+  const QUEUE_REFRESH_EVENT_TYPES = [
+    "queue_enqueued", "queue_dequeued", "queue_removed", "queue_reordered",
+    "queue_paused", "queue_resumed", "publication_fence_established",
+    "session_control_changed"
+  ];
+  const SSE_RECONNECT_BASE_MS = 1000;
+  const SSE_RECONNECT_MAX_MS = 30000;
   const SESSION_ROUTE_TIMEOUT_MS = 4000;
   const LIVE_SNAPSHOT_TIMEOUT_MS = 3000;
   const LIVE_STATE_RETRY_MS = 3000;
@@ -642,30 +676,7 @@
       button.addEventListener("click", function () { self.closeFlyouts(); });
     });
     if (this.els.input) {
-      this.els.input.addEventListener("keydown", function (e) {
-        if (self.commandMenuOpen()) {
-          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-            e.preventDefault();
-            self.moveCommandSelection(e.key === "ArrowDown" ? 1 : -1);
-            return;
-          }
-          if (e.key === "Escape") {
-            e.preventDefault();
-            self.closeCommandMenu();
-            return;
-          }
-          if ((e.key === "Enter" || (e.key === "Tab" && !e.ctrlKey && !e.metaKey && !e.altKey)) &&
-              !e.shiftKey && !e.isComposing && e.keyCode !== 229 && self.commandMatches.length) {
-            e.preventDefault();
-            self.selectMenuItem(self.commandMatches[self.commandSelectedIndex]);
-            return;
-          }
-        }
-        if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
-          e.preventDefault();
-          self.send(self.prompting ? "append" : "append");
-        }
-      });
+      this.els.input.addEventListener("keydown", function (e) { self.onComposerKeydown(e); });
       this.els.input.addEventListener("input", function () {
         self.updateCommandMenu();
         self.autosizeInput();
@@ -1330,8 +1341,8 @@
       holder.innerHTML = entry.unsequencedHtml;
       while (holder.firstChild) {
         const row = holder.firstChild;
-        const user = row.querySelector(".acw-bubble-user");
-        if (user && this._isDuplicateUserBubble(user.dataset.markdown || "")) row.remove();
+        const promptId = row.dataset && row.dataset.promptId;
+        if (promptId && this._userRowForPrompt(promptId)) row.remove();
         else this.els.messages.appendChild(row);
       }
       this.messageRowCount = this.els.messages.querySelectorAll(".acw-msg").length;
@@ -1524,6 +1535,11 @@
       if ((event.type === "user_message" || event.type === "queue_enqueued") && this.drafts) this.drafts.observeAcceptance(p.id, event.type === "queue_enqueued");
       if (["permission_request", "permission_resolved", "turn_completed", "cancelled", "connection_lost", "prompt_failed", "user_message", "queue_enqueued"].includes(event.type)) this.heldControlSeq[controlKey] = event.seq;
     }
+    // The queue panel reads the live snapshot, not the transcript window, so a
+    // reader paging through older history must still see the queue move. Other
+    // holds (recent bootstrap, a sequence gap) are short: the held events are
+    // applied through handleEvent once the tail is loaded, which refreshes then.
+    if (this.historyPreserveWindow && QUEUE_REFRESH_EVENT_TYPES.indexOf(event.type) >= 0) this.refreshQueue();
     if (this.historyPreserveWindow) this.updateNewerControl();
     this._renderHistoryNotice();
   };
@@ -2192,18 +2208,71 @@
     return images.length === 1 ? "Attached image: " + images[0].name : "Attached " + images.length + " images";
   }
 
-  AgentChatWidget.prototype._isDuplicateUserBubble = function (text) {
-    // Compare against dataset.markdown (raw prompt), not textContent — markdown
-    // rendering drops newlines (`<br>` / `<p>`), which made every multi-line
-    // optimistic bubble look unique and paint a second copy from SSE.
-    if (typeof text !== "string" || !this.els.messages) return false;
-    const rows = this.els.messages.querySelectorAll(".acw-msg-user .acw-bubble");
-    if (!rows.length) return false;
-    const last = rows[rows.length - 1];
-    const lastText = Object.prototype.hasOwnProperty.call(last.dataset, "markdown")
-      ? last.dataset.markdown
-      : (last.textContent || "");
-    return lastText === text;
+  // User bubbles are identified by prompt id, never by their text: the same
+  // words sent twice are two messages, and a queued prompt's bubble is painted
+  // before the turn that runs it. A bubble with no source sequence is an
+  // optimistic one that the server has not echoed yet.
+  AgentChatWidget.prototype._userRowForPrompt = function (promptId) {
+    if (!promptId || !this.els.messages) return null;
+    const rows = this.els.messages.querySelectorAll(".acw-msg-user");
+    for (let index = rows.length - 1; index >= 0; index -= 1) {
+      if (rows[index].dataset.promptId === promptId) return rows[index];
+    }
+    return null;
+  };
+
+  AgentChatWidget.prototype._optimisticUserRowFor = function (promptId, text) {
+    const row = this._userRowForPrompt(promptId);
+    if (row) return row;
+    if (promptId || typeof text !== "string" || !this.els.messages) return null;
+    // Legacy events carry no prompt id. Only an optimistic bubble without one can
+    // be their echo; compare the raw prompt, not textContent: markdown rendering
+    // drops newlines (`<br>` / `<p>`), which made every multi-line optimistic
+    // bubble look unique and paint a second copy from SSE.
+    const bubbles = this.els.messages.querySelectorAll(".acw-msg-user .acw-bubble");
+    for (let index = bubbles.length - 1; index >= 0; index -= 1) {
+      const bubble = bubbles[index], candidate = bubble.parentNode;
+      if (!candidate || candidate.dataset.sourceSeq || candidate.dataset.promptId) continue;
+      const raw = Object.prototype.hasOwnProperty.call(bubble.dataset, "markdown")
+        ? bubble.dataset.markdown : (bubble.textContent || "");
+      if (raw === text) return candidate;
+    }
+    return null;
+  };
+
+  // The server's user_message for a prompt either finds the bubble already on
+  // screen (adopt it) or nothing (the caller paints it). Adopting sequences the
+  // optimistic bubble and moves it to where the turn really began: it was
+  // painted mid-turn, above output of the turn that was running.
+  AgentChatWidget.prototype._adoptUserBubble = function (promptId, text, event) {
+    const row = this._optimisticUserRowFor(promptId, text);
+    if (!row) return false;
+    if (row.dataset.sourceSeq) return true;
+    row.dataset.sourceSeq = String(event.payload && event.payload.source_first_seq || event.seq);
+    const stamp = row.querySelector("time");
+    if (stamp && event.created_at) {
+      stamp.dateTime = event.created_at;
+      stamp.textContent = new Date(event.created_at).toLocaleTimeString();
+    }
+    const rows = this.els.messages.querySelectorAll(".acw-msg[data-source-seq]");
+    let anchor = null;
+    for (let index = rows.length - 1; index >= 0; index -= 1) {
+      if (rows[index] !== row) { anchor = rows[index]; break; }
+    }
+    if (anchor && anchor.parentNode === row.parentNode && anchor.nextSibling !== row) {
+      row.parentNode.insertBefore(row, anchor.nextSibling);
+    }
+    return true;
+  };
+
+  // A queued prompt that is withdrawn before it runs leaves nothing in the
+  // transcript, so its optimistic bubble must go too. Once the server has
+  // sequenced a bubble it is history and stays.
+  AgentChatWidget.prototype._discardOptimisticUserBubble = function (promptId) {
+    const row = this._userRowForPrompt(promptId);
+    if (!row || row.dataset.sourceSeq) return;
+    row.remove();
+    this.messageRowCount = Math.max(0, (this.messageRowCount || 1) - 1);
   };
 
   AgentChatWidget.prototype.setStatus = function (state) {
@@ -2931,6 +3000,7 @@
         return;
       }
       self.connectionNoticeShown = false;
+      self.sseClosedRetries = 0;
       self.api("/sessions/" + self.esSessionId).then(function (snap) {
         if (self.es !== es || self.destroyed || generation !== self.subscriptionGeneration) return;
         self.applySnapshot(snap);
@@ -2956,42 +3026,7 @@
       }
     }
 
-    [
-      "user_message",
-      "agent_message_chunk",
-      "agent_thought_chunk",
-      "tool_call",
-      "tool_call_update",
-      "session_info_update",
-      "prompt_timing",
-      "plan",
-      "permission_request",
-      "permission_resolved",
-      "turn_completed",
-      "queue_enqueued",
-      "queue_dequeued",
-      "queue_removed",
-      "queue_reordered",
-      "queue_paused",
-      "queue_resumed",
-      "publication_fence_established",
-      "session_control_changed",
-      "cancelled",
-      "session_started",
-      "session_closed",
-      "browser_attachment_changed",
-      "connection_lost",
-      "usage_update",
-      "turn_waiting",
-      "prompt_failed",
-      "model_changed",
-      "mode_changed",
-      "config_changed",
-      "config_option_update",
-      "current_mode_update",
-      "error",
-      "message",
-    ].forEach(function (name) {
+    TRANSCRIPT_EVENT_TYPES.forEach(function (name) {
       es.addEventListener(name, onAny);
     });
     // Do not also set es.onmessage — that would double-dispatch default
@@ -3021,7 +3056,29 @@
           { system: true, forceVisible: true }
         );
       }
+      // While readyState is CONNECTING the browser retries by itself. A non-200
+      // answer (a 404/503 during a PA restart) instead closes the source for good,
+      // so reopen it ourselves, resuming after the last applied sequence.
+      if (es.readyState === EventSource.CLOSED) self._scheduleSseReopen(es, generation);
     };
+  };
+
+  AgentChatWidget.prototype._scheduleSseReopen = function (es, generation) {
+    const self = this;
+    if (this.sseReopenTimer) clearTimeout(this.sseReopenTimer);
+    const delay = Math.min(
+      SSE_RECONNECT_MAX_MS,
+      SSE_RECONNECT_BASE_MS * Math.pow(2, Math.min(5, this.sseClosedRetries || 0))
+    );
+    this.sseClosedRetries = (this.sseClosedRetries || 0) + 1;
+    const timer = setTimeout(function () {
+      if (self.sseReopenTimer !== timer) return;
+      self.sseReopenTimer = null;
+      // A replaced, closed or retargeted transport must not be resurrected.
+      if (self.destroyed || self.es !== es || generation !== self.subscriptionGeneration) return;
+      self.connectSSE();
+    }, delay);
+    this.sseReopenTimer = timer;
   };
 
   AgentChatWidget.prototype.useExternalEventTransport = function (enabled) {
@@ -3032,6 +3089,8 @@
   };
 
   AgentChatWidget.prototype.closeSSE = function (reason) {
+    if (this.sseReopenTimer) clearTimeout(this.sseReopenTimer);
+    this.sseReopenTimer = null;
     const es = this.es;
     if (!es) return;
     console.debug("[PA agent SSE] close", {
@@ -3197,6 +3256,7 @@
     const payload = event.payload || {};
     const created = event.created_at;
     this.renderingEvent = event;
+    if (type === "queue_removed") this._discardOptimisticUserBubble(payload.id);
 
     switch (type) {
       case "user_message":
@@ -3205,8 +3265,8 @@
         }
         if (!replay) this.refreshQueue();
         const userText = payload.message || imageSummary(payload.images);
-        // Skip duplicate if we already painted an optimistic bubble for this text.
-        if (!this._isDuplicateUserBubble(userText)) {
+        // Adopt the optimistic bubble painted for this prompt id instead of a second copy.
+        if (!this._adoptUserBubble(payload.id, userText, event)) {
           this.addBubble("user", payload.message || "", created, {
             system: payload.source === "system",
             images: payload.images || [],
@@ -4700,7 +4760,9 @@
   AgentChatWidget.prototype.markSubmissionAccepted = function (result, displayText, submittedImages, draftRawText, promptId) {
     result = result || {};
     const rawText = draftRawText == null ? displayText : draftRawText;
-    if (!this._isDuplicateUserBubble(displayText)) {
+    promptId = promptId || result.prompt_id;
+    // The server's echo can beat this response; never paint a prompt id twice.
+    if (!(promptId && this._userRowForPrompt(promptId))) {
       this.addBubble("user", displayText, new Date().toISOString(), {
         promptId: promptId,
         images: (submittedImages || []).map(function (image) {
@@ -4713,7 +4775,14 @@
         }),
       });
     }
-    if (result.status !== "completed") this.setTurnActive(true);
+    // POST /prompt reports where the prompt went (started, or queued behind a busy
+    // or paused session); only a prompt that really started means work is under
+    // way. A duplicate retry says nothing about the present, and the receipt
+    // lookup reports a lifecycle status instead of "started".
+    const startedNow = result.status
+      ? result.status === "executing"
+      : result.started === true && result.duplicate !== true;
+    if (startedNow) this.setTurnActive(true);
     this.scrollToBottom();
     if (this.drafts && promptId) {
       this.drafts.observeAcceptance(promptId, !!result.queued);
@@ -5040,7 +5109,41 @@
     else this.selectCommand(item);
   };
 
+  AgentChatWidget.prototype.onComposerKeydown = function (e) {
+    const self = this;
+    if (self.commandMenuOpen()) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        self.moveCommandSelection(e.key === "ArrowDown" ? 1 : -1);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        self.closeCommandMenu();
+        return;
+      }
+      const completes = (e.key === "Enter" || (e.key === "Tab" && !e.ctrlKey && !e.metaKey && !e.altKey)) &&
+        !e.shiftKey && !e.isComposing && e.keyCode !== 229;
+      if (completes && self.commandMatches.length) {
+        e.preventDefault();
+        self.selectMenuItem(self.commandMatches[self.commandSelectedIndex]);
+        return;
+      }
+      // The menu is still waiting for the current "@" query. Its old items were
+      // dropped, and sending half a mention is not what Enter meant either.
+      if (completes && self._mentionPending) {
+        e.preventDefault();
+        return;
+      }
+    }
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+      e.preventDefault();
+      self.send(self.prompting ? "append" : "append");
+    }
+  };
+
   AgentChatWidget.prototype.cancelMentionSearch = function () {
+    this._mentionPending = false;
     this._mentionQuery = null;
     this._mentionSeq = (this._mentionSeq || 0) + 1;
     if (this._mentionTimer) clearTimeout(this._mentionTimer);
@@ -5050,6 +5153,11 @@
     const self = this;
     this.cancelMentionSearch();
     this._mentionQuery = query;
+    this._mentionPending = true;
+    // Results on screen belong to the previous query: they must not be offered
+    // (or completed with Enter) until this query's results replace them.
+    this.commandMatches = [];
+    if (this.commandMenuOpen()) this.renderMenu("@", [], "Searching…");
     const seq = this._mentionSeq;
     this._mentionTimer = setTimeout(function () { self.runMentionSearch(query, seq); }, 120);
   };
@@ -5061,6 +5169,7 @@
     this.api("/sessions/" + encodeURIComponent(sessionId) + "/mentions?q=" + encodeURIComponent(query))
       .then(function (result) {
         if (seq !== self._mentionSeq || sessionId !== self.sessionId) return;
+        self._mentionPending = false;
         const items = result && result.items || [];
         // "@" is as often plain text as a mention, so nothing found means no menu.
         if (!items.length) {
@@ -5072,7 +5181,9 @@
         self.renderMenu("@", items, items.length + (items.length === 1 ? " match" : " matches"));
       })
       .catch(function () {
-        if (seq === self._mentionSeq) self.closeCommandMenu();
+        if (seq !== self._mentionSeq) return;
+        self._mentionPending = false;
+        self.closeCommandMenu();
       });
   };
 
@@ -5683,18 +5794,8 @@
     "config_option_update", "config_options_update", "permission_request",
     "permission_resolved", "elicitation_request", "elicitation_resolved", "error"
   ];
-  const SESSION_MULTIPLEX_EVENTS = [
-    "user_message", "agent_message", "agent_message_chunk", "agent_thought_chunk",
-    "tool_call", "tool_call_update", "session_info_update", "prompt_timing", "plan", "usage_update", "card_disposition",
-    "stream_recovery", "available_commands_update", "command_result", "browser_attachment_changed",
-    "turn_waiting", "turn_completed", "prompt_failed", "cancelled",
-    "queue_enqueued", "queue_dequeued", "queue_removed", "queue_reordered",
-    "queue_paused", "queue_resumed", "publication_fence_established", "session_control_changed", "session_started", "session_closed",
-    "session_recovered", "connection_lost", "model_changed", "mode_changed",
-    "current_mode_update", "config_changed", "configuration_changed", "config_option_update",
-    "config_options_update", "permission_request", "permission_resolved",
-    "elicitation_request", "elicitation_resolved", "error", "message"
-  ];
+  // The multiplex stream also announces missed ranges with stream_recovery.
+  const SESSION_MULTIPLEX_EVENTS = TRANSCRIPT_EVENT_TYPES.concat(["stream_recovery"]);
   const SESSION_LIST_REFRESH_EVENT_SET = SESSION_LIST_REFRESH_EVENTS.reduce(function (result, type) {
     result[type] = true;
     return result;
@@ -7169,6 +7270,7 @@
     startSessionListFreshness: startSessionListFreshness,
     stopSessionListFreshness: stopSessionListFreshness,
     sessionListRefreshEvents: SESSION_LIST_REFRESH_EVENTS.slice(),
+    sessionMultiplexEvents: SESSION_MULTIPLEX_EVENTS.slice(),
     anchoredScrollTop: anchoredScrollTop,
     renderMarkdown: renderMarkdown,
     renderMarkdownAsync: renderMarkdownAsync,
