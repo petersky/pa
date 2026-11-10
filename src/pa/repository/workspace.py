@@ -172,11 +172,15 @@ class WorkspaceCleanupTarget(BaseModel):
     expected_head: str = Field(pattern=r"^[0-9a-f]{40,64}$")
     expected_updated_at: datetime
     merged_pr_number: int | None = Field(default=None, gt=0)
+    expected_actual_branch: str | None = Field(default=None, min_length=1, max_length=255,
+                                               pattern=r'^[A-Za-z0-9_./-]+$')
+    expected_native_id: str | None = Field(default=None, min_length=1, max_length=200)
+    expected_owner_updated_at: datetime | None = None
 
-    @field_validator("expected_updated_at")
+    @field_validator("expected_updated_at", "expected_owner_updated_at")
     @classmethod
-    def aware_timestamp(cls, value: datetime) -> datetime:
-        if value.tzinfo is None:
+    def aware_timestamp(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.tzinfo is None:
             raise ValueError("expected_updated_at must include a timezone")
         return value
 
@@ -1222,6 +1226,77 @@ class WorkspaceManager:
                 "Leased worktree is detached or on the wrong branch"
             )
 
+    def _cleanup_owner_binding_matches(self, owner, lease: WorkspaceLease,
+                                       target: WorkspaceCleanupTarget) -> bool:
+        binding = owner.execution_binding or {}
+        if target.expected_owner_updated_at is not None and owner.updated_at != target.expected_owner_updated_at:
+            return False
+        if binding:
+            return lease.id in binding.get('lease_ids', [])
+        # Read-only legacy resolution follows the existing workspace preparation
+        # rule: prefer the unique durable lease, never mutable card association
+        # alone. No legacy binding is written and no provider is admitted.
+        identity_matches = bool(target.expected_owner_updated_at is not None
+            and owner.id == lease.session_id and owner.card_id == lease.card_id
+            and owner.project_id == lease.project_id
+            and owner.cwd == lease.worktree_path
+            and owner.origin_instance_id == self.settings.instance_id)
+        if not identity_matches:
+            return False
+        with derived_connection(self, self._connect) as conn:
+            siblings = conn.execute("SELECT id FROM workspace_leases WHERE session_id=? AND state!='cleaned' LIMIT 2",
+                                    (lease.session_id,)).fetchall()
+        return [row['id'] for row in siblings] == [lease.id]
+
+    def _verify_selected_worktree(self, lease: WorkspaceLease,
+                                  target: WorkspaceCleanupTarget) -> str:
+        """Cleanup-only reconciliation, never an admission rebind or ref rewrite.
+
+        A missing original ref may have an explicitly observed review suffix.
+        Retain the original lease, require its same session namespace and exact
+        HEAD, and repeat these checks under the repository lock at the effect.
+        All reads disable implicit network activity.
+        """
+        branch = target.expected_actual_branch
+        tree, cache = Path(lease.worktree_path), Path(lease.cache_path)
+        if branch is None:
+            if target.expected_native_id is not None or target.expected_owner_updated_at is not None:
+                raise WorkspaceProvisioningError('Native branch reconciliation fence requires an observed branch')
+            self._verify_worktree(cache, tree, lease)
+            return lease.branch
+        owner = self.store.get_session(lease.session_id)
+        durable = (owner.config_json or {}).get('durable_runtime') if owner else None
+        if (not owner or owner.status != 'closed' or owner.card_id != lease.card_id
+                or not self._cleanup_owner_binding_matches(owner, lease, target)
+                or not target.expected_native_id
+                or owner.external_session_id != target.expected_native_id
+                or self.store.native_history_session_ids(target.expected_native_id) != [lease.session_id]
+                or not isinstance(durable, dict) or 'in_flight' not in durable
+                or durable['in_flight'] is not None or durable.get('queued_prompts') != []):
+            raise WorkspaceProvisioningError('Observed cleanup branch requires an exact closed idle native owner')
+        if (not lease.branch.startswith('pa/') or '-' not in lease.branch
+                or branch == lease.branch
+                or not branch.startswith(lease.branch.rsplit('-', 1)[0] + '-')
+                or '/' in branch.removeprefix(lease.branch.rsplit('-', 1)[0] + '-')):
+            raise WorkspaceProvisioningError('Observed cleanup branch is outside the leased session namespace')
+        local = {'GIT_NO_LAZY_FETCH': '1', 'GIT_OPTIONAL_LOCKS': '0'}
+        def git(*args, **kw):
+            return self._git('-C', str(tree), *args, env_extra=local, **kw)
+        if git('check-ref-format', '--branch', branch, check=False).returncode:
+            raise WorkspaceProvisioningError('Observed cleanup branch is invalid')
+        if git('show-ref', '--verify', '--quiet', 'refs/heads/' + lease.branch,
+               check=False).returncode != 1:
+            raise WorkspaceProvisioningError('Original leased branch is not confirmed missing')
+        with derived_connection(self, self._connect) as conn:
+            conflict = conn.execute('SELECT id FROM workspace_leases WHERE branch=? AND id!=? LIMIT 1',
+                                    (branch, lease.id)).fetchone()
+        if conflict is not None:
+            raise WorkspaceProvisioningError('Observed cleanup branch belongs to another lease')
+        self._verify_worktree(cache, tree, lease.model_copy(update={'branch': branch}))
+        if git('rev-parse', '--verify', 'HEAD').stdout.strip() != target.expected_head:
+            raise WorkspaceProvisioningError('Observed cleanup branch HEAD changed')
+        return branch
+
     def _apply_policy(
         self,
         worktree_path: Path,
@@ -1497,7 +1572,7 @@ class WorkspaceManager:
                             tree = self._assert_managed_path(Path(lease.worktree_path))
                             if not tree.is_dir() or Path(lease.worktree_path).is_symlink():
                                 raise WorkspaceProvisioningError("selected worktree is missing or unsafe")
-                            self._verify_worktree(Path(lease.cache_path), tree, lease)
+                            self._verify_selected_worktree(lease, selected[lease.id])
                             head = self._git("-C", str(tree), "rev-parse", "--verify", "HEAD").stdout.strip()
                             outcomes[lease.id]["observed_head"] = head
                             if head != selected[lease.id].expected_head:
@@ -1811,6 +1886,8 @@ class WorkspaceManager:
         worktree = Path(lease.worktree_path)
         cache = Path(lease.cache_path)
         try:
+            branch = (self._verify_selected_worktree(lease, expected_target)
+                      if expected_target is not None else lease.branch)
             if self.store.pending_restart_continuation(session_id=lease.session_id):
                 raise WorkspaceProvisioningError("restart continuation is pending")
             if lease.card_id and not self._card_completion_eligible(lease.card_id):
@@ -1825,7 +1902,7 @@ class WorkspaceManager:
                     "-C",
                     str(worktree),
                     "rev-list",
-                    lease.branch,
+                    branch,
                     "--not",
                     "--remotes=origin",
                 ).stdout.strip()
@@ -1870,11 +1947,12 @@ class WorkspaceManager:
                             str(cache),
                             "show-ref",
                             "--verify",
-                            f"refs/remotes/origin/{lease.branch}",
+                            f"refs/remotes/origin/{branch}",
                             check=False,
                         ).returncode
                     )
-                    equivalent, proof = self._content_equivalence(lease, evidence)
+                    equivalent, proof = self._content_equivalence(
+                        lease.model_copy(update={'branch': branch}), evidence)
                     if not equivalent:
                         proof["unique_commits"] = unpushed.splitlines()
                         self._block_cleanup(
@@ -1897,7 +1975,7 @@ class WorkspaceManager:
                     raise WorkspaceProvisioningError("restart continuation became pending before cleanup")
                 if expected_target is not None:
                     self.selected_cleanup_leases([expected_target])
-                    self._verify_worktree(cache, worktree, lease)
+                    self._verify_selected_worktree(lease, expected_target)
                     if self._git("-C", str(worktree), "rev-parse", "HEAD").stdout.strip() != expected_target.expected_head:
                         raise WorkspaceProvisioningError("selected HEAD changed before cleanup")
                 self._git("-C", str(cache), "worktree", "remove", str(worktree))
@@ -1909,10 +1987,20 @@ class WorkspaceManager:
             if expected_target is not None:
                 # Atomic expected-value ref deletion preserves any intervening
                 # unique commit. Tracking configuration is intentionally retained.
-                self._git("-C", str(cache), "update-ref", "-d", "refs/heads/" + lease.branch,
+                self._git("-C", str(cache), "update-ref", "-d", "refs/heads/" + branch,
                           expected_target.expected_head)
             else:
                 self._git("-C", str(cache), "branch", "-D", lease.branch, check=False)
+            if expected_target is not None and expected_target.expected_actual_branch:
+                lease.cleanup_evidence['branch_reconciliation'] = {
+                    'leased_branch': lease.branch, 'observed_branch': branch,
+                    'expected_head': expected_target.expected_head,
+                    'lease_id': lease.id, 'fencing_token': lease.fencing_token,
+                    'expected_native_id': expected_target.expected_native_id,
+                    'expected_owner_updated_at': (expected_target.expected_owner_updated_at.isoformat()
+                        if expected_target.expected_owner_updated_at is not None else None),
+                    'lease_branch_unchanged': True, 'provider_admission_authorized': False,
+                }
             lease.state = "cleaned"
             lease.stage = "cleaned"
             lease.error = None

@@ -440,6 +440,16 @@ async def collect_selected_workspaces(
                     if not owner or (owner.principal_id not in {None, principal}
                                      and getattr(user, "role", None) != "admin"):
                         raise HTTPException(403, "selected workspace owner is unavailable or belongs to another principal")
+                for target, lease in zip(body.targets, leases, strict=True):
+                    if target.expected_actual_branch is not None:
+                        live = agent.get(lease.session_id)
+                        if live is not None and not live._closed:
+                            raise HTTPException(409, 'Observed cleanup branch owner has a live runtime')
+                        try:
+                            await runtime.run_blocking('workspace.cleanup_branch_preflight',
+                                manager._verify_selected_worktree, lease, target)
+                        except WorkspaceProvisioningError as exc:
+                            raise HTTPException(409, str(exc)) from None
                 proofs = {}
                 for target, lease in zip(body.targets, leases, strict=True):
                     if target.merged_pr_number is not None:
@@ -508,7 +518,9 @@ async def preserve_selected_untracked(request: Request, body: WorkspaceUntracked
                 agent.store.get_session, lease.session_id)
             durable = (owner.config_json or {}).get('durable_runtime') if owner else None
             if (not owner or owner.card_id != lease.card_id
-                    or lease.id not in (owner.execution_binding or {}).get('lease_ids', [])
+                    or (lease.id not in (owner.execution_binding or {}).get('lease_ids', [])
+                        and not (body.target.expected_actual_branch
+                                 and manager._cleanup_owner_binding_matches(owner, lease, body.target)))
                     or not isinstance(durable, dict) or 'in_flight' not in durable
                     or durable['in_flight'] is not None or durable.get('queued_prompts') != []):
                 raise HTTPException(409, 'Exact bound owner idle evidence is unavailable')
