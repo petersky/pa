@@ -256,7 +256,7 @@ def compare(*, pairs=3, commits=100, source_reader_before=None):
         pooled_ms={key: {phase: support.distribution(values) for phase, values in item.items()}
             for key, item in pooled.items()},
         script_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        scope="Alternating independent real private DAG/ledger fixtures, same100-commit bound and original writer-reserving connect behavior vs native read-only scopes. No copied databases. Fixture-only deterministic schedule/occurrence IDs and wall clock permit COMPLETE final get/list/pending/history/status/health byte parity; no fields removed. Event timestamps fixed, full objects still validated. Observers and concurrent list reads retained; all write transactions unchanged. No delivery/Kernel/native/deployed/whole-card acceptance; no physical IO claim.")
+        scope=("Source SELECT connection per-query committed snapshot vs one autocommit read-only connection with explicitly closed query cursors per realm poll. " if source_reader_before else "Original writer-reserving reads vs native read-only snapshot scopes. ")+"Alternating independent real private DAG/ledger fixtures, same100-commit bound. No copied databases. Fixture-only deterministic schedule/occurrence IDs and wall clock permit COMPLETE final get/list/pending/history/status/health byte parity; no fields removed. Event timestamps fixed, full objects still validated. Observers and concurrent list reads retained; all write transactions unchanged. No delivery/Kernel/native/deployed/whole-card acceptance; no physical IO claim.")
     assert len(json.dumps(result).encode()) <= 128*1024
     return result
 
