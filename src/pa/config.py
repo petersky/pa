@@ -162,6 +162,10 @@ class Settings(BaseSettings):
     # Provider processes are comparatively expensive. Keep restart recovery
     # bounded even when many sessions have durable unfinished work.
     agent_recovery_concurrency: int = Field(default=2, ge=1, le=16)
+    # PA may take over a card's worktree lease from a session that is closed or
+    # recovery-blocked with no live runtime, after saving its uncommitted work
+    # to a rescue ref. Turn off to keep the "resume its owner" refusal.
+    agent_reclaim_dead_session_leases: bool = True
     # Idle sessions remain follow-up capable for one day unless a durable
     # terminal workflow proves that they can close sooner.
     agent_session_idle_retention_hours: float = Field(default=24.0, ge=0.01, le=8760)

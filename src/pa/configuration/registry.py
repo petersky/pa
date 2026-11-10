@@ -975,6 +975,18 @@ _DEFINITIONS = (
         validator="range:1:16",
     ),
     _s(
+        "agent_reclaim_dead_session_leases",
+        "bool",
+        True,
+        "Reclaim a card's worktree lease from a closed or recovery-blocked session.",
+        "Agent",
+        55,
+        "On: PA saves the dead session's uncommitted work to a refs/pa/rescue ref, "
+        "releases its lease and notifies you, so the card can continue. Off: a dead "
+        "owner keeps blocking new dispatches until you resume or close it.",
+        apply="live",
+    ),
+    _s(
         "agent_session_idle_retention_hours",
         "float",
         24.0,
