@@ -3517,6 +3517,7 @@ class DispatchStore:
                 )
             record = self._snapshot(record)
             if existing:
+                self._preserve_post_turn_evidence(existing, record)
                 record.progress_next_sequence = max(
                     record.progress_next_sequence, existing.progress_next_sequence
                 )
@@ -3540,6 +3541,45 @@ class DispatchStore:
             record.updated_at = datetime.now(UTC)
             self._save(record, durability="full")
             return self._snapshot(self._records[record.dispatch_id])
+
+    @staticmethod
+    def _preserve_post_turn_evidence(
+        existing: DispatchRecord, record: DispatchRecord
+    ) -> None:
+        """Never let a stale whole-record write erase turn-end evaluator evidence.
+
+        On a local dispatch the authority and the target share one store, so the
+        authority's ``/complete`` handler persists the snapshot/evaluation while
+        the target outbox still holds its pre-request record.  Evidence is
+        append-only: items the incoming record lacks are kept from the stored
+        row, items present in both take the incoming (intentionally edited)
+        version, and receipts are owned by the claim/finish transactions.
+        """
+
+        def merged(stored: list[Any], incoming: list[Any], key: str) -> list[Any]:
+            by_id = {getattr(item, key): item for item in incoming}
+            kept = [item for item in stored if getattr(item, key) not in by_id]
+            return [*kept, *incoming][-20:]
+
+        record.turn_end_snapshots = merged(
+            existing.turn_end_snapshots, record.turn_end_snapshots, "snapshot_id"
+        )
+        record.post_turn_evaluations = merged(
+            existing.post_turn_evaluations,
+            record.post_turn_evaluations,
+            "evaluation_id",
+        )
+        record.post_turn_context_digests = {
+            **existing.post_turn_context_digests,
+            **record.post_turn_context_digests,
+        }
+        record.post_turn_context_digests = dict(
+            list(record.post_turn_context_digests.items())[-20:]
+        )
+        record.post_turn_action_receipts = {
+            **record.post_turn_action_receipts,
+            **existing.post_turn_action_receipts,
+        }
 
     def claim_post_turn_action(
         self,
@@ -4499,6 +4539,18 @@ class DispatchStore:
         *,
         detail: dict[str, Any] | None = None,
     ) -> DispatchRecord:
+        self.apply_transition(record, state, message, detail=detail)
+        return self.put(record)
+
+    @staticmethod
+    def apply_transition(
+        record: DispatchRecord,
+        state: str,
+        message: str,
+        *,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        """Apply a lifecycle transition in memory (no persistence)."""
         if state not in DISPATCH_STAGES:
             raise ValueError(f"unknown dispatch state: {state}")
         previous_state = record.state
@@ -4542,7 +4594,6 @@ class DispatchStore:
                 detail=detail or {},
             )
         )
-        return self.put(record)
 
     def record_followup_started(
         self,
@@ -5874,7 +5925,7 @@ class CompletionOutbox:
         self, record: DispatchRecord, turn: dict[str, Any]
     ) -> None:
         turn["delivery_attempts"] = int(turn.get("delivery_attempts") or 0) + 1
-        await self._offload("dispatch.followup_record_write", self.store.put, record)
+        await self._write_turn_delivery(record, turn)
         key = (
             f"{record.mutation_id}:turn:"
             f"{turn.get('prompt_id') or turn.get('idempotency_key')}"
@@ -5922,7 +5973,47 @@ class CompletionOutbox:
                 turn["next_retry_at"] = (
                     datetime.now(UTC) + timedelta(seconds=delay)
                 ).isoformat()
-        await self._offload("dispatch.followup_record_write", self.store.put, record)
+        await self._write_turn_delivery(record, turn)
+
+    async def _write_turn_delivery(
+        self, record: DispatchRecord, turn: dict[str, Any]
+    ) -> None:
+        owned = (
+            "delivery_attempts",
+            "delivery_state",
+            "delivered_at",
+            "delivery_error",
+            "next_retry_at",
+        )
+
+        def apply(current: DispatchRecord) -> bool:
+            for stored in current.followup_turns:
+                if stored.get("idempotency_key") == turn.get("idempotency_key"):
+                    stored.update({key: turn[key] for key in owned if key in turn})
+                    return True
+            return False
+
+        await self._mutate(record, apply, "dispatch.followup_record_write")
+
+    async def _mutate(
+        self,
+        record: DispatchRecord,
+        mutate: Callable[[DispatchRecord], bool | None],
+        operation: str = "dispatch.record_write",
+    ) -> DispatchRecord:
+        """Update only the fields the outbox owns on the latest durable record.
+
+        The record handed to ``_send`` predates the HTTP round trip.  When the
+        authority is the same store, its handler has meanwhile written turn-end
+        snapshots, evaluations, receipts and more; a whole-record ``put`` of the
+        stale copy would erase them.
+        """
+        return await self._offload(
+            operation,
+            self.store.mutate_current,
+            record.dispatch_id,
+            mutate=mutate,
+        )
 
     def _schedule_retry(self, record: DispatchRecord, error: str) -> None:
         record.last_error = sanitize_text(error, limit=500)
@@ -5939,8 +6030,10 @@ class CompletionOutbox:
         record.completion_next_retry_at = datetime.now(UTC) + timedelta(seconds=delay)
 
     async def _send(self, record: DispatchRecord) -> None:
-        record.attempts += 1
-        await self._offload("dispatch.record_write", self.store.put, record)
+        def count_attempt(current: DispatchRecord) -> None:
+            current.attempts += 1
+
+        record = await self._mutate(record, count_attempt)
         headers = {"Idempotency-Key": record.mutation_id}
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
@@ -5981,35 +6074,48 @@ class CompletionOutbox:
                 except ValueError:
                     acknowledgement = {}
                 disposition = acknowledgement.get("card_disposition") or {}
-                if isinstance(disposition, dict):
-                    record.card_disposition_status = disposition.get("status")
-                    record.card_disposition_reason = disposition.get("reason")
-                    record.card_lane_before = disposition.get("lane_before")
-                    record.card_lane_after = disposition.get("lane_after")
                 reconciliation = acknowledgement.get("reconciliation")
-                if isinstance(reconciliation, dict):
-                    for field in ("state", "condition", "recovery_action"):
-                        value = reconciliation.get(field)
-                        if field in reconciliation and (isinstance(value, str) or (value is None and field != "state")):
-                            setattr(record, "reconciliation_" + field, value)
-                    if isinstance(reconciliation.get("recoverable"), bool):
-                        record.reconciliation_recoverable = reconciliation["recoverable"]
-                    if isinstance(reconciliation.get("current_card"), dict):
-                        record.reconciliation_current_card = reconciliation["current_card"]
-                    record.reconciliation_updated_at = datetime.now(UTC)
-                record.acknowledged_at = datetime.now(UTC)
-                record.last_error = None
-                record.completion_delivery_class = "acknowledged"
-                record.completion_next_retry_at = None
-                await self._offload(
-                    "dispatch.record_complete",
-                    self.store.transition,
-                    record,
-                    "completed",
-                    (
-                        "Authority acknowledged dispatch completion separately "
-                        "from card disposition."
-                    ),
+
+                def acknowledge(current: DispatchRecord) -> None:
+                    if isinstance(disposition, dict):
+                        current.card_disposition_status = disposition.get("status")
+                        current.card_disposition_reason = disposition.get("reason")
+                        current.card_lane_before = disposition.get("lane_before")
+                        current.card_lane_after = disposition.get("lane_after")
+                    if isinstance(reconciliation, dict):
+                        for field in ("state", "condition", "recovery_action"):
+                            value = reconciliation.get(field)
+                            if field in reconciliation and (
+                                isinstance(value, str)
+                                or (value is None and field != "state")
+                            ):
+                                setattr(current, "reconciliation_" + field, value)
+                        if isinstance(reconciliation.get("recoverable"), bool):
+                            current.reconciliation_recoverable = reconciliation[
+                                "recoverable"
+                            ]
+                        if isinstance(reconciliation.get("current_card"), dict):
+                            current.reconciliation_current_card = reconciliation[
+                                "current_card"
+                            ]
+                        current.reconciliation_updated_at = datetime.now(UTC)
+                    current.acknowledged_at = current.acknowledged_at or datetime.now(
+                        UTC
+                    )
+                    current.last_error = None
+                    current.completion_delivery_class = "acknowledged"
+                    current.completion_next_retry_at = None
+                    self.store.apply_transition(
+                        current,
+                        "completed",
+                        (
+                            "Authority acknowledged dispatch completion separately "
+                            "from card disposition."
+                        ),
+                    )
+
+                record = await self._mutate(
+                    record, acknowledge, "dispatch.record_complete"
                 )
                 if self.disposition_notifier and record.session_id:
                     notice = {
@@ -6049,23 +6155,29 @@ class CompletionOutbox:
                     "authority_version_conflict",
                     "authority_card_missing",
                 }:
-                    record.last_error = sanitize_text(message, limit=500)
-                    record.completion_delivery_class = "semantic_conflict"
-                    record.completion_next_retry_at = None
-                    record.reconciliation_state = "conflict_requires_resolution"
-                    record.reconciliation_reason = f"A mixed-version authority rejected immutable completion before reconciliation: {code}."
-                    record.reconciliation_condition = (
-                        "peer_protocol_upgrade_or_operator_retry"
-                    )
-                    record.reconciliation_last_dependency_error = record.last_error
-                    record.reconciliation_recoverable = True
-                    record.reconciliation_updated_at = datetime.now(UTC)
-                    await self._offload(
-                        "dispatch.record_complete",
-                        self.store.transition,
-                        record,
-                        "completed",
-                        "Agent turn ended; legacy authority reconciliation needs attention.",
+
+                    def semantic_conflict(current: DispatchRecord) -> None:
+                        current.last_error = sanitize_text(message, limit=500)
+                        current.completion_delivery_class = "semantic_conflict"
+                        current.completion_next_retry_at = None
+                        current.reconciliation_state = "conflict_requires_resolution"
+                        current.reconciliation_reason = f"A mixed-version authority rejected immutable completion before reconciliation: {code}."
+                        current.reconciliation_condition = (
+                            "peer_protocol_upgrade_or_operator_retry"
+                        )
+                        current.reconciliation_last_dependency_error = (
+                            current.last_error
+                        )
+                        current.reconciliation_recoverable = True
+                        current.reconciliation_updated_at = datetime.now(UTC)
+                        self.store.apply_transition(
+                            current,
+                            "completed",
+                            "Agent turn ended; legacy authority reconciliation needs attention.",
+                        )
+
+                    record = await self._mutate(
+                        record, semantic_conflict, "dispatch.record_complete"
                     )
                 elif response.status_code == 409 or response.status_code in {
                     401,
@@ -6073,17 +6185,23 @@ class CompletionOutbox:
                     404,
                     422,
                 }:
-                    record.last_error = sanitize_text(message, limit=500)
-                    record.completion_delivery_class = "permanent_failure"
-                    record.completion_next_retry_at = None
-                    record.recoverable = False
-                    await self._offload("dispatch.record_write", self.store.put, record)
+
+                    def permanent(current: DispatchRecord) -> None:
+                        current.last_error = sanitize_text(message, limit=500)
+                        current.completion_delivery_class = "permanent_failure"
+                        current.completion_next_retry_at = None
+                        current.recoverable = False
+
+                    record = await self._mutate(record, permanent)
                 else:
-                    self._schedule_retry(record, message)
-                    await self._offload("dispatch.record_write", self.store.put, record)
+                    record = await self._mutate(
+                        record, lambda current: self._schedule_retry(current, message)
+                    )
         except httpx.HTTPError as exc:
-            self._schedule_retry(record, str(exc))
-            await self._offload("dispatch.record_write", self.store.put, record)
+            error = str(exc)
+            record = await self._mutate(
+                record, lambda current: self._schedule_retry(current, error)
+            )
         if self.stall_notifier and record.completion_delivery_class in {
             "transport_exhausted",
             "permanent_failure",
