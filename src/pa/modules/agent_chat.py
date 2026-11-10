@@ -4608,6 +4608,34 @@ async def session_close_all(request: Request) -> dict:
     return result
 
 
+def _retired_empty_dispatch_retry(mgr, origin, sibling):
+    """A canonically closed allocation failure is not a competing owner proof."""
+    config = sibling.config_json or {}
+    durable = config.get("durable_runtime") or {}
+    runtime = mgr.get(sibling.id)
+    if (
+        sibling.status != "closed" or sibling.external_session_id or sibling.execution_binding or sibling.cwd
+        or sibling.id in mgr._admitting_sessions or (runtime and not runtime._closed)
+        or sibling.dispatch_id != origin.dispatch_id
+        or sibling.card_id != origin.card_id or sibling.project_id != origin.project_id
+        or sibling.authority_instance_id != origin.authority_instance_id
+        or sibling.origin_instance_id != origin.target_instance_id
+        or sibling.realm_id != origin.realm_id or sibling.principal_id != origin.principal_id
+        or sibling.purpose != "automated_run" or sibling.control_mode != "automation"
+        or durable.get("queued_prompts") or durable.get("in_flight")
+        or (config.get("execution_context") or {}).get("repositories")
+        or (config.get("execution_context") or {}).get("artifact_workspace")
+        or (config.get("execution_pending_settings") or {}).get("state") in {"pending", "failed"}
+        or (config.get("provisioning") or {}).get("state") != "failed"
+        or mgr.store.pending_restart_continuation(session_id=sibling.id)
+        or any(l.session_id == sibling.id for l in mgr.workspace_manager.list())
+    ):
+        return False
+    events = mgr.store.list_transcript_events(sibling.id, limit=2)
+    return (len(events) == 1 and events[0].event_type == "session_closed"
+            and events[0].payload.get("reason") == "orphan_user_close")
+
+
 def _reconcile_reserved_recovery_source(mgr, ledger, origin, source):
     """Recover a legacy allocation/publication crash cut for retirement only.
 
@@ -4647,7 +4675,8 @@ def _reconcile_reserved_recovery_source(mgr, ledger, origin, source):
         reject()
     candidates = [s for s in mgr.store.list_sessions()
                   if s.dispatch_id == origin.dispatch_id or s.label == source.label]
-    if {s.id for s in candidates} != {source.id}:
+    retired = [s for s in candidates if s.id != source.id]
+    if any(not _retired_empty_dispatch_retry(mgr, origin, s) for s in retired):
         reject()
     repositories = context.get("repositories") or []
     leases = [l for l in mgr.workspace_manager.list() if l.session_id == source.id]
@@ -4694,7 +4723,11 @@ def _reconcile_reserved_recovery_source(mgr, ledger, origin, source):
     def reconcile(current):
         fresh = mgr.store.get_session(source.id)
         fresh_leases = [l for l in mgr.workspace_manager.list() if l.session_id == source.id]
-        if fresh != source or fresh_leases != leases:
+        fresh_candidates = [s for s in mgr.store.list_sessions()
+                            if s.dispatch_id == origin.dispatch_id or s.label == source.label]
+        if (fresh != source or fresh_leases != leases
+            or {s.id: s for s in fresh_candidates} != {s.id: s for s in candidates}
+            or any(not _retired_empty_dispatch_retry(mgr, origin, s) for s in retired)):
             reject()
         current.session_id = source.id
         current.events.append(DispatchEvent(
@@ -4702,7 +4735,8 @@ def _reconcile_reserved_recovery_source(mgr, ledger, origin, source):
             state=current.state,
             message="Reconciled exact reserved source for workspace-preserving retirement.",
             detail={"kind": "reserved_source_retirement_binding", "session_id": source.id,
-                    "lease_proof": proof, "outcome_inferred": False},
+                    "lease_proof": proof, "outcome_inferred": False,
+                    "retired_empty_retry_ids": [s.id for s in retired]},
         ))
     try:
         return ledger.compare_and_mutate(origin, reconcile)
