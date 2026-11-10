@@ -30,6 +30,40 @@
   const FLYOUT_TOP_TRIGGER = 120;
   const MAX_PLANS = 50;
   const MAX_STREAM_CHARS = 250000;
+  // Every transcript event type the server can append. The server names each SSE
+  // event after its type, and a browser only dispatches a named event to a
+  // listener registered for that exact name, so a type missing here is never
+  // delivered: it leaves a hole in the sequence and forces a history repair.
+  // Types without a dedicated case in handleEvent are harmless no-ops that still
+  // advance the cursor. tests/test_agent_chat_transcript.py checks this list
+  // against every type the server source can emit.
+  const TRANSCRIPT_EVENT_TYPES = [
+    "user_message", "agent_message", "agent_message_chunk", "agent_thought_chunk",
+    "user_message_chunk", "tool_call", "tool_call_update", "session_info_update",
+    "prompt_timing", "prompt_rendered", "prompt_mentions", "prompt_blocked",
+    "prompt_failed", "plan", "usage_update", "available_commands_update",
+    "card_disposition", "command_result", "shell_result", "context_boundary",
+    "collaboration_mode_transition", "browser_attachment_changed",
+    "turn_waiting", "turn_completed", "cancelled",
+    "queue_enqueued", "queue_dequeued", "queue_removed", "queue_reordered",
+    "queue_paused", "queue_resumed", "publication_fence_established",
+    "session_control_changed", "session_started", "session_closed", "session_recovered",
+    "session_admission_failed", "session_recovery_audited", "session_recovery_fenced",
+    "provider_released", "connection_lost", "model_changed", "mode_changed",
+    "current_mode_update", "config_changed", "configuration_changed",
+    "config_option_update", "config_options_update", "permission_request",
+    "permission_resolved", "elicitation_request", "elicitation_resolved",
+    "interaction_request", "interaction_superseded", "error", "message"
+  ];
+  // Queue events change what the queue panel shows even while the transcript
+  // itself is held back for older-history reading.
+  const QUEUE_REFRESH_EVENT_TYPES = [
+    "queue_enqueued", "queue_dequeued", "queue_removed", "queue_reordered",
+    "queue_paused", "queue_resumed", "publication_fence_established",
+    "session_control_changed"
+  ];
+  const SSE_RECONNECT_BASE_MS = 1000;
+  const SSE_RECONNECT_MAX_MS = 30000;
   const SESSION_ROUTE_TIMEOUT_MS = 4000;
   const LIVE_SNAPSHOT_TIMEOUT_MS = 3000;
   const LIVE_STATE_RETRY_MS = 3000;
@@ -1523,6 +1557,8 @@
       if ((event.type === "user_message" || event.type === "queue_enqueued") && this.drafts) this.drafts.observeAcceptance(p.id, event.type === "queue_enqueued");
       if (["permission_request", "permission_resolved", "turn_completed", "cancelled", "connection_lost", "prompt_failed", "user_message", "queue_enqueued"].includes(event.type)) this.heldControlSeq[controlKey] = event.seq;
     }
+    // The queue panel reads the live snapshot, not the transcript window.
+    if (QUEUE_REFRESH_EVENT_TYPES.indexOf(event.type) >= 0) this.refreshQueue();
     if (this.historyPreserveWindow) this.updateNewerControl();
     this._renderHistoryNotice();
   };
@@ -2983,6 +3019,7 @@
         return;
       }
       self.connectionNoticeShown = false;
+      self.sseClosedRetries = 0;
       self.api("/sessions/" + self.esSessionId).then(function (snap) {
         if (self.es !== es || self.destroyed || generation !== self.subscriptionGeneration) return;
         self.applySnapshot(snap);
@@ -3008,42 +3045,7 @@
       }
     }
 
-    [
-      "user_message",
-      "agent_message_chunk",
-      "agent_thought_chunk",
-      "tool_call",
-      "tool_call_update",
-      "session_info_update",
-      "prompt_timing",
-      "plan",
-      "permission_request",
-      "permission_resolved",
-      "turn_completed",
-      "queue_enqueued",
-      "queue_dequeued",
-      "queue_removed",
-      "queue_reordered",
-      "queue_paused",
-      "queue_resumed",
-      "publication_fence_established",
-      "session_control_changed",
-      "cancelled",
-      "session_started",
-      "session_closed",
-      "browser_attachment_changed",
-      "connection_lost",
-      "usage_update",
-      "turn_waiting",
-      "prompt_failed",
-      "model_changed",
-      "mode_changed",
-      "config_changed",
-      "config_option_update",
-      "current_mode_update",
-      "error",
-      "message",
-    ].forEach(function (name) {
+    TRANSCRIPT_EVENT_TYPES.forEach(function (name) {
       es.addEventListener(name, onAny);
     });
     // Do not also set es.onmessage — that would double-dispatch default
@@ -3073,7 +3075,29 @@
           { system: true, forceVisible: true }
         );
       }
+      // While readyState is CONNECTING the browser retries by itself. A non-200
+      // answer (a 404/503 during a PA restart) instead closes the source for good,
+      // so reopen it ourselves, resuming after the last applied sequence.
+      if (es.readyState === EventSource.CLOSED) self._scheduleSseReopen(es, generation);
     };
+  };
+
+  AgentChatWidget.prototype._scheduleSseReopen = function (es, generation) {
+    const self = this;
+    if (this.sseReopenTimer) clearTimeout(this.sseReopenTimer);
+    const delay = Math.min(
+      SSE_RECONNECT_MAX_MS,
+      SSE_RECONNECT_BASE_MS * Math.pow(2, Math.min(5, this.sseClosedRetries || 0))
+    );
+    this.sseClosedRetries = (this.sseClosedRetries || 0) + 1;
+    const timer = setTimeout(function () {
+      if (self.sseReopenTimer !== timer) return;
+      self.sseReopenTimer = null;
+      // A replaced, closed or retargeted transport must not be resurrected.
+      if (self.destroyed || self.es !== es || generation !== self.subscriptionGeneration) return;
+      self.connectSSE();
+    }, delay);
+    this.sseReopenTimer = timer;
   };
 
   AgentChatWidget.prototype.useExternalEventTransport = function (enabled) {
@@ -3084,6 +3108,8 @@
   };
 
   AgentChatWidget.prototype.closeSSE = function (reason) {
+    if (this.sseReopenTimer) clearTimeout(this.sseReopenTimer);
+    this.sseReopenTimer = null;
     const es = this.es;
     if (!es) return;
     console.debug("[PA agent SSE] close", {
@@ -5709,18 +5735,8 @@
     "config_option_update", "config_options_update", "permission_request",
     "permission_resolved", "elicitation_request", "elicitation_resolved", "error"
   ];
-  const SESSION_MULTIPLEX_EVENTS = [
-    "user_message", "agent_message", "agent_message_chunk", "agent_thought_chunk",
-    "tool_call", "tool_call_update", "session_info_update", "prompt_timing", "plan", "usage_update", "card_disposition",
-    "stream_recovery", "available_commands_update", "command_result", "browser_attachment_changed",
-    "turn_waiting", "turn_completed", "prompt_failed", "cancelled",
-    "queue_enqueued", "queue_dequeued", "queue_removed", "queue_reordered",
-    "queue_paused", "queue_resumed", "publication_fence_established", "session_control_changed", "session_started", "session_closed",
-    "session_recovered", "connection_lost", "model_changed", "mode_changed",
-    "current_mode_update", "config_changed", "configuration_changed", "config_option_update",
-    "config_options_update", "permission_request", "permission_resolved",
-    "elicitation_request", "elicitation_resolved", "error", "message"
-  ];
+  // The multiplex stream also announces missed ranges with stream_recovery.
+  const SESSION_MULTIPLEX_EVENTS = TRANSCRIPT_EVENT_TYPES.concat(["stream_recovery"]);
   const SESSION_LIST_REFRESH_EVENT_SET = SESSION_LIST_REFRESH_EVENTS.reduce(function (result, type) {
     result[type] = true;
     return result;
@@ -7195,6 +7211,7 @@
     startSessionListFreshness: startSessionListFreshness,
     stopSessionListFreshness: stopSessionListFreshness,
     sessionListRefreshEvents: SESSION_LIST_REFRESH_EVENTS.slice(),
+    sessionMultiplexEvents: SESSION_MULTIPLEX_EVENTS.slice(),
     anchoredScrollTop: anchoredScrollTop,
     renderMarkdown: renderMarkdown,
     renderMarkdownAsync: renderMarkdownAsync,

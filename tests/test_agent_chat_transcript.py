@@ -44,17 +44,17 @@ class AgentChatTranscriptTests(unittest.TestCase):
             result = subprocess.run(command, capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_repeated_identical_prompts_are_all_shown(self) -> None:
-        self.run_scenario("repeated_identical_prompts_are_all_shown")
+    def test_prompt_rendered_does_not_cause_gap_repair(self) -> None:
+        self.run_scenario("prompt_rendered_does_not_cause_gap_repair")
 
-    def test_repeated_identical_prompts_survive_replay(self) -> None:
-        self.run_scenario("repeated_identical_prompts_survive_replay")
+    def test_live_mentions_decorate_the_prompt_bubble(self) -> None:
+        self.run_scenario("live_mentions_decorate_the_prompt_bubble")
 
-    def test_queue_removed_discards_optimistic_bubble(self) -> None:
-        self.run_scenario("queue_removed_discards_optimistic_bubble")
+    def test_queue_events_refresh_while_history_is_held(self) -> None:
+        self.run_scenario("queue_events_refresh_while_history_is_held")
 
-    def test_queued_prompt_does_not_claim_the_agent_is_working(self) -> None:
-        self.run_scenario("queued_prompt_does_not_claim_the_agent_is_working")
+    def test_closed_direct_stream_is_reopened_with_backoff(self) -> None:
+        self.run_scenario("closed_direct_stream_is_reopened_with_backoff")
 
 
 if __name__ == "__main__":
