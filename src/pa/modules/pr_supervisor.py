@@ -1014,6 +1014,9 @@ class PRSupervisorModule(Module):
         store = PRSupervisorStore(ctx.settings.data_dir / "pr_supervisor.db")
         store.completion_capabilities = ctx.store.card_completion_capabilities
         ctx.register_service("pr_supervisor_store", store)
+        from pa.fleet.workshop_transitions import workshop_transition_publisher
+
+        store.watch_observer = workshop_transition_publisher(ctx).watch_changed
         pages: PageRegistry = ctx.require_service("pages")
         pages.register(
             PageDefinition(

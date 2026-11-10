@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from collections import Counter
 from collections.abc import Iterator
@@ -22,6 +23,8 @@ from pa.pr_supervisor.models import (
     PRWatchStatus,
     utcnow,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _dt(value: str | None) -> datetime | None:
@@ -48,6 +51,9 @@ class PRSupervisorStore:
 
     def __init__(self, db_path: Path) -> None:
         self.completion_capabilities = None
+        # Optional ``callable(PRWatch)`` told after a watch's status or state is
+        # written, so the Workshop floor can move cards without refetching.
+        self.watch_observer = None
         self.completion_card_db_path: Path | None = None
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -326,7 +332,16 @@ class PRSupervisorStore:
                 """,
                 self._watch_values(watch),
             )
-        return self.get_watch(watch.id) or watch
+        return self._observed(self.get_watch(watch.id) or watch)
+
+    def _observed(self, watch: PRWatch | None) -> PRWatch | None:
+        observer = self.watch_observer
+        if observer is not None and watch is not None:
+            try:
+                observer(watch)
+            except Exception:  # Observation must never fail a durable write.
+                logger.exception("PR watch observer failed watch=%s", watch.id)
+        return watch
 
     def _watch_values(self, watch: PRWatch) -> tuple[Any, ...]:
         return (
@@ -1160,7 +1175,7 @@ class PRSupervisorStore:
         updated = self.get_watch(watch_id)
         if not updated:
             raise KeyError(watch_id)
-        return updated
+        return self._observed(updated)
 
     def release_lease(self, watch_id: str, instance_id: str, fence_token: int) -> bool:
         with self._conn(immediate=True) as conn:
@@ -1322,7 +1337,7 @@ class PRSupervisorStore:
                 ),
             )
         self.increment_metric("poll_errors")
-        return self.get_watch(watch_id)
+        return self._observed(self.get_watch(watch_id))
 
     def set_terminal(
         self,
@@ -1406,7 +1421,7 @@ class PRSupervisorStore:
                     watch_id,
                 ),
             )
-        return self.get_watch(watch_id)
+        return self._observed(self.get_watch(watch_id))
 
     def append_event(self, event: PRWatchEvent) -> bool:
         try:

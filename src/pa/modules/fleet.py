@@ -15433,6 +15433,11 @@ class FleetModule(Module):
             reservation_hard_expiry=settings.dispatch_capacity_reservation_hard_expiry,
         )
         ctx.register_service("dispatch_store", dispatch_store)
+        from pa.fleet.workshop_transitions import workshop_transition_publisher
+
+        dispatch_store.transition_observer = workshop_transition_publisher(
+            ctx
+        ).dispatch_changed
         ctx.register_service(
             "assigned_mcp_environment_resolver",
             lambda session: _assigned_mcp_environment_for_session(
