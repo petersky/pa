@@ -17,8 +17,8 @@ from time import perf_counter
 from typing import Any, Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi import APIRouter, HTTPException, Request, Query
+from fastapi.responses import FileResponse, Response, StreamingResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from pa.core.async_runtime import AsyncRuntime
@@ -1943,6 +1943,47 @@ async def session_wire_metadata(
         return await _offload(mgr, "agent.wire_metadata_read", collect, timeout=10.0)
     except (ValueError, OSError) as exc:
         raise HTTPException(409, "Wire metadata binding or snapshot unavailable/changed") from exc
+
+
+@router.get("/observability/v1/sessions/{session_id}/workspace-binding")
+async def inspect_session_workspace_binding(
+    request: Request, session_id: str,
+    expected_authority_instance_id: str = Query(min_length=1, max_length=200),
+    expected_session_version: datetime = Query(),
+    expected_native_id: str = Query(max_length=200),
+    expected_binding_hash: str = Query(pattern=r'^[0-9a-f]{64}$'),
+    expected_lease_hash: str = Query(pattern=r'^[0-9a-f]{64}$'),
+    history_limit: int = Query(16, ge=1, le=32),
+    history_offset: int = Query(0, ge=0, le=4096),
+) -> dict:
+    """Inspect fixed provenance only; never connect, recover, renew, or deliver."""
+    from sqlite3 import Error as SQLiteError
+    from pa.instance.binding_inspection import inspect_binding
+    owner = request.app.state.ctx.settings.instance_id
+    if expected_authority_instance_id != owner:
+        raise HTTPException(409, 'Authority precondition changed')
+    if expected_session_version.tzinfo is None:
+        raise HTTPException(422, 'Session version must include timezone')
+    user = getattr(request.state, 'user', None)
+    try:
+        result = await _offload(_manager(request), 'workspace.binding_inspection',
+            inspect_binding, _manager(request), session_id,
+            owner_instance_id=owner, principal_id=get_principal_id(request),
+            is_admin=getattr(user, 'role', None) == 'admin',
+            expected_session_version=expected_session_version,
+            expected_native_id=expected_native_id,
+            expected_binding_hash=expected_binding_hash,
+            expected_lease_hash=expected_lease_hash,
+            history_limit=history_limit, history_offset=history_offset, timeout=10.0)
+        return JSONResponse(result, headers={'Cache-Control': 'private, no-store'})
+    except LookupError:
+        raise HTTPException(404, 'Session not found') from None
+    except PermissionError:
+        raise HTTPException(403, 'Session is owned by another principal') from None
+    except (ValueError, RecursionError):
+        raise HTTPException(409, 'Binding inspection precondition, shape, or snapshot unavailable') from None
+    except (OSError, SQLiteError, TimeoutError):
+        raise HTTPException(503, 'Binding inspection temporarily unavailable; outcome unknown') from None
 
 
 @router.post("/observability/v1/sessions/{session_id}/diagnostics")

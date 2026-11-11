@@ -100,6 +100,29 @@ def register_mcp(mcp, ctx) -> None:
         )
 
     @mcp.tool()
+    def get_agent_session_workspace_binding(
+        session_id: str, expected_authority_instance_id: str,
+        expected_session_version: str, expected_native_id: str,
+        expected_binding_hash: str, expected_lease_hash: str,
+        history_limit: int = 16, history_offset: int = 0,
+    ) -> dict:
+        """Inspect bounded binding/history/lease metadata; restoration is unsupported.
+
+        Empty expected_native_id explicitly asserts no saved native identity.
+        All hashes/versions/fences are read preconditions, never mutation authority.
+        """
+        from urllib.parse import quote
+        return request_local_pa(ctx.settings, 'GET',
+            f'/api/agent/observability/v1/sessions/{quote(session_id, safe="")}/workspace-binding',
+            params=dict(expected_authority_instance_id=expected_authority_instance_id,
+                expected_session_version=expected_session_version,
+                expected_native_id=expected_native_id,
+                expected_binding_hash=expected_binding_hash,
+                expected_lease_hash=expected_lease_hash,
+                history_limit=history_limit, history_offset=history_offset),
+            timeout_seconds=15.0, max_response_bytes=256 * 1024)
+
+    @mcp.tool()
     def get_agent_session_wire_metadata(
         session_id: str, handoff_id: str, expected_native_id: str,
         expected_version: int, expected_attempt: int,

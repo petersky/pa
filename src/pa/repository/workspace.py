@@ -855,6 +855,20 @@ class WorkspaceManager:
             leases.append(lease)
         return leases
 
+    def binding_inspection_leases(self, session_id: str) -> list[dict]:
+        """Bounded metadata snapshot, including cleaned original leases."""
+        from pa.instance.binding_inspection import LEASE_FIELDS
+        with derived_connection(self, self._connect) as conn, conn:
+            rows = conn.execute('SELECT ' + ','.join(LEASE_FIELDS) +
+                ' FROM workspace_leases WHERE session_id=? ORDER BY id LIMIT 33',
+                (session_id,)).fetchall()
+        if len(rows) > 32:
+            raise ValueError('Session lease inspection exceeds fixed capacity')
+        result = [dict(r) for r in rows]
+        if any(isinstance(v, str) and len(v) > 2048 for r in result for v in r.values()):
+            raise ValueError('Lease metadata exceeds fixed capacity')
+        return result
+
     def list(
         self, *, card_id: str | None = None, include_cleaned: bool = True,
     ) -> list[WorkspaceLease]:
