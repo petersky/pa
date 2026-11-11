@@ -63,7 +63,15 @@ async def test_active_watch_observed_before_blocked_completion_batch():
 @pytest.mark.asyncio
 async def test_completed_card_units_report_progress_but_failed_unit_does_not():
     service = object.__new__(PRSupervisor)
-    service.store = SimpleNamespace(list_card_completion_due=lambda:["first","second","third"])
+    class Unit(str):
+        # The reconcile pass shares each outcome with sibling watches by id.
+        id = property(lambda self:str(self))
+    service.store = SimpleNamespace(
+        list_card_completion_due=lambda:[Unit("first"),Unit("second"),Unit("third")],
+        propagate_card_completion=lambda watch_id:[],
+    )
+    service.settings = SimpleNamespace(pr_supervisor_reconcile_budget_seconds=60.0)
+    service._monotonic = lambda:0.0
     service._offload = offload
     heartbeats = []
     completed = []

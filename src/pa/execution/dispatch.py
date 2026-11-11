@@ -48,6 +48,9 @@ from pa.execution.progress import (
     CompletionReportV1,
     DispatchProgressEventV1,
     DispatchProgressHeartbeatV1,
+    LEASE_FENCE_HEADER,
+    LEASE_PROTOCOL,
+    STALE_LEASE_FENCE_CODE,
     ProgressIngestResult,
     ProgressDeliveryTarget,
     progress_freshness,
@@ -135,8 +138,37 @@ CAPACITY_RESERVATION_STATES = {
     "delivering_prompt",
 }
 QUEUE_CONSUMING_STATES = {"waiting_capacity", "blocked"}
+# Forward order of the stages the authority worker drives. A worker holding a
+# stale snapshot may never move the durable record backwards through them.
+WORKER_STAGE_RANK = {
+    "queued": 0,
+    "checking_sync": 1,
+    "materializing": 2,
+    "provisioning": 3,
+    "starting_session": 4,
+    "delivering_prompt": 5,
+    "running": 6,
+    "completion_pending": 7,
+    "completed": 8,
+}
+CANCELLABLE_WORKER_STAGES = {
+    "checking_sync", "materializing", "provisioning", "starting_session",
+}
+# Fields the authority worker legitimately computes while driving one dispatch.
+# Everything else (cancel/control, completion, progress, repair, follow-up
+# operations, ...) belongs to other writers and is never taken from the
+# worker's snapshot.
+WORKER_OWNED_FIELDS = (
+    "sync_evidence", "card_version", "card_snapshot", "project_id",
+    "attachment_evidence", "progress_protocol_version", "session_id",
+    "goal_provenance", "knowledge_recorded_at", "lease_protocol",
+)
 CAPACITY_RESERVATION_TTL = timedelta(hours=1)
 CAPACITY_CONSUMER_LINK_LIMIT = 256
+# Dispatch lease protocol, negotiated in the materialize handshake. The lease is
+# the authority's liveness claim on the target that holds a running dispatch; the
+# fence orders successive assignments so a superseded holder cannot write.
+DEFAULT_LEASE_TTL_SECONDS = 300.0
 RECOVERABLE_DISPATCH_STATES = {
     "checking_sync",
     "materializing",
@@ -148,6 +180,18 @@ RECOVERABLE_DISPATCH_STATES = {
     "dispatched",
     "materialized",
 }
+
+
+class StaleLeaseFence(ValueError):
+    """A writer presented a lease fence older than the dispatch's current one."""
+
+    def __init__(self, dispatch_id: str, presented: int, current: int) -> None:
+        super().__init__(
+            f"dispatch {dispatch_id} was reassigned (fence {presented} < {current})"
+        )
+        self.dispatch_id = dispatch_id
+        self.presented = presented
+        self.current = current
 
 
 class DispatchEvent(BaseModel):
@@ -164,6 +208,7 @@ class ReconciliationCandidate:
     dispatch_id: str
     reconciliation_state: str
     reconciliation_next_retry_at: datetime | None
+    reconciliation_updated_at: datetime | None = None
 
 
 class GoalDispatchProvenance(BaseModel):
@@ -366,6 +411,24 @@ class DispatchRecord(BaseModel):
     completion_delivery_class: str | None = None
     completion_next_retry_at: datetime | None = None
     acknowledged_at: datetime | None = None
+    # Dispatch lease (stage 2). ``lease_fence`` is the assignment generation: it
+    # starts at 1 and is bumped by every retry/re-offer, and a writer holding an
+    # older fence is rejected. ``lease_protocol`` is set only when the target
+    # confirmed it in the materialize handshake; the other lease fields are
+    # authority-side liveness bookkeeping granted when the dispatch starts
+    # running and renewed by every progress, heartbeat and confirmed probe.
+    # Authority == target dispatches never carry a lease (implicitly fresh).
+    lease_protocol: str | None = None
+    lease_id: str | None = None
+    lease_fence: int = Field(default=1, ge=1)
+    lease_holder_instance_id: str | None = None
+    lease_granted_at: datetime | None = None
+    lease_renewed_at: datetime | None = None
+    lease_expires_at: datetime | None = None
+    lease_ttl_seconds: float | None = None
+    # Target-side: a newer fence made this mirror stale; it stops reporting.
+    lease_superseded_at: datetime | None = None
+    lease_superseded_by_fence: int | None = None
     events: list[DispatchEvent] = Field(default_factory=list)
     progress_protocol_version: int | None = None
     progress_next_sequence: int = 1
@@ -397,6 +460,46 @@ class DispatchRecord(BaseModel):
             key=lambda event: (event.sequence, event.occurred_at),
             default=None,
         )
+
+    @property
+    def is_local_dispatch(self) -> bool:
+        return self.authority_instance_id == self.target_instance_id
+
+    @property
+    def assignment_lease_id(self) -> str:
+        """Identity of the current assignment (stable for one fence)."""
+        return f"{self.dispatch_id}:{self.lease_fence}"
+
+    def lease_is_fresh(self, now: datetime | None = None) -> bool | None:
+        """Whether the holder's lease is current; ``None`` when no lease exists.
+
+        A local dispatch (authority == target) is covered by session liveness and
+        needs no renewal traffic, so its lease is implicitly always fresh.
+        """
+        if self.is_local_dispatch:
+            return True
+        if self.lease_expires_at is None:
+            return None
+        stamp = self.lease_expires_at
+        stamp = stamp if stamp.tzinfo else stamp.replace(tzinfo=UTC)
+        return (now or datetime.now(UTC)) < stamp
+
+    def public_lease(self, now: datetime | None = None) -> dict[str, Any]:
+        local = self.is_local_dispatch
+        return {
+            "protocol": self.lease_protocol,
+            "mode": "implicit" if local else ("leased" if self.lease_expires_at else "none"),
+            "id": None if local else (self.lease_id or self.assignment_lease_id),
+            "fence": self.lease_fence,
+            "holder_instance_id": self.lease_holder_instance_id,
+            "granted_at": self.lease_granted_at.isoformat() if self.lease_granted_at else None,
+            "renewed_at": self.lease_renewed_at.isoformat() if self.lease_renewed_at else None,
+            "expires_at": self.lease_expires_at.isoformat() if self.lease_expires_at else None,
+            "fresh": self.lease_is_fresh(now),
+            "superseded_at": (
+                self.lease_superseded_at.isoformat() if self.lease_superseded_at else None
+            ),
+        }
 
     @property
     def completion_outbox_last_error(self) -> str | None:
@@ -490,6 +593,8 @@ class DispatchRecord(BaseModel):
             },
         )
         data["can_retry"] = self.retryable
+        if not summary:
+            data["lease"] = self.public_lease()
         data["execution_selection"] = self.request_payload.get("execution_selection")
         data["can_cancel"] = self.state in {
             "waiting_capacity",
@@ -1031,9 +1136,19 @@ class DispatchStore:
         fault_injector: Callable[[str], None] | None = None,
         read_only: bool = False,
         deferred_read_only: bool = False,
+        reservation_hard_expiry: bool = False,
+        lease_ttl_seconds: float | Callable[[], float] = DEFAULT_LEASE_TTL_SECONDS,
     ) -> None:
         if deferred_read_only and not read_only:
             raise ValueError("deferred dispatch storage must be read-only")
+        # False (default): a pre-start reservation that outlives its TTL is
+        # renewed while it is queued or still making stage transitions, and only
+        # failed when a stage has been hung for a full TTL. True restores the
+        # unconditional timeout.
+        self.reservation_hard_expiry = bool(reservation_hard_expiry)
+        # Seconds a granted dispatch lease stays valid without a renewal (0 = do
+        # not grant leases). A callable is read at use so a live setting applies.
+        self._lease_ttl_source = lease_ttl_seconds
         self.path = data_dir / "dispatch_mutations.json"
         self.db_path = data_dir / "dispatch_mutations.db"
         self.backup_path = self.path.with_name(
@@ -1048,6 +1163,13 @@ class DispatchStore:
         self._history_counts: dict[tuple[str, str], int] = {}
         self._capacity_records_by_target: dict[str, tuple[DispatchRecord, ...]] = {}
         self._goal_lifecycle_records: dict[str, DispatchRecord] = {}
+        # Optional ``callable(previous, record)`` told after a dispatch's state
+        # (or session) changes, so the Workshop floor can move reservation
+        # tokens without refetching. Called with the writer lock held: it must
+        # not block.
+        self.transition_observer: Callable[
+            [DispatchRecord | None, DispatchRecord], None
+        ] | None = None
         self._lock = RLock()
         # Database writers are serialized by ``_lock``. Indexed readers only
         # need to exclude the very short post-commit publication window, not a
@@ -1821,11 +1943,18 @@ class DispatchStore:
 
     def _publish_records_locked(self, records: list[DispatchRecord]) -> None:
         self._index_writer_waiting = True
+        transitions: list[tuple[DispatchRecord | None, DispatchRecord]] = []
         try:
             with measured_lock(self._index_lock):
                 for source in records:
                     candidate = self._snapshot(source)
                     previous = self._records.get(candidate.dispatch_id)
+                    if (
+                        previous is None
+                        or previous.state != candidate.state
+                        or previous.session_id != candidate.session_id
+                    ):
+                        transitions.append((previous, candidate))
                     self._update_operation_records_locked(candidate, previous)
                     self._records[candidate.dispatch_id] = candidate
                     self._update_history_count_locked(candidate, previous)
@@ -1836,6 +1965,16 @@ class DispatchStore:
                 self._refresh_queue_positions_locked()
         finally:
             self._index_writer_waiting = False
+        observer = self.transition_observer
+        if observer is not None:
+            for previous, candidate in transitions:
+                try:
+                    observer(previous, candidate)
+                except Exception:  # Observation must never fail a durable write.
+                    logger.exception(
+                        "dispatch transition observer failed dispatch=%s",
+                        candidate.dispatch_id,
+                    )
 
     def _yield_to_index_writer(self) -> None:
         # CPython locks do not promise waiter fairness. A hot polling reader can
@@ -2454,8 +2593,54 @@ class DispatchStore:
                 )
             )), key=lambda record: record.updated_at, reverse=True)[:limit]
             return [ReconciliationCandidate(record.dispatch_id, record.reconciliation_state,
-                                            record.reconciliation_next_retry_at)
+                                            record.reconciliation_next_retry_at,
+                                            record.reconciliation_updated_at)
                     for record in selected]
+
+    def post_turn_candidates(
+        self, *, since: datetime, limit: int = 200
+    ) -> list[DispatchRecord]:
+        """Recently active dispatches that carry post-turn evaluations."""
+        self._require_readable()
+        self._yield_to_index_writer()
+        with measured_lock(self._index_lock):
+            selected = sorted(
+                (
+                    record
+                    for record in self._records.values()
+                    if record.post_turn_evaluations and record.updated_at >= since
+                ),
+                key=lambda record: record.updated_at,
+                reverse=True,
+            )[:limit]
+            return [self._snapshot(record) for record in selected]
+
+    def lost_completion_candidates(self, *, limit: int = 1000) -> list[tuple[str, str, str]]:
+        """``(dispatch_id, session_id, prompt_id)`` of running dispatches that may have lost a completion.
+
+        Only identities: no record copies, so the periodic sweep stays cheap. A
+        candidate is a card dispatch still ``running`` with no completion payload
+        and no reconciliation in progress whose initial prompt id is known; the
+        caller checks the session transcript for a finished turn.
+        """
+        self._require_readable()
+        self._yield_to_index_writer()
+        with measured_lock(self._index_lock):
+            found = [
+                (
+                    record.dispatch_id,
+                    record.session_id,
+                    str((record.initial_prompt_operation or {}).get("prompt_id")),
+                )
+                for record in self._records.values()
+                if record.card_id
+                and record.state == "running"
+                and record.session_id
+                and record.completion_payload is None
+                and record.reconciliation_state == "not_requested"
+                and (record.initial_prompt_operation or {}).get("prompt_id")
+            ]
+        return found[:limit]
 
     def waiting_count(self) -> int:
         """Scalar queue health; no record copies, SQL or writer lock."""
@@ -3497,6 +3682,48 @@ class DispatchStore:
                         changed_fields=changed_fields,
                     )
             if existing:
+                # A stale snapshot (an in-flight worker stage) must never erase a
+                # cancel or operator control committed after it was read. Only a
+                # retry newly recorded by this very write may clear a cancel.
+                new_retry = any(
+                    operation == "retry" and key not in existing.control_operations
+                    for key, operation in record.control_operations.items()
+                )
+                if existing.cancel_requested and not record.cancel_requested and not new_retry:
+                    record.cancel_requested = True
+                for key, operation in existing.control_operations.items():
+                    record.control_operations.setdefault(key, operation)
+            if (
+                existing
+                and existing.acknowledged_at is not None
+                and existing.state in {"completed", "acknowledged"}
+                and record.acknowledged_at is None
+            ):
+                # The snapshot predates an acknowledged completion (a worker
+                # stage that straddled /complete). Acknowledged completion wins:
+                # keep the durable record and take only the worker-owned
+                # fields plus the events the stale writer appended.
+                merged = self._snapshot(existing)
+                for field in WORKER_OWNED_FIELDS:
+                    setattr(merged, field, copy.deepcopy(getattr(record, field)))
+                known = {(e.state, e.message) for e in merged.events}
+                for event in record.events:
+                    if (event.state, event.message) not in known:
+                        merged.events.append(event.model_copy(update={
+                            "seq": merged.events[-1].seq + 1 if merged.events else 1,
+                            "state": merged.state,
+                            "detail": {**event.detail, "requested_state": event.state,
+                                       "retained_state": merged.state,
+                                       "acknowledged_completion_wins": True},
+                        }))
+                merged.lifecycle_inconsistencies.append({
+                    "kind": "stale_snapshot_write_after_acknowledged_completion",
+                    "requested_state": record.state, "retained_state": merged.state,
+                    "observed_at": datetime.now(UTC).isoformat(),
+                })
+                merged.lifecycle_inconsistencies = merged.lifecycle_inconsistencies[-50:]
+                record = merged
+            if existing:
                 # Progress rows and their delivery state are maintained by the
                 # normalized ingestion/outbox methods.  A caller can legitimately
                 # hold a lifecycle snapshot while a heartbeat or delivery update
@@ -3515,6 +3742,7 @@ class DispatchStore:
                 )
             record = self._snapshot(record)
             if existing:
+                self._preserve_post_turn_evidence(existing, record)
                 record.progress_next_sequence = max(
                     record.progress_next_sequence, existing.progress_next_sequence
                 )
@@ -3538,6 +3766,45 @@ class DispatchStore:
             record.updated_at = datetime.now(UTC)
             self._save(record, durability="full")
             return self._snapshot(self._records[record.dispatch_id])
+
+    @staticmethod
+    def _preserve_post_turn_evidence(
+        existing: DispatchRecord, record: DispatchRecord
+    ) -> None:
+        """Never let a stale whole-record write erase turn-end evaluator evidence.
+
+        On a local dispatch the authority and the target share one store, so the
+        authority's ``/complete`` handler persists the snapshot/evaluation while
+        the target outbox still holds its pre-request record.  Evidence is
+        append-only: items the incoming record lacks are kept from the stored
+        row, items present in both take the incoming (intentionally edited)
+        version, and receipts are owned by the claim/finish transactions.
+        """
+
+        def merged(stored: list[Any], incoming: list[Any], key: str) -> list[Any]:
+            by_id = {getattr(item, key): item for item in incoming}
+            kept = [item for item in stored if getattr(item, key) not in by_id]
+            return [*kept, *incoming][-20:]
+
+        record.turn_end_snapshots = merged(
+            existing.turn_end_snapshots, record.turn_end_snapshots, "snapshot_id"
+        )
+        record.post_turn_evaluations = merged(
+            existing.post_turn_evaluations,
+            record.post_turn_evaluations,
+            "evaluation_id",
+        )
+        record.post_turn_context_digests = {
+            **existing.post_turn_context_digests,
+            **record.post_turn_context_digests,
+        }
+        record.post_turn_context_digests = dict(
+            list(record.post_turn_context_digests.items())[-20:]
+        )
+        record.post_turn_action_receipts = {
+            **record.post_turn_action_receipts,
+            **existing.post_turn_action_receipts,
+        }
 
     def claim_post_turn_action(
         self,
@@ -3752,8 +4019,14 @@ class DispatchStore:
         capacity: CapacityAdmission,
         *,
         idempotency_key: str,
+        retarget: dict[str, Any] | None = None,
     ) -> DispatchRecord:
-        """Atomically renew the same target reservation for a safe retry."""
+        """Atomically renew a reservation for a safe retry.
+
+        ``retarget`` re-places a dispatch whose target was lost: it replaces the
+        target, placement and every field bound to the old target (session,
+        resume request, materialization), keeping the dispatch id and card.
+        """
 
         with measured_lock(self._lock):
             self._require_writer()
@@ -3777,6 +4050,31 @@ class DispatchStore:
             # terminal. Reuse the same atomic gate as new admission on retry.
             self._check_card_concurrency_locked(current)
             now = datetime.now(UTC)
+            # Every (re)assignment starts a new lease generation: whoever held the
+            # previous one can no longer report for this dispatch.
+            current.lease_fence += 1
+            current.lease_protocol = None
+            current.lease_id = None
+            current.lease_holder_instance_id = None
+            current.lease_granted_at = None
+            current.lease_renewed_at = None
+            current.lease_expires_at = None
+            current.lease_ttl_seconds = None
+            current.lease_superseded_at = None
+            current.lease_superseded_by_fence = None
+            if retarget:
+                for field_name, value in retarget.items():
+                    setattr(current, field_name, copy.deepcopy(value))
+                current.session_id = None
+                current.resume_requested = False
+                current.resume_session_id = None
+                current.session_retry = None
+                current.materialization_plan = None
+                current.attachment_evidence = None
+                current.initial_prompt_operation = {}
+                current.prompt_ack = None
+                current.prompt_acknowledged_at = None
+                current.progress_protocol_version = None
             execution_full, queue_full, queue_count, reserved, queue_max = (
                 self._constraint_counts_locked(
                     current, capacity, exclude_dispatch_id=current.dispatch_id
@@ -3799,6 +4097,7 @@ class DispatchStore:
             current.capacity_override = capacity.override
             current.capacity_override_reason = capacity.override_reason
             current.cancel_requested = False
+            current.stage_attempts = 0
             current.last_error = None
             current.error_code = None
             if current.session_id:
@@ -4020,7 +4319,11 @@ class DispatchStore:
         return len(event.__pydantic_serializer__.to_json(event))
 
     def ingest_progress(
-        self, event: DispatchProgressEventV1, *, delivered: bool = False
+        self,
+        event: DispatchProgressEventV1,
+        *,
+        delivered: bool = False,
+        lease_fence: int | None = None,
     ) -> ProgressIngestResult:
         """Idempotently retain a bounded, safely reorderable checkpoint history."""
         sanitized = sanitize_progress_event(event)
@@ -4032,6 +4335,7 @@ class DispatchStore:
             replayed = self._replay_progress_receipt(sanitized)
             if replayed:
                 return replayed
+            self.enforce_lease_fence(stored, lease_fence)
             self._validate_progress_provenance(stored, sanitized)
             if delivered and sanitized.delivered_at is None:
                 sanitized.delivered_at = datetime.now(UTC)
@@ -4089,6 +4393,7 @@ class DispatchStore:
                     -MAX_PROGRESS_SEEN_KEYS:
                 ]
                 record.updated_at = datetime.now(UTC)
+                self._renew_lease(record, record.updated_at)
                 result = ProgressIngestResult(
                     accepted=True,
                     status="coalesced",
@@ -4168,6 +4473,7 @@ class DispatchStore:
                 record.progress_next_sequence, sanitized.sequence + 1
             )
             record.updated_at = datetime.now(UTC)
+            self._renew_lease(record, record.updated_at)
             result = ProgressIngestResult(
                 accepted=True,
                 status="late" if sanitized.sequence < previous_max else "accepted",
@@ -4188,6 +4494,7 @@ class DispatchStore:
         heartbeat: DispatchProgressHeartbeatV1,
         *,
         delivered: bool = False,
+        lease_fence: int | None = None,
     ) -> ProgressIngestResult:
         """Replace the freshness signal without appending activity history."""
         sanitized = sanitize_heartbeat(heartbeat)
@@ -4199,6 +4506,7 @@ class DispatchStore:
             replayed = self._replay_progress_receipt(sanitized)
             if replayed:
                 return replayed
+            self.enforce_lease_fence(stored, lease_fence)
             self._validate_progress_provenance(stored, sanitized)
             # Only seen keys mutate in place. Range helpers replace their lists
             # and the incoming heartbeat is detached by sanitization. Preserve
@@ -4216,6 +4524,7 @@ class DispatchStore:
                     -MAX_PROGRESS_SEEN_KEYS:
                 ]
                 record.updated_at = datetime.now(UTC)
+                self._renew_lease(record, record.updated_at)
                 result = ProgressIngestResult(
                     accepted=True,
                     status="late",
@@ -4246,6 +4555,7 @@ class DispatchStore:
                 record.progress_next_sequence, sanitized.sequence + 1
             )
             record.updated_at = datetime.now(UTC)
+            self._renew_lease(record, record.updated_at)
             result = ProgressIngestResult(
                 accepted=True,
                 status="accepted",
@@ -4277,6 +4587,8 @@ class DispatchStore:
         with measured_lock(self._lock):
             for record in self._records.values():
                 if record.target_instance_id != originating_instance_id:
+                    continue
+                if record.lease_superseded_at is not None:
                     continue
                 for event in record.progress_events:
                     if event.delivered_at is None:
@@ -4326,10 +4638,13 @@ class DispatchStore:
             for record in self._records.values():
                 if record.target_instance_id != originating_instance_id:
                     continue
+                if record.lease_superseded_at is not None:
+                    continue
                 target = ProgressDeliveryTarget(
                     record.dispatch_id,
                     record.authority_instance_id,
                     record.authority_url,
+                    record.lease_fence if record.lease_protocol else None,
                 )
                 for event in record.progress_events:
                     if event.delivered_at is None:
@@ -4497,6 +4812,23 @@ class DispatchStore:
         *,
         detail: dict[str, Any] | None = None,
     ) -> DispatchRecord:
+        self.apply_transition(record, state, message, detail=detail)
+        return self.put(record)
+
+    @staticmethod
+    def apply_transition(
+        record: DispatchRecord,
+        state: str,
+        message: str,
+        *,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        """Apply a lifecycle transition to ``record`` in memory (no persistence).
+
+        ``transition`` persists this with a whole-record ``put``; callers that
+        hold a fresh record inside ``mutate_current`` use it directly so the
+        state change is committed atomically with their other field edits.
+        """
         if state not in DISPATCH_STAGES:
             raise ValueError(f"unknown dispatch state: {state}")
         previous_state = record.state
@@ -4540,7 +4872,101 @@ class DispatchStore:
                 detail=detail or {},
             )
         )
-        return self.put(record)
+
+    def begin_attempt(
+        self, dispatch_id: str, *, max_attempts: int = 0
+    ) -> tuple[DispatchRecord | None, bool]:
+        """Claim one execution attempt of a queued dispatch, atomically.
+
+        Returns ``(record, claimed)``. A dispatch that is no longer ``queued``
+        (cancelled or settled after the worker read it) is not claimed, and its
+        durable state is left exactly as it is. ``max_attempts`` > 0 bounds how
+        many times one dispatch may be (re-)executed, which stops a record that
+        crashes the process from being retried forever.
+        """
+        outcome = {"claimed": False}
+
+        def mutate(current: DispatchRecord) -> bool:
+            if current.state != "queued":
+                return False
+            current.stage_attempts += 1
+            outcome["claimed"] = True
+            return True
+
+        with measured_lock(self._lock):
+            self._require_writer()
+            if dispatch_id not in self._records:
+                return None, False
+            record = self.mutate_current(dispatch_id, mutate=mutate)
+        return record, outcome["claimed"]
+
+    def commit_worker_stage(
+        self,
+        record: DispatchRecord,
+        state: str | None = None,
+        message: str = "",
+        *,
+        detail: dict[str, Any] | None = None,
+        events: list[DispatchEvent] | None = None,
+    ) -> DispatchRecord:
+        """Field-level commit for the authority worker's stage progress.
+
+        The worker keeps a snapshot for the duration of a stage that spans
+        network calls. Writing that snapshot back whole would revert a cancel,
+        control operation, completion acknowledgement or progress committed in
+        the meantime. This copies only ``WORKER_OWNED_FIELDS`` onto the current
+        durable record, moves the state forward only, and refuses to continue
+        past a cancelled/failed record or a committed cancel request.
+        """
+        with measured_lock(self._lock):
+            self._require_writer()
+            stored = self._records.get(record.dispatch_id)
+            if stored is None:
+                raise ValueError("dispatch not found")
+            if stored.mutation_id != record.mutation_id:
+                raise ValueError("dispatch id already belongs to another mutation")
+            current = self._snapshot(stored)
+            if current.state in {"cancelled", "failed"}:
+                raise DispatchSuperseded(current.dispatch_id, current.state, "terminal")
+            if (
+                state in CANCELLABLE_WORKER_STAGES
+                and current.cancel_requested
+                and current.acknowledged_at is None
+            ):
+                raise DispatchCancelRequested(current.dispatch_id, current.state)
+            for field in WORKER_OWNED_FIELDS:
+                value = getattr(record, field)
+                # A snapshot that never learned a value must not erase one
+                # another writer (e.g. a local target binding the session) set.
+                if value is None and getattr(current, field) is not None:
+                    continue
+                setattr(current, field, copy.deepcopy(value))
+            for event in events or ():
+                current.events.append(event.model_copy(update={
+                    "seq": current.events[-1].seq + 1 if current.events else 1,
+                }))
+            if state is not None:
+                behind = (
+                    current.acknowledged_at is not None
+                    or WORKER_STAGE_RANK.get(current.state, -1)
+                    > WORKER_STAGE_RANK.get(state, -1)
+                )
+                if behind:
+                    current.events.append(DispatchEvent(
+                        seq=current.events[-1].seq + 1 if current.events else 1,
+                        state=current.state, message=message,
+                        detail={**(detail or {}), "requested_state": state,
+                                "retained_state": current.state,
+                                "stale_worker_stage_ignored": True},
+                    ))
+                else:
+                    self.apply_transition(current, state, message, detail=detail)
+                    if state == "running":
+                        # The target acknowledged the prompt: grant the lease.
+                        self._renew_lease(current)
+            current.updated_at = datetime.now(UTC)
+            self._save(current, durability="full")
+            return self._snapshot(self._records[current.dispatch_id])
 
     def record_followup_started(
         self,
@@ -4583,10 +5009,25 @@ class DispatchStore:
         recoverable: bool = True,
         detail: dict[str, Any] | None = None,
     ) -> DispatchRecord:
-        record.last_error = message
-        record.error_code = code
-        record.recoverable = recoverable
-        return self.transition(record, "failed", message, detail=detail)
+        with measured_lock(self._lock):
+            stored = self._records.get(record.dispatch_id)
+            if stored is not None and stored.state != "failed" and (
+                stored.state in TERMINAL_DISPATCH_STATES | {"acknowledged", "completion_pending"}
+                or stored.acknowledged_at is not None
+            ):
+                # A settled outcome (cancel, completion) is never overwritten by
+                # a worker that failed while holding a stale snapshot.
+                settled = self._snapshot(stored)
+                for field in DispatchRecord.model_fields:
+                    setattr(record, field, getattr(settled, field))
+                return settled
+            # The caller may have staged other field edits on ``record`` (for
+            # example a rejected admission verdict); they are persisted with the
+            # failure, exactly as before.
+            record.last_error = message
+            record.error_code = code
+            record.recoverable = recoverable
+            return self.transition(record, "failed", message, detail=detail)
 
     def expire_capacity_reservations(
         self,
@@ -4594,10 +5035,18 @@ class DispatchStore:
         now: datetime | None = None,
         target_instance_id: str | None = None,
     ) -> list[DispatchRecord]:
-        """Fail timed-out pre-start work and durably release its slot."""
+        """Fail timed-out pre-start work and durably release its slot.
+
+        Unless ``reservation_hard_expiry`` is set, an overdue reservation is
+        renewed only while the dispatch is genuinely waiting (``queued`` for a
+        worker) or progressing (its last stage transition is within the TTL).
+        A pre-start stage that made no transition for a full TTL is hung and is
+        failed whether or not anyone is waiting for the slot.
+        """
 
         checked_at = now or datetime.now(UTC)
         expired: list[DispatchRecord] = []
+        renewed: list[DispatchRecord] = []
         with measured_lock(self._lock):
             self._require_writer()
             candidates = (
@@ -4615,6 +5064,19 @@ class DispatchStore:
                     or stored.capacity_reservation_expires_at is None
                     or stored.capacity_reservation_expires_at > checked_at
                 ):
+                    continue
+                if not self.reservation_hard_expiry and (
+                    stored.state == "queued"
+                    or (
+                        stored.events[-1].created_at if stored.events else stored.updated_at
+                    )
+                    > checked_at - CAPACITY_RESERVATION_TTL
+                ):
+                    record = self._snapshot(stored)
+                    record.capacity_reservation_expires_at = (
+                        checked_at + CAPACITY_RESERVATION_TTL
+                    )
+                    renewed.append(record)
                     continue
                 record = self._snapshot(stored)
                 previous_state = record.state
@@ -4638,6 +5100,8 @@ class DispatchStore:
                 )
                 record.updated_at = checked_at
                 expired.append(record)
+            if renewed:
+                self._save(renewed)
             if expired:
                 self._save(expired, durability="full")
                 logger.warning(
@@ -5162,7 +5626,7 @@ class DispatchStore:
             self._conn.close()
             self._conn = None
 
-    def runnable(self) -> list[DispatchRecord]:
+    def runnable(self, owner_instance_id: str | None = None) -> list[DispatchRecord]:
         self.expire_capacity_reservations()
         # Stored observations are sufficient for locally tracked slot releases.
         # The worker additionally refreshes target readiness for external changes.
@@ -5172,11 +5636,136 @@ class DispatchStore:
         self._require_readable()
         self._yield_to_index_writer()
         with measured_lock(self._index_lock):
+            queued = [
+                record
+                for record in self._records.values()
+                if record.state == "queued"
+                # Mirror records belong to another instance's worker.
+                and (owner_instance_id is None
+                     or record.authority_instance_id == owner_instance_id)
+            ]
+            # Same order the queue is displayed in: priority, class, then FIFO.
+            queued.sort(key=lambda item: (
+                -item.requested_priority, item.scheduling_class_sequence,
+                item.created_at, item.dispatch_id,
+            ))
+            return [self._snapshot(record) for record in queued]
+
+    def running_remote_records(self, authority_instance_id: str) -> list[DispatchRecord]:
+        """Unsettled ``running`` dispatches this instance sent to another instance."""
+        self._require_readable()
+        self._yield_to_index_writer()
+        with measured_lock(self._index_lock):
             return [
                 self._snapshot(record)
                 for record in self._records.values()
-                if record.state == "queued"
+                if record.state == "running"
+                and record.authority_instance_id == authority_instance_id
+                and record.target_instance_id != authority_instance_id
+                and record.acknowledged_at is None
+                and not record.terminal_repair_reservation
             ]
+
+    def note_target_confirmed(self, dispatch_id: str, message: str) -> DispatchRecord:
+        """Record that the target vouched for a running dispatch (counts as activity)."""
+
+        def mutate(current: DispatchRecord) -> bool:
+            if current.state != "running" or current.acknowledged_at is not None:
+                return False
+            if self._renew_lease(current) and any(
+                event.detail.get("liveness_probe") for event in current.events[-1:]
+            ):
+                # A leased quiet turn is re-confirmed every TTL; the lease carries
+                # the evidence, so do not append an identical event each time.
+                return True
+            current.events.append(DispatchEvent(
+                seq=current.events[-1].seq + 1 if current.events else 1,
+                state="running", message=message, detail={"liveness_probe": True},
+            ))
+            return True
+
+        return self.mutate_current(dispatch_id, mutate=mutate)
+
+    # ---- dispatch lease -------------------------------------------------
+
+    def lease_ttl(self) -> float:
+        source = self._lease_ttl_source
+        try:
+            return max(0.0, float(source() if callable(source) else source))
+        except (TypeError, ValueError):
+            return DEFAULT_LEASE_TTL_SECONDS
+
+    def _renew_lease(self, record: DispatchRecord, now: datetime | None = None) -> bool:
+        """Grant or extend the holder's lease on ``record`` (in memory).
+
+        Only a running remote dispatch whose target negotiated the lease protocol
+        carries a lease; a local dispatch is implicitly fresh and is never
+        written. The expiry only moves forward.
+        """
+        ttl = self.lease_ttl()
+        if (
+            ttl <= 0
+            or record.lease_protocol != LEASE_PROTOCOL
+            or record.is_local_dispatch
+            or record.state != "running"
+            or record.acknowledged_at is not None
+        ):
+            return False
+        now = now or datetime.now(UTC)
+        expires = now + timedelta(seconds=ttl)
+        previous = record.lease_expires_at
+        if previous is not None:
+            previous = previous if previous.tzinfo else previous.replace(tzinfo=UTC)
+            expires = max(expires, previous)
+        else:
+            record.lease_granted_at = now
+        record.lease_id = record.assignment_lease_id
+        record.lease_holder_instance_id = record.target_instance_id
+        record.lease_renewed_at = now
+        record.lease_ttl_seconds = ttl
+        record.lease_expires_at = expires
+        return True
+
+    @staticmethod
+    def enforce_lease_fence(record: DispatchRecord, presented: int | None) -> None:
+        """Reject a writer whose fence predates the current assignment.
+
+        An absent fence (an older target that never negotiated a lease) is not
+        checked; the existing provenance checks still apply to it. A presented
+        fence is checked even after a reassignment cleared ``lease_protocol``
+        (it is renegotiated with the new holder).
+        """
+        if presented is not None and presented < record.lease_fence:
+            raise StaleLeaseFence(record.dispatch_id, presented, record.lease_fence)
+
+    def mark_lease_superseded(
+        self, dispatch_id: str, current_fence: int | None
+    ) -> DispatchRecord | None:
+        """Target side: the authority reassigned this dispatch; stop reporting."""
+
+        def mutate(current: DispatchRecord) -> bool:
+            if current.lease_superseded_at is not None:
+                return False
+            if current_fence is not None and current_fence <= current.lease_fence:
+                return False
+            current.lease_superseded_at = datetime.now(UTC)
+            current.lease_superseded_by_fence = current_fence
+            current.events.append(DispatchEvent(
+                seq=current.events[-1].seq + 1 if current.events else 1,
+                state=current.state,
+                message=(
+                    "The authority reassigned this dispatch to a newer lease; "
+                    "this instance no longer reports for it."
+                ),
+                detail={"lease_superseded": True, "held_fence": current.lease_fence,
+                        "current_fence": current_fence},
+            ))
+            return True
+
+        try:
+            return self.mutate_current(dispatch_id, mutate=mutate)
+        except ValueError:
+            return None
 
     def pending(self) -> list[DispatchRecord]:
         self._require_readable()
@@ -5213,11 +5802,24 @@ class DispatchStore:
                 pending.append((snapshot, turn))
         return pending
 
-    def reconcile_interrupted(self) -> list[DispatchRecord]:
-        """Make pre-restart work retryable without losing its identity or session."""
+    def reconcile_interrupted(
+        self, owner_instance_id: str | None = None
+    ) -> list[DispatchRecord]:
+        """Make pre-restart work retryable without losing its identity or session.
+
+        With ``owner_instance_id`` only records this instance is the authority
+        for are touched. The target-side mirror of someone else's dispatch is
+        driven by its authority's worker; re-queueing it here would make this
+        instance run the dispatch against itself.
+        """
         reconciled: list[DispatchRecord] = []
         for record in self.list(limit=1000):
             if record.state not in RECOVERABLE_DISPATCH_STATES:
+                continue
+            if (
+                owner_instance_id is not None
+                and record.authority_instance_id != owner_instance_id
+            ):
                 continue
             if not record.request_payload:
                 record = self.fail(
@@ -5228,7 +5830,8 @@ class DispatchStore:
                 reconciled.append(record)
                 continue
             previous_state = record.state
-            record.cancel_requested = False
+            # An unprocessed operator cancel survives the restart; the worker
+            # honours it at its first safe boundary.
             record.last_error = None
             record.error_code = None
             record = self.transition(
@@ -5254,6 +5857,23 @@ class DispatchCompareConflict(ValueError):
         super().__init__("dispatch changed before atomic mutation")
         self.dispatch_id = dispatch_id
         self.changed_fields = list(changed_fields)
+
+
+class DispatchSuperseded(Exception):
+    """The durable dispatch moved past the stage a worker was about to write."""
+
+    def __init__(self, dispatch_id: str, state: str, reason: str) -> None:
+        super().__init__(f"dispatch {dispatch_id} superseded in {state}: {reason}")
+        self.dispatch_id = dispatch_id
+        self.state = state
+        self.reason = reason
+
+
+class DispatchCancelRequested(DispatchSuperseded):
+    """An operator cancel was committed before the worker's next stage."""
+
+    def __init__(self, dispatch_id: str, state: str) -> None:
+        super().__init__(dispatch_id, state, "cancel_requested")
 
 
 class DispatchReceiptConflict(ValueError):
@@ -5361,8 +5981,20 @@ class DispatchWorker:
         | None = None,
         terminal: Callable[[DispatchRecord, str], Awaitable[None]] | None = None,
         lifecycle_recovery: Callable[[], Awaitable[None]] | None = None,
+        stall_notifier: Callable[[DispatchRecord], Any] | None = None,
+        instance_id: str | None = None,
+        max_stage_attempts: int = 0,
     ) -> None:
         self.store, self.handler = store, handler
+        # Only records this instance is the authority for are driven here; the
+        # target-side mirror of a peer's dispatch is never run against itself.
+        # None keeps the legacy "every record is mine" behaviour.
+        self.instance_id = instance_id
+        # Re-executions allowed for one record before it is failed recoverably
+        # (a record that crashes the process is otherwise retried forever).
+        self.max_stage_attempts = max(0, int(max_stage_attempts))
+        # Tells the owner a dispatch failed; called off-loop and never allowed to raise.
+        self.stall_notifier = stall_notifier
         self.concurrency, self.async_runtime = max(1, concurrency), async_runtime
         # This bounded control lane cannot be consumed by transcript/progress traffic.
         self._control_runtime = (
@@ -5476,7 +6108,9 @@ class DispatchWorker:
 
     async def _run_generation(self) -> None:
         await self._offload(
-            "dispatch.reconcile_interrupted", self.store.reconcile_interrupted
+            "dispatch.reconcile_interrupted",
+            self.store.reconcile_interrupted,
+            self.instance_id,
         )
         consecutive_failures = 0
         while not self._closing:
@@ -5557,7 +6191,7 @@ class DispatchWorker:
                                 reason=reason,
                             )
                 runnable = await self._offload(
-                    "dispatch.runnable_read", self.store.runnable
+                    "dispatch.runnable_read", self.store.runnable, self.instance_id
                 )
             except asyncio.CancelledError:
                 raise
@@ -5642,12 +6276,33 @@ class DispatchWorker:
         }
 
     async def _execute(self, record: DispatchRecord) -> None:
-        record.stage_attempts += 1
-        await self._offload("dispatch.record_write", self.store.put, record)
+        # Claim the attempt atomically. Writing the runnable() snapshot back
+        # whole would resurrect a dispatch an operator cancelled after it was
+        # read, so a record that is no longer queued is simply skipped.
+        claimed_record, claimed = await self._offload(
+            "dispatch.begin_attempt", self.store.begin_attempt, record.dispatch_id,
+        )
+        if not claimed or claimed_record is None:
+            return
+        # The handler and callers hold ``record``; advance it to the durable truth.
+        for field in DispatchRecord.model_fields:
+            setattr(record, field, getattr(claimed_record, field))
+        if self.max_stage_attempts and record.stage_attempts > self.max_stage_attempts:
+            await self._fail(
+                record,
+                f"This dispatch was started {record.stage_attempts - 1} times without "
+                "reaching a durable outcome (the process may be crashing while running it); "
+                "retry it from Fleet Operations once the cause is fixed.",
+                code="dispatch_stage_attempts_exhausted", recoverable=True, detail={},
+            )
+            return
         try:
             await self.handler(record)
         except asyncio.CancelledError:
             raise
+        except DispatchSuperseded as exc:
+            # Cancelled or settled by another writer mid-stage; nothing to fail.
+            logger.info("Dispatch %s stopped: %s", record.dispatch_id, exc)
         except Exception as exc:
             logger.exception("Dispatch %s failed", record.dispatch_id)
             detail = getattr(exc, "detail", None)
@@ -5658,23 +6313,62 @@ class DispatchWorker:
                     bool(detail.get("recoverable", True)),
                     str(detail.get("message") or detail),
                 )
-            failed = await self._offload(
-                "dispatch.record_fail",
-                self.store.fail,
-                record,
-                message,
-                code=code,
-                recoverable=recoverable,
+            await self._fail(
+                record, message, code=code, recoverable=recoverable,
                 detail=detail if isinstance(detail, dict) else {},
             )
-            if self.terminal:
-                try:
-                    await self.terminal(failed, "failed")
-                except Exception:
-                    logger.exception(
-                        "Dispatch %s terminal lifecycle callback failed",
-                        record.dispatch_id,
-                    )
+
+    async def _fail(
+        self, record: DispatchRecord, message: str, *, code: str,
+        recoverable: bool, detail: dict[str, Any],
+    ) -> None:
+        failed = await self._offload(
+            "dispatch.record_fail",
+            self.store.fail,
+            record,
+            message,
+            code=code,
+            recoverable=recoverable,
+            detail=detail,
+        )
+        if failed.state != "failed":
+            # A cancel or acknowledged completion settled the dispatch first;
+            # that outcome stands and nothing failed from the owner's view.
+            return
+        if self.terminal:
+            try:
+                await self.terminal(failed, "failed")
+            except Exception:
+                logger.exception(
+                    "Dispatch %s terminal lifecycle callback failed",
+                    record.dispatch_id,
+                )
+        if self.stall_notifier:
+            try:
+                await self._offload(
+                    "dispatch.stall_notify", self.stall_notifier, failed
+                )
+            except Exception:
+                logger.exception(
+                    "Dispatch %s failure notification failed", record.dispatch_id
+                )
+
+
+def completion_request_body(record: DispatchRecord) -> dict[str, Any]:
+    """The immutable ``/complete`` envelope a target sends for ``record``."""
+    return {
+        "mutation_id": record.mutation_id,
+        "card_id": record.card_id,
+        "realm_id": record.realm_id,
+        "card_version": record.card_version,
+        "source_instance_id": record.target_instance_id,
+        "session_id": record.session_id,
+        "result": record.completion_payload or {},
+        "disposition": (record.completion_payload or {}).get("card_disposition"),
+        "final_report": (
+            record.final_report.model_dump(mode="json") if record.final_report else None
+        ),
+    }
 
 
 class CompletionOutbox:
@@ -5683,21 +6377,43 @@ class CompletionOutbox:
     def __init__(
         self,
         store: DispatchStore,
-        token: str,
+        token: str | Callable[[], str],
         *,
         retry_seconds: float = 5.0,
-        retry_max_seconds: float = 300.0,
+        retry_max_seconds: float | Callable[[], float] = 300.0,
         max_attempts: int = 12,
         rng: random.Random | None = None,
         async_runtime: AsyncRuntime | None = None,
         disposition_notifier: Callable[[str, dict[str, Any]], Awaitable[Any] | Any]
         | None = None,
+        stall_notifier: Callable[[DispatchRecord], Any] | None = None,
+        peer_post: Callable[..., Awaitable[httpx.Response]] | None = None,
+        notify_after_attempts: int = 0,
+        unknown_dispatch_grace_seconds: float = 0.0,
+        superseded_notifier: Callable[[str, dict[str, Any]], Awaitable[Any] | Any]
+        | None = None,
     ) -> None:
         self.store = store
-        self.token = token
+        # Told ``(dispatch_id, detail)`` when the authority rejects a completion
+        # because a newer lease fence owns the dispatch.
+        self.superseded_notifier = superseded_notifier
+        # A callable is read at send time so a rotated fleet token is picked up
+        # without restarting; a plain string keeps the legacy fixed behaviour.
+        self._token_source = token
+        # Posts to the authority through endpoint failover; falls back to the
+        # authority URL frozen into the record when not provided.
+        self.peer_post = peer_post
+        # Tells the owner a completion could not be delivered; never allowed to raise.
+        self.stall_notifier = stall_notifier
         self.retry_seconds = retry_seconds
-        self.retry_max_seconds = max(retry_seconds, retry_max_seconds)
-        self.max_attempts = max(1, max_attempts)
+        self._retry_max_source = retry_max_seconds
+        # 0 retries forever; the stall notifier still fires after
+        # ``notify_after_attempts`` (once per incident: its dedupe key is stable).
+        self.max_attempts = max(0, max_attempts)
+        self.notify_after_attempts = max(0, notify_after_attempts)
+        # How long 404/unknown_dispatch/401 keep being retried: the authority may
+        # still be restoring its ledger or rotating credentials. 0 = never.
+        self.unknown_dispatch_grace_seconds = max(0.0, unknown_dispatch_grace_seconds)
         self.rng = rng or random.Random()
         self.async_runtime = async_runtime
         self.disposition_notifier = disposition_notifier
@@ -5717,6 +6433,46 @@ class CompletionOutbox:
                 operation, call, *args, **kwargs
             )
         return await asyncio.to_thread(call, *args, **kwargs)
+
+    @property
+    def token(self) -> str:
+        source = self._token_source
+        value = source() if callable(source) else source
+        return str(value or "")
+
+    @property
+    def retry_max_seconds(self) -> float:
+        source = self._retry_max_source
+        value = source() if callable(source) else source
+        return max(self.retry_seconds, float(value))
+
+    async def _post(
+        self,
+        record: DispatchRecord,
+        suffix: str,
+        *,
+        json: dict[str, Any],
+        headers: dict[str, str],
+    ) -> httpx.Response:
+        headers = dict(headers)
+        token = self.token
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        path = f"api/fleet/dispatch/{record.dispatch_id}/{suffix}"
+        if self.peer_post is not None:
+            routed = await self.peer_post(record, path, json=json, headers=headers)
+            if routed is not None:
+                return routed
+        return await self._http_client().post(
+            f"{record.authority_url.rstrip('/')}/{path}", json=json, headers=headers
+        )
+
+    def _delivery_started_at(self, record: DispatchRecord) -> datetime:
+        """When this delivery obligation was armed (not when it was last written)."""
+        for event in reversed(record.events):
+            if event.state == "completion_pending":
+                return event.created_at
+        return record.events[0].created_at if record.events else record.created_at
 
     def _http_client(self) -> httpx.AsyncClient:
         if self._client is None:
@@ -5815,6 +6571,7 @@ class CompletionOutbox:
                     "transport_exhausted",
                     "permanent_failure",
                     "semantic_conflict",
+                    "superseded",
                 }:
                     continue
                 if (
@@ -5834,18 +6591,15 @@ class CompletionOutbox:
         self, record: DispatchRecord, turn: dict[str, Any]
     ) -> None:
         turn["delivery_attempts"] = int(turn.get("delivery_attempts") or 0) + 1
-        await self._offload("dispatch.followup_record_write", self.store.put, record)
+        await self._write_turn_delivery(record, turn)
         key = (
             f"{record.mutation_id}:turn:"
             f"{turn.get('prompt_id') or turn.get('idempotency_key')}"
         )
         headers = {"Idempotency-Key": key}
-        if self.token:
-            headers["Authorization"] = f"Bearer {self.token}"
         try:
-            response = await self._http_client().post(
-                f"{record.authority_url.rstrip('/')}/api/fleet/dispatch/"
-                f"{record.dispatch_id}/turn-end",
+            response = await self._post(
+                record, "turn-end",
                 headers=headers,
                 json={
                     "mutation_id": record.mutation_id,
@@ -5868,45 +6622,87 @@ class CompletionOutbox:
             turn["delivered_at"] = datetime.now(UTC).isoformat()
             turn["delivery_error"] = None
             turn["next_retry_at"] = None
-        except (httpx.HTTPError, ValueError) as exc:
+        except (httpx.HTTPError, ValueError, TimeoutError, OSError) as exc:
             turn["delivery_error"] = sanitize_text(exc, limit=500)
-            if int(turn["delivery_attempts"]) >= self.max_attempts:
+            if self.max_attempts and int(turn["delivery_attempts"]) >= self.max_attempts:
                 turn["delivery_state"] = "failed"
                 turn["next_retry_at"] = None
             else:
                 delay = min(
                     self.retry_max_seconds,
                     self.retry_seconds
-                    * (2 ** max(0, int(turn["delivery_attempts"]) - 1)),
+                    * (2 ** min(20, max(0, int(turn["delivery_attempts"]) - 1))),
                 )
                 turn["next_retry_at"] = (
                     datetime.now(UTC) + timedelta(seconds=delay)
                 ).isoformat()
-        await self._offload("dispatch.followup_record_write", self.store.put, record)
+        await self._write_turn_delivery(record, turn)
+
+    async def _write_turn_delivery(
+        self, record: DispatchRecord, turn: dict[str, Any]
+    ) -> None:
+        owned = (
+            "delivery_attempts",
+            "delivery_state",
+            "delivered_at",
+            "delivery_error",
+            "next_retry_at",
+        )
+
+        def apply(current: DispatchRecord) -> bool:
+            for stored in current.followup_turns:
+                if stored.get("idempotency_key") == turn.get("idempotency_key"):
+                    stored.update({key: turn[key] for key in owned if key in turn})
+                    return True
+            return False
+
+        await self._mutate(record, apply, "dispatch.followup_record_write")
+
+    async def _mutate(
+        self,
+        record: DispatchRecord,
+        mutate: Callable[[DispatchRecord], bool | None],
+        operation: str = "dispatch.record_write",
+    ) -> DispatchRecord:
+        """Update only the fields the outbox owns on the latest durable record.
+
+        The record handed to ``_send`` predates the HTTP round trip.  When the
+        authority is the same store, its handler has meanwhile written turn-end
+        snapshots, evaluations, receipts and more; a whole-record ``put`` of the
+        stale copy would erase them.
+        """
+        return await self._offload(
+            operation,
+            self.store.mutate_current,
+            record.dispatch_id,
+            mutate=mutate,
+        )
 
     def _schedule_retry(self, record: DispatchRecord, error: str) -> None:
         record.last_error = sanitize_text(error, limit=500)
-        if record.attempts >= self.max_attempts:
+        if self.max_attempts and record.attempts >= self.max_attempts:
             record.completion_delivery_class = "transport_exhausted"
             record.completion_next_retry_at = None
             return
         ceiling = min(
             self.retry_max_seconds,
-            self.retry_seconds * (2 ** max(0, record.attempts - 1)),
+            self.retry_seconds * (2 ** min(20, max(0, record.attempts - 1))),
         )
         delay = self.rng.uniform(ceiling / 2, ceiling)
         record.completion_delivery_class = "transport_retry"
         record.completion_next_retry_at = datetime.now(UTC) + timedelta(seconds=delay)
 
     async def _send(self, record: DispatchRecord) -> None:
-        record.attempts += 1
-        await self._offload("dispatch.record_write", self.store.put, record)
+        def count_attempt(current: DispatchRecord) -> None:
+            current.attempts += 1
+
+        record = await self._mutate(record, count_attempt)
         headers = {"Idempotency-Key": record.mutation_id}
-        if self.token:
-            headers["Authorization"] = f"Bearer {self.token}"
+        if record.lease_protocol and record.lease_fence:
+            headers[LEASE_FENCE_HEADER] = str(record.lease_fence)
         try:
-            request = self._http_client().post(
-                f"{record.authority_url.rstrip('/')}/api/fleet/dispatch/{record.dispatch_id}/complete",
+            request = self._post(
+                record, "complete",
                 json={
                     "mutation_id": record.mutation_id,
                     "card_id": record.card_id,
@@ -5941,35 +6737,48 @@ class CompletionOutbox:
                 except ValueError:
                     acknowledgement = {}
                 disposition = acknowledgement.get("card_disposition") or {}
-                if isinstance(disposition, dict):
-                    record.card_disposition_status = disposition.get("status")
-                    record.card_disposition_reason = disposition.get("reason")
-                    record.card_lane_before = disposition.get("lane_before")
-                    record.card_lane_after = disposition.get("lane_after")
                 reconciliation = acknowledgement.get("reconciliation")
-                if isinstance(reconciliation, dict):
-                    for field in ("state", "condition", "recovery_action"):
-                        value = reconciliation.get(field)
-                        if field in reconciliation and (isinstance(value, str) or (value is None and field != "state")):
-                            setattr(record, "reconciliation_" + field, value)
-                    if isinstance(reconciliation.get("recoverable"), bool):
-                        record.reconciliation_recoverable = reconciliation["recoverable"]
-                    if isinstance(reconciliation.get("current_card"), dict):
-                        record.reconciliation_current_card = reconciliation["current_card"]
-                    record.reconciliation_updated_at = datetime.now(UTC)
-                record.acknowledged_at = datetime.now(UTC)
-                record.last_error = None
-                record.completion_delivery_class = "acknowledged"
-                record.completion_next_retry_at = None
-                await self._offload(
-                    "dispatch.record_complete",
-                    self.store.transition,
-                    record,
-                    "completed",
-                    (
-                        "Authority acknowledged dispatch completion separately "
-                        "from card disposition."
-                    ),
+
+                def acknowledge(current: DispatchRecord) -> None:
+                    if isinstance(disposition, dict):
+                        current.card_disposition_status = disposition.get("status")
+                        current.card_disposition_reason = disposition.get("reason")
+                        current.card_lane_before = disposition.get("lane_before")
+                        current.card_lane_after = disposition.get("lane_after")
+                    if isinstance(reconciliation, dict):
+                        for field in ("state", "condition", "recovery_action"):
+                            value = reconciliation.get(field)
+                            if field in reconciliation and (
+                                isinstance(value, str)
+                                or (value is None and field != "state")
+                            ):
+                                setattr(current, "reconciliation_" + field, value)
+                        if isinstance(reconciliation.get("recoverable"), bool):
+                            current.reconciliation_recoverable = reconciliation[
+                                "recoverable"
+                            ]
+                        if isinstance(reconciliation.get("current_card"), dict):
+                            current.reconciliation_current_card = reconciliation[
+                                "current_card"
+                            ]
+                        current.reconciliation_updated_at = datetime.now(UTC)
+                    current.acknowledged_at = current.acknowledged_at or datetime.now(
+                        UTC
+                    )
+                    current.last_error = None
+                    current.completion_delivery_class = "acknowledged"
+                    current.completion_next_retry_at = None
+                    self.store.apply_transition(
+                        current,
+                        "completed",
+                        (
+                            "Authority acknowledged dispatch completion separately "
+                            "from card disposition."
+                        ),
+                    )
+
+                record = await self._mutate(
+                    record, acknowledge, "dispatch.record_complete"
                 )
                 if self.disposition_notifier and record.session_id:
                     notice = {
@@ -6005,27 +6814,81 @@ class CompletionOutbox:
                     detail = {}
                 code = str(detail.get("code") or "")
                 message = f"HTTP {response.status_code}: {response.text[:500]}"
-                if response.status_code == 409 and code in {
+                if response.status_code == 409 and code == STALE_LEASE_FENCE_CODE:
+                    current_fence = detail.get("current_fence")
+
+                    def superseded(current: DispatchRecord) -> None:
+                        now = datetime.now(UTC)
+                        current.last_error = sanitize_text(
+                            "Superseded: the authority reassigned this dispatch to a "
+                            "newer lease; the completion was not accepted.",
+                            limit=500,
+                        )
+                        current.completion_delivery_class = "superseded"
+                        current.completion_next_retry_at = None
+                        current.recoverable = False
+                        current.lease_superseded_at = now
+                        current.lease_superseded_by_fence = (
+                            current_fence if isinstance(current_fence, int) else None
+                        )
+                        current.events.append(DispatchEvent(
+                            seq=current.events[-1].seq + 1 if current.events else 1,
+                            state=current.state,
+                            message="Completion rejected: this dispatch was reassigned to a newer lease.",
+                            detail={"lease_superseded": True,
+                                    "held_fence": current.lease_fence,
+                                    "current_fence": current_fence},
+                        ))
+
+                    record = await self._mutate(record, superseded)
+                    if self.superseded_notifier:
+                        try:
+                            result = self.superseded_notifier(record.dispatch_id, dict(detail))
+                            if asyncio.iscoroutine(result):
+                                await result
+                        except Exception:
+                            logger.exception(
+                                "Superseded-lease notice failed for %s", record.dispatch_id
+                            )
+                elif response.status_code == 409 and code in {
                     "authority_version_conflict",
                     "authority_card_missing",
                 }:
-                    record.last_error = sanitize_text(message, limit=500)
-                    record.completion_delivery_class = "semantic_conflict"
-                    record.completion_next_retry_at = None
-                    record.reconciliation_state = "conflict_requires_resolution"
-                    record.reconciliation_reason = f"A mixed-version authority rejected immutable completion before reconciliation: {code}."
-                    record.reconciliation_condition = (
-                        "peer_protocol_upgrade_or_operator_retry"
+
+                    def semantic_conflict(current: DispatchRecord) -> None:
+                        current.last_error = sanitize_text(message, limit=500)
+                        current.completion_delivery_class = "semantic_conflict"
+                        current.completion_next_retry_at = None
+                        current.reconciliation_state = "conflict_requires_resolution"
+                        current.reconciliation_reason = f"A mixed-version authority rejected immutable completion before reconciliation: {code}."
+                        current.reconciliation_condition = (
+                            "peer_protocol_upgrade_or_operator_retry"
+                        )
+                        current.reconciliation_last_dependency_error = (
+                            current.last_error
+                        )
+                        current.reconciliation_recoverable = True
+                        current.reconciliation_updated_at = datetime.now(UTC)
+                        self.store.apply_transition(
+                            current,
+                            "completed",
+                            "Agent turn ended; legacy authority reconciliation needs attention.",
+                        )
+
+                    record = await self._mutate(
+                        record, semantic_conflict, "dispatch.record_complete"
                     )
-                    record.reconciliation_last_dependency_error = record.last_error
-                    record.reconciliation_recoverable = True
-                    record.reconciliation_updated_at = datetime.now(UTC)
-                    await self._offload(
-                        "dispatch.record_complete",
-                        self.store.transition,
-                        record,
-                        "completed",
-                        "Agent turn ended; legacy authority reconciliation needs attention.",
+                elif (
+                    response.status_code in {401, 404}
+                    or (response.status_code == 409 and code == "unknown_dispatch")
+                ) and (
+                    datetime.now(UTC) - self._delivery_started_at(record)
+                    < timedelta(seconds=self.unknown_dispatch_grace_seconds)
+                ):
+                    # The authority may be restoring its ledger or rotating
+                    # credentials; keep the immutable completion and retry.
+                    record = await self._mutate(
+                        record, lambda current: self._schedule_retry(current, message)
                     )
                 elif response.status_code == 409 or response.status_code in {
                     401,
@@ -6033,14 +6896,41 @@ class CompletionOutbox:
                     404,
                     422,
                 }:
-                    record.last_error = sanitize_text(message, limit=500)
-                    record.completion_delivery_class = "permanent_failure"
-                    record.completion_next_retry_at = None
-                    record.recoverable = False
-                    await self._offload("dispatch.record_write", self.store.put, record)
+
+                    def permanent(current: DispatchRecord) -> None:
+                        current.last_error = sanitize_text(message, limit=500)
+                        current.completion_delivery_class = "permanent_failure"
+                        current.completion_next_retry_at = None
+                        current.recoverable = False
+
+                    record = await self._mutate(record, permanent)
                 else:
-                    self._schedule_retry(record, message)
-                    await self._offload("dispatch.record_write", self.store.put, record)
-        except httpx.HTTPError as exc:
-            self._schedule_retry(record, str(exc))
-            await self._offload("dispatch.record_write", self.store.put, record)
+                    record = await self._mutate(
+                        record, lambda current: self._schedule_retry(current, message)
+                    )
+        except (httpx.HTTPError, TimeoutError, OSError) as exc:
+            error = str(exc) or type(exc).__name__
+            record = await self._mutate(
+                record, lambda current: self._schedule_retry(current, error)
+            )
+        if self.stall_notifier and (
+            record.completion_delivery_class
+            in {
+                "transport_exhausted",
+                "permanent_failure",
+            }
+            or (
+                self.notify_after_attempts
+                and record.completion_delivery_class == "transport_retry"
+                and record.attempts == self.notify_after_attempts
+            )
+        ):
+            try:
+                await self._offload(
+                    "dispatch.stall_notify", self.stall_notifier, record
+                )
+            except Exception:
+                logger.exception(
+                    "Dispatch %s completion-failure notification failed",
+                    record.dispatch_id,
+                )

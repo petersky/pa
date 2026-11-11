@@ -8,6 +8,7 @@ import logging
 import threading
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from fnmatch import fnmatchcase
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
@@ -78,7 +79,13 @@ from pa.goals.models import (
     TransitionGoalAction,
     WorkPackageState,
 )
-from pa.goals.service import GoalConflict, GoalService, goal_completion_findings
+from pa.goals.service import (
+    GoalConflict,
+    GoalService,
+    goal_completion_findings,
+    goal_transition_allowed,
+)
+from pa.notifications.stall import StallKind, notify_stall
 
 logger = logging.getLogger(__name__)
 
@@ -113,13 +120,68 @@ _TERMINAL_INTERACTIONS = {
     InteractionState.SUPERSEDED,
     InteractionState.DELIVERED,
 }
+# Deliberate stop (or finished) states: the supervisor may observe the world but
+# must not materialize cards, dispatch, create notifications or otherwise act.
+# DRAFT/SHAPING/READY are pre-activation states that already accept operator
+# proposals and are deliberately left as they were.
+_STOPPED_GOAL_STATES = {
+    GoalState.PAUSED,
+    GoalState.BLOCKED,
+    GoalState.WAITING_EXTERNAL,
+    GoalState.ABANDONED,
+    GoalState.ACHIEVED,
+}
+_OBSERVED_WORK = {
+    WorkPackageState.DISPATCHED,
+    WorkPackageState.RUNNING,
+    WorkPackageState.BLOCKED,
+}
+# Fleet states in which the platform, not the agent, owns the wait: a queued,
+# capacity-blocked or starting dispatch is not a silent turn and never counts as
+# stalled however long it waits.
+_WAITING_DISPATCH_STATES = {
+    "queued",
+    "waiting_capacity",
+    "admission_pending",
+    "dispatching",
+    "starting",
+    "backing_off",
+    "completion_pending",
+}
+_HEARTBEAT_PROGRESS_GRANULARITY = timedelta(minutes=5)
+_PLAN_RATIONALE = "ACTIVE unmet criteria require one bounded governed work package."
+# Authorization rejections that a fresh proposal cures by itself.
+_STALE_REASON_CODES = {"stale_policy_revision", "future_goal_version"}
 _MAX_PACKAGE_REPLACEMENTS = 20
 _MAX_GOAL_REPLACEMENTS = 100
 _MAX_GOAL_DISPATCH_IDS = 200
+_FAILURE_BACKOFF_BASE_SECONDS = 30
+_FAILURE_BACKOFF_CAP_SECONDS = 15 * 60
+_CONFLICT_STREAK_BEFORE_FAILURE = 5
+
+
+# A terminal Fleet record is acted on only while its package is still waiting on
+# it. Once the package has moved on (replacement READY, FAILED, VERIFIED) the old
+# record is history; re-handling it every cycle re-entered the completion branch.
+_TERMINAL_HANDLING_STATES = {
+    WorkPackageState.DISPATCHED,
+    WorkPackageState.RUNNING,
+    WorkPackageState.BLOCKED,
+    WorkPackageState.AWAITING_VERIFICATION,
+}
 
 
 class GoalSupervisor:
     """Runs recoverable, fenced supervision cycles over durable Goal projections."""
+
+    # "strict": a verifier needs a different session, target instance, provider and
+    # service principal. "relaxed": a different session and service principal. Wired
+    # by the goals module from completion_verifier_independence; a bare supervisor
+    # stays strict.
+    verifier_independence: Callable[[], str] | str | None = "strict"
+    # Whether the Goals page lets the signed-in owner record the completion audit
+    # (only used to word the notification that the goal is awaiting its audit).
+    owner_may_audit = False
 
     def __init__(
         self,
@@ -136,12 +198,21 @@ class GoalSupervisor:
         stalled_cycles: int = 6,
         lease_ttl_seconds: int = 90,
         default_provider: str | None = None,
+        failure_notify_after: int = 3,
+        verifier_independence: Callable[[], str] | str | None = None,
+        no_progress_seconds: int = 0,
+        stalled_seconds: int = 0,
+        owner_may_audit: bool = False,
     ) -> None:
+        self.owner_may_audit = owner_may_audit
         if stalled_cycles <= no_progress_cycles:
             raise ValueError("stalled_cycles must exceed no_progress_cycles")
         self.service = service
         self.store = store
         self.instance_id = instance_id
+        # "strict" (the default when unwired) also demands a different instance and provider;
+        # "relaxed" accepts a different session and service principal (single-user instances).
+        self.verifier_independence = verifier_independence
         self.notifications = notification_service
         self.dispatch_store = dispatch_store
         self.dispatch = dispatch
@@ -154,7 +225,16 @@ class GoalSupervisor:
         self._active_reservation_id: str | None = None
         self.no_progress_threshold = no_progress_cycles
         self.stalled_threshold = stalled_cycles
+        # Wall-clock floor on top of the cycle counts: a package is only drifting or
+        # stalled when BOTH its cycle count and its idle time reach the threshold.
+        # 0 means "cycle count alone", the original behaviour.
+        self.no_progress_seconds = max(0, no_progress_seconds)
+        self.stalled_seconds = max(0, stalled_seconds)
         self.lease_ttl_seconds = lease_ttl_seconds
+        self.failure_notify_after = max(1, failure_notify_after)
+        self._conflict_streaks: dict[str, int] = {}
+        self._outbox: list[tuple[StallKind, str, str, str]] = []
+        self._effects = 0
         self._wakeup = threading.Event()
 
     def wake(self) -> None:
@@ -173,6 +253,9 @@ class GoalSupervisor:
         for candidate in candidates:
             if not candidate or candidate.state in _TERMINAL_GOAL_STATES:
                 continue
+            # An explicit (manual) cycle ignores the failure backoff.
+            if goal_id is None and self._backing_off(candidate):
+                continue
             if not self._needs_cycle(candidate):
                 continue
             try:
@@ -180,18 +263,167 @@ class GoalSupervisor:
                 if leased is None:
                     continue
                 processed.append(self._cycle(leased))
-            except GoalConflict:
+                self._conflict_streaks.pop(candidate.id, None)
+            except GoalConflict as exc:
                 logger.info(
                     "Goal supervision lost a concurrent race for %s", candidate.id
                 )
+                # A genuine race clears on the next poll; a conflict that repeats
+                # is a wedge and must be counted and escalated like any failure.
+                streak = self._conflict_streaks.get(candidate.id, 0) + 1
+                if streak >= _CONFLICT_STREAK_BEFORE_FAILURE:
+                    self._conflict_streaks.pop(candidate.id, None)
+                    self._record_cycle_failure(candidate.id, exc)
+                else:
+                    self._conflict_streaks[candidate.id] = streak
             except Exception as exc:
                 logger.exception("Goal supervision failed for %s", candidate.id)
+                self._conflict_streaks.pop(candidate.id, None)
+                self._record_cycle_failure(candidate.id, exc)
                 self._reschedule_failed_wakeup(candidate.id, exc)
         return processed
+
+    def _backing_off(self, goal: Goal) -> bool:
+        retry_after = goal.supervision.retry_after
+        return bool(
+            goal.supervision.consecutive_failures
+            and retry_after is not None
+            and retry_after > self.now()
+        )
+
+    def _record_cycle_failure(self, goal_id: str, exc: Exception) -> None:
+        """Count a failed cycle durably, back off, and tell the owner when it persists."""
+
+        try:
+            current = self.service.get(goal_id)
+            if (
+                current is None
+                or current.control_authority_instance_id != self.instance_id
+            ):
+                return
+            leased = self._claim(current)
+            if leased is None:
+                return
+            failures = current.supervision.consecutive_failures + 1
+            delay = min(
+                _FAILURE_BACKOFF_CAP_SECONDS,
+                _FAILURE_BACKOFF_BASE_SECONDS * 2 ** min(failures - 1, 10),
+            )
+            reason = f"{type(exc).__name__}: {exc}"[:2000]
+            retry_after = self.now() + timedelta(seconds=delay)
+            recorded = self.service.record_supervision_failure(
+                goal_id,
+                self._context(
+                    leased,
+                    f"goal-supervisor:cycle-failed:{goal_id}:{leased.version}:"
+                    f"{failures}",
+                ),
+                reason=reason,
+                retry_after=retry_after,
+            )
+            if (
+                failures == self.failure_notify_after
+                or failures % 20 == 0
+            ):
+                self._notify(
+                    recorded,
+                    StallKind.MANUAL_REVIEW,
+                    f"goal-cycle:{goal_id}",
+                    f"Goal supervision keeps failing: {recorded.objective[:120]}",
+                    (
+                        f"The goal supervisor has failed {failures} consecutive "
+                        f"cycles and is retrying with backoff (next attempt "
+                        f"around {retry_after.isoformat(timespec='minutes')}). "
+                        f"Last error: {reason}"
+                    ),
+                )
+        except Exception:  # noqa: BLE001 - recording a failure must never raise
+            logger.exception("Could not record the supervision failure for %s", goal_id)
+
+    def _notify(
+        self,
+        goal: Goal,
+        kind: StallKind,
+        dedupe_key: str,
+        title: str,
+        body: str,
+        *,
+        severity: str = "error",
+    ) -> None:
+        """Tell the owner (in-app and Telegram) that a goal needs a human."""
+
+        if not self.notifications:
+            return
+        notify_stall(
+            self.notifications,
+            kind=kind,
+            subject_ids={
+                "realm_id": goal.realm_id,
+                "project_id": goal.project_id,
+                "goal_id": goal.id,
+            },
+            title=title,
+            body=body,
+            severity=severity,
+            dedupe_key=dedupe_key,
+            actions=["dismiss"],
+            reopen_resolved=True,
+        )
+
+    def _may_act(self, goal: Goal) -> bool:
+        """True when the goal's state lets the supervisor take side effects."""
+
+        if goal.state in _STOPPED_GOAL_STATES:
+            return False
+        if goal.state == GoalState.WAITING_OPERATOR:
+            return not any(
+                item.state == GoalInteractionState.PENDING
+                for item in goal.operator_interactions
+            )
+        return True
+
+    def _interaction_resolved(self, goal: Goal) -> bool:
+        for link in goal.operator_interactions:
+            if link.state != GoalInteractionState.PENDING:
+                continue
+            notification = self.store.get_notification(
+                link.notification_id, realm_id=goal.realm_id
+            )
+            if (
+                notification
+                and notification.interaction
+                and notification.interaction.state in _TERMINAL_INTERACTIONS
+            ):
+                return True
+        return False
 
     def _needs_cycle(self, goal: Goal) -> bool:
         if any(package.dispatch_attempt is not None for package in goal.work_packages):
             return True
+        if (
+            goal.state == GoalState.VERIFYING
+            and goal.audit is not None
+            and not goal.supervision.parked_reason
+            and (
+                goal.audit.verdict != CriterionVerdict.SATISFIED
+                or not goal_completion_findings(goal, now=self.now())
+            )
+        ):
+            # A recorded completion audit is the event that finishes (or rejects)
+            # the goal; without this a verified goal was never cycled again.
+            return True
+        if not self._may_act(goal):
+            # Parked: a paused/blocked/waiting goal only needs a cycle to observe
+            # in-flight Fleet work, to ingest a resolved operator interaction, or
+            # when an explicit timer fires.
+            return bool(
+                any(
+                    item.state in _OBSERVED_WORK and item.dispatch_ids
+                    for item in goal.work_packages
+                )
+                or self._interaction_resolved(goal)
+                or (goal.wakeup and goal.wakeup.wake_at <= self.now())
+            )
         if any(item.status not in _TERMINAL_PROPOSALS for item in goal.proposals):
             return True
         if any(
@@ -333,6 +565,7 @@ class GoalSupervisor:
     ) -> Any:
         """Reserve, revalidate, apply, and release one side effect."""
 
+        self._effects += 1
         state = self.governance.get_state(goal.id)
         state, reservation_decision = self.governance.authorize_action(
             goal.id,
@@ -501,6 +734,13 @@ class GoalSupervisor:
         current = self.service.get(goal.id)
         if current is None:
             raise GoalConflict("goal disappeared before its side effect")
+        if current.state in _STOPPED_GOAL_STATES:
+            # The operator may have paused (or the goal may have been stopped by
+            # another controller) after this cycle began: never act on a stale
+            # copy of a goal that is deliberately stopped.
+            raise GoalConflict(
+                f"goal is {current.state.value}; refusing to take a side effect"
+            )
         if not current.lease.active(self.now()):
             raise GoalConflict("goal controller lease expired before its side effect")
         if (
@@ -541,9 +781,62 @@ class GoalSupervisor:
             ttl_seconds=self.lease_ttl_seconds,
         )
 
+    # Fields that change every cycle without meaning anything; they are excluded
+    # when deciding whether a cycle changed the goal at all.
+    _VOLATILE_SUPERVISION = {
+        "cycle",
+        "last_cycle_at",
+        "next_wakeup_at",
+        "event_cursor",
+        "no_progress_cycles",
+    }
+
+    @classmethod
+    def _stable_state(cls, goal: Goal, summary: str) -> str:
+        def strip(value: Any) -> Any:
+            if isinstance(value, dict):
+                return {
+                    key: strip(item)
+                    for key, item in value.items()
+                    if key != "updated_at"
+                }
+            if isinstance(value, list):
+                return [strip(item) for item in value]
+            return value
+
+        payload = strip(
+            {
+                "criteria": [item.model_dump(mode="json") for item in goal.criteria],
+                "evidence": [item.model_dump(mode="json") for item in goal.evidence],
+                "proposals": [item.model_dump(mode="json") for item in goal.proposals],
+                "work_packages": [
+                    item.model_dump(mode="json") for item in goal.work_packages
+                ],
+                "operator_interactions": [
+                    item.model_dump(mode="json") for item in goal.operator_interactions
+                ],
+                "supervision": goal.supervision.model_dump(
+                    mode="json", exclude=cls._VOLATILE_SUPERVISION
+                ),
+                "linked_card_ids": list(dict.fromkeys(goal.linked_card_ids)),
+                "linked_dispatch_ids": list(dict.fromkeys(goal.linked_dispatch_ids)),
+                "assumptions": goal.assumptions,
+                "risks": goal.risks,
+                "strategy_revision": goal.strategy_revision,
+                "state": goal.state.value,
+                "summary": summary,
+            }
+        )
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+
     def _cycle(self, source: Goal) -> Goal:
         goal = source.model_copy(deep=True)
         now = self.now()
+        self._outbox = []
+        self._effects = 0
+        baseline = self._stable_state(source, source.progress_summary)
         durably_admitted_packages = {
             package.id
             for package in source.work_packages
@@ -554,8 +847,11 @@ class GoalSupervisor:
         meaningful = self._reconcile_dispatch_attempts(goal, now)
         meaningful = self._ensure_plan_proposal(goal, now) or meaningful
         meaningful = self._ingest_interactions(goal, now) or meaningful
-        meaningful = self._authorize_pending(goal, now) or meaningful
-        meaningful = self._apply_authorized(goal, now) or meaningful
+        # Pause (and every other deliberate stop) is enforced here: observation
+        # continues, but nothing authorizes, applies, plans or dispatches.
+        if self._may_act(goal):
+            meaningful = self._authorize_pending(goal, now) or meaningful
+            meaningful = self._apply_authorized(goal, now) or meaningful
         meaningful = (
             self._reconcile_dispatches(
                 goal,
@@ -564,11 +860,26 @@ class GoalSupervisor:
             )
             or meaningful
         )
-        meaningful = self._advance_ready_work(goal, now) or meaningful
-        meaningful = self._ensure_dispatch_proposals(goal, now) or meaningful
+        if self._may_act(goal):
+            meaningful = self._advance_ready_work(goal, now) or meaningful
+            meaningful = self._ensure_dispatch_proposals(goal, now) or meaningful
         meaningful = self._detect_drift(goal, now) or meaningful
+        meaningful = self._park_dead_ends(goal) or meaningful
         meaningful = self._advance_goal_state(goal) or meaningful
 
+        quiet = (
+            not self._effects
+            and not self._outbox
+            and source.supervision.consecutive_failures == 0
+            and self._stable_state(goal, self._summary(goal)) == baseline
+        )
+        if quiet:
+            # Nothing meaningful changed (a running dispatch still running, a goal
+            # still waiting): do not write a full-goal checkpoint event every poll.
+            return self._consume_wakeup(source, source, consumed_wakeup)
+
+        goal.supervision.consecutive_failures = 0
+        goal.supervision.retry_after = None
         goal.supervision.cycle += 1
         goal.supervision.last_cycle_at = now
         goal.supervision.next_wakeup_at = now + timedelta(seconds=30)
@@ -605,18 +916,26 @@ class GoalSupervisor:
             ),
         )
         self._release_rejected_dispatch_attempts(checkpointed)
-        if consumed_wakeup:
-            checkpointed = self.service.schedule_wakeup(
-                checkpointed.id,
-                None,
-                self._context(
-                    checkpointed,
-                    f"goal-supervisor:wakeup-consumed:{goal.id}:"
-                    f"{source.wakeup.wake_at.isoformat() if source.wakeup else source.version}",
-                ),
-                outcome_reason="due wakeup consumed after durable supervision checkpoint",
-            )
-        return checkpointed
+        outbox, self._outbox = self._outbox, []
+        for kind, dedupe_key, title, body in outbox:
+            self._notify(checkpointed, kind, dedupe_key, title, body)
+        return self._consume_wakeup(source, checkpointed, consumed_wakeup)
+
+    def _consume_wakeup(
+        self, source: Goal, current: Goal, consumed_wakeup: bool
+    ) -> Goal:
+        if not consumed_wakeup:
+            return current
+        return self.service.schedule_wakeup(
+            current.id,
+            None,
+            self._context(
+                current,
+                f"goal-supervisor:wakeup-consumed:{current.id}:"
+                f"{source.wakeup.wake_at.isoformat() if source.wakeup else source.version}",
+            ),
+            outcome_reason="due wakeup consumed after durable supervision checkpoint",
+        )
 
     def _ensure_plan_proposal(self, goal: Goal, now: datetime) -> bool:
         """Create one deterministic bounded proposal for uncovered ACTIVE criteria."""
@@ -624,10 +943,26 @@ class GoalSupervisor:
         criterion_ids = self._unplanned_criterion_ids(goal)
         if goal.state != GoalState.ACTIVE or not criterion_ids:
             return False
+        if goal.supervision.parked_reason:
+            # The supervisor stopped this goal for a human; do not re-plan until
+            # the operator resumes it (which clears the hold).
+            return False
+        # A plan that was rejected or failed is not re-created under the same id:
+        # each retry after a resume is its own generation.
+        generation = sum(
+            self._is_plan_proposal(item)
+            and item.status in {ProposalStatus.REJECTED, ProposalStatus.FAILED}
+            and set(item.action.criterion_ids) == set(criterion_ids)
+            for item in goal.proposals
+        )
         proposal_id = str(
             uuid5(
                 NAMESPACE_URL,
-                "pa-goal-plan:" + goal.id + ":" + ",".join(sorted(criterion_ids)),
+                "pa-goal-plan:"
+                + goal.id
+                + ":"
+                + ",".join(sorted(criterion_ids))
+                + (f":{generation}" if generation else ""),
             )
         )
         if any(item.id == proposal_id for item in goal.proposals):
@@ -647,7 +982,7 @@ class GoalSupervisor:
                     dispatch_when_ready=True,
                     max_attempts=min(20, goal.budget.retry_limit + 1),
                 ),
-                rationale="ACTIVE unmet criteria require one bounded governed work package.",
+                rationale=_PLAN_RATIONALE,
                 expected_goal_version=goal.version,
                 policy_revision=goal.policy.revision,
                 created_at=now,
@@ -655,6 +990,140 @@ class GoalSupervisor:
             )
         )
         return True
+
+    @staticmethod
+    def _is_plan_proposal(proposal: GoalProposal) -> bool:
+        return (
+            isinstance(proposal.action, CreateWorkPackageAction)
+            and proposal.rationale == _PLAN_RATIONALE
+        )
+
+    def _park(
+        self,
+        goal: Goal,
+        preferred: GoalState,
+        reason: str,
+        *,
+        notify: tuple[StallKind, str, str, str] | None = None,
+    ) -> None:
+        """Stop the goal for a human, with a durable reason and (optionally) a push."""
+
+        target = next(
+            (
+                candidate
+                for candidate in (preferred, GoalState.BLOCKED, GoalState.PAUSED)
+                if goal_transition_allowed(goal.state, candidate)
+            ),
+            None,
+        )
+        if target is None:
+            return
+        goal.state = target
+        goal.supervision.parked_reason = reason[:2000]
+        goal.progress_summary = reason[:2000]
+        if notify is not None:
+            kind, dedupe_key, title, body = notify
+            self._outbox.append((kind, dedupe_key, title, body))
+
+    def _park_dead_ends(self, goal: Goal) -> bool:
+        """Turn silent dead ends into a stopped goal and a notification (A2, A7)."""
+
+        if goal.state not in {GoalState.ACTIVE, GoalState.VERIFYING} and not (
+            goal.state == GoalState.WAITING_OPERATOR and self._may_act(goal)
+        ):
+            return False
+        if goal.supervision.parked_reason:
+            return False
+        previous = goal.state
+        plans = [item for item in goal.proposals if self._is_plan_proposal(item)]
+        latest = plans[-1] if plans else None
+        if (
+            latest is not None
+            and latest.status in {ProposalStatus.REJECTED, ProposalStatus.FAILED}
+            and self._unplanned_criterion_ids(goal)
+            and not (
+                latest.authorization is not None
+                and latest.authorization.reason_code in _STALE_REASON_CODES
+            )
+        ):
+            detail = (
+                (latest.authorization.explanation if latest.authorization else "")
+                if latest.status == ProposalStatus.REJECTED
+                else ""
+            ) or latest.error or "no detail"
+            if latest.error.startswith("operator "):
+                self._park(
+                    goal,
+                    GoalState.PAUSED,
+                    f"The plan was not approved ({latest.error}). Resume to re-plan.",
+                )
+            else:
+                reason = (
+                    f"The goal cannot be planned under its policy: {detail} "
+                    "Review the goal's autonomy level and permitted actions, then resume."
+                )
+                self._park(
+                    goal,
+                    GoalState.BLOCKED,
+                    reason,
+                    notify=(
+                        StallKind.MANUAL_REVIEW,
+                        f"goal-plan:{goal.id}:{latest.id}",
+                        f"Goal cannot be planned: {goal.objective[:120]}",
+                        reason,
+                    ),
+                )
+            return goal.state != previous
+        if (
+            goal.state == GoalState.VERIFYING
+            and goal.audit is not None
+            and goal.audit.verdict != CriterionVerdict.SATISFIED
+        ):
+            reason = (
+                "The completion audit did not accept the evidence: "
+                f"{goal.audit.explanation}. Retry verification or take over."
+            )
+            self._park(
+                goal,
+                GoalState.BLOCKED,
+                reason,
+                notify=(
+                    StallKind.VERIFICATION_FAILED,
+                    f"goal-audit-rejected:{goal.id}:{goal.audit.id}",
+                    f"Goal audit rejected the evidence: {goal.objective[:120]}",
+                    reason,
+                ),
+            )
+            return goal.state != previous
+        failed = [
+            item
+            for item in goal.work_packages
+            if item.state == WorkPackageState.FAILED
+            and item.attempts >= item.max_attempts
+            and item.role != GoalActorRole.CRITIC
+        ]
+        if failed:
+            package = failed[0]
+            reason = (
+                f"{package.role.value.capitalize()} work '{package.title}' failed "
+                f"after {package.attempts} attempt(s): "
+                f"{package.result_summary or 'no detail'}. Retry the work package "
+                "or take over."
+            )
+            self._park(
+                goal,
+                GoalState.BLOCKED,
+                reason,
+                notify=(
+                    StallKind.VERIFICATION_FAILED
+                    if package.role == GoalActorRole.VERIFIER
+                    else StallKind.DISPATCH_FAILED,
+                    f"goal-package-failed:{goal.id}:{package.id}:{package.attempts}",
+                    f"Goal work failed: {goal.objective[:120]}",
+                    reason,
+                ),
+            )
+        return goal.state != previous
 
     def _authorize_pending(self, goal: Goal, now: datetime) -> bool:
         changed = False
@@ -2090,6 +2559,11 @@ class GoalSupervisor:
                         package.executor_service_id = service_id
                         changed = True
             if (
+                record.state in {"completed", "failed", "cancelled"}
+                and package.state not in _TERMINAL_HANDLING_STATES
+            ):
+                continue
+            if (
                 package.dispatch_attempt is not None
                 and package.dispatch_attempt.state == GoalDispatchAttemptState.ADMITTED
                 and package.id not in durably_admitted_packages
@@ -2100,13 +2574,46 @@ class GoalSupervisor:
                 # durably observable and the admission attempt has been cleared.
                 continue
             fingerprint = self._dispatch_fingerprint(record)
+            progressed = False
+            beat_at = getattr(
+                getattr(record, "progress_heartbeat", None), "occurred_at", None
+            )
             if fingerprint != package.last_progress_fingerprint:
                 package.last_progress_fingerprint = fingerprint
                 package.last_progress_at = now
                 package.no_progress_cycles = 0
-                changed = True
+                changed = progressed = True
+            elif beat_at is not None and (
+                package.last_progress_at is None
+                or beat_at > package.last_progress_at + _HEARTBEAT_PROGRESS_GRANULARITY
+            ):
+                # A live heartbeat is progress (recorded at most every few minutes
+                # so a healthy long turn does not rewrite the goal every cycle).
+                package.last_progress_at = beat_at
+                package.no_progress_cycles = 0
+                changed = progressed = True
+            elif record.state in _WAITING_DISPATCH_STATES:
+                if package.no_progress_cycles:
+                    package.no_progress_cycles = 0
+                    changed = True
+                progressed = True
             elif record.state not in {"completed", "failed", "cancelled"}:
-                package.no_progress_cycles += 1
+                package.no_progress_cycles = min(
+                    package.no_progress_cycles + 1, self.stalled_threshold
+                )
+            if (
+                progressed
+                and package.state == WorkPackageState.BLOCKED
+                and record.state not in {"completed", "failed", "cancelled"}
+            ):
+                # The dispatch the stall detector gave up on has moved again.
+                package.state = (
+                    WorkPackageState.RUNNING
+                    if record.state == "running"
+                    else WorkPackageState.DISPATCHED
+                )
+                package.result_summary = ""
+                changed = True
             if record.session_id and record.session_id != package.session_id:
                 if package.session_id:
                     self._append_bounded(
@@ -2130,7 +2637,13 @@ class GoalSupervisor:
                 else:
                     package.executor_service_id = service_id
                 changed = True
-            if record.state == "running" and package.state != WorkPackageState.RUNNING:
+            if (
+                record.state == "running"
+                and package.state == WorkPackageState.DISPATCHED
+            ):
+                # Only a freshly dispatched package starts running. A BLOCKED one
+                # resumes through the progress check above, not merely because the
+                # silent record still says "running" (that flapped every cycle).
                 package.state = WorkPackageState.RUNNING
                 changed = True
             elif record.state == "completed":
@@ -2266,6 +2779,8 @@ class GoalSupervisor:
                 if verifier_binding is not None
                 else None
             )
+            mode = getattr(self, "verifier_independence", None)
+            relaxed = (mode() if callable(mode) else mode) == "relaxed"
             independent = bool(
                 verifier_binding is not None
                 and verifier_binding.work_package_id == package.id
@@ -2282,9 +2797,14 @@ class GoalSupervisor:
                         else "executor"
                     )
                     and verifier_binding.session_id != identity.session_id
-                    and verifier_binding.target_instance_id
-                    != identity.target_instance_id
-                    and verifier_binding.provider_id != identity.provider_id
+                    and (
+                        relaxed
+                        or (
+                            verifier_binding.target_instance_id
+                            != identity.target_instance_id
+                            and verifier_binding.provider_id != identity.provider_id
+                        )
+                    )
                     and verifier_binding.assigned_service_principal
                     != identity.assigned_service_principal
                     for dependency, identity in executor_bindings
@@ -2412,12 +2932,14 @@ class GoalSupervisor:
             item
             for item in goal.work_packages
             if item.no_progress_cycles >= self.stalled_threshold
+            and self._idle_seconds(item, now) >= self.stalled_seconds
             and item.state in _ACTIVE_WORK
         ]
         drifting = [
             item
             for item in goal.work_packages
             if item.no_progress_cycles >= self.no_progress_threshold
+            and self._idle_seconds(item, now) >= self.no_progress_seconds
             and item.state in _ACTIVE_WORK
         ]
         if stalled:
@@ -2452,12 +2974,33 @@ class GoalSupervisor:
         )
         goal.supervision.drift_state = state
         goal.supervision.drift_reasons = reasons
-        if stalled:
+        if stalled and self._may_act(goal):
             for package in stalled:
                 package.state = WorkPackageState.BLOCKED
                 package.updated_at = now
+                idle_minutes = int(self._idle_seconds(package, now) // 60)
+                self._outbox.append(
+                    (
+                        StallKind.MANUAL_REVIEW,
+                        f"goal-stalled:{goal.id}:{package.id}:"
+                        f"{(package.last_progress_at or package.created_at).isoformat()}",
+                        f"Goal work stalled: {goal.objective[:120]}",
+                        (
+                            f"'{package.title}' showed no progress for about "
+                            f"{idle_minutes} minutes and was blocked. It resumes "
+                            "by itself if the agent reports progress again; use "
+                            "Retry on the Goals page to give it a fresh window or "
+                            "take over the session."
+                        ),
+                    )
+                )
             self._ensure_critic_proposal(goal, reasons, now)
         return changed
+
+    @staticmethod
+    def _idle_seconds(package: GoalWorkPackage, now: datetime) -> float:
+        reference = package.last_progress_at or package.created_at
+        return max(0.0, (now - reference).total_seconds())
 
     def _ensure_critic_proposal(
         self, goal: Goal, reasons: list[str], now: datetime
@@ -2597,6 +3140,12 @@ class GoalSupervisor:
                 if proposal and proposal.status == ProposalStatus.OPERATOR_REQUIRED:
                     proposal.status = ProposalStatus.REJECTED
                     proposal.error = f"operator interaction {interaction.state.value}"
+                    self._park(
+                        goal,
+                        GoalState.PAUSED,
+                        f"The operator input for {proposal.action.kind} was "
+                        f"{interaction.state.value}. Resume to try again.",
+                    )
                     if isinstance(proposal.action, DispatchWorkPackageAction):
                         self._record_dispatch_failure(
                             goal,
@@ -2621,6 +3170,12 @@ class GoalSupervisor:
                     )
                     if not approved:
                         proposal.error = "operator rejected the proposal"
+                        self._park(
+                            goal,
+                            GoalState.PAUSED,
+                            f"The operator rejected {proposal.action.kind}. "
+                            "Resume to try again.",
+                        )
                         if isinstance(proposal.action, DispatchWorkPackageAction):
                             self._record_dispatch_failure(
                                 goal,
@@ -2649,6 +3204,7 @@ class GoalSupervisor:
             goal.state = GoalState.BLOCKED
         elif (
             goal.state == GoalState.BLOCKED
+            and not goal.supervision.parked_reason
             and any(item.state in _ACTIVE_WORK for item in goal.work_packages)
             or goal.state == GoalState.READY
             and goal.work_packages
@@ -2663,7 +3219,48 @@ class GoalSupervisor:
             )
         ):
             goal.state = GoalState.VERIFYING
+            self._outbox.append(
+                (
+                    StallKind.MANUAL_REVIEW,
+                    f"goal-verifying:{goal.id}:{goal.strategy_revision}",
+                    f"Goal ready for its completion audit: {goal.objective[:120]}",
+                    (
+                        "Every work package is verified. The goal is achieved "
+                        "once a completion audit is recorded: the verifier "
+                        "service was asked to record it"
+                        + (
+                            ", or you can record your own review on the Goals page."
+                            if self.owner_may_audit
+                            else "; enable goal_owner_may_audit to record it "
+                            "yourself on a single-user instance."
+                        )
+                    ),
+                )
+            )
+        elif (
+            previous == GoalState.VERIFYING
+            and goal.state == GoalState.VERIFYING
+            and goal.audit is not None
+            and not self._transition_prohibited(goal)
+            and not goal_completion_findings(goal, now=self.now())
+        ):
+            goal.state = GoalState.ACHIEVED
+            self._outbox.append(
+                (
+                    StallKind.OTHER,
+                    f"goal-achieved:{goal.id}",
+                    f"Goal achieved: {goal.objective[:120]}",
+                    "The independent completion audit accepted the evidence.",
+                )
+            )
         return previous != goal.state
+
+    @staticmethod
+    def _transition_prohibited(goal: Goal) -> bool:
+        return any(
+            fnmatchcase("transition_goal", pattern)
+            for pattern in goal.policy.prohibited_actions
+        )
 
     @staticmethod
     def _dispatch_fingerprint(record) -> str:
@@ -2717,7 +3314,13 @@ class GoalSupervisor:
         role_instruction = {
             GoalActorRole.EXECUTOR: "Implement the bounded work and report evidence.",
             GoalActorRole.VERIFIER: (
-                "Independently verify; run concrete checks and do not trust executor claims."
+                "Independently verify; run concrete checks and do not trust executor "
+                "claims. When the checks pass, record one piece of evidence per "
+                "criterion with record_assigned_goal_evidence, then call "
+                "get_assigned_goal for the current version and policy revision and "
+                "finish by calling audit_assigned_goal with a verdict for every "
+                "criterion listed under Criteria, the evidence ids you recorded and a "
+                "short explanation. The goal can only be marked achieved by that audit."
             ),
             GoalActorRole.CRITIC: (
                 "Critique the strategy and submit a typed revision proposal."
@@ -2734,6 +3337,8 @@ class GoalSupervisor:
 
     @staticmethod
     def _summary(goal: Goal) -> str:
+        if goal.supervision.parked_reason:
+            return goal.supervision.parked_reason
         counts: dict[str, int] = {}
         for package in goal.work_packages:
             counts[package.state.value] = counts.get(package.state.value, 0) + 1

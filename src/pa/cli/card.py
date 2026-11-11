@@ -57,6 +57,28 @@ def create(
     _run(execute)
 
 
+@card_app.command("drop-active")
+def drop_active(
+    apply: Annotated[bool, typer.Option("--apply", help="Edit the cards; without it nothing is changed")] = False,
+) -> None:
+    """Drop the default `active` milestone from open completion requirements (dry-run unless --apply)."""
+
+    def execute():
+        from pa.execution import completion_migration
+
+        settings = get_settings()
+
+        def request(method, path, *, params=None, body=None, headers=None):
+            return _request(settings, method, path, params=params, body=body, headers=headers)
+
+        report = completion_migration.run(request, settings.subscribed_realms, apply=apply)
+        typer.echo(json.dumps(report, indent=2, default=str))
+        if not apply and report["eligible"]:
+            typer.echo(f"Dry run: {report['eligible']} card(s) would change. Re-run with --apply.", err=True)
+
+    _run(execute)
+
+
 @card_app.command("execution-defaults")
 def execution_defaults(card_id: str, selection_json: str | None = None) -> None:
     """Read inherited defaults, or explicitly save card defaults separately from dispatch."""

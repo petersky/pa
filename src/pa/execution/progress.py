@@ -6,7 +6,10 @@ import asyncio
 import hashlib
 import json
 import logging
+import random
 import re
+import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -44,6 +47,12 @@ MAX_FINAL_REPORT_BYTES = 64_000
 PROGRESS_HEARTBEAT_SECONDS = 15.0
 PROGRESS_RETRY_SECONDS = 3.0
 DERIVED_PROGRESS_COALESCE_SECONDS = 60.0
+# Dispatch lease protocol (negotiated in the materialize handshake). The fence
+# header travels on every target -> authority write; a 409 with the code below
+# tells a superseded holder to stop reporting.
+LEASE_PROTOCOL = "dispatch-lease/v1"
+LEASE_FENCE_HEADER = "X-PA-Lease-Fence"
+STALE_LEASE_FENCE_CODE = "stale_lease_fence"
 PROGRESS_LIVE_SECONDS = 45
 PROGRESS_DELAYED_SECONDS = 120
 
@@ -696,6 +705,19 @@ def derived_checkpoint(
     return None
 
 
+def stale_lease_detail(response: Any) -> dict[str, Any] | None:
+    """The ``stale_lease_fence`` detail of an authority 409, else ``None``."""
+    if getattr(response, "status_code", None) != 409:
+        return None
+    try:
+        detail = response.json().get("detail")
+    except (ValueError, AttributeError):
+        return None
+    if isinstance(detail, dict) and detail.get("code") == STALE_LEASE_FENCE_CODE:
+        return detail
+    return None
+
+
 @dataclass(frozen=True, slots=True)
 class ProgressDeliveryTarget:
     """Immutable routing fields needed to deliver one persisted payload."""
@@ -703,6 +725,9 @@ class ProgressDeliveryTarget:
     dispatch_id: str
     authority_instance_id: str
     authority_url: str
+    # The lease fence this (target) mirror was assigned; None when the lease
+    # protocol was not negotiated, so no fence header is sent.
+    lease_fence: int | None = None
 
 
 class ProgressService:
@@ -713,15 +738,29 @@ class ProgressService:
         store: Any,
         *,
         instance_id: str,
-        token: str,
+        token: str | Callable[[], str],
         async_runtime: AsyncRuntime | None = None,
         session_manager: Any = None,
         retry_seconds: float = PROGRESS_RETRY_SECONDS,
         heartbeat_seconds: float = PROGRESS_HEARTBEAT_SECONDS,
+        peer_post: Callable[..., Awaitable[httpx.Response | None]] | None = None,
+        retry_max_seconds: float | Callable[[], float] | None = None,
+        superseded_notifier: Callable[[str, dict[str, Any]], Awaitable[Any] | Any]
+        | None = None,
     ) -> None:
         self.store = store
         self.instance_id = instance_id
-        self.token = token
+        # Told ``(dispatch_id, detail)`` once when the authority reports that a
+        # newer lease fence superseded this instance's mirror.
+        self.superseded_notifier = superseded_notifier
+        # A callable is read at send time so a rotated fleet token is picked up.
+        self._token_source = token
+        # Reaches the authority through its current endpoints (with failover).
+        self.peer_post = peer_post
+        # Longest pause after repeated delivery failures to one authority. None
+        # keeps the legacy flat ``retry_seconds`` cadence.
+        self._retry_max_source = retry_max_seconds
+        self._authority_backoff: dict[str, tuple[int, float]] = {}
         self.async_runtime = async_runtime
         self.session_manager = session_manager
         self.retry_seconds = retry_seconds
@@ -751,6 +790,31 @@ class ProgressService:
                 operation, call, *args, **kwargs
             )
         return await asyncio.to_thread(call, *args, **kwargs)
+
+    @property
+    def token(self) -> str:
+        source = self._token_source
+        return str((source() if callable(source) else source) or "")
+
+    def _backing_off(self, authority_instance_id: str) -> bool:
+        state = self._authority_backoff.get(authority_instance_id)
+        return bool(state and state[1] > time.monotonic())
+
+    def _note_delivery(self, authority_instance_id: str, ok: bool) -> None:
+        """Back off per authority; one failing peer must not be retried per-event."""
+        if ok:
+            self._authority_backoff.pop(authority_instance_id, None)
+            return
+        source = self._retry_max_source
+        cap = source() if callable(source) else source
+        if cap is None:
+            return
+        failures = (self._authority_backoff.get(authority_instance_id) or (0, 0.0))[0] + 1
+        ceiling = min(float(cap), self.retry_seconds * (2 ** min(failures, 20)))
+        delay = random.uniform(ceiling / 2, ceiling)
+        self._authority_backoff[authority_instance_id] = (
+            failures, time.monotonic() + max(delay, self.retry_seconds),
+        )
 
     def _http_client(self) -> httpx.AsyncClient:
         if self._client is None:
@@ -1181,13 +1245,30 @@ class ProgressService:
     async def _queue_periodic_heartbeats(self) -> None:
         if not self.session_manager:
             return
+        window = getattr(
+            getattr(self.session_manager, "settings", None),
+            "agent_heartbeat_activity_window_seconds",
+            0,
+        )
+        window = float(window) if isinstance(window, (int, float)) and not isinstance(window, bool) else 0.0
         for runtime in self.session_manager.list_runtimes():
             if not runtime.prompting:
+                continue
+            quiet_reader = getattr(runtime, "provider_quiet_seconds", None)
+            quiet = quiet_reader() if callable(quiet_reader) else None
+            if window > 0 and isinstance(quiet, (int, float)) and quiet > window:
+                # "Agent active." is only true while the provider is producing
+                # output. A silent (possibly hung) provider must let dispatch
+                # freshness decay to stale instead of reading live forever.
                 continue
             record = await self._offload(
                 "progress.dispatch_read", self.store.by_session, runtime.session_id
             )
-            if record and record.progress_protocol_version == PROGRESS_SCHEMA_VERSION:
+            if (
+                record
+                and record.progress_protocol_version == PROGRESS_SCHEMA_VERSION
+                and getattr(record, "lease_superseded_at", None) is None
+            ):
                 phase = (
                     record.latest_progress.phase
                     if record.latest_progress
@@ -1221,6 +1302,11 @@ class ProgressService:
                     self.instance_id,
                 )
                 for record, payload in pending:
+                    # Custom readers may yield opaque targets; only a known
+                    # authority can be backed off.
+                    authority = getattr(record, "authority_instance_id", None)
+                    if authority and self._backing_off(authority):
+                        continue
                     await self._send(record, payload)
             except asyncio.CancelledError:
                 raise
@@ -1231,6 +1317,41 @@ class ProgressService:
                 await asyncio.wait_for(self._wake.wait(), timeout=self.retry_seconds)
             except TimeoutError:
                 pass
+
+    async def _superseded(self, dispatch_id: str, detail: dict[str, Any]) -> None:
+        current = detail.get("current_fence")
+        marked = await self._offload(
+            "progress.lease_superseded",
+            self.store.mark_lease_superseded,
+            dispatch_id,
+            current if isinstance(current, int) else None,
+        )
+        if marked is not None and marked.lease_superseded_at and self.superseded_notifier:
+            try:
+                result = self.superseded_notifier(dispatch_id, dict(detail))
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception:
+                logger.exception("Superseded-lease notice failed for %s", dispatch_id)
+
+    async def _post(
+        self,
+        record: Any,
+        payload: DispatchProgressEventV1 | DispatchProgressHeartbeatV1,
+        headers: dict[str, str],
+    ) -> httpx.Response:
+        path = f"api/fleet/dispatch/{record.dispatch_id}/progress"
+        if self.peer_post is not None:
+            routed = await self.peer_post(
+                record, path, json=payload.transport_dict(), headers=headers
+            )
+            if routed is not None:
+                return routed
+        return await self._http_client().post(
+            f"{record.authority_url.rstrip('/')}/{path}",
+            json=payload.transport_dict(),
+            headers=headers,
+        )
 
     async def _send(
         self,
@@ -1249,15 +1370,13 @@ class ProgressService:
             "Idempotency-Key": payload.idempotency_key,
             "X-PA-Origin-Instance-ID": self.instance_id,
         }
+        fence = getattr(record, "lease_fence", None)
+        if getattr(record, "lease_protocol", LEASE_PROTOCOL) and fence:
+            headers[LEASE_FENCE_HEADER] = str(fence)
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
         try:
-            request = self._http_client().post(
-                f"{record.authority_url.rstrip('/')}/api/fleet/dispatch/"
-                f"{record.dispatch_id}/progress",
-                json=payload.transport_dict(),
-                headers=headers,
-            )
+            request = self._post(record, payload, headers)
             response = (
                 await self.async_runtime.observe(
                     "http.dispatch_progress", request, timeout=15.0
@@ -1266,6 +1385,7 @@ class ProgressService:
                 else await request
             )
             if response.status_code in {200, 208}:
+                self._note_delivery(record.authority_instance_id, True)
                 await self._offload(
                     "progress.delivery_ack",
                     self.store.mark_progress_delivered,
@@ -1273,9 +1393,18 @@ class ProgressService:
                     payload.idempotency_key,
                 )
                 return
+            stale = stale_lease_detail(response)
+            if stale is not None:
+                # Not a transport failure: a newer assignment owns this dispatch.
+                # Stop reporting (the mirror is marked superseded) instead of
+                # retrying forever.
+                self._note_delivery(record.authority_instance_id, True)
+                await self._superseded(record.dispatch_id, stale)
+                return
             error = f"HTTP {response.status_code}: {response.text[:200]}"
         except Exception as exc:  # noqa: BLE001 - delivery failures remain retryable
             error = f"{type(exc).__name__}: {exc}"
+        self._note_delivery(record.authority_instance_id, False)
         await self._offload(
             "progress.delivery_fail",
             self.store.mark_progress_delivery_failed,

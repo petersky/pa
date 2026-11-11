@@ -110,6 +110,15 @@ diffs, and audits.
 | `PA_TELEGRAM_WEBHOOK_URL` | empty | Public HTTPS callback URL |
 | `PA_TELEGRAM_ALLOWED_USER_IDS` | `[]` | Telegram sender allowlist |
 | `PA_TELEGRAM_ALLOWED_CONVERSATION_IDS` | `[]` | Telegram chat allowlist |
+| `PA_TELEGRAM_PUSH_ENABLED` | `false` | Push high-priority notifications to the owner chat |
+| `PA_TELEGRAM_OWNER_CHAT_ID` | empty | Chat that receives pushes and may answer them |
+| `PA_TELEGRAM_OWNER_USER_ID` | empty | Only user allowed to answer (private chat: same as chat ID) |
+| `PA_TELEGRAM_OWNER_PRINCIPAL` | `user:local` | PA principal replies act as |
+| `PA_TELEGRAM_PUSH_MIN_PRIORITY` | `high` | Lowest priority pushed |
+| `PA_TELEGRAM_RENOTIFY_HOURS` / `_MAX` | `4` / `3` | Reminder interval and cap |
+| `PA_TELEGRAM_PUSH_RATE_LIMIT_PER_HOUR` | `20` | Global push cap |
+
+See `INTERACTIONS_AND_NOTIFICATIONS.md` (Telegram push and replies).
 | `PA_DISCORD_BOT_TOKEN` | empty | Discord bot/Gateway credential |
 | `PA_DISCORD_APPLICATION_PUBLIC_KEY` | empty | Event Webhook verification key |
 | `PA_DISCORD_ALLOWED_USER_IDS` | `[]` | Discord sender allowlist |

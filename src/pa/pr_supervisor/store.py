@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from collections import Counter
 from collections.abc import Iterator
@@ -22,6 +23,8 @@ from pa.pr_supervisor.models import (
     PRWatchStatus,
     utcnow,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _dt(value: str | None) -> datetime | None:
@@ -48,6 +51,9 @@ class PRSupervisorStore:
 
     def __init__(self, db_path: Path) -> None:
         self.completion_capabilities = None
+        # Optional ``callable(PRWatch)`` told after a watch's status or state is
+        # written, so the Workshop floor can move cards without refetching.
+        self.watch_observer = None
         self.completion_card_db_path: Path | None = None
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -326,7 +332,16 @@ class PRSupervisorStore:
                 """,
                 self._watch_values(watch),
             )
-        return self.get_watch(watch.id) or watch
+        return self._observed(self.get_watch(watch.id) or watch)
+
+    def _observed(self, watch: PRWatch | None) -> PRWatch | None:
+        observer = self.watch_observer
+        if observer is not None and watch is not None:
+            try:
+                observer(watch)
+            except Exception:  # Observation must never fail a durable write.
+                logger.exception("PR watch observer failed watch=%s", watch.id)
+        return watch
 
     def _watch_values(self, watch: PRWatch) -> tuple[Any, ...]:
         return (
@@ -554,18 +569,74 @@ class PRSupervisorStore:
                 changed = """EXISTS (SELECT 1 FROM completion_cards.cards AS card
                     WHERE card.id=pr_watches.card_id AND card.realm_id=pr_watches.realm_id
                     AND card.updated_at != COALESCE(json_extract(state_json, '$.card_completion_version'), ''))"""
+            # One representative (the newest merged watch) per card: a card with
+            # many merged watches is evaluated once per pass, and the result is
+            # applied to its siblings by propagate_card_completion().
             rows = conn.execute(
-                f"""SELECT * FROM pr_watches
-                   WHERE status='merged' AND card_id IS NOT NULL
-                     AND COALESCE(json_extract(state_json, '$.card_lane'), '') != 'done'
-                     AND (COALESCE(json_extract(state_json, '$.card_disposition.reason_code'), '') NOT IN ('acceptance_pending', 'completion_owner_unconfigured', 'verification_pending')
-                          OR {changed})
-                     AND (json_extract(state_json, '$.card_completion_retry.next_retry_at') IS NULL
-                          OR json_extract(state_json, '$.card_completion_retry.next_retry_at') <= ?)
+                f"""SELECT * FROM (
+                     SELECT pr_watches.*, ROW_NUMBER() OVER (
+                         PARTITION BY realm_id, card_id
+                         ORDER BY updated_at DESC, id DESC) AS card_rank
+                     FROM pr_watches
+                     WHERE status='merged' AND card_id IS NOT NULL
+                       AND COALESCE(json_extract(state_json, '$.card_lane'), '') != 'done'
+                       AND json_extract(state_json, '$.card_completion_orphan') IS NULL
+                       AND (COALESCE(json_extract(state_json, '$.card_disposition.reason_code'), '') NOT IN ('acceptance_pending', 'completion_owner_unconfigured', 'verification_pending')
+                            OR {changed})
+                       AND (json_extract(state_json, '$.card_completion_retry.next_retry_at') IS NULL
+                            OR json_extract(state_json, '$.card_completion_retry.next_retry_at') <= ?)
+                   ) WHERE card_rank = 1
                    ORDER BY updated_at, id LIMIT ?""",
                 ((now or utcnow()).isoformat(), max(1, min(int(limit), 100))),
             ).fetchall()
         return [self._row_to_watch(row) for row in rows]
+
+    _CARD_COMPLETION_STATE_KEYS = (
+        "card_lane",
+        "card_completion_version",
+        "card_disposition",
+        "card_completion_retry",
+        "card_completion_orphan",
+    )
+
+    def propagate_card_completion(self, watch_id: str) -> list[PRWatch]:
+        """Copy one watch's card-completion outcome to its card's other merged watches.
+
+        The card is evaluated once per pass (on the representative); every
+        sibling merged watch that is not already Done adopts the same outcome so
+        it stops re-entering the due queue on every card change.
+        """
+        now = utcnow()
+        updated: list[str] = []
+        with self._conn(immediate=True) as conn:
+            row = conn.execute(
+                "SELECT * FROM pr_watches WHERE id = ?", (watch_id,)
+            ).fetchone()
+            if not row or not row["card_id"]:
+                return []
+            source = self._row_to_watch(row).state
+            siblings = conn.execute(
+                """SELECT * FROM pr_watches
+                   WHERE realm_id = ? AND card_id = ? AND status = 'merged' AND id != ?
+                     AND COALESCE(json_extract(state_json, '$.card_lane'), '') != 'done'""",
+                (row["realm_id"], row["card_id"], watch_id),
+            ).fetchall()
+            for sibling_row in siblings:
+                sibling = self._row_to_watch(sibling_row)
+                state = dict(sibling.state)
+                for key in self._CARD_COMPLETION_STATE_KEYS:
+                    if key in source:
+                        state[key] = source[key]
+                    else:
+                        state.pop(key, None)
+                if state == sibling.state:
+                    continue
+                conn.execute(
+                    "UPDATE pr_watches SET state_json = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps(state), now.isoformat(), sibling.id),
+                )
+                updated.append(sibling.id)
+        return [w for w in (self.get_watch(item) for item in updated) if w]
 
     def list_watch_page(
         self,
@@ -995,10 +1066,27 @@ class PRSupervisorStore:
                 # Keep every effect/destination/policy binding immutable, but do
                 # not make an expired worker lease part of the semantic identity.
                 lease_keys = {"owner_instance_id", "fence_token", "lease_version"}
+                # An action_required event key names the *repair* (repair
+                # fingerprint + epoch), not the gate condition that happened to
+                # be observed when it was issued. Unrelated checks/approvals can
+                # change the condition fingerprint, condition version and prompt text
+                # while the same repair is outstanding.
+                # Those fields are therefore rebinding-only for action_required;
+                # every destination/policy/kind binding stays immutable.
+                condition_keys = (
+                    {
+                        "condition_fingerprint",
+                        "condition_version",
+                        "head_sha",
+                        "content_digest",
+                    }
+                    if semantic.get("effect_kind") == "action_required"
+                    else set()
+                )
                 stable_semantic = {
                     key: value
                     for key, value in semantic.items()
-                    if key not in lease_keys
+                    if key not in lease_keys and key not in condition_keys
                 }
                 prior_stable_semantic = {
                     key: prior.get(key) for key in stable_semantic
@@ -1007,8 +1095,12 @@ class PRSupervisorStore:
                     raise StaleFenceError(
                         f"event key belongs to different effect for watch {watch_id}"
                     )
+                rebound = any(
+                    prior.get(key) != semantic.get(key) for key in condition_keys
+                )
                 if prior.get("state") == "accepted" or (
                     prior.get("state") == "prepared"
+                    and not rebound
                     and datetime.fromisoformat(str(prior["expires_at"])) > now
                 ):
                     return watch, prior
@@ -1083,7 +1175,7 @@ class PRSupervisorStore:
         updated = self.get_watch(watch_id)
         if not updated:
             raise KeyError(watch_id)
-        return updated
+        return self._observed(updated)
 
     def release_lease(self, watch_id: str, instance_id: str, fence_token: int) -> bool:
         with self._conn(immediate=True) as conn:
@@ -1245,7 +1337,7 @@ class PRSupervisorStore:
                 ),
             )
         self.increment_metric("poll_errors")
-        return self.get_watch(watch_id)
+        return self._observed(self.get_watch(watch_id))
 
     def set_terminal(
         self,
@@ -1329,7 +1421,7 @@ class PRSupervisorStore:
                     watch_id,
                 ),
             )
-        return self.get_watch(watch_id)
+        return self._observed(self.get_watch(watch_id))
 
     def append_event(self, event: PRWatchEvent) -> bool:
         try:

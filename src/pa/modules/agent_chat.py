@@ -676,6 +676,13 @@ class ConfigBody(BaseModel):
 class ReorderBody(BaseModel):
     prompt_ids: list[str] = Field(default_factory=list)
 
+    @field_validator("prompt_ids")
+    @classmethod
+    def _unique_prompt_ids(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("prompt_ids must not contain duplicates")
+        return value
+
 
 class RecoverSessionBody(BaseModel):
     provider: str | None = None
@@ -3681,6 +3688,7 @@ async def _submit_dispatch_followup(
     from pa.modules.fleet import _merge_dispatch_followup_operation
 
     key = body.idempotency_key
+    target_instance_id = request.app.state.ctx.settings.instance_id
     if body.dispatch_prompt_protocol != PROMPT_IDENTITY_PROTOCOL:
         raise HTTPException(409, detail={
             "code": "dispatch_prompt_protocol_required", "recoverable": True,
@@ -3756,6 +3764,21 @@ async def _submit_dispatch_followup(
                 current.prompt_ack = {**response, "event_type": accepted.event_type,
                                       "event_id": accepted.id, "event_seq": accepted.seq}
                 current.prompt_acknowledged_at = accepted.created_at
+                # On a target that is not the authority this is the only place
+                # its mirror record can learn the work started: the authority
+                # drives its own record to ``running`` but never the target's.
+                # Without this the mirror stays ``starting_session``, so the
+                # completion path (running/completion_pending only) never
+                # queues a /complete and the authority waits forever.
+                if (current.authority_instance_id != target_instance_id
+                        and current.state in {"queued", "materializing", "provisioning",
+                                             "starting_session", "delivering_prompt"}):
+                    ledger.apply_transition(
+                        current, "running", "Prompt accepted by the intended session.",
+                        detail={"session_id": session_id, "event_id": accepted.id,
+                                "event_seq": accepted.seq, "event_type": accepted.event_type,
+                                "followup": False, "target_mirror": True},
+                    )
             await _runtime_offload(
                 runtime, "dispatch.initial_prompt_ack", ledger.mutate_current,
                 record.dispatch_id, mutate=acknowledge, wait_for_completion=True,
@@ -4203,7 +4226,11 @@ async def _session_prompt_owned(request: Request, session_id: str, body: PromptB
 @router.post("/sessions/{session_id}/cancel")
 async def session_cancel(request: Request, session_id: str) -> dict:
     runtime = await _runtime_or_404_async(request, session_id)
-    await runtime.cancel(pause_queue=False)
+    # Stop is the user's explicit "halt": queued prompts wait until Resume.
+    # With nothing queued there is nothing to hold, and pausing would strand the
+    # next message the user types behind an invisible hold. Agent-internal
+    # interrupts call cancel(pause_queue=False) themselves.
+    await runtime.cancel(pause_queue=runtime.has_work_to_hold())
     return {"ok": True, "queue_paused": runtime.queue_paused}
 
 
@@ -4947,7 +4974,15 @@ async def queue_pause(request: Request, session_id: str) -> dict:
 @router.post("/sessions/{session_id}/queue/resume")
 async def queue_resume(request: Request, session_id: str) -> dict:
     runtime = await _runtime_or_404_async(request, session_id)
-    runtime.resume_queue()
+    try:
+        runtime.resume_queue()
+    except ValueError as exc:
+        # Recovery/delivery fences are a conflict with current state, not a
+        # server fault; the queue stays paused.
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "delivery_not_allowed", "message": str(exc)},
+        ) from exc
     await _drain_runtime_transcripts(runtime)
     return {"queue_paused": False}
 
@@ -4965,6 +5000,16 @@ async def queue_remove(request: Request, session_id: str, prompt_id: str) -> dic
     runtime = await _runtime_or_404_async(request, session_id)
     removed = runtime.remove_queued(prompt_id)
     if not removed:
+        if runtime.prompt_started(prompt_id):
+            # Lost the race with the drain: the prompt is already running or
+            # done, which the client treats as "gone" and refreshes.
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "already_started",
+                    "message": "The prompt already left the queue.",
+                },
+            )
         raise HTTPException(status_code=404, detail="Queued prompt not found")
     await _drain_runtime_transcripts(runtime)
     return {"ok": True}

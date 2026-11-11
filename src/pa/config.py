@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     fleet_owner_url: str = ""
     # Single fenced PR-supervisor lease authority. Empty follows fleet_owner_url.
     pr_supervisor_authority_url: str = ""
+    # Wall-clock budget for one merged-card reconcile pass inside the PR
+    # supervisor loop. The pre-budget behaviour was unbounded (up to 100 watches).
+    pr_supervisor_reconcile_budget_seconds: float = Field(default=5.0, ge=0.5, le=60)
+    # Missing-card completion attempts before a merged watch is marked orphaned
+    # and no longer retried. The pre-limit behaviour retried hourly forever.
+    pr_supervisor_orphan_card_max_attempts: int = Field(default=8, ge=1, le=100)
     instance_url: str = ""
     subscribed_realms: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["default"]
@@ -73,6 +79,35 @@ class Settings(BaseSettings):
     dispatch_provider_queue_capacities: dict[str, DispatchQueueCapacity] = Field(
         default_factory=dict
     )
+    # A pre-start capacity reservation older than one hour is renewed while the
+    # dispatch is queued or still progressing between stages; a stage hung for a
+    # full hour is failed. True restores the old behaviour: fail every
+    # reservation that is not running after one hour.
+    dispatch_capacity_reservation_hard_expiry: bool = False
+    # Re-place a lost remote dispatch automatically (False = leave it failed for manual retry).
+    dispatch_reoffer_lost_remote: bool = True
+    dispatch_lost_remote_seconds: int = Field(default=21600, ge=0, le=90 * 24 * 3600)
+    # Silence before an authority asks the target about a running remote dispatch (0 = never; old behaviour).
+    dispatch_stale_running_seconds: int = Field(default=1800, ge=0, le=30 * 24 * 3600)
+    # Dispatch lease: a running remote dispatch whose target negotiated the lease is
+    # live while its lease is fresh; progress, heartbeats and a confirmed probe renew it
+    # (0 = grant no leases; older stale-running behaviour only).
+    dispatch_lease_ttl_seconds: int = Field(default=300, ge=0, le=7 * 24 * 3600)
+    # Extra time an expired lease is given when the target cannot even answer a status
+    # probe, before the dispatch is failed recoverably and re-offered.
+    dispatch_lease_grace_seconds: int = Field(default=300, ge=0, le=7 * 24 * 3600)
+    # Cap of the progress-delivery backoff (old behaviour: flat 3 s).
+    progress_delivery_retry_max_seconds: int = Field(default=300, ge=1, le=86400)
+    # Retry window for 404/401/unknown_dispatch (0 = permanent after one try, as before).
+    completion_unknown_dispatch_grace_seconds: int = Field(default=3600, ge=0, le=30 * 24 * 3600)
+    completion_delivery_notify_after_attempts: int = Field(default=12, ge=0, le=1_000_000)
+    # 0 retries forever; 12 restores the old give-up-after-12 behaviour.
+    completion_delivery_max_attempts: int = Field(default=0, ge=0, le=1_000_000)
+    # Cap of the completion-delivery backoff (it retries indefinitely; old cap 300).
+    completion_delivery_retry_max_seconds: int = Field(default=600, ge=5, le=86400)
+    # Worker re-executions allowed for one dispatch before it fails recoverably;
+    # 0 restores the old unlimited behaviour.
+    dispatch_max_stage_attempts: int = Field(default=5, ge=0, le=100)
     relay_enabled: bool = False
 
     # Optional always-on coordination plane. The endpoint implements PA's
@@ -115,6 +150,16 @@ class Settings(BaseSettings):
     telegram_allowed_conversation_ids: Annotated[list[str], NoDecode] = Field(
         default_factory=list
     )
+    # Outbound Telegram push for high-priority notifications, and the owner-only
+    # reply path that answers them. Off until the owner opts in and names the chat.
+    telegram_push_enabled: bool = False
+    telegram_owner_chat_id: str = ""
+    telegram_owner_user_id: str = ""
+    telegram_owner_principal: str = "user:local"
+    telegram_push_min_priority: Literal["low", "normal", "high", "urgent"] = "high"
+    telegram_renotify_hours: float = Field(default=4.0, ge=0, le=720)
+    telegram_renotify_max: int = Field(default=3, ge=0, le=20)
+    telegram_push_rate_limit_per_hour: int = Field(default=20, ge=1, le=1000)
     discord_bot_token: str = ""
     discord_application_public_key: str = ""
     discord_allowed_user_ids: Annotated[list[str], NoDecode] = Field(
@@ -141,10 +186,37 @@ class Settings(BaseSettings):
     # Provider processes are comparatively expensive. Keep restart recovery
     # bounded even when many sessions have durable unfinished work.
     agent_recovery_concurrency: int = Field(default=2, ge=1, le=16)
+    # PA may take over a card's worktree lease from a session that is closed or
+    # recovery-blocked with no live runtime, after saving its uncommitted work
+    # to a rescue ref. Turn off to keep the "resume its owner" refusal.
+    agent_reclaim_dead_session_leases: bool = True
     # Idle sessions remain follow-up capable for one day unless a durable
     # terminal workflow proves that they can close sooner.
     agent_session_idle_retention_hours: float = Field(default=24.0, ge=0.01, le=8760)
     agent_session_sweep_seconds: float = Field(default=30.0, ge=1.0, le=3600)
+    # --- Turn liveness and provider-error resilience -------------------------
+    # A turn may run for as long as it needs. Only INACTIVITY (no real ACP
+    # output: message/thought chunks, tool calls, plans, usage, permission
+    # requests) is bounded. Time spent waiting on a pending human permission or
+    # elicitation never counts. 0 disables the inactivity deadline.
+    agent_turn_inactivity_timeout_seconds: float = Field(default=1800.0, ge=0, le=604800)
+    # After the inactivity deadline PA sends session/cancel and waits this long
+    # for the provider to end the turn before killing the provider process.
+    agent_turn_cancel_grace_seconds: float = Field(default=60.0, ge=0, le=3600)
+    # Bound on ACP initialize / session/new / session/load. 0 disables.
+    agent_connect_timeout_seconds: float = Field(default=180.0, ge=0, le=3600)
+    # A provider error that retrying can cure (rate limit, quota, overload,
+    # transient 5xx) re-drains the queue after an exponentially growing delay.
+    agent_retry_base_seconds: float = Field(default=30.0, ge=1, le=3600)
+    agent_retry_cap_seconds: float = Field(default=900.0, ge=1, le=86400)
+    # Attempt cap for retryable errors other than rate limits / quota (those keep
+    # waiting with no cap). After the cap the owner is notified.
+    agent_retry_max_attempts: int = Field(default=5, ge=1, le=100)
+    # Notify the owner once when a rate limit / quota wait outlasts this. 0 = never.
+    agent_rate_limit_notify_after_seconds: float = Field(default=1800.0, ge=0, le=604800)
+    # The "Agent active." progress heartbeat only counts while the provider
+    # produced real output within this window. 0 keeps the heartbeat unconditional.
+    agent_heartbeat_activity_window_seconds: float = Field(default=300.0, ge=0, le=86400)
     # Bounded local cruft cleanup. Does not delete cards, sessions, or objects/.
     maintenance_interval_seconds: int = Field(
         default=24 * 60 * 60, ge=60, le=7 * 24 * 60 * 60
@@ -189,11 +261,25 @@ class Settings(BaseSettings):
 
     # Bounded post-turn evaluation and automatic follow-up policy. Evaluators
     # remain read-only; PA validates and executes eligible catalog actions.
+    # The automatic follow-up budget is a runaway-loop guard, not a work limit:
+    # it is high enough that a single card finishes end to end without an
+    # operator approval. Set it to 2 to restore the previous behaviour.
     post_turn_evaluator_max_attempts: int = Field(default=2, ge=1, le=5)
-    post_turn_max_automatic_followups: int = Field(default=2, ge=0, le=10)
+    post_turn_max_automatic_followups: int = Field(default=25, ge=0, le=1000)
     post_turn_evaluation_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
     post_turn_retry_seconds: float = Field(default=15.0, gt=0, le=3600)
     post_turn_escalation_threshold: int = Field(default=2, ge=1, le=10)
+    # Follow-through: a background worker executes the evaluator's recommended
+    # actions that need no approval, within the budget above, and raises a
+    # manual-review notification when it cannot. False restores the previous
+    # record-only behaviour.
+    post_turn_worker_enabled: bool = True
+    # Same-session prompts telling an agent why a Done claim was downgraded to
+    # Waiting, per card. 0 turns the feedback off.
+    post_turn_downgrade_feedback_max: int = Field(default=2, ge=0, le=20)
+    # A card turn that never produced a valid disposition after reconciliation is
+    # moved to Waiting and the owner is notified. False restores the quiet end.
+    completion_missing_disposition_escalates: bool = True
 
     # Developer / debug
     debug: bool = False
@@ -229,6 +315,8 @@ class Settings(BaseSettings):
 
     blocking_slow_call_seconds: float = Field(default=0.5, gt=0, le=60)
     event_loop_probe_interval: float = Field(default=0.1, gt=0, le=10)
+    # How long the shared Workshop snapshot is reused across live subscribers.
+    workshop_snapshot_ttl_seconds: float = Field(default=1.5, ge=0, le=30)
 
     # Resource telemetry. Samples are deliberately isolated from pa.db and realm
     # sync; an empty database path resolves to <data_dir>/telemetry.db.
@@ -244,6 +332,15 @@ class Settings(BaseSettings):
     telemetry_per_session_enabled: bool = True
     telemetry_ui_refresh_seconds: float = Field(default=5.0, ge=2.0, le=300)
     telemetry_default_report_range: str = "1h"
+    # Workshop page. ``floor`` opens the workshop-floor view (stations with
+    # agents walking between them); ``list`` opens the compact list. Each browser
+    # can still toggle and remembers its own choice.
+    workshop_default_view: Literal["floor", "list"] = "floor"
+    # Show chat (non-card) agents on the Workshop floor.
+    workshop_floor_chat_agents: bool = True
+    # ``auto`` walks agents between stations unless the browser asks for reduced
+    # motion; ``off`` always snaps them and only updates the station counts.
+    workshop_floor_motion: Literal["auto", "off"] = "auto"
 
     # Verified authoritative metadata backups. A blank destination resolves to
     # a private sibling of data_dir, never beneath the live data directory.
@@ -265,6 +362,32 @@ class Settings(BaseSettings):
     # Stalled, merged cards whose acceptance principal is the local operator are handed to the
     # independent verifier instead of waiting on a worker that has already ended. 0 disables it.
     completion_auto_verify_stalled_seconds: int = Field(default=24 * 60 * 60, ge=0, le=365 * 24 * 60 * 60)
+    # Durable goals.
+    # Seconds without real progress (heartbeat, checkpoint, queue movement) before
+    # a goal's in-flight work package is reported as drifting / stalled and blocked.
+    # 0 restores the previous behaviour, which counted 30 s supervision cycles
+    # (about 90 s / 180 s).
+    goal_drifting_after_seconds: int = Field(default=2 * 60 * 60, ge=0, le=30 * 24 * 60 * 60)
+    goal_stalled_after_seconds: int = Field(default=8 * 60 * 60, ge=0, le=30 * 24 * 60 * 60)
+    # Let the signed-in owner record the completion audit on a single-user instance
+    # (never when the audit would be by the executing service).
+    goal_owner_may_audit: bool = False
+    # `active` is a deliberate milestone, not a default one: a declaration only keeps it when it is
+    # explicitly selected (CompletionRequirement.include_active). True restores the old behaviour.
+    completion_active_milestone_default: bool = False
+    # relaxed: a verifier is independent when it is a different session and a different service
+    # principal. strict: it must also run on a different instance and provider (the old rule).
+    completion_verifier_independence: Literal["relaxed", "strict"] = "relaxed"
+    # How many times a failed verification is fed back to the executor before PA stops and tells
+    # the owner. 0 restores the old behaviour (a failed verification is silently terminal).
+    completion_verifier_reengage_max: int = Field(default=1, ge=0, le=10)
+    # While a verification already ran for this requirement revision, wait until the newest integrated
+    # change is this old before verifying again, so a burst of merges is verified once, at its end.
+    completion_verification_quiet_seconds: int = Field(default=120, ge=0, le=24 * 60 * 60)
+    # Notify the owner when a card waits for their acceptance. False disables the notification.
+    completion_notify_acceptance_needed: bool = True
+    # Notify the owner when verification stays pending this long with nothing in flight (0 disables).
+    completion_verification_pending_notify_seconds: int = Field(default=2 * 60 * 60, ge=0, le=365 * 24 * 60 * 60)
     backup_compression: bool = True
     backup_io_limit_mib_per_second: float | None = Field(default=None, gt=0, le=10_000)
     backup_concurrency: Literal[1] = 1
@@ -314,6 +437,12 @@ class Settings(BaseSettings):
                     pass
             return [part.strip() for part in text.split(",") if part.strip()]
         return value
+
+    @field_validator("telegram_owner_chat_id", "telegram_owner_user_id", mode="before")
+    @classmethod
+    def _telegram_ids_as_text(cls, value: object) -> object:
+        # Provider IDs are numbers in JSON config files but identifiers in PA.
+        return str(value).strip() if isinstance(value, int) else value
 
     @model_validator(mode="after")
     def _normalize_legacy_settings(self) -> Settings:

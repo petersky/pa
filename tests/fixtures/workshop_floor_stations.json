@@ -1,0 +1,377 @@
+{
+ "shipping_recent_seconds": 1800,
+ "cases": [
+  {
+   "name": "admission pending queues",
+   "kind": "worker",
+   "input": {
+    "relationship": "reservation",
+    "bay_connected": true,
+    "dispatch_state": "admission_pending"
+   },
+   "station": "queue"
+  },
+  {
+   "name": "waiting capacity queues",
+   "kind": "worker",
+   "input": {
+    "relationship": "reservation",
+    "bay_connected": true,
+    "dispatch_state": "waiting_capacity"
+   },
+   "station": "queue"
+  },
+  {
+   "name": "blocked dispatch queues",
+   "kind": "worker",
+   "input": {
+    "relationship": "reservation",
+    "bay_connected": true,
+    "dispatch_state": "blocked"
+   },
+   "station": "queue"
+  },
+  {
+   "name": "queued dispatch queues",
+   "kind": "worker",
+   "input": {
+    "relationship": "reservation",
+    "bay_connected": true,
+    "dispatch_state": "queued"
+   },
+   "station": "queue"
+  },
+  {
+   "name": "checking sync queues",
+   "kind": "worker",
+   "input": {
+    "relationship": "reservation",
+    "bay_connected": true,
+    "dispatch_state": "checking_sync"
+   },
+   "station": "queue"
+  },
+  {
+   "name": "materializing is tooling-up",
+   "kind": "worker",
+   "input": {
+    "relationship": "reservation",
+    "bay_connected": true,
+    "dispatch_state": "materializing"
+   },
+   "station": "tooling"
+  },
+  {
+   "name": "provisioning is tooling-up",
+   "kind": "worker",
+   "input": {
+    "relationship": "reservation",
+    "bay_connected": true,
+    "dispatch_state": "provisioning"
+   },
+   "station": "tooling"
+  },
+  {
+   "name": "starting session is tooling-up",
+   "kind": "worker",
+   "input": {
+    "relationship": "reservation",
+    "bay_connected": true,
+    "dispatch_state": "starting_session"
+   },
+   "station": "tooling"
+  },
+  {
+   "name": "delivering prompt is tooling-up",
+   "kind": "worker",
+   "input": {
+    "relationship": "reservation",
+    "bay_connected": true,
+    "dispatch_state": "delivering_prompt"
+   },
+   "station": "tooling"
+  },
+  {
+   "name": "reservation on a down bay stays in the greyed bay",
+   "kind": "worker",
+   "input": {
+    "relationship": "reservation",
+    "bay_connected": false,
+    "dispatch_state": "queued"
+   },
+   "station": "offline"
+  },
+  {
+   "name": "prompting session works at the bench",
+   "kind": "worker",
+   "input": {
+    "relationship": "session",
+    "bay_connected": true,
+    "state": "working"
+   },
+   "station": "workbench"
+  },
+  {
+   "name": "pending permission goes to the bell",
+   "kind": "worker",
+   "input": {
+    "relationship": "session",
+    "bay_connected": true,
+    "state": "working",
+    "interaction": {
+     "kind": "permission",
+     "count": 1
+    }
+   },
+   "station": "bell"
+  },
+  {
+   "name": "pending operator input goes to the bell",
+   "kind": "worker",
+   "input": {
+    "relationship": "session",
+    "bay_connected": true,
+    "state": "quiet-active",
+    "interaction": {
+     "kind": "input",
+     "count": 1
+    }
+   },
+   "station": "bell"
+  },
+  {
+   "name": "recovery blocked goes to the infirmary",
+   "kind": "worker",
+   "input": {
+    "relationship": "session",
+    "bay_connected": true,
+    "state": "quiet-active",
+    "recovery": "blocked"
+   },
+   "station": "infirmary"
+  },
+  {
+   "name": "recoverable interrupted goes to the infirmary",
+   "kind": "worker",
+   "input": {
+    "relationship": "session",
+    "bay_connected": true,
+    "state": "quiet-active",
+    "recovery": "restoring"
+   },
+   "station": "infirmary"
+  },
+  {
+   "name": "deferred session is recovering",
+   "kind": "worker",
+   "input": {
+    "relationship": "session",
+    "bay_connected": true,
+    "state": "recovering"
+   },
+   "station": "infirmary"
+  },
+  {
+   "name": "failed session goes to the infirmary",
+   "kind": "worker",
+   "input": {
+    "relationship": "session",
+    "bay_connected": true,
+    "state": "failed"
+   },
+   "station": "infirmary"
+  },
+  {
+   "name": "lost connection goes to the infirmary",
+   "kind": "worker",
+   "input": {
+    "relationship": "session",
+    "bay_connected": true,
+    "state": "quiet-active",
+    "connection": "disconnected"
+   },
+   "station": "infirmary"
+  },
+  {
+   "name": "stale heartbeat on a reachable bay goes to the infirmary",
+   "kind": "worker",
+   "input": {
+    "relationship": "session",
+    "bay_connected": true,
+    "state": "stalled"
+   },
+   "station": "infirmary"
+  },
+  {
+   "name": "working agent on an unreachable bay is greyed, not stalled",
+   "kind": "worker",
+   "input": {
+    "relationship": "session",
+    "bay_connected": false,
+    "state": "working"
+   },
+   "station": "offline"
+  },
+  {
+   "name": "idle agent with a verification-pending card sits at the desk",
+   "kind": "worker",
+   "input": {
+    "relationship": "session",
+    "bay_connected": true,
+    "state": "quiet-active",
+    "verification": true
+   },
+   "station": "verification"
+  },
+  {
+   "name": "idle agent with an active PR watch is at the gantry",
+   "kind": "worker",
+   "input": {
+    "relationship": "session",
+    "bay_connected": true,
+    "state": "quiet-active",
+    "gantry": true
+   },
+   "station": "gantry"
+  },
+  {
+   "name": "prompting beats gantry",
+   "kind": "worker",
+   "input": {
+    "relationship": "session",
+    "bay_connected": true,
+    "state": "working",
+    "gantry": true
+   },
+   "station": "workbench"
+  },
+  {
+   "name": "idle connected session sits on the idle bench",
+   "kind": "worker",
+   "input": {
+    "relationship": "session",
+    "bay_connected": true,
+    "state": "quiet-active"
+   },
+   "station": "bench"
+  },
+  {
+   "name": "session with queued prompts waits on the bench",
+   "kind": "worker",
+   "input": {
+    "relationship": "session",
+    "bay_connected": true,
+    "state": "queued"
+   },
+   "station": "bench"
+  },
+  {
+   "name": "ended session is not on the floor",
+   "kind": "worker",
+   "input": {
+    "relationship": "session",
+    "bay_connected": true,
+    "state": "completed"
+   },
+   "station": null
+  },
+  {
+   "name": "inbox card without dispatch is at intake",
+   "kind": "card",
+   "input": {
+    "lane": "inbox",
+    "has_dispatch": false,
+    "has_session": false,
+    "presentation_state": null,
+    "gantry": false
+   },
+   "station": "intake"
+  },
+  {
+   "name": "inbox card with a dispatch is not at intake",
+   "kind": "card",
+   "input": {
+    "lane": "inbox",
+    "has_dispatch": true,
+    "has_session": false,
+    "presentation_state": null,
+    "gantry": false
+   },
+   "station": null
+  },
+  {
+   "name": "waiting card with verification pending is at the desk",
+   "kind": "card",
+   "input": {
+    "lane": "waiting",
+    "has_dispatch": false,
+    "has_session": false,
+    "presentation_state": "verification_pending",
+    "gantry": false
+   },
+   "station": "verification"
+  },
+  {
+   "name": "waiting card with acceptance pending is at the desk",
+   "kind": "card",
+   "input": {
+    "lane": "waiting",
+    "has_dispatch": false,
+    "has_session": false,
+    "presentation_state": "acceptance_pending",
+    "gantry": false
+   },
+   "station": "verification"
+  },
+  {
+   "name": "card with an active PR watch is at the gantry",
+   "kind": "card",
+   "input": {
+    "lane": "active",
+    "has_dispatch": false,
+    "has_session": false,
+    "presentation_state": null,
+    "gantry": true
+   },
+   "station": "gantry"
+  },
+  {
+   "name": "recently done card is shipping",
+   "kind": "card",
+   "input": {
+    "lane": "done",
+    "has_dispatch": false,
+    "has_session": false,
+    "presentation_state": null,
+    "gantry": false,
+    "updated_age_seconds": 60
+   },
+   "station": "shipping"
+  },
+  {
+   "name": "long done card is no longer on the floor",
+   "kind": "card",
+   "input": {
+    "lane": "done",
+    "has_dispatch": false,
+    "has_session": false,
+    "presentation_state": null,
+    "gantry": false,
+    "updated_age_seconds": 86400
+   },
+   "station": null
+  },
+  {
+   "name": "plain active card without agent is not placed",
+   "kind": "card",
+   "input": {
+    "lane": "active",
+    "has_dispatch": false,
+    "has_session": false,
+    "presentation_state": null,
+    "gantry": false
+   },
+   "station": null
+  }
+ ]
+}

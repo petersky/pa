@@ -13,6 +13,7 @@ from pa.goals.models import (
     GoalAudit,
     GoalAuditCreate,
     GoalCreate,
+    GoalDriftState,
     GoalEvidence,
     GoalEvidenceCreate,
     GoalMutationContext,
@@ -23,6 +24,7 @@ from pa.goals.models import (
     GoalSupervisionCheckpoint,
     GoalTransition,
     GoalWakeup,
+    WorkPackageState,
 )
 from pa.goals.projection import (
     find_goal_event_by_idempotency,
@@ -164,7 +166,9 @@ def goal_completion_findings(goal: Goal, *, now: datetime) -> list[str]:
     if audit is None:
         return ["an independently satisfied audit is required before achievement"]
     findings: list[str] = []
-    if not audit.independent or audit.auditor_principal == goal.owner_principal:
+    if not audit.independent or (
+        audit.auditor_principal == goal.owner_principal and not audit.owner_attested
+    ):
         findings.append("completion audit is not independent of the goal owner")
     if audit.verdict != CriterionVerdict.SATISFIED:
         findings.append("completion audit is not satisfied")
@@ -212,9 +216,12 @@ class GoalService:
         instance_id: str,
         *,
         clock: Callable[[], datetime] | None = None,
+        allow_owner_audit: bool = False,
     ) -> None:
         self.store = store
         self.instance_id = instance_id
+        # Single-user instances: the signed-in owner may record the completion audit.
+        self.allow_owner_audit = allow_owner_audit
         self._clock = clock or (lambda: datetime.now(UTC))
 
     @serialized_goal_mutation
@@ -341,6 +348,9 @@ class GoalService:
                     )
             previous = goal.state
             goal.state = change.state
+            if change.state in {GoalState.ACTIVE, GoalState.READY}:
+                # An operator resuming the goal releases a supervisor hold.
+                goal.supervision.parked_reason = ""
             if change.progress_summary is not None:
                 goal.progress_summary = change.progress_summary
             return {
@@ -472,9 +482,14 @@ class GoalService:
                 raise GoalConflict(
                     "audit principal must match the authenticated mutation actor"
                 )
-            if (
-                not change.independent
-                or context.actor_principal == goal.owner_principal
+            owner_attested = (
+                context.actor_principal == goal.owner_principal
+                and self.allow_owner_audit
+                and context.actor_principal.startswith(("user:", "role:admin"))
+            )
+            if not change.independent or (
+                context.actor_principal == goal.owner_principal
+                and not owner_attested
             ):
                 raise GoalConflict(
                     "completion audit must be independent of the goal owner"
@@ -534,6 +549,7 @@ class GoalService:
                     else None
                 ),
                 independent=True,
+                owner_attested=owner_attested,
                 verdict=verdict,
                 criterion_verdicts=change.criterion_verdicts,
                 evidence_ids=change.evidence_ids,
@@ -734,6 +750,98 @@ class GoalService:
             return GoalActorRole.EXECUTOR
         return GoalActorRole.COORDINATOR
 
+    def retry_work_package(
+        self,
+        goal_id: str,
+        package_id: str,
+        context: GoalMutationContext,
+        *,
+        reason: str = "Retried by operator",
+    ) -> Goal:
+        """Operator retry of a BLOCKED or terminally FAILED work package.
+
+        A blocked package whose dispatch may still be alive gets a fresh stall
+        window (the supervisor reconciles the real Fleet state next cycle); a failed
+        or dispatch-less one goes back to READY with one more attempt. The goal's
+        supervisor hold is released and a BLOCKED goal resumes.
+        """
+
+        def mutate(goal: Goal) -> dict[str, Any]:
+            package = next(
+                (item for item in goal.work_packages if item.id == package_id), None
+            )
+            if package is None:
+                raise GoalConflict(f"unknown work package {package_id}")
+            if package.state not in {
+                WorkPackageState.BLOCKED,
+                WorkPackageState.FAILED,
+            }:
+                raise GoalConflict(
+                    f"only a blocked or failed work package can be retried, not "
+                    f"{package.state.value}"
+                )
+            previous = package.state
+            now = self._clock()
+            package.last_progress_at = now
+            package.last_progress_fingerprint = None
+            package.no_progress_cycles = 0
+            package.updated_at = now
+            if previous == WorkPackageState.BLOCKED and package.dispatch_ids:
+                package.state = WorkPackageState.DISPATCHED
+            else:
+                if previous == WorkPackageState.FAILED:
+                    package.max_attempts = min(20, max(package.max_attempts, package.attempts + 1))
+                package.state = WorkPackageState.READY
+            package.result_summary = reason[:8000]
+            goal.supervision.parked_reason = ""
+            goal.supervision.drift_state = GoalDriftState.ON_TRACK
+            goal.supervision.drift_reasons = []
+            if goal.state == GoalState.BLOCKED:
+                goal.state = GoalState.ACTIVE
+            return {
+                "work_package_id": package_id,
+                "from": previous.value,
+                "to": package.state.value,
+                "reason": reason,
+            }
+
+        return self._mutate(
+            goal_id,
+            context,
+            "goal.work_package_retried",
+            mutate,
+            operation={"work_package_id": package_id, "reason": reason},
+        )
+
+    def record_supervision_failure(
+        self,
+        goal_id: str,
+        context: GoalMutationContext,
+        *,
+        reason: str,
+        retry_after: datetime,
+    ) -> Goal:
+        """Durably count one failed supervision cycle and schedule its backoff."""
+
+        def mutate(goal: Goal) -> dict[str, Any]:
+            goal.supervision.consecutive_failures += 1
+            goal.supervision.last_failure_at = self._clock()
+            goal.supervision.last_failure_reason = reason[:2000]
+            goal.supervision.retry_after = retry_after
+            return {
+                "consecutive_failures": goal.supervision.consecutive_failures,
+                "reason": reason[:2000],
+                "retry_after": retry_after.isoformat(),
+            }
+
+        return self._mutate(
+            goal_id,
+            context,
+            "goal.supervision_failed",
+            mutate,
+            operation={"reason": reason[:2000], "retry_after": retry_after},
+        )
+
     def checkpoint_supervision(
         self,
         goal_id: str,
@@ -845,7 +953,11 @@ class GoalService:
             raise GoalConflict(
                 "goal mutation must execute on the durable control authority instance"
             )
-        if require_fence and goal.lease.active(self._clock()):
+        if (
+            require_fence
+            and goal.lease.active(self._clock())
+            and not self._operator_on_lease_holder(goal, context)
+        ):
             self._check_fence(goal, context)
         if require_fence and context.actor_principal.startswith("service:"):
             if not goal.lease.active(self._clock()):
@@ -887,6 +999,24 @@ class GoalService:
             raise GoalConflict(
                 "idempotency key already belongs to a different goal operation"
             )
+
+    def _operator_on_lease_holder(
+        self, goal: Goal, context: GoalMutationContext
+    ) -> bool:
+        """A signed-in operator acting on the controlling instance needs no fence.
+
+        The fence orders competing controllers. An operator control (Pause, edit,
+        retry) cannot carry the supervisor's fencing token, and requiring it made
+        every control fail while a supervisor lease was held. The optimistic
+        ``expected_version`` still serializes the operator against the supervisor,
+        whose own checkpoint then loses and whose side effects re-check the goal.
+        """
+
+        return bool(
+            context.actor_principal.startswith(("user:", "role:admin"))
+            and goal.lease.holder_instance_id == context.authority_instance_id
+            and context.authority_instance_id == self.instance_id
+        )
 
     @staticmethod
     def _check_fence(goal: Goal, context: GoalMutationContext) -> None:

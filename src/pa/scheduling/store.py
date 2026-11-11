@@ -402,17 +402,26 @@ class Ledger:
               WHERE o.state='pending' AND o.next_retry<=? AND s.deleted=0 AND s.cancelled=0
               AND json_extract(s.spec,'$.enabled')=1 ORDER BY next_retry LIMIT ?''', (now, limit))]
 
+    def occurrence_owner(self, oid):
+        """(owner, schedule_id) of an occurrence, or None."""
+        with self.connect() as db:
+            row = db.execute('SELECT s.owner AS owner, o.schedule_id AS schedule_id FROM occurrences o '
+                             'JOIN schedules s ON s.id=o.schedule_id WHERE o.id=?', (oid,)).fetchone()
+            return (row['owner'], row['schedule_id']) if row else None
+
     def finish(self, oid, now, *, accepted=False, error=None):
+        """Record one delivery attempt and return the occurrence's resulting state."""
         with self.connect() as db:
             row = db.execute('SELECT * FROM occurrences WHERE id=?', (oid,)).fetchone()
             if row['state'] not in {'pending', 'delivering'}:
-                return
+                return row['state']
             attempts = row['attempts'] + 1
             state = 'delivered' if accepted else ('failed' if attempts >= 8 else 'pending')
             db.execute('UPDATE occurrences SET state=?,attempts=?,next_retry=?,delivered_at=?,error=? WHERE id=?',
                        (state, attempts, now + min(3600, 2 ** attempts), now if accepted else None, error, oid))
             db.execute("UPDATE occurrences SET envelope='{}' WHERE schedule_id=? AND state IN ('delivered','cancelled','coalesced') AND id NOT IN (SELECT id FROM occurrences WHERE schedule_id=? ORDER BY rowid DESC LIMIT 1000)",
                        (row['schedule_id'], row['schedule_id']))
+            return state
 
     def history(self, owner, sid):
         with self.connect(read_only=True) as db:

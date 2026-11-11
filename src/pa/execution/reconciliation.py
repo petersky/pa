@@ -7,6 +7,7 @@ import copy
 import inspect
 import logging
 import random
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -31,6 +32,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 RECONCILIATION_SOURCE_PREFIX = "card-reconciliation:"
+# A prompted reconciliation whose record has not changed is re-examined this often.
+PROMPTED_RECHECK_SECONDS = 30.0
 RECONCILIATION_TERMINAL_STATES = {
     # Authority completion outcomes consumed by the target outbox. Terminal
     # means no reconciliation work remains, not that the card goal succeeded.
@@ -62,7 +65,33 @@ class CompletionReconciler:
         max_attempts: int = 30,
         retry_max_seconds: float = 300.0,
         rng: random.Random | None = None,
+        escalate_missing_disposition: Callable[[], bool] | None = None,
+        stall_notifier: Callable[[DispatchRecord, str], Any] | None = None,
+        sweep_seconds: float = 60.0,
+        sweep_min_age_seconds: float = 30.0,
+        session_unavailable_seconds: float | Callable[[], float] = 0.0,
+        abandoned_notifier: Callable[[DispatchRecord, str], Any] | None = None,
     ) -> None:
+        # The escalation/sweep knobs default to the old quiet behaviour so bare
+        # constructions (tests, tools) are unchanged; the fleet module wires the
+        # settings-driven values.
+        self.escalate_missing_disposition = escalate_missing_disposition
+        # Tells the owner a dispatch needs a person (missing disposition, or an
+        # abandoned reconciliation when no ``abandoned_notifier`` is given);
+        # must not raise.
+        self.stall_notifier = stall_notifier
+        # Dedicated notice for an abandoned reconciliation; falls back to
+        # ``stall_notifier`` when unset.
+        self.abandoned_notifier = abandoned_notifier
+        self.sweep_seconds = max(0.0, sweep_seconds)
+        self.sweep_min_age_seconds = max(0.0, sweep_min_age_seconds)
+        self._last_sweep = 0.0
+        # How long a prompted reconciliation may wait for a quiesced or
+        # disconnected session before the dispatch's own completion is delivered
+        # without it. 0 waits indefinitely (the previous behaviour).
+        self._session_unavailable_source = session_unavailable_seconds
+        # dispatch_id -> (reconciliation_updated_at, monotonic time last examined)
+        self._prompted_checked: dict[str, tuple[datetime | None, float]] = {}
         self.dispatch_store = dispatch_store
         self.agent = agent
         self.completion_outbox = completion_outbox
@@ -335,7 +364,9 @@ class CompletionReconciler:
             record.reconciliation_recoverable = False
             record.reconciliation_updated_at = datetime.now(UTC)
             await self._save(record)
-            return await self._queue_delivery(session_id, payload)
+            return await self._deliver_without_disposition(
+                record, session_id, payload
+            )
 
         record.completion_payload = payload
         record.card_disposition_error = error
@@ -366,10 +397,58 @@ class CompletionReconciler:
         )
         return bool(queued)
 
+    async def _deliver_without_disposition(
+        self, record: DispatchRecord, session_id: str, payload: dict[str, Any]
+    ) -> bool:
+        """Finish a turn that never produced a disposition without hiding it.
+
+        Reconciliation is out of attempts.  The completion is still delivered,
+        but it carries an explicit Waiting disposition (the authority applies it
+        under its usual lane rules, so a newer Done is preserved) and the owner
+        is told, instead of the card silently keeping its lane.
+        """
+        if not (
+            self.escalate_missing_disposition
+            and self.escalate_missing_disposition()
+            and record.card_id
+        ):
+            return await self._queue_delivery(session_id, payload)
+        why = (record.reconciliation_reason or "no valid disposition")[:600]
+        outcome = (
+            "The agent finished a turn but never reported a valid card "
+            f"disposition after reconciliation ({why}). Parked in Waiting for "
+            "review."
+        )[:4000]
+        payload = {
+            **payload,
+            "card_disposition": {
+                "contract": "pa.card-disposition/v1",
+                "lane": CardLane.WAITING.value,
+                "outcome": outcome,
+                "evidence": {},
+            },
+        }
+        payload.pop("card_disposition_error", None)
+        if self.stall_notifier:
+            try:
+                await self._offload(
+                    "reconciliation.stall_notify", self.stall_notifier, record, outcome
+                )
+            except Exception:
+                logger.exception(
+                    "Missing-disposition notification failed for dispatch %s",
+                    record.dispatch_id,
+                )
+        return await self._queue_delivery(session_id, payload)
+
     async def _run(self, heartbeat: Callable[[], None] | None = None) -> None:
         while not self._closing:
             if heartbeat:
                 heartbeat()
+            try:
+                await self._sweep_lost_completions()
+            except Exception:
+                logger.exception("Lost-completion sweep failed")
             records = await self._offload(
                 "reconciliation.dispatch_read",
                 self.dispatch_store.reconciliation_candidates,
@@ -414,11 +493,97 @@ class CompletionReconciler:
             except TimeoutError:
                 pass
 
+    async def _sweep_lost_completions(self) -> int:
+        """Replay completions whose turn finished but whose callback was lost.
+
+        The session layer retries a failing completion callback a few times and
+        then only logs. A dispatch whose initial turn ended (``turn_completed`` in
+        the transcript) yet never received a completion payload would otherwise
+        stay ``running`` forever, so find it and hand the completion over again.
+        Returns the number of completions replayed.
+        """
+        if self.sweep_seconds <= 0:
+            return 0
+        now = time.monotonic()
+        if self._last_sweep and now - self._last_sweep < self.sweep_seconds:
+            return 0
+        self._last_sweep = now
+        # Legacy dynamic adapters must not fabricate an optional new reader.
+        declared = inspect.getattr_static(
+            self.dispatch_store, "lost_completion_candidates", None
+        )
+        reader = (
+            getattr(self.dispatch_store, "lost_completion_candidates", None)
+            if declared is not None
+            else None
+        )
+        completion_reader = getattr(self.agent.store, "find_prompt_completion", None)
+        if not callable(reader) or not completion_reader:
+            return 0
+        candidates = await self._offload(
+            "reconciliation.dispatch_read", reader, limit=1000
+        )
+        replayed = 0
+        for dispatch_id, session_id, prompt_id in candidates:
+            completion = await self._offload(
+                "reconciliation.completion_evidence_read",
+                completion_reader,
+                session_id,
+                prompt_id,
+            )
+            if completion is None:
+                continue
+            age = (datetime.now(UTC) - completion.created_at).total_seconds()
+            if age < self.sweep_min_age_seconds:
+                continue  # the normal callback may still be in flight
+            record = await self._offload(
+                "reconciliation.dispatch_read", self.dispatch_store.get, dispatch_id
+            )
+            if (
+                not record
+                or record.state != "running"
+                or record.completion_payload is not None
+                or record.reconciliation_state != "not_requested"
+            ):
+                continue
+            payload = await self._recover_transcript_completion(
+                record, prompt_id=prompt_id, source=None
+            )
+            if not payload:
+                continue
+            logger.warning(
+                "Replaying lost card completion for dispatch %s (session %s, prompt %s)",
+                dispatch_id,
+                session_id,
+                prompt_id,
+            )
+            async with self._lock:
+                await self._handle_completion(session_id, payload)
+            replayed += 1
+        return replayed
+
     def worker_health(self) -> dict[str, Any]:
         return self._supervisor.health()
 
     async def _recover_prompted(self, record: DispatchRecord | ReconciliationCandidate) -> None:
         """Recover a reconciler turn that finished immediately before restart."""
+        # Only the poll loop's lightweight candidates are throttled; a full
+        # record handed in by a caller is always examined.
+        is_candidate = not isinstance(record, DispatchRecord)
+        updated = getattr(record, "reconciliation_updated_at", None)
+        checked = self._prompted_checked.get(record.dispatch_id)
+        if (
+            is_candidate
+            and updated is not None
+            and checked is not None
+            and checked[0] == updated
+            and time.monotonic() - checked[1] < PROMPTED_RECHECK_SECONDS
+        ):
+            # Unchanged since it was last examined: skip the deep record copy.
+            return
+        self._prompted_checked[record.dispatch_id] = (updated, time.monotonic())
+        if len(self._prompted_checked) > 2048:
+            self._prompted_checked.clear()
         current = await self._offload(
             "reconciliation.dispatch_read",
             self.dispatch_store.get,
@@ -448,6 +613,9 @@ class CompletionReconciler:
             "closed",
             "configuration_failed",
             "provisioning_failed",
+            # Recovery gave up: nothing will run the reconciliation prompt, so
+            # deliver what the dispatch has instead of waiting forever.
+            "recovery_blocked",
         }:
             await self._skip_and_deliver(
                 current,
@@ -459,6 +627,37 @@ class CompletionReconciler:
                 current,
                 "failed",
                 "The durable reconciliation prompt was no longer queued and no completed turn could be recovered.",
+            )
+        elif self._session_unavailable_too_long(current):
+            # Quiesced or disconnected without a runtime: nothing will run the
+            # reconciliation prompt. Deliver the dispatch's completion with the
+            # reconciliation skipped, and tell the owner.
+            reason = (
+                "The reconciliation session stayed unavailable "
+                f"(status {session.status}); delivered the completion without it."
+            )
+            await self._skip_and_deliver(current, "failed", reason)
+            await self._notify(current, reason)
+
+    def _session_unavailable_too_long(self, record: DispatchRecord) -> bool:
+        source = self._session_unavailable_source
+        limit = float(source() if callable(source) else source)
+        if limit <= 0 or record.reconciliation_updated_at is None:
+            return False
+        waited = (datetime.now(UTC) - record.reconciliation_updated_at).total_seconds()
+        return waited >= limit
+
+    async def _notify(self, record: DispatchRecord, reason: str) -> None:
+        notifier = self.abandoned_notifier or self.stall_notifier
+        if not notifier:
+            return
+        try:
+            await self._offload(
+                "reconciliation.stall_notify", notifier, record, reason
+            )
+        except Exception:
+            logger.exception(
+                "Reconciliation notification failed for dispatch %s", record.dispatch_id
             )
 
     async def _recover_transcript_completion(
@@ -733,8 +932,8 @@ class CompletionReconciler:
             record.reconciliation_recoverable = False
             record.reconciliation_next_retry_at = None
             await self._save(record)
-            await self._queue_delivery(
-                str(record.session_id), record.completion_payload or {}
+            await self._deliver_without_disposition(
+                record, str(record.session_id), record.completion_payload or {}
             )
             return
         record.reconciliation_state = "blocked"

@@ -45,3 +45,17 @@ cancelled, errored, reconnecting, over-age, and paired upstream/downstream
 counters. Fleet Operations shows a concise version under **Activity transport
 diagnostics**. Active connections older than five minutes are marked over-age
 for investigation; they are not automatically terminated solely because of age.
+
+## Workshop floor
+
+The Workshop floor view uses the same multiplexed `session-events` transport for
+this instance and for each reachable remote peer (through the Fleet proxy), with
+its own lease namespace (`pa-workshop-activity-owner-v1:<instance>` and the
+`pa-workshop-activity-v1` BroadcastChannel) so a Workshop tab and a Fleet tab do
+not compete for one lease. The stream is opened only while the floor layout is on
+screen and released when the compact list is shown. Dispatch stage changes and
+pull-request gate changes arrive as small `workshop-floor` events (ids plus the new
+state, with a per-realm `seq`) on `/api/cards/events?include=workshop`; a gap in
+`seq`, a reconnect, or an unknown session or dispatch makes the page refetch the
+`?view=floor` skeleton once. Peers without the multiplexed endpoint keep their
+last snapshot; there is no per-session fallback.

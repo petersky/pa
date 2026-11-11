@@ -385,6 +385,30 @@ class CompletionReconciliationTests(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_prompted_reconciliation_stops_waiting_on_a_recovery_blocked_session(
+        self,
+    ) -> None:
+        async def run() -> None:
+            with tempfile.TemporaryDirectory() as tmp:
+                ledger, runtime, _supervisor, outbox, reconciler = self.make_fixture(
+                    Path(tmp), session_status="recovery_blocked"
+                )
+                runtime.connected = False
+                record = ledger.get("dispatch-1")
+                record.completion_payload = {"queued_prompt_id": "initial-prompt"}
+                record.reconciliation_state = "prompted"
+                record.reconciliation_prompt_id = "reconcile-prompt"
+                ledger.put(record)
+
+                await reconciler._recover_prompted(record)
+
+                current = ledger.get("dispatch-1")
+                self.assertEqual(current.reconciliation_state, "failed")
+                self.assertFalse(current.reconciliation_recoverable)
+                self.assertEqual(len(outbox.payloads), 1)
+
+        asyncio.run(run())
+
     def test_non_resumable_session_is_not_prompted(self) -> None:
         async def run() -> None:
             with tempfile.TemporaryDirectory() as tmp:

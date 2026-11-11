@@ -15,6 +15,7 @@ import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Annotated, Any, Literal
 from urllib.parse import quote
 from uuid import UUID, uuid4
@@ -59,6 +60,15 @@ from pa.domain.models import (
     FleetInstance,
     RealmRole,
 )
+from pa.notifications.stall import (
+    StallKind,
+    notify_completion_undeliverable,
+    notify_dispatch_reoffered,
+    notify_reconciliation_abandoned,
+    notify_dispatch_failed,
+    notify_manual_review,
+    notify_stall,
+)
 from pa.domain.notifications import (
     InteractionChoice,
     InteractionKind,
@@ -76,6 +86,7 @@ from pa.execution.dispatch import (
     CapacityAdmission,
     CompletionOutbox,
     ConcurrentCardDispatch,
+    DispatchCancelRequested,
     DispatchCapacityExhausted,
     DispatchCompareConflict,
     DispatchEvent,
@@ -86,7 +97,9 @@ from pa.execution.dispatch import (
     DispatchStore,
     DispatchWorker,
     GoalDispatchProvenance,
+    StaleLeaseFence,
     TERMINAL_DISPATCH_STATES,
+    completion_request_body,
     goal_admission_validation_proof,
     goal_dispatch_execution_identity_valid,
     goal_dispatch_materialization_binding_valid,
@@ -95,8 +108,10 @@ from pa.execution.dispatch import (
     goal_dispatch_placement_input_snapshot,
     goal_dispatch_record_placement_input_valid,
 )
+from pa.execution.liveness import RunningLivenessSweeper, TargetStatus
 from pa.execution.session_presentation import build_session_presentation
 from pa.execution.disposition import decide_card_disposition
+from pa.execution.post_turn_worker import PostTurnHooks, PostTurnWorker
 from pa.execution.post_turn import (
     ActionApprovalV1,
     ActionReceiptStatus,
@@ -109,6 +124,9 @@ from pa.execution.post_turn import (
     SafetyClassification,
     TurnEndSnapshotV1,
     action_catalog,
+    automatic_followup_budget_exhausted,
+    automatic_followups_used,
+    continuation_context,
     is_authorized_same_session_continuation,
     mark_record_only_actions,
 )
@@ -119,7 +137,10 @@ from pa.execution.profiles import (
     resolve_materialization_plan,
 )
 from pa.execution.progress import (
+    LEASE_FENCE_HEADER,
+    LEASE_PROTOCOL,
     PROGRESS_SCHEMA_VERSION,
+    STALE_LEASE_FENCE_CODE,
     SUPPORTED_PROGRESS_VERSIONS,
     CompletionReportV1,
     DispatchProgressEventV1,
@@ -207,7 +228,18 @@ from pa.fleet.update import (
     prepare_update_job_recovery,
     start_update_job,
 )
-from pa.fleet.workshop import build_workshop_snapshot, workshop_semantic_snapshot
+from pa.fleet.workshop import (
+    WORKSHOP_VIEWS,
+    build_workshop_snapshot,
+    workshop_floor_view,
+    workshop_view,
+)
+from pa.fleet.workshop_feed import (
+    WorkshopFeed,
+    make_snapshot_event,
+    semantic_digest,
+    snapshot_payload,
+)
 from pa.goals.advanced_models import (
     GoalActionDisposition,
     GoalActionRequest,
@@ -279,7 +311,7 @@ def control_plane_status(request: Request) -> dict[str, Any]:
     service = request.app.state.ctx.services.get("pr_supervisor")
     health = service.authority_health() if service is not None else None
     workers = {}
-    for name in ("completion_outbox", "completion_reconciler"):
+    for name in ("completion_outbox", "completion_reconciler", "post_turn_worker"):
         worker = request.app.state.ctx.services.get(name)
         if worker is not None:
             workers[name] = worker.worker_health()
@@ -702,6 +734,11 @@ class DispatchMaterializeBody(BaseModel):
     attachment_digest: str | None = None
     materialization_plan: dict[str, Any] | None = None
     goal_provenance: GoalDispatchProvenance | None = None
+    # Lease handshake: an older target ignores these and answers without
+    # ``lease_protocol``, which leaves the dispatch on status-probe liveness.
+    lease_protocols: list[str] = Field(default_factory=list, max_length=10)
+    lease_fence: int | None = Field(default=None, ge=1)
+    lease_id: str | None = Field(default=None, max_length=200)
 
 
 class AttachmentFinalizeBody(BaseModel):
@@ -758,6 +795,29 @@ def _canonical_dispatch_uuid(value: str | None, field: str) -> str:
     return parsed
 
 
+def _presented_lease_fence(request: Request) -> int | None:
+    """The lease fence a target writer attached; ``None`` from an older target."""
+    raw = request.headers.get(LEASE_FENCE_HEADER, "").strip()
+    try:
+        value = int(raw) if raw else None
+    except ValueError:
+        return None
+    return value if value is not None and value >= 1 else None
+
+
+def _stale_lease_fence_error(exc: StaleLeaseFence) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": STALE_LEASE_FENCE_CODE,
+            "message": "This dispatch was reassigned to a newer lease; stop reporting for it.",
+            "presented_fence": exc.presented,
+            "current_fence": exc.current,
+            "recoverable": False,
+        },
+    )
+
+
 def _dispatch_store(request: Request) -> DispatchStore:
     service = request.app.state.ctx.services.get("dispatch_store")
     if isinstance(service, DispatchStore):
@@ -767,6 +827,10 @@ def _dispatch_store(request: Request) -> DispatchStore:
         request.app.state.ctx.settings.data_dir,
         read_only=auxiliary,
         deferred_read_only=auxiliary,
+        reservation_hard_expiry=(
+            request.app.state.ctx.settings.dispatch_capacity_reservation_hard_expiry
+        ),
+        lease_ttl_seconds=lambda: request.app.state.ctx.settings.dispatch_lease_ttl_seconds,
     )
     request.app.state.ctx.register_service("dispatch_store", service)
     return service
@@ -1806,12 +1870,35 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
         ),
         None,
     )
+    # Only a remote target holds a lease; a local dispatch is implicitly fresh.
+    lease_protocol = (
+        LEASE_PROTOCOL
+        if LEASE_PROTOCOL in body.lease_protocols
+        and body.lease_fence is not None
+        and body.authority_instance_id != settings.instance_id
+        else None
+    )
     if recorded:
         # Local authority/target dispatches already share this admission record.
         # Negotiate on the authenticated materialization offer, even on replay.
         # Never replace an established version with an absent/incompatible offer.
         def preserve_materialization(current: DispatchRecord) -> bool:
-            before = (current.progress_protocol_version, current.goal_provenance, current.attachment_evidence, current.session_retry)
+            before = (current.progress_protocol_version, current.goal_provenance, current.attachment_evidence, current.session_retry,
+                      current.lease_protocol, current.lease_fence, current.lease_superseded_at)
+            if lease_protocol:
+                if body.lease_fence < current.lease_fence and current.lease_protocol:
+                    # A delayed materialize of an older assignment.
+                    raise HTTPException(status_code=409, detail={
+                        "code": STALE_LEASE_FENCE_CODE, "current_fence": current.lease_fence,
+                        "recoverable": False,
+                    })
+                if body.lease_fence > current.lease_fence or not current.lease_protocol:
+                    current.lease_fence = body.lease_fence
+                    current.lease_superseded_at = None
+                    current.lease_superseded_by_fence = None
+                current.lease_protocol = lease_protocol
+                current.lease_id = body.lease_id or current.assignment_lease_id
+                current.lease_holder_instance_id = settings.instance_id
             if current.progress_protocol_version is None and progress_protocol_version is not None:
                 current.progress_protocol_version = progress_protocol_version
             current.goal_provenance = target_provenance
@@ -1822,7 +1909,8 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
                 # authority admits a new retry. Local authority already queued it.
                 if current.authority_instance_id != settings.instance_id:
                     current.state = "materializing"
-            return before != (current.progress_protocol_version, current.goal_provenance, current.attachment_evidence, current.session_retry)
+            return before != (current.progress_protocol_version, current.goal_provenance, current.attachment_evidence, current.session_retry,
+                              current.lease_protocol, current.lease_fence, current.lease_superseded_at)
 
         try:
             recorded = ledger.compare_and_mutate(recorded, preserve_materialization)
@@ -1838,6 +1926,8 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
             "duplicate": True,
             "session_id": recorded.session_id,
             "progress_protocol_version": recorded.progress_protocol_version,
+            "lease_protocol": recorded.lease_protocol,
+            "lease_fence": recorded.lease_fence if recorded.lease_protocol else None,
             "attachment_evidence": recorded.attachment_evidence,
             "materialization_plan": recorded.materialization_plan,
             "execution_identity_digest": (
@@ -1904,6 +1994,10 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
         resume_session_id=body.session_id,
         state="materializing",
         progress_protocol_version=progress_protocol_version,
+        lease_protocol=lease_protocol,
+        lease_fence=body.lease_fence if lease_protocol else 1,
+        lease_id=body.lease_id if lease_protocol else None,
+        lease_holder_instance_id=settings.instance_id if lease_protocol else None,
         attachment_evidence=attachment_evidence,
         materialization_plan=body.materialization_plan,
         goal_provenance=body.goal_provenance,
@@ -1933,6 +2027,8 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
         "resolvable": True,
         "duplicate": False,
         "progress_protocol_version": progress_protocol_version,
+        "lease_protocol": lease_protocol,
+        "lease_fence": body.lease_fence if lease_protocol else None,
         "attachment_evidence": attachment_evidence,
     }
 
@@ -2032,6 +2128,19 @@ def _model_json(value: Any) -> dict[str, Any]:
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="json")
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _snapshot_stop_reason(result: dict[str, Any]) -> str | None:
+    """Stop reason for the turn-end snapshot.
+
+    A turn PA cancelled because the provider went silent is recorded by the
+    session as stop_reason ``cancelled`` with reason ``inactivity_timeout``; the
+    evaluator must treat that as unfinished work, not an operator cancel.
+    """
+    stop_reason = result.get("stop_reason")
+    if stop_reason == "cancelled" and result.get("reason") == "inactivity_timeout":
+        return "inactivity_timeout"
+    return stop_reason
 
 
 def _record_post_turn_evaluation(
@@ -2135,7 +2244,7 @@ def _record_post_turn_evaluation(
         authority_instance_id=record.authority_instance_id,
         authority_version=authority_version,
         originating_instance_id=record.target_instance_id,
-        stop_reason=result.get("stop_reason"),
+        stop_reason=_snapshot_stop_reason(result),
         provider_status=result.get("provider_status"),
         session_status=result.get("session_status") or "idle",
         card_lane_before=(
@@ -2157,8 +2266,21 @@ def _record_post_turn_evaluation(
             ),
             "attempts": record.attempts,
         },
-        disposition=record.card_disposition_payload,
-        disposition_status=record.card_disposition_status,
+        # A follow-up turn carries its own disposition; the dispatch-level one
+        # belongs to the original completion and would make the evaluator
+        # re-judge a stale claim on every continuation.
+        disposition=(
+            (
+                result.get("card_disposition")
+                if isinstance(result.get("card_disposition"), dict)
+                else None
+            )
+            if result_override is not None
+            else record.card_disposition_payload
+        ),
+        disposition_status=(
+            None if result_override is not None else record.card_disposition_status
+        ),
         disposition_parse_error=result.get("card_disposition_error"),
         final_outcome_text=(
             str(result.get("final_outcome_text") or "")
@@ -2248,6 +2370,49 @@ def _record_post_turn_evaluation(
     return ledger.put(record)
 
 
+@router.get("/fleet/dispatch/{dispatch_id}/status")
+def dispatch_target_status(request: Request, dispatch_id: str) -> dict[str, Any]:
+    """What this target knows about a dispatch, for its authority's liveness sweep.
+
+    Read-only and idempotent. Only the dispatch's own authority may ask. An
+    unknown dispatch is a successful ``known: false`` answer (not a 404) so the
+    authority can tell "lost" from "unreachable".
+    """
+    _require_instance(request)
+    caller = request.headers.get("X-PA-Origin-Instance-ID", "").strip()
+    ledger = _dispatch_store(request)
+    record = ledger.get(dispatch_id)
+    if record is None:
+        return {"dispatch_id": dispatch_id, "known": False}
+    if caller != record.authority_instance_id:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "dispatch_authority_mismatch", "recoverable": False},
+        )
+    session_status = None
+    if record.session_id:
+        session = request.app.state.ctx.store.get_session(record.session_id)
+        session_status = getattr(session, "status", None)
+    return {
+        "dispatch_id": dispatch_id,
+        "known": True,
+        "state": record.state,
+        "session_id": record.session_id,
+        "session_status": session_status,
+        "acknowledged": record.acknowledged_at is not None,
+        "lease": {
+            "protocol": record.lease_protocol,
+            "fence": record.lease_fence,
+            "superseded": record.lease_superseded_at is not None,
+        },
+        "completion": (
+            completion_request_body(record)
+            if record.completion_payload is not None
+            else None
+        ),
+    }
+
+
 @router.post("/fleet/dispatch/{dispatch_id}/complete")
 def complete_dispatch(
     request: Request, dispatch_id: str, body: DispatchCompletionBody
@@ -2257,6 +2422,8 @@ def complete_dispatch(
     envelope = body.model_dump(mode="json")
     duplicate = [False]
 
+    fence = _presented_lease_fence(request)
+
     def acknowledge(current: DispatchRecord) -> bool:
         if (
             current.mutation_id != body.mutation_id
@@ -2265,6 +2432,13 @@ def complete_dispatch(
             raise HTTPException(
                 status_code=409, detail={"code": "idempotency_conflict"}
             )
+        if current.acknowledged_at is None:
+            # A completion from a superseded holder never changes the record; an
+            # acknowledged completion still wins and is replayed below.
+            try:
+                ledger.enforce_lease_fence(current, fence)
+            except StaleLeaseFence as exc:
+                raise _stale_lease_fence_error(exc) from exc
         if (
             body.source_instance_id != current.target_instance_id
             or body.card_id != current.card_id
@@ -3252,6 +3426,13 @@ def ingest_dispatch_progress(
             detail={"code": "unknown_dispatch", "recoverable": True},
         )
     caller = request.headers.get("X-PA-Origin-Instance-ID", "").strip()
+    fence = _presented_lease_fence(request)
+    try:
+        # A superseded holder gets a distinguishable 409 before any provenance
+        # verdict, so it stops reporting instead of treating this as transient.
+        ledger.enforce_lease_fence(record, fence)
+    except StaleLeaseFence as exc:
+        raise _stale_lease_fence_error(exc) from exc
     if (
         caller != body.originating_instance_id
         or caller != record.target_instance_id
@@ -3265,11 +3446,14 @@ def ingest_dispatch_progress(
             },
         )
     try:
+        # Progress and heartbeats renew the holder's lease in the same commit.
         result = (
-            ledger.ingest_heartbeat(body, delivered=True)
+            ledger.ingest_heartbeat(body, delivered=True, lease_fence=fence)
             if body.kind == ProgressKind.HEARTBEAT
-            else ledger.ingest_progress(body, delivered=True)
+            else ledger.ingest_progress(body, delivered=True, lease_fence=fence)
         )
+    except StaleLeaseFence as exc:
+        raise _stale_lease_fence_error(exc) from exc
     except ValueError as exc:
         raise HTTPException(
             status_code=409,
@@ -3562,8 +3746,12 @@ def _workshop_context(request: Request) -> dict:
     instances = list(fleet.list_instances())
     overview = build_overview(ctx, instances, list(peer_table.all_routes()))
     return {
-        "workshop": build_workshop_snapshot(ctx, overview),
+        # The page embeds the same slim projection the live client consumes.
+        "workshop": workshop_floor_view(build_workshop_snapshot(ctx, overview)),
         "primary_realm": ctx.settings.primary_realm,
+        "workshop_default_view": ctx.settings.workshop_default_view,
+        "workshop_floor_chat_agents": ctx.settings.workshop_floor_chat_agents,
+        "workshop_floor_motion": ctx.settings.workshop_floor_motion,
     }
 
 
@@ -3639,22 +3827,66 @@ def _build_workshop(
 
 
 def _workshop_stream_iteration(
-    snapshot: dict[str, Any], last_digest: str, sequence: int
+    snapshot: dict[str, Any], last_digest: str, sequence: int, view: str = "full"
 ) -> tuple[str, str, int]:
-    digest = hashlib.sha256(
-        json.dumps(
-            workshop_semantic_snapshot(snapshot), sort_keys=True, default=str
-        ).encode()
-    ).hexdigest()
+    """Format one standalone stream step for ``view`` (heartbeat if nothing changed).
+
+    The live endpoint shares one derived frame per snapshot through
+    ``WorkshopFeed`` instead; this is the equivalent for a single caller.
+    """
+    projected = workshop_view(snapshot, view)
+    digest = semantic_digest(projected)
     if digest == last_digest:
         return ": workshop heartbeat\n\n", last_digest, sequence
     sequence += 1
     return (
-        f"id: {sequence}\nevent: snapshot\ndata: "
-        + json.dumps(snapshot, default=str)
-        + "\n\n",
+        make_snapshot_event(sequence, snapshot_payload(projected)),
         digest,
         sequence,
+    )
+
+
+_workshop_feeds: dict[str, WorkshopFeed] = {}
+
+
+def _workshop_feed(ctx: Any) -> WorkshopFeed:
+    key = str(ctx.settings.data_dir)
+    feed = _workshop_feeds.get(key)
+    if feed is None:
+        feed = _workshop_feeds[key] = WorkshopFeed()
+    return feed
+
+
+def _workshop_snapshot_ttl(ctx: Any) -> float:
+    try:
+        return max(0.0, float(ctx.settings.workshop_snapshot_ttl_seconds))
+    except (AttributeError, TypeError, ValueError):
+        return 1.5
+
+
+def _workshop_view_name(view: str) -> str:
+    if view not in WORKSHOP_VIEWS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown Workshop view; expected one of {', '.join(WORKSHOP_VIEWS)}",
+        )
+    return view
+
+
+async def _produce_workshop_snapshot(
+    ctx: Any, fleet: FleetRegistry, peer_table: PeerTable, *, force: bool
+) -> dict:
+    """Probe the fleet, then rebuild the snapshot off the event loop."""
+    instances = list(fleet.list_instances())
+    observations = await _refresh_workshop_dimensions(ctx, instances, force=force)
+    return await _offload_ctx(
+        ctx,
+        "fleet.workshop_snapshot",
+        _build_workshop,
+        ctx,
+        instances,
+        list(peer_table.all_routes()),
+        observations,
     )
 
 
@@ -4027,20 +4259,40 @@ def fleet_overview(request: Request) -> dict:
 
 
 @router.get("/fleet/workshop")
-async def fleet_workshop(request: Request, refresh: bool = False) -> dict:
-    """Return one canonical, presentation-ready Workshop snapshot."""
+async def fleet_workshop(
+    request: Request, refresh: bool = False, view: str = "full"
+) -> Response:
+    """Return one canonical, presentation-ready Workshop snapshot.
+
+    ``view=floor`` returns the slim projection the Workshop page renders.
+    """
     require_user(request)
+    view = _workshop_view_name(view)
     ctx = request.app.state.ctx
     fleet: FleetRegistry = ctx.require_service("fleet_registry")
     peer_table: PeerTable = ctx.require_service("peer_table")
-    instances = list(fleet.list_instances())
-    observations = await _refresh_workshop_dimensions(ctx, instances, force=refresh)
-    return _build_workshop(ctx, instances, list(peer_table.all_routes()), observations)
+    frame = await _workshop_feed(ctx).frame(
+        view,
+        lambda: _produce_workshop_snapshot(ctx, fleet, peer_table, force=refresh),
+        lambda operation, call, *args: _offload_ctx(ctx, operation, call, *args),
+        # An explicit read always joins or starts a build; only the push stream
+        # may reuse a snapshot built a moment ago.
+        max_age=0.0,
+    )
+    body = await _offload_ctx(
+        ctx, "fleet.workshop_json", snapshot_payload, frame.snapshot
+    )
+    return Response(content=body, media_type="application/json")
 
 
 @router.get("/fleet/workshop/events")
-async def fleet_workshop_events(request: Request) -> StreamingResponse:
-    """Stream one fleet-wide Workshop projection with bounded probe fallback."""
+async def fleet_workshop_events(
+    request: Request, view: str = "full"
+) -> StreamingResponse:
+    """Stream one fleet-wide Workshop projection with bounded probe fallback.
+
+    All subscribers share one snapshot build per ``workshop_snapshot_ttl_seconds``.
+    """
     from pa.server.shutdown import (
         is_shutting_down,
         wait_for_shutdown,
@@ -4048,27 +4300,34 @@ async def fleet_workshop_events(request: Request) -> StreamingResponse:
     )
 
     require_user(request)
+    view = _workshop_view_name(view)
     ctx = request.app.state.ctx
     fleet: FleetRegistry = ctx.require_service("fleet_registry")
     peer_table: PeerTable = ctx.require_service("peer_table")
+    feed = _workshop_feed(ctx)
 
     async def stream() -> AsyncIterator[str]:
-        last_digest = ""
-        sequence = 0
+        last_sequence = 0
         while not is_shutting_down() and not await request.is_disconnected():
-            instances = list(fleet.list_instances())
-            stopping, observations = await wait_for_shutdown_or(
-                _refresh_workshop_dimensions(ctx, instances, force=False)
+            stopping, frame = await wait_for_shutdown_or(
+                feed.frame(
+                    view,
+                    lambda: _produce_workshop_snapshot(
+                        ctx, fleet, peer_table, force=False
+                    ),
+                    lambda operation, call, *args: _offload_ctx(
+                        ctx, operation, call, *args
+                    ),
+                    max_age=_workshop_snapshot_ttl(ctx),
+                )
             )
-            if stopping or observations is None:
+            if stopping or frame is None:
                 return
-            snapshot = _build_workshop(
-                ctx, instances, list(peer_table.all_routes()), observations
-            )
-            event, last_digest, sequence = _workshop_stream_iteration(
-                snapshot, last_digest, sequence
-            )
-            yield event
+            if frame.sequence != last_sequence:
+                last_sequence = frame.sequence
+                yield frame.event
+            else:
+                yield ": workshop heartbeat\n\n"
             if await wait_for_shutdown(2.0):
                 return
 
@@ -6911,7 +7170,46 @@ async def _synchronize_target_goal_execution_identity(
         )
 
 
+async def _commit_dispatch_stage(
+    ctx: AppContext,
+    ledger: DispatchStore,
+    record: DispatchRecord,
+    state: str | None = None,
+    message: str = "",
+    *,
+    detail: dict[str, Any] | None = None,
+    events: list[DispatchEvent] | None = None,
+) -> DispatchRecord:
+    """Field-level worker commit; adopts the durable result into ``record``.
+
+    The worker's snapshot spans network calls. Writing it back whole would
+    revert a cancel or an acknowledged completion committed meanwhile, so only
+    the worker-owned fields and the forward stage change are applied.
+    """
+    committed = await _offload_ctx(
+        ctx,
+        "dispatch.record_write",
+        lambda: ledger.commit_worker_stage(
+            record, state, message, detail=detail, events=events
+        ),
+    )
+    for field in DispatchRecord.model_fields:
+        setattr(record, field, getattr(committed, field))
+    return committed
+
+
 async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
+    """Run one dispatch; a cancel committed mid-stage stops it at the next boundary."""
+    ctx = app.state.ctx
+    try:
+        await _process_remote_dispatch_stages(app, record)
+    except DispatchCancelRequested:
+        await _dispatch_cancelled(
+            ctx, ctx.require_service("dispatch_store"), record
+        )
+
+
+async def _process_remote_dispatch_stages(app, record: DispatchRecord) -> None:
     """Advance one persisted dispatch through independently auditable stages."""
     request = _dispatch_request(app)
     ctx = app.state.ctx
@@ -6933,15 +7231,15 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
 
     if await _dispatch_cancelled(ctx, ledger, record):
         return
-    await _offload_ctx(
+    await _commit_dispatch_stage(
         ctx,
-        "dispatch.record_write",
-        ledger.transition,
+        ledger,
         record,
         "checking_sync",
         "Checking realm convergence.",
     )
     card = None
+    launch_events: list[DispatchEvent] = []
     if record.card_id:
         sync_evidence = await _wait_for_dispatch_sync_health(
             request, record.realm_id, record.target_instance_id
@@ -6976,9 +7274,9 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
             )
         prior_card_version = record.card_version
         if prior_card_version and prior_card_version != card.updated_at.isoformat():
-            record.events.append(
+            launch_events.append(
                 DispatchEvent(
-                    seq=(record.events[-1].seq + 1 if record.events else 1),
+                    seq=1,
                     state=record.state,
                     message="Card changed while queued; launching the latest authoritative snapshot without changing target or execution contract.",
                     detail={
@@ -7007,14 +7305,13 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
                         "recoverable": False,
                     },
                 )
-        await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
+        await _commit_dispatch_stage(ctx, ledger, record, events=launch_events)
     if await _dispatch_cancelled(ctx, ledger, record):
         return
 
-    await _offload_ctx(
+    await _commit_dispatch_stage(
         ctx,
-        "dispatch.record_write",
-        ledger.transition,
+        ledger,
         record,
         "materializing",
         "Materializing the exact dispatch context on the target.",
@@ -7072,6 +7369,9 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         "execution_contract": record.request_payload.get("execution_contract"),
         "session_id": record.resume_session_id if record.resume_requested else None,
         "progress_versions": SUPPORTED_PROGRESS_VERSIONS,
+        "lease_protocols": [LEASE_PROTOCOL],
+        "lease_fence": record.lease_fence,
+        "lease_id": record.assignment_lease_id,
         "attachment_manifest": [
             item.model_dump(mode="json") for item in materialized_attachments
         ],
@@ -7159,7 +7459,16 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         if negotiated_progress in SUPPORTED_PROGRESS_VERSIONS
         else None
     )
-    await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
+    # The lease is negotiated, never assumed: an older target answers without
+    # it and the dispatch stays on status-probe liveness.
+    record.lease_protocol = (
+        LEASE_PROTOCOL
+        if materialized.get("lease_protocol") == LEASE_PROTOCOL
+        and materialized.get("lease_fence") == record.lease_fence
+        and record.target_instance_id != record.authority_instance_id
+        else None
+    )
+    await _commit_dispatch_stage(ctx, ledger, record)
     await _synchronize_target_goal_execution_identity(
         request,
         record,
@@ -7169,10 +7478,9 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         return
 
     payload = dict(record.request_payload)
-    await _offload_ctx(
+    await _commit_dispatch_stage(
         ctx,
-        "dispatch.record_write",
-        ledger.transition,
+        ledger,
         record,
         "provisioning",
         "Provisioning the target workspace and execution environment.",
@@ -7236,11 +7544,10 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
     # crash from this point forward can then bind governance and resume exactly
     # this session instead of trying to allocate another one.
     record.session_id = session_id
-    await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
-    await _offload_ctx(
+    await _commit_dispatch_stage(ctx, ledger, record)
+    await _commit_dispatch_stage(
         ctx,
-        "dispatch.record_write",
-        ledger.transition,
+        ledger,
         record,
         "starting_session",
         "Provider session allocated; validating configuration and linkage.",
@@ -7373,7 +7680,7 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
                 "recoverable": False,
             },
         )
-    await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
+    await _commit_dispatch_stage(ctx, ledger, record)
     await _synchronize_target_goal_execution_identity(
         request,
         record,
@@ -7391,10 +7698,9 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         ).text
     prompt_result: dict[str, Any] | None = None
     if message:
-        await _offload_ctx(
+        await _commit_dispatch_stage(
             ctx,
-            "dispatch.record_write",
-            ledger.transition,
+            ledger,
             record,
             "delivering_prompt",
             "Delivering and awaiting durable prompt acceptance.",
@@ -7500,12 +7806,11 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         # The dispatch ledger and session transcript are the authoritative audit
         # history. Never mirror lifecycle notices into curated Memory.
         record.knowledge_recorded_at = datetime.now(UTC)
-        await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
+        await _commit_dispatch_stage(ctx, ledger, record)
     if record.state != "completed":
-        await _offload_ctx(
+        await _commit_dispatch_stage(
             ctx,
-            "dispatch.record_write",
-            ledger.transition,
+            ledger,
             record,
             "running",
             "Prompt accepted by the intended remote session."
@@ -7524,6 +7829,238 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         outcome="started",
         applied=True,
     )
+
+
+def _liveness_probe(ctx: AppContext):
+    async def probe(record: DispatchRecord) -> TargetStatus:
+        fleet = ctx.services.get("fleet_registry")
+        client = ctx.services.get("dispatch_http_client") or ctx.services.get(
+            "fleet_http_client"
+        )
+        inst = fleet.get_instance(record.target_instance_id) if fleet else None
+        if inst is None or client is None:
+            return TargetStatus(reachable=False, error="target is not a fleet member")
+        try:
+            response, _endpoint = await request_peer(
+                ctx, client, inst, "GET",
+                f"api/fleet/dispatch/{record.dispatch_id}/status",
+                timeout=10.0, headers=_peer_headers_ctx(ctx),
+            )
+        except (httpx.HTTPError, TimeoutError, OSError) as exc:
+            return TargetStatus(reachable=False, error=f"{type(exc).__name__}: {exc}"[:200])
+        if response.status_code != 200:
+            # An older peer without the endpoint (404) cannot vouch either way.
+            return TargetStatus(reachable=True, known=None, error=f"HTTP {response.status_code}")
+        try:
+            data = response.json()
+        except ValueError:
+            return TargetStatus(reachable=True, known=None, error="malformed status")
+        if not isinstance(data, dict) or not isinstance(data.get("known"), bool):
+            return TargetStatus(reachable=True, known=None, error="malformed status")
+        completion = data.get("completion")
+        return TargetStatus(
+            reachable=True, known=data["known"], state=data.get("state"),
+            session_status=data.get("session_status"),
+            completion=completion if isinstance(completion, dict) else None, raw=data,
+        )
+
+    return probe
+
+
+async def _liveness_adopt(app, record: DispatchRecord, completion: dict[str, Any]) -> None:
+    """Acknowledge the target's completion through the normal /complete handler."""
+    ctx = app.state.ctx
+    request = Request({
+        "type": "http", "app": app,
+        "headers": [(b"idempotency-key", str(record.mutation_id).encode())],
+    })
+    body = DispatchCompletionBody.model_validate(completion)
+    await _offload_ctx(ctx, "dispatch.liveness_adopt", complete_dispatch, request, record.dispatch_id, body)
+
+
+async def _liveness_fail(app, record: DispatchRecord, reason: str, code: str) -> DispatchRecord:
+    ctx = app.state.ctx
+    ledger: DispatchStore = ctx.require_service("dispatch_store")
+    failed = await _offload_ctx(
+        ctx, "dispatch.liveness_fail", ledger.fail, record, reason,
+        code=code, recoverable=True, detail={"liveness": True},
+    )
+    if failed.state == "failed":
+        await _release_goal_dispatch_reservation_async(
+            ctx, ledger, failed, outcome="failed", applied=_goal_dispatch_was_applied(failed),
+        )
+    return failed
+
+
+async def _reoffer_lost_dispatch(app, record: DispatchRecord) -> bool:
+    """Retry a lost remote dispatch through the retry admission, placing it again.
+
+    Same dispatch id and card; the lost target is excluded and every field bound
+    to it is cleared. Governed (goal) and repository-bound dispatches keep their
+    fixed target and are left failed for the owner (already notified).
+    """
+    ctx = app.state.ctx
+    ledger: DispatchStore = ctx.require_service("dispatch_store")
+    plan = record.materialization_plan or {}
+    if sum(1 for key in record.control_operations if key.startswith("reoffer-lost:")) >= 3:
+        return False  # bounded: stop re-placing a dispatch that keeps getting lost
+    if (
+        record.goal_provenance is not None
+        or plan.get("profile") == "repository"
+        or (plan.get("requirements") or {}).get("repositories")
+        or not record.retryable
+    ):
+        return False
+    request = _dispatch_request(app)
+    request.state.instance_authenticated = True
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    instances = [
+        item for item in fleet.list_instances()
+        if item.instance_id != record.target_instance_id
+    ]
+    if not instances:
+        return False
+    candidates = await _placement_candidates(request, instances)
+    _, enforcement, effective = await _offload_request(
+        request, "fleet.reoffer_policy_inputs", _placement_policy_inputs,
+        _policy_service(request), ctx.store, record.realm_id, candidates,
+    )
+    original = dict(record.placement_decision or {})
+    for candidate, (policy, explicit) in zip(candidates, effective):
+        candidate.participation_policy = policy
+        candidate.participation_policy_explicit = explicit
+        candidate.group_membership = "included"
+    provider = record.capacity_provider or record.request_payload.get("provider")
+    try:
+        decision = await _offload_request(
+            request, "fleet.reoffer_placement_resolve",
+            ctx.require_service("placement_service").resolve,
+            PlacementRequest(
+                realm_id=record.realm_id,
+                fleet_id=ctx.settings.fleet_id,
+                policy=PlacementPolicy.BEST_MATCH,
+                card_id=record.card_id,
+                provider=provider,
+                model_id=record.request_payload.get("model_id"),
+                workload_profile=str(
+                    original.get("workload_profile") or plan.get("profile") or "research"
+                ),
+                project_id=record.project_id,
+                dispatch_intent=DispatchIntent.AUTOMATIC,
+                default_source="lost_remote_reoffer",
+                principal_id=record.principal_id,
+                policy_enforcement_active=enforcement,
+                allow_concurrent=True,
+            ),
+            candidates,
+        )
+    except PlacementError as exc:
+        logger.warning("Lost dispatch %s could not be placed again: %s", record.dispatch_id, exc)
+        return False
+    capacity = _capacity_admission_from_decision(
+        decision.model_dump(mode="json"), provider=provider,
+        override=False, override_reason=None,
+    )
+    if capacity is None:
+        return False
+    revalidation = decision.model_dump(mode="json")
+    revalidation["reoffered_from_instance_id"] = record.target_instance_id
+    revalidation["reoffered_at"] = datetime.now(UTC).isoformat()
+    try:
+        await _offload_ctx(
+            ctx, "dispatch.reoffer_admission", ledger.retry_with_capacity, record, capacity,
+            idempotency_key=f"reoffer-lost:{record.dispatch_id}:{record.target_instance_id}",
+            retarget={
+                "target_instance_id": decision.chosen_instance_id,
+                "target_instance_name": decision.chosen_instance_name,
+                "placement_policy": decision.policy,
+                "placement_decision": revalidation,
+                "placement_resolved_at": decision.resolved_at,
+            },
+        )
+    except (DispatchQueueFull, DispatchCapacityExhausted, ConcurrentCardDispatch, ValueError) as exc:
+        logger.warning("Lost dispatch %s could not be re-admitted: %s", record.dispatch_id, exc)
+        return False
+    worker = ctx.services.get("dispatch_worker")
+    if worker:
+        worker.wake()
+    await _offload_ctx(
+        ctx, "dispatch.reoffer_notify", notify_dispatch_reoffered, ctx, record,
+        decision.chosen_instance_name,
+    )
+    return True
+
+
+async def _dispatch_terminal(app, record: DispatchRecord, outcome: str) -> None:
+    """Worker terminal hook: release the goal hold; re-offer an expired remote dispatch."""
+    ctx = app.state.ctx
+    await _release_goal_dispatch_reservation_async(
+        ctx,
+        ctx.require_service("dispatch_store"),
+        record,
+        outcome=outcome,
+        applied=_goal_dispatch_was_applied(record),
+    )
+    if (
+        outcome == "capacity-expired"
+        and record.target_instance_id != ctx.settings.instance_id
+        and record.authority_instance_id == ctx.settings.instance_id
+        and ctx.settings.dispatch_reoffer_lost_remote
+    ):
+        await _offload_ctx(ctx, "dispatch.expiry_notify", notify_dispatch_failed, ctx, record)
+        await _reoffer_lost_dispatch(app, record)
+
+
+def _announce_superseded(ctx: AppContext):
+    """Put a transcript note in the session whose dispatch the authority reassigned."""
+
+    async def announce(dispatch_id: str, detail: dict[str, Any]) -> None:
+        ledger = ctx.services.get("dispatch_store")
+        agent = ctx.services.get("instance_agent")
+        record = ledger.get(dispatch_id) if ledger else None
+        if record is None or not record.session_id or agent is None:
+            return
+        await agent.record_dispatch_superseded(record.session_id, {
+            "dispatch_id": dispatch_id,
+            "authority_instance_id": record.authority_instance_id,
+            "held_fence": record.lease_fence,
+            "current_fence": detail.get("current_fence"),
+            "message": (
+                "The authority reassigned this dispatch to another lease or target. "
+                "This session is no longer reporting progress or completion for it."
+            ),
+        })
+
+    return announce
+
+
+def _authority_peer_post(ctx: AppContext):
+    """Build the outbox/progress sender that reaches the authority by its current
+    fleet endpoints (with failover) instead of the URL frozen into the record.
+
+    Returns ``None`` when the authority is not a known fleet member, so the
+    caller falls back to the recorded URL.
+    """
+
+    async def post(record, path, *, json, headers):
+        fleet = ctx.services.get("fleet_registry")
+        client = ctx.services.get("dispatch_http_client") or ctx.services.get(
+            "fleet_http_client"
+        )
+        inst = (
+            fleet.get_instance(record.authority_instance_id)
+            if fleet is not None
+            else None
+        )
+        if inst is None or client is None:
+            return None
+        headers = {"X-PA-Origin-Instance-ID": ctx.settings.instance_id, **headers}
+        response, _endpoint = await request_peer(
+            ctx, client, inst, "POST", path, timeout=15.0, headers=headers, json=json
+        )
+        return response
+
+    return post
 
 
 async def _placement_candidates(
@@ -11924,20 +12461,16 @@ async def execute_post_turn_action(
         inherited = is_authorized_same_session_continuation(
             action, decision=evaluation.decision, session_id=record.session_id
         )
-        automatic_used = sum(
-            1
-            for prior_evaluation in record.post_turn_evaluations
-            for prior_action in prior_evaluation.recommended_actions
-            if prior_action.name == FollowupActionName.PROMPT_SAME_SESSION
-            and any(event.get("automatic") for event in prior_action.audit)
-        )
+        automatic_used = automatic_followups_used(record.post_turn_evaluations)
         budget = request.app.state.ctx.settings.post_turn_max_automatic_followups
-        if not inherited or automatic_used >= budget:
+        if not inherited or automatic_followup_budget_exhausted(
+            record.post_turn_evaluations, budget
+        ):
             action.human_approval_required = True
             action.status_reason = (
                 "Withheld for operator approval: continuation scope was not inherited "
-                "or the automatic follow-up budget is exhausted. Approve this action "
-                "to continue."
+                "or the automatic follow-up budget is exhausted (setting "
+                "post_turn_max_automatic_followups). Approve this action to continue."
             )
         else:
             action.audit.append(
@@ -11977,6 +12510,11 @@ async def execute_post_turn_action(
         if action.human_approval_required
         else action.status
     )
+    # The claim below re-reads the durable action; carry the authorization
+    # audit across or the automatic follow-up budget would never be consumed.
+    authorization_audit = [
+        event for event in action.audit if event.get("event") == "authorized"
+    ]
     receipt = ActionReceiptV1(
         action_id=action.action_id,
         action_digest=action.binding_digest,
@@ -12019,6 +12557,9 @@ async def execute_post_turn_action(
     action = next(
         item for item in evaluation.recommended_actions if item.action_id == action_id
     )
+    action.audit.extend(
+        event for event in authorization_audit if event not in action.audit
+    )
     result: Any = None
     try:
         if action.name in {
@@ -12042,11 +12583,27 @@ async def execute_post_turn_action(
             )
             result = {"card": _model_json(updated)}
         elif action.name == FollowupActionName.PROMPT_SAME_SESSION:
+            message = action.parameters["prompt"]
+            if any(event.get("automatic") for event in action.audit):
+                # The stored prompt is the exact text PA pre-authorized; the
+                # recorded reason is appended so the agent knows why it is
+                # being asked to continue.
+                message += "\n\n" + continuation_context(
+                    evaluation,
+                    next(
+                        (
+                            item
+                            for item in record.turn_end_snapshots
+                            if item.snapshot_id == evaluation.snapshot_id
+                        ),
+                        None,
+                    ),
+                )
             result = await prompt_dispatch_session(
                 request,
                 dispatch_id,
                 DispatchFollowupBody(
-                    message=action.parameters["prompt"],
+                    message=message,
                     idempotency_key=body.idempotency_key,
                 ),
             )
@@ -12136,6 +12693,24 @@ async def execute_post_turn_action(
             # Wait, refresh, and escalation remain condition records. Operator
             # input is executable above and resumes the same session.
             result = {"recorded": True, "condition": action.parameters}
+            if action.name == FollowupActionName.ESCALATE_FOR_MANUAL_REVIEW:
+                # The evaluator asked for a human: say so outside the card page.
+                await asyncio.to_thread(
+                    notify_stall,
+                    request.app.state.ctx,
+                    kind=StallKind.MANUAL_REVIEW,
+                    subject_ids={
+                        "realm_id": record.realm_id,
+                        "card_id": record.card_id,
+                        "session_id": record.session_id,
+                        "dispatch_id": record.dispatch_id,
+                        "project_id": record.project_id,
+                    },
+                    title="Manual review requested",
+                    body=str(action.parameters.get("reason") or "The post-turn evaluation escalated this work."),
+                    severity="error",
+                    dedupe_key=action.action_id,
+                )
         action.status = FollowupActionStatus.EXECUTED
         action.executed_at = datetime.now(UTC)
         action.status_reason = "Validated and deterministically executed by PA."
@@ -12203,6 +12778,68 @@ async def execute_post_turn_action(
         "result": result,
         "receipt": receipt.model_dump(mode="json"),
     }
+
+
+def _internal_post_turn_request(app: Any, record: DispatchRecord) -> Request:
+    """A request-shaped handle so PA's own worker uses the same guarded endpoints.
+
+    Execution still goes through ``execute_post_turn_action`` and
+    ``prompt_dispatch_session``: the same validation, approval gate, claims,
+    fencing tokens and receipts as an operator click.  It carries no approval.
+    """
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/internal/post-turn",
+            "headers": [],
+            "query_string": b"",
+            "app": app,
+        }
+    )
+    request.state.user = SimpleNamespace(id="system:post-turn", role="admin")
+    request.state.principal_id = record.principal_id or "system:post-turn"
+    request.state.instance_authenticated = True
+    return request
+
+
+def _build_post_turn_worker(
+    app: Any, ctx: AppContext, async_runtime: Any
+) -> PostTurnWorker:
+    async def execute(
+        record: DispatchRecord,
+        evaluation: PostTurnEvaluationV1,
+        action: Any,
+        key: str,
+    ) -> Any:
+        return await execute_post_turn_action(
+            _internal_post_turn_request(app, record),
+            record.dispatch_id,
+            action.action_id,
+            FollowupActionExecutionBody(
+                evaluation_id=evaluation.evaluation_id,
+                action_id=action.action_id,
+                expected_authority_version=evaluation.observed_authority_version,
+                idempotency_key=key,
+            ),
+        )
+
+    async def prompt(record: DispatchRecord, message: str, key: str) -> Any:
+        return await prompt_dispatch_session(
+            _internal_post_turn_request(app, record),
+            record.dispatch_id,
+            DispatchFollowupBody(message=message, idempotency_key=key),
+        )
+
+    def escalate(record: DispatchRecord, **kwargs: Any) -> Any:
+        return notify_manual_review(ctx, record, **kwargs)
+
+    return PostTurnWorker(
+        ctx.require_service("dispatch_store"),
+        PostTurnHooks(execute=execute, prompt=prompt, escalate=escalate),
+        lambda: ctx.settings,
+        async_runtime=async_runtime,
+    )
 
 
 _TERMINAL_REPAIR_EVIDENCE_MAX_AGE = timedelta(seconds=10)
@@ -14268,6 +14905,7 @@ def retry_dispatch(
         # Legacy records predate reservations. Preserve their retry behavior;
         # every newly admitted record carries capacity metadata.
         record.cancel_requested = False
+        record.stage_attempts = 0
         record.last_error = None
         record.error_code = None
         if record.session_id:
@@ -15216,8 +15854,15 @@ class FleetModule(Module):
             settings.data_dir,
             read_only=auxiliary,
             deferred_read_only=auxiliary,
+            reservation_hard_expiry=settings.dispatch_capacity_reservation_hard_expiry,
+            lease_ttl_seconds=lambda: ctx.settings.dispatch_lease_ttl_seconds,
         )
         ctx.register_service("dispatch_store", dispatch_store)
+        from pa.fleet.workshop_transitions import workshop_transition_publisher
+
+        dispatch_store.transition_observer = workshop_transition_publisher(
+            ctx
+        ).dispatch_changed
         ctx.register_service(
             "assigned_mcp_environment_resolver",
             lambda session: _assigned_mcp_environment_for_session(
@@ -15300,24 +15945,31 @@ class FleetModule(Module):
             lambda record: _process_remote_dispatch(app, record),
             async_runtime=async_runtime,
             readiness=lambda record: _refresh_queued_dispatch_readiness(app, record),
-            terminal=lambda record, outcome: _release_goal_dispatch_reservation_async(
-                ctx,
-                ctx.require_service("dispatch_store"),
-                record,
-                outcome=outcome,
-                applied=_goal_dispatch_was_applied(record),
-            ),
+            terminal=lambda record, outcome: _dispatch_terminal(app, record, outcome),
             lifecycle_recovery=lambda: _reconcile_goal_dispatch_reservations(ctx),
+            stall_notifier=lambda record: notify_dispatch_failed(ctx, record),
+            instance_id=ctx.settings.instance_id,
+            max_stage_attempts=ctx.settings.dispatch_max_stage_attempts,
         )
         dispatch_worker.start()
         ctx.register_service("dispatch_worker", dispatch_worker)
         outbox = CompletionOutbox(
             ctx.require_service("dispatch_store"),
-            ctx.settings.sync_token,
+            # Read at send time: sync_token rotates while the process runs.
+            lambda: ctx.settings.sync_token,
             async_runtime=async_runtime,
             disposition_notifier=ctx.require_service(
                 "instance_agent"
             ).record_card_disposition_status,
+            stall_notifier=lambda record: notify_completion_undeliverable(ctx, record),
+            peer_post=_authority_peer_post(ctx),
+            superseded_notifier=_announce_superseded(ctx),
+            retry_max_seconds=lambda: ctx.settings.completion_delivery_retry_max_seconds,
+            max_attempts=ctx.settings.completion_delivery_max_attempts,
+            notify_after_attempts=ctx.settings.completion_delivery_notify_after_attempts,
+            unknown_dispatch_grace_seconds=(
+                ctx.settings.completion_unknown_dispatch_grace_seconds
+            ),
         )
         ctx.register_service("completion_outbox", outbox)
         agent = ctx.require_service("instance_agent")
@@ -15327,6 +15979,22 @@ class FleetModule(Module):
             outbox,
             ctx.store,
             lambda: ctx.services.get("pr_supervisor"),
+            escalate_missing_disposition=lambda: (
+                ctx.settings.completion_missing_disposition_escalates
+            ),
+            stall_notifier=lambda record, reason: notify_manual_review(
+                ctx,
+                record,
+                title="Finished work has no card disposition",
+                body=reason,
+                dedupe_key=f"{record.dispatch_id}:missing_disposition",
+            ),
+            session_unavailable_seconds=(
+                lambda: ctx.settings.reconciliation_session_unavailable_seconds
+            ),
+            abandoned_notifier=lambda record, reason: notify_reconciliation_abandoned(
+                ctx, record, reason
+            ),
         )
         await reconciler.recover()
         reconciler.start()
@@ -15338,17 +16006,41 @@ class FleetModule(Module):
         ctx.register_service("session_lifecycle", lifecycle)
         if ctx.settings.agent_enabled:
             lifecycle.start()
+        liveness = RunningLivenessSweeper(
+            ctx.require_service("dispatch_store"),
+            instance_id=ctx.settings.instance_id,
+            probe=_liveness_probe(ctx),
+            adopt=lambda record, completion: _liveness_adopt(app, record, completion),
+            fail_lost=lambda record, reason, code: _liveness_fail(app, record, reason, code),
+            reoffer=lambda record: _reoffer_lost_dispatch(app, record),
+            notify=lambda record: notify_dispatch_failed(ctx, record),
+            stale_seconds=lambda: ctx.settings.dispatch_stale_running_seconds,
+            lost_seconds=lambda: ctx.settings.dispatch_lost_remote_seconds,
+            reoffer_enabled=lambda: ctx.settings.dispatch_reoffer_lost_remote,
+            lease_grace_seconds=lambda: ctx.settings.dispatch_lease_grace_seconds,
+            offload=lambda operation, call, *args, **kwargs: _offload_ctx(
+                ctx, operation, call, *args, **kwargs
+            ),
+        )
+        liveness.start()
+        ctx.register_service("dispatch_liveness", liveness)
         progress_service = ProgressService(
             ctx.require_service("dispatch_store"),
             instance_id=ctx.settings.instance_id,
-            token=ctx.settings.sync_token,
+            token=lambda: ctx.settings.sync_token,
             async_runtime=async_runtime,
             session_manager=agent,
+            peer_post=_authority_peer_post(ctx),
+            superseded_notifier=_announce_superseded(ctx),
+            retry_max_seconds=lambda: ctx.settings.progress_delivery_retry_max_seconds,
         )
         ctx.register_service("progress_service", progress_service)
         agent.progress_handler = progress_service.observe
         progress_service.start()
         outbox.start()
+        post_turn_worker = _build_post_turn_worker(app, ctx, async_runtime)
+        ctx.register_service("post_turn_worker", post_turn_worker)
+        post_turn_worker.start()
 
     async def on_shutdown(self, app, ctx: AppContext) -> None:
         bootstrap_store: BootstrapJobStore | None = ctx.services.get(
@@ -15372,9 +16064,15 @@ class FleetModule(Module):
         dispatch_worker = ctx.services.get("dispatch_worker")
         if dispatch_worker:
             await dispatch_worker.close()
+        post_turn_worker = ctx.services.get("post_turn_worker")
+        if post_turn_worker:
+            await post_turn_worker.close()
         reconciler = ctx.services.get("completion_reconciler")
         if reconciler:
             await reconciler.close()
+        liveness = ctx.services.get("dispatch_liveness")
+        if liveness:
+            await liveness.close()
         progress_service = ctx.services.get("progress_service")
         if progress_service:
             await progress_service.close()

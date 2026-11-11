@@ -75,7 +75,12 @@ class Scheduler:
             error = str(exc) if isinstance(exc, DeliveryError) else f'destination_failure:{type(exc).__name__}'
             if isinstance(exc, HTTPException):
                 error += f':http_{exc.status_code}'
-            await self.offload(self.ledger.finish, item['id'], now, error=error)
+            state = await self.offload(self.ledger.finish, item['id'], now, error=error)
+            if state == 'failed' and self.ctx is not None:
+                # Eight attempts are spent: nobody else will ever know this prompt was lost.
+                from pa.notifications.stall import notify_schedule_failed
+                await self.offload(notify_schedule_failed, self.ctx, occurrence=claimed,
+                                   owner=claimed.get('owner'), error=error)
         else:
             await self.offload(self.ledger.finish, item['id'], time.time() if real_clock else now, accepted=True)
 

@@ -32,6 +32,18 @@ class DispatchWorkerResilienceTests(unittest.IsolatedAsyncioTestCase):
             created_at=datetime.now(UTC),
         )
 
+    @staticmethod
+    def claims(store, *records) -> None:
+        """Model DispatchStore.begin_attempt for a mocked store."""
+        by_id = {record.dispatch_id: record for record in records}
+
+        def begin_attempt(dispatch_id, **_kwargs):
+            record = by_id[dispatch_id]
+            record.stage_attempts += 1
+            return record, True
+
+        store.begin_attempt.side_effect = begin_attempt
+
     def worker(self, store, handler, **kwargs) -> DispatchWorker:
         return DispatchWorker(
             store,
@@ -45,6 +57,7 @@ class DispatchWorkerResilienceTests(unittest.IsolatedAsyncioTestCase):
     async def test_queue_full_once_and_repeatedly_recovers(self) -> None:
         record = self.record()
         store = MagicMock()
+        self.claims(store, record)
         store.reconcile_interrupted.return_value = []
         store.runnable.side_effect = [
             BlockingQueueFull("full once"),
@@ -88,6 +101,7 @@ class DispatchWorkerResilienceTests(unittest.IsolatedAsyncioTestCase):
     async def test_generation_restart_does_not_duplicate_active_dispatch(self) -> None:
         record = self.record()
         store = MagicMock()
+        self.claims(store, record)
         store.reconcile_interrupted.return_value = []
         store.runnable.side_effect = [[record], ValueError("boom"), [record], []]
         release = asyncio.Event()
@@ -119,6 +133,7 @@ class DispatchWorkerResilienceTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.to_thread(entered.wait, 1)
         record = self.record()
         store = MagicMock()
+        self.claims(store, record)
         store.reconcile_interrupted.return_value = []
         store.runnable.side_effect = [[record], []]
         handled = asyncio.Event()

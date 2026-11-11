@@ -6,6 +6,7 @@ import asyncio
 import inspect
 import logging
 import os
+import time
 from collections import deque
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager, nullcontext
@@ -26,6 +27,7 @@ from pa.acp.configuration import (
     SessionConfigurationRequest,
     normalized_session_config_json,
 )
+from pa.acp.errors import TurnInactivityTimeout, deterministic_recovery_block
 from pa.acp.environment import (
     COMPLETION_DISPATCH_ENV,
     COMPLETION_SESSION_ENV,
@@ -99,6 +101,9 @@ _RECOVERY_MAX_SECONDS = 300
 _RECOVERY_MAX_ATTEMPTS = 8
 _QUIESCE_POLL_SECONDS = 0.4
 TURN_WAITING_SECONDS = 15.0
+# Spaced retries of a failed card-completion callback before the reconciler's
+# lost-completion sweep takes over.
+COMPLETION_RETRY_DELAYS = (1.0, 5.0, 15.0)
 TRANSCRIPT_WINDOW_LIMIT = 1000
 _TURN_STREAM_EVENT_TYPES = {
     "agent_message_chunk",
@@ -110,6 +115,10 @@ _TURN_STREAM_EVENT_TYPES = {
     "plan",
 }
 PromptAction = Literal["append", "prepend", "interrupt"]
+
+
+class PromptRetryScheduled(RuntimeError):
+    """A provider error that waiting cures; the prompt stays queued for a timed retry."""
 
 
 class PromptAdmissionBlocked(RuntimeError):
@@ -178,6 +187,29 @@ _AUTOMATIC_PROMPT_PREFIXES = (
 def _is_automatic_source(source: str) -> bool:
     normalized = (source or "api").strip().casefold()
     return normalized.startswith(_AUTOMATIC_PROMPT_PREFIXES)
+
+
+def _insert_by_priority(
+    queue: list[QueuedPrompt], item: QueuedPrompt, *, front: bool = False
+) -> None:
+    """Insert one prompt by priority without reshuffling the existing order.
+
+    A user may have reordered the queue across priority classes; sorting the
+    whole list on every enqueue would silently undo that. ``front`` places the
+    item before the first entry it outranks or ties with; otherwise it goes
+    after the last entry that outranks or ties with it.
+    """
+    if front:
+        index = next(
+            (i for i, queued in enumerate(queue) if queued.priority >= item.priority),
+            len(queue),
+        )
+    else:
+        index = max(
+            (i + 1 for i, queued in enumerate(queue) if queued.priority <= item.priority),
+            default=0,
+        )
+    queue.insert(index, item)
 
 
 def _prompt_authority(source: str, action: PromptAction) -> tuple[int, str]:
@@ -290,6 +322,11 @@ def _live_event_size(event: dict[str, Any]) -> int:
 class AgentSessionRuntime:
     """Owns one ACP subprocess + connection for a single PA session."""
 
+    # Defaults for runtimes built without __init__ (partial test doubles).
+    _retry: dict[str, Any] | None = None
+    _retry_not_before = 0.0
+    _retry_task: asyncio.Task[None] | None = None
+
     def __init__(
         self,
         manager: AgentSessionManager,
@@ -321,6 +358,26 @@ class AgentSessionRuntime:
         self._queue_paused = False
         self._in_flight: QueuedPrompt | None = None
         self._draining_prompt: QueuedPrompt | None = None
+        # Stop bumps the epoch; a turn that began earlier and has not reached
+        # the provider yet must not be delivered (see _run_prompt).
+        self._cancel_epoch = 0
+        self._draining_cancel_epoch = 0
+        # Dequeued by the drain but not yet owning a turn / not yet handed to
+        # the provider. Both are reset whenever the drain pops an item.
+        self._draining_started = False
+        self._delivery_started = False
+        self._delivered_prompt_id: str | None = None
+        # A turn lost to a dead connection stays recoverable (checkpointed as
+        # in_flight) until recovery requeues it on a fresh runtime.
+        self._interrupted: QueuedPrompt | None = None
+        # Retryable provider errors (rate limit, quota, overload): the failed
+        # prompt stays at the head of the queue and the drain is re-armed on a
+        # timer with exponential backoff. No new delivery before _retry_not_before.
+        self._retry: dict[str, Any] | None = None
+        self._retry_not_before = 0.0
+        self._retry_task: asyncio.Task[None] | None = None
+        self._recent_started_ids: deque[str] = deque(maxlen=64)
+        self._backlog_overflowed = False
         self._restart_receipts: dict[str, RestartHandoff] = {}
         self._drain_task: asyncio.Task[None] | None = None
         self._subscribers: list[asyncio.Queue[dict[str, Any]]] = []
@@ -330,6 +387,7 @@ class AgentSessionRuntime:
         self._pending_permissions: dict[str, asyncio.Future[Any]] = {}
         self._permission_requests: dict[str, dict[str, Any]] = {}
         self._permission_notification_ids: dict[str, str] = {}
+        self._logged_permission_requests: set[str] = set()
         self._pending_elicitations: dict[str, asyncio.Future[Any]] = {}
         self._elicitation_requests: dict[str, dict[str, Any]] = {}
         self._elicitation_notification_ids: dict[str, str] = {}
@@ -398,8 +456,15 @@ class AgentSessionRuntime:
             self._save_session_preserving_external_browser,
         )
 
-    def _checkpoint_runtime(self, *, lifecycle: str | None = None) -> None:
-        """Persist recoverable execution ownership before an API acknowledges it."""
+    def _checkpoint_runtime(
+        self, *, lifecycle: str | None = None, event_cursor: int | None = None
+    ) -> None:
+        """Persist recoverable execution ownership before an API acknowledges it.
+
+        ``event_cursor`` lets a caller checkpoint *before* publishing an event
+        while still recording the sequence number that event will receive.
+        """
+        in_flight = self._in_flight or self._interrupted
         config = dict(self.session.config_json or {})
         previous = dict(config.get(_DURABLE_RUNTIME_KEY) or {})
         config[_DURABLE_RUNTIME_KEY] = {
@@ -407,10 +472,8 @@ class AgentSessionRuntime:
             "lifecycle": lifecycle or previous.get("lifecycle") or "admitted",
             "queue_paused": self._queue_paused,
             "queued_prompts": [item.model_dump(mode="json") for item in self._queue],
-            "in_flight": (
-                self._in_flight.model_dump(mode="json") if self._in_flight else None
-            ),
-            "last_event_cursor": self._seq,
+            "in_flight": in_flight.model_dump(mode="json") if in_flight else None,
+            "last_event_cursor": self._seq if event_cursor is None else event_cursor,
             "pending_permissions": list(self._permission_requests.values()),
             "pending_elicitations": list(self._elicitation_requests.values()),
             "pending_interaction": previous.get("pending_interaction"),
@@ -434,6 +497,19 @@ class AgentSessionRuntime:
     @property
     def connected(self) -> bool:
         return bool(self.connection and self.connection.connected)
+
+    def provider_quiet_seconds(self) -> float | None:
+        """Seconds since the provider last produced real output this turn.
+
+        ``None`` when unknown. Zero while a human answer is awaited (the agent
+        is not silent, it is blocked on a person).
+        """
+        activity = getattr(self.connection, "activity", None)
+        quiet = getattr(activity, "quiet_seconds", None)
+        if not callable(quiet):
+            return None
+        value = quiet()
+        return float(value) if isinstance(value, (int, float)) else None
 
     @property
     def prompting(self) -> bool:
@@ -498,8 +574,26 @@ class AgentSessionRuntime:
             payload=payload,
         )
         self._transcript_buffer.append(te)
-        if len(self._transcript_buffer) > 4096:
+        if len(self._transcript_buffer) > 4096 and not self._backlog_overflowed:
+            # Make the hold visible and durable before refusing more events.
+            # The pause event itself may exceed the limit (the flag stops it
+            # from recursing); events after it are refused.
+            newly_paused = not self._queue_paused
             self._queue_paused = True
+            if newly_paused:
+                self._backlog_overflowed = True
+                try:
+                    self._append_transcript(
+                        "queue_paused", {"reason": "transcript_backlog_exceeded"}
+                    )
+                    self._checkpoint_runtime(lifecycle="paused")
+                except Exception:
+                    logger.exception(
+                        "Could not persist the transcript-backlog queue pause for %s",
+                        self.session_id,
+                    )
+                finally:
+                    self._backlog_overflowed = False
             raise RuntimeError(
                 "Transcript persistence backlog exceeded 4096 events; session paused"
             )
@@ -812,9 +906,68 @@ class AgentSessionRuntime:
         return InteractionResponse(idempotency_key=retry_key, value=stored)
 
     async def _on_permission(
+        self, external_session_id: str, request: dict[str, Any]
+    ) -> Any:
+        """Resolve one permission request; a failed attempt leaves no phantom state.
+
+        ``PAClient`` retries this on failure, so every attempt must start clean:
+        a half-registered future from a failed notification write would otherwise
+        linger as a pending permission nobody can answer.
+        """
+        request_id = str(request.get("request_id") or uuid4())
+        request["request_id"] = request_id
+        try:
+            return await self._on_permission_once(external_session_id, request)
+        except BaseException:
+            future = self._pending_permissions.pop(request_id, None)
+            if future is not None and not future.done():
+                future.cancel()
+            self._permission_requests.pop(request_id, None)
+            self._permission_notification_ids.pop(request_id, None)
+            raise
+
+    async def _on_permission_unavailable(
+        self, _external_session_id: str, request: dict[str, Any], exc: BaseException
+    ) -> None:
+        """The permission handler keeps failing: tell the owner, keep the request pending."""
+        tool = request.get("tool_call") or {}
+        title = str(tool.get("title") or tool.get("kind") or "a tool call")
+        await self._raise_stall(
+            "other",
+            item=None,
+            title="Agent is waiting for a permission PA cannot show",
+            body=(
+                f"The agent asked permission for {title}, but PA could not record the "
+                f"request ({type(exc).__name__}: {exc}). The agent is still waiting; PA "
+                "keeps retrying and will show the request as soon as it can."
+            ),
+            dedupe_key=f"{self.session_id}:permission:{request.get('request_id')}",
+        )
+
+    async def _on_permission_once(
         self, _external_session_id: str, request: dict[str, Any]
     ) -> Any:
-        if await self.manager.should_auto_approve_async(self.session.principal_id):
+        approver = self.session.principal_id
+        dispatch_id = getattr(self.session, "dispatch_id", None)
+        if dispatch_id:
+            # A goal-dispatched session acts on the goal owner's behalf, so the
+            # owner's auto-approve preference governs it; the session's own
+            # principal can be an instance or service identity with no preference
+            # and would silently fall back to the global default (prompt).
+            owner = await asyncio.to_thread(
+                goal_owner_principal,
+                getattr(self.manager, "dispatch_store", None),
+                getattr(self.manager, "store", None),
+                dispatch_id,
+            )
+            approver = owner or approver
+        try:
+            auto_approve = await self.manager.should_auto_approve_async(approver)
+        except Exception:
+            # Cannot read the preference: ask a human rather than guess "allow".
+            logger.exception("Could not read the auto-approve preference")
+            auto_approve = False
+        if auto_approve:
             options = request.get("options") or []
             option_id = None
             for kind in ("allow_always", "allow_once"):
@@ -844,7 +997,10 @@ class AgentSessionRuntime:
         future: asyncio.Future[Any] = loop.create_future()
         self._pending_permissions[request_id] = future
         self._permission_requests[request_id] = request
-        self._append_transcript("permission_request", request)
+        logged = self.__dict__.setdefault("_logged_permission_requests", set())
+        if request_id not in logged:
+            logged.add(request_id)
+            self._append_transcript("permission_request", request)
         notification_service = getattr(self.manager, "notification_service", None)
         notification_id = None
         if notification_service:
@@ -1006,6 +1162,7 @@ class AgentSessionRuntime:
             self._pending_permissions.pop(request_id, None)
             self._permission_requests.pop(request_id, None)
             self._permission_notification_ids.pop(request_id, None)
+            self.__dict__.setdefault("_logged_permission_requests", set()).discard(request_id)
             await self._checkpoint_runtime_async(
                 lifecycle="prompting" if self._in_flight else "ready"
             )
@@ -1228,6 +1385,26 @@ class AgentSessionRuntime:
                 lifecycle="prompting" if self._in_flight else "ready"
             )
 
+    def _restore_queue(self, queued_prompts: list[QueuedPrompt]) -> None:
+        """Restore persisted prompts, keeping their durable (possibly manual) order.
+
+        Only legacy entries written before priorities existed are classified
+        and sorted; otherwise sorting would undo an explicit reorder.
+        """
+        legacy = False
+        for item in queued_prompts:
+            item.session_id = self.session_id
+            if "priority" not in item.model_fields_set:
+                legacy = True
+                item.priority, item.turn_reason = _prompt_authority(
+                    item.source, "append"
+                )
+        self._queue = (
+            sorted(queued_prompts, key=lambda item: item.priority)
+            if legacy
+            else list(queued_prompts)
+        )
+
     async def start(
         self,
         *,
@@ -1288,6 +1465,7 @@ class AgentSessionRuntime:
             mcp_private_env=self.mcp_private_env,
             startup_trace=self.startup_trace,
         )
+        self.connection.on_permission_unavailable = self._on_permission_unavailable
         persisted = dict(
             ((self.session.config_json or {}).get("configuration") or {}).get("requested")
             or {}
@@ -1365,13 +1543,7 @@ class AgentSessionRuntime:
             await self._save_session_preserving_external_browser_async()
         self._queue_paused = queue_paused
         if queued_prompts:
-            for item in queued_prompts:
-                item.session_id = self.session_id
-                if "priority" not in item.model_fields_set:
-                    item.priority, item.turn_reason = _prompt_authority(
-                        item.source, "append"
-                    )
-            self._queue = sorted(queued_prompts, key=lambda item: item.priority)
+            self._restore_queue(queued_prompts)
         self._append_transcript(
             "session_started",
             {
@@ -1557,6 +1729,31 @@ class AgentSessionRuntime:
             return
         self._drain_task = asyncio.create_task(self._drain_queue())
 
+    def _arm_retry_timer(self) -> None:
+        """(Re)start the timer that re-drains the queue when the backoff ends."""
+        if self._closed:
+            return
+        delay = max(0.0, self._retry_not_before - time.monotonic())
+        current = self._retry_task
+        if current is not None and not current.done():
+            current.cancel()
+        self._retry_task = asyncio.create_task(self._retry_after(delay))
+
+    async def _retry_after(self, delay: float) -> None:
+        await asyncio.sleep(delay)
+        if self._closed:
+            return
+        self._retry_not_before = 0.0
+        self._start_drain()
+
+    def _clear_retry(self) -> None:
+        self._retry = None
+        self._retry_not_before = 0.0
+        task = self._retry_task
+        self._retry_task = None
+        if task is not None and not task.done() and task is not asyncio.current_task():
+            task.cancel()
+
     async def _drain_queue(self) -> None:
         self._restart_receipts.clear()
         while (
@@ -1570,6 +1767,11 @@ class AgentSessionRuntime:
             except ValueError:
                 return
             if self.manager.quiescing:
+                break
+            if time.monotonic() < self._retry_not_before:
+                # Backing off after a retryable provider error. Nothing (not even
+                # a fresh enqueue) may hammer the provider before the timer fires.
+                self._arm_retry_timer()
                 break
             # Inspect queue order before doing I/O. A receipt behind an eligible
             # user prompt must never delay that prompt. Restart the scan after
@@ -1616,20 +1818,36 @@ class AgentSessionRuntime:
             # Provider admission performs async work before _in_flight is set.
             # Keep ownership visible to receipt replay throughout that interval.
             self._draining_prompt = item
+            self._draining_cancel_epoch = self._cancel_epoch
+            self._draining_started = False
+            self._delivery_started = False
             self._queue.remove(item)
-            self._append_transcript(
-                "queue_dequeued",
-                {
-                    "id": item.id,
-                    "message": item.message,
-                    "source": item.source,
-                    "priority": item.priority,
-                    "turn_reason": item.turn_reason,
-                    "supersedes": item.supersedes,
-                },
-            )
+            self._recent_started_ids.append(item.id)
             try:
-                await self._run_prompt(item)
+                # Inside the guarded region so a failure here (for example a
+                # transcript backlog overflow) requeues the popped item.
+                self._append_transcript(
+                    "queue_dequeued",
+                    {
+                        "id": item.id,
+                        "message": item.message,
+                        "source": item.source,
+                        "priority": item.priority,
+                        "turn_reason": item.turn_reason,
+                        "supersedes": item.supersedes,
+                    },
+                )
+                result = await self._run_prompt(item)
+                if result == "connection_lost":
+                    # The interrupted prompt stays recoverable (checkpointed as
+                    # in_flight); stop draining so nothing overwrites that
+                    # until session recovery takes over.
+                    break
+                if result == "cancelled":
+                    # Not a completed turn: no restart receipt is delivered and
+                    # no publication fence is established. The prompt itself is
+                    # back at the head of the queue.
+                    continue
                 await self._refresh_restart_receipt(item)
                 receipt = self._restart_continuation_receipt(item)
                 if receipt is not None:
@@ -1654,6 +1872,21 @@ class AgentSessionRuntime:
                         },
                     )
                     await self._checkpoint_runtime_async(lifecycle="paused_for_review")
+            except PromptRetryScheduled as exc:
+                # Not an error to alarm about: the provider asked us to wait.
+                logger.warning(
+                    "Prompt %s will be retried for session %s: %s",
+                    item.id,
+                    self.session_id,
+                    exc,
+                )
+                if not any(queued.id == item.id for queued in self._queue):
+                    self._queue.insert(0, item)
+                try:
+                    await self._checkpoint_runtime_async(lifecycle="queued")
+                except Exception:
+                    logger.exception("Could not checkpoint retry wait")
+                break
             except PromptAdmissionBlocked as exc:
                 logger.info(
                     "Prompt %s is blocked before provider delivery for session %s: %s",
@@ -1665,15 +1898,33 @@ class AgentSessionRuntime:
                 break
             except Exception as exc:
                 logger.exception("Queued prompt failed for session %s", self.session_id)
-                self._append_transcript(
-                    "error",
-                    {"message": str(exc), "queued_prompt_id": item.id},
-                )
-                if not any(queued.id == item.id for queued in self._queue):
+                # The provider already received (and finished) this prompt: the
+                # failure is in post-turn bookkeeping. Requeueing it would send
+                # the same prompt to the agent twice.
+                delivered = self._delivered_prompt_id == item.id
+                try:
+                    self._append_transcript(
+                        "error",
+                        {
+                            "message": str(exc),
+                            "queued_prompt_id": item.id,
+                            "delivered": delivered,
+                        },
+                    )
+                except Exception:
+                    logger.exception("Could not record queued prompt failure")
+                if not delivered and not any(
+                    queued.id == item.id for queued in self._queue
+                ):
                     self._queue.insert(0, item)
-                await self._checkpoint_runtime_async(
-                    lifecycle="recoverable_interrupted"
-                )
+                try:
+                    await self._checkpoint_runtime_async(
+                        lifecycle="ready" if delivered else "recoverable_interrupted"
+                    )
+                except Exception:
+                    logger.exception("Could not checkpoint after queued prompt failure")
+                if delivered:
+                    continue
                 break
             finally:
                 self._restart_receipts.pop(item.id, None)
@@ -1723,8 +1974,7 @@ class AgentSessionRuntime:
             },
         )
         if not any(queued.id == item.id for queued in self._queue):
-            self._queue.insert(0, item)
-            self._queue.sort(key=lambda queued: queued.priority)
+            _insert_by_priority(self._queue, item, front=True)
         await self._checkpoint_runtime_async(lifecycle="admission_blocked")
         self._flush_transcript()
         block = (self.session.config_json or {}).get("execution_selection_block")
@@ -1822,11 +2072,9 @@ class AgentSessionRuntime:
             admission_pending=_durable_admission,
             admission_action=action if _durable_admission else None,
         )
-        if action in {"prepend", "interrupt"}:
-            self._queue.insert(0, item)
-        else:
-            self._queue.append(item)
-        self._queue.sort(key=lambda queued: queued.priority)
+        _insert_by_priority(
+            self._queue, item, front=action in {"prepend", "interrupt"}
+        )
         if _durable_admission:
             # Persist work before publishing acceptance. The per-item fence is
             # also restored after a crash, so no provider can overtake this save.
@@ -1836,6 +2084,17 @@ class AgentSessionRuntime:
                 self._queue = [queued for queued in self._queue if queued.id != item.id]
                 raise
             return item
+        # Persist before publishing acceptance: a failed checkpoint must leave
+        # no queue_enqueued event, otherwise a retry with the same prompt id
+        # would be reported as a duplicate of something that was never queued.
+        position = self._queue.index(item)
+        if not _is_automatic_source(source):
+            self._record_human_activity()
+        try:
+            self._checkpoint_runtime(lifecycle="queued", event_cursor=self._seq + 1)
+        except Exception:
+            self._queue = [queued for queued in self._queue if queued.id != item.id]
+            raise
         self._append_transcript(
             "queue_enqueued",
             {
@@ -1843,7 +2102,7 @@ class AgentSessionRuntime:
                 "message": message,
                 "images": [image.public_dict() for image in item.images],
                 "action": action,
-                "position": self._queue.index(item),
+                "position": position,
                 "source": source,
                 "priority": item.priority,
                 "turn_reason": item.turn_reason,
@@ -1851,13 +2110,6 @@ class AgentSessionRuntime:
                 "acceptance_result": item.acceptance_result,
             },
         )
-        if not _is_automatic_source(source):
-            self._record_human_activity()
-        try:
-            self._checkpoint_runtime(lifecycle="queued")
-        except Exception:
-            self._queue = [queued for queued in self._queue if queued.id != item.id]
-            raise
         self._flush_transcript()
         # The checkpoint above already includes human activity, the complete
         # queue and the assigned transcript cursor. Flushing only schedules
@@ -2013,7 +2265,16 @@ class AgentSessionRuntime:
         )
         if not wait and not _from_queue:
             # Chat UI / SSE path: accept immediately and run the turn in the background.
-            if self._queue_paused:
+            # Only an idle runtime with nothing waiting may start a prompt ahead
+            # of the queue. A non-empty queue, an active drain or a prompt that
+            # was dequeued but has not started a turn yet means this prompt
+            # waits its turn (FIFO by priority) like every other.
+            if (
+                self._queue_paused
+                or self._queue
+                or self._draining_prompt is not None
+                or (self._drain_task is not None and not self._drain_task.done())
+            ):
                 self.enqueue(
                     message,
                     images=images,
@@ -2036,6 +2297,11 @@ class AgentSessionRuntime:
                     "images": [image.public_dict() for image in item.images],
                     "action": "run",
                     "position": 0,
+                    "source": item.source,
+                    "priority": item.priority,
+                    "turn_reason": item.turn_reason,
+                    "supersedes": item.supersedes,
+                    "acceptance_result": item.acceptance_result,
                 },
             )
             self._flush_transcript()
@@ -2109,6 +2375,13 @@ class AgentSessionRuntime:
                 await self._finish_prompt_admission(item)
         if not self.connection:
             raise RuntimeError("Session not connected")
+        # A Stop issued after this point and before the provider receives the
+        # prompt must win. The drain captured the epoch when it dequeued us.
+        cancel_epoch = (
+            self._draining_cancel_epoch
+            if self._draining_prompt is item
+            else self._cancel_epoch
+        )
         item.cwd = self._validated_cwd(item.cwd)
         item.agent_env = self._merged_agent_env(item.agent_env)
         try:
@@ -2121,6 +2394,8 @@ class AgentSessionRuntime:
             logger.exception("Could not renew workspace lease for %s", self.session_id)
         async with self._prompt_lock:
             self._require_execution_context_active()
+            if self._cancel_epoch != cancel_epoch:
+                return await self._decline_cancelled_prompt(item)
             collaboration = getattr(self.manager, "collaboration_service", None)
             from pa.execution.selection_settings import apply_pending
 
@@ -2159,13 +2434,20 @@ class AgentSessionRuntime:
                 raise PromptAdmissionBlocked(
                     "Automatic prompt held: the queue was paused or its authorization changed during admission"
                 )
-            self._in_flight = item
-            self._turn_started_at = datetime.now(UTC)
-            self._turn_agent_events = []
-            self._turn_streamed = False
-            await self._supersede_obsolete_final_input_fallbacks(item)
-            await self._checkpoint_runtime_async(lifecycle="prompting")
             try:
+                # Everything from here to the provider call is inside the guard:
+                # a failure must clear _in_flight (and its checkpoint) instead
+                # of leaving the item both in flight and queued.
+                self._interrupted = None
+                self._delivered_prompt_id = None
+                self._delivery_started = False
+                self._draining_started = True
+                self._in_flight = item
+                self._turn_started_at = datetime.now(UTC)
+                self._turn_agent_events = []
+                self._turn_streamed = False
+                await self._supersede_obsolete_final_input_fallbacks(item)
+                await self._checkpoint_runtime_async(lifecycle="prompting")
                 composition = await self._offload(
                     "agent.prompt_compose",
                     compose_session_prompt,
@@ -2203,6 +2485,7 @@ class AgentSessionRuntime:
                         "pr_supervisor.action.required",
                         "pr_supervisor.action.green",
                         "pr_supervisor.action.merged",
+                        "pr_supervisor.action.closed",
                     ):
                         definition = PROMPTS.get(key)
                         if definition.template in item.message:
@@ -2249,6 +2532,12 @@ class AgentSessionRuntime:
                 config["prompt_audit"] = audit_history[-50:]
                 self.session.config_json = config
                 await self._save_session_preserving_external_browser_async()
+                if self._cancel_epoch != cancel_epoch:
+                    # Stop arrived during admission/composition: nothing has been
+                    # shown or sent yet, so hand the prompt back untouched.
+                    return await self._decline_cancelled_prompt(
+                        item, selection_attempt
+                    )
                 if first_attempt:
                     if not self.session.title and item.source != "system":
                         fallback = clean_title(" ".join(item.message.split())[:80])
@@ -2291,6 +2580,12 @@ class AgentSessionRuntime:
                 try:
                     await self._offload("sqlite.recovery_delivery_guard",
                         self.store.require_session_delivery_allowed, self.session_id)
+                    if self._cancel_epoch != cancel_epoch:
+                        # Last chance: the provider has not seen this prompt, so
+                        # honour Stop and keep the prompt (the finally below
+                        # records the selection attempt as not completed).
+                        return await self._decline_cancelled_prompt(item)
+                    self._delivery_started = True
                     stop_reason = await self.connection.prompt(
                         composition.text,
                         images=item.images,
@@ -2300,10 +2595,15 @@ class AgentSessionRuntime:
                         cwd=item.cwd,
                     )
                     protocol_completed, selection_stop_reason = True, stop_reason
+                    self._delivered_prompt_id = item.id
                 except Exception as exc:
                     from pa.acp.errors import classify_acp_failure, format_acp_error
 
                     if self._is_connection_loss(exc):
+                        # The prompt may not have reached the agent. Keep it in
+                        # the durable checkpoint as in_flight so session
+                        # recovery re-sends it (with the resume preamble) once.
+                        self._interrupted = item
                         await self._finish_turn_state()
                         await self._notify_connection_lost(item, exc)
                         await self._drain_transcripts()
@@ -2313,17 +2613,68 @@ class AgentSessionRuntime:
                         provider_id=self.session.agent_name,
                         stage="prompt",
                     )
-                    self._append_transcript(
-                        "prompt_failed",
-                        {
-                            "id": item.id,
-                            "error": format_acp_error(exc)[:1000],
-                            "failure": classified,
-                        },
-                    )
+                    plan = self._plan_prompt_retry(item, classified)
+                    failure_event: dict[str, Any] = {
+                        "id": item.id,
+                        "error": format_acp_error(exc)[:1000],
+                        "failure": classified,
+                    }
+                    will_retry = plan is not None and not plan.give_up
+                    if plan is not None:
+                        failure_event["retryable"] = will_retry
+                        failure_event["attempt"] = plan.attempt
+                        if will_retry:
+                            failure_event["retry_in_seconds"] = round(plan.delay_seconds, 1)
+                            failure_event["retry_at"] = (
+                                datetime.now(UTC) + timedelta(seconds=plan.delay_seconds)
+                            ).isoformat()
+                        else:
+                            failure_event["gave_up_after_attempts"] = plan.attempt
+                    self._append_transcript("prompt_failed", failure_event)
                     self._flush_transcript()
                     await self._drain_transcripts()
+                    if will_retry:
+                        await self._begin_retry_wait(item, classified, plan)
+                        raise PromptRetryScheduled(
+                            f"{classified.get('code')}: retrying in {int(plan.delay_seconds)}s "
+                            f"(attempt {plan.attempt})"
+                        ) from exc
+                    if plan is not None:
+                        self._clear_retry()  # a manual retry starts a fresh cycle
+                    await self._raise_stall(
+                        "prompt_failed",
+                        item=item,
+                        title="Prompt failed",
+                        body=(
+                            f"The agent turn ended with an error"
+                            + (
+                                f" after {plan.attempt} attempts"
+                                if plan is not None
+                                else ""
+                            )
+                            + f" ({classified.get('code')}): "
+                            f"{classified.get('message') or exc}"
+                        ),
+                        dedupe_key=f"{self.session_id}:{item.id}",
+                    )
                     raise RuntimeError(classified.get("message") or str(exc)) from exc
+                self._clear_retry()
+                interruption = getattr(self.connection, "last_interruption", None)
+                if not isinstance(interruption, dict):
+                    interruption = None
+                if interruption:
+                    await self._raise_stall(
+                        "hung_turn",
+                        item=item,
+                        title="Agent turn made no progress",
+                        body=(
+                            f"The agent produced no output for "
+                            f"{int(interruption.get('idle_seconds') or 0)}s, so PA cancelled "
+                            "the turn (it ended with stop reason "
+                            f"{stop_reason!r}, reason inactivity_timeout)."
+                        ),
+                        dedupe_key=f"{self.session_id}:{item.id}",
+                    )
                 usage = self.connection.last_usage if self.connection else None
                 if usage:
                     metrics = dict(self.session.metrics_json or {})
@@ -2334,18 +2685,31 @@ class AgentSessionRuntime:
                 # terminal event. A page refresh after turn_completed must see
                 # prompting=false and no per-turn start time.
                 await self._finish_turn_state()
-                self._append_transcript(
-                    "turn_completed",
-                    {
-                        "stop_reason": stop_reason,
-                        "usage": usage,
-                        "queued_prompt_id": item.id,
-                    },
-                )
+                completed_event: dict[str, Any] = {
+                    "stop_reason": stop_reason,
+                    "usage": usage,
+                    "queued_prompt_id": item.id,
+                }
+                if interruption:
+                    # The inactivity deadline cancelled this turn: record why, so
+                    # it is never mistaken for an operator Stop or a clean end.
+                    completed_event["reason"] = interruption.get("reason")
+                    completed_event["interruption"] = interruption
+                self._append_transcript("turn_completed", completed_event)
                 self._flush_transcript()
                 await self._drain_transcripts()
                 final_text = assemble_final_assistant_message(self._turn_agent_events)
-                needs_input = await self._surface_final_input_fallback(final_text, item)
+                try:
+                    needs_input = await self._surface_final_input_fallback(
+                        final_text, item
+                    )
+                except Exception:
+                    # Optional notification; never fail (and requeue) a turn
+                    # the provider has already completed.
+                    logger.exception(
+                        "Could not surface final input fallback for %s", item.id
+                    )
+                    needs_input = False
                 metrics = dict(self.session.metrics_json or {})
                 metrics["turns"] = int(metrics.get("turns") or 0) + 1
                 self.session.metrics_json = metrics
@@ -2411,6 +2775,8 @@ class AgentSessionRuntime:
                                 final_text, limit=8_000
                             ),
                         }
+                        if interruption:
+                            payload["reason"] = interruption.get("reason")
                         if disposition:
                             payload["card_disposition"] = disposition
                         elif disposition_error:
@@ -2444,20 +2810,7 @@ class AgentSessionRuntime:
                                 "result": payload,
                             }
                         )
-                        if inspect.iscoroutinefunction(self.manager.completion_handler):
-                            result = self.manager.completion_handler(
-                                self.session_id, payload
-                            )
-                        else:
-                            result = await self._offload(
-                                "agent.completion_callback",
-                                self.manager.completion_handler,
-                                self.session_id,
-                                payload,
-                                timeout=30.0,
-                            )
-                        if asyncio.iscoroutine(result):
-                            await result
+                        await self._deliver_completion(payload)
                     except Exception:
                         # Completion delivery is an outbox operation. A transport
                         # failure must never turn successful agent work into a
@@ -2490,6 +2843,44 @@ class AgentSessionRuntime:
                         logger.exception(
                             "Could not persist execution-selection outcome evidence"
                         )
+
+    async def _decline_cancelled_prompt(
+        self, item: QueuedPrompt, selection_attempt=None
+    ) -> str:
+        """End a turn Stop pre-empted before the provider received the prompt.
+
+        The prompt is returned to the head of the queue (never lost, never
+        delivered) and the turn state is cleared.
+        """
+        if not any(queued.id == item.id for queued in self._queue):
+            self._queue.insert(0, item)
+        if selection_attempt:
+            try:
+                from pa.execution.selection_audit import finish_prompt
+
+                await self._offload(
+                    "selection.prompt_outcome",
+                    finish_prompt,
+                    self,
+                    selection_attempt,
+                    completed=False,
+                    latency_ms=0.0,
+                    stop_reason=None,
+                )
+            except Exception:
+                logger.exception("Could not persist execution-selection outcome evidence")
+        self._append_transcript(
+            "queue_reordered",
+            {
+                "ids": [queued.id for queued in self._queue],
+                "order": "manual",
+                "reason": "cancelled_before_delivery",
+                "prompt_id": item.id,
+            },
+        )
+        await self._finish_turn_state()
+        self._flush_transcript()
+        return "cancelled"
 
     async def _surface_final_input_fallback(
         self, final_text: str, item: QueuedPrompt
@@ -2682,6 +3073,127 @@ class AgentSessionRuntime:
         self._turn_streamed = False
         await self._checkpoint_runtime_async(lifecycle="ready")
 
+    async def _deliver_completion(self, payload: dict[str, Any]) -> None:
+        """Hand the finished turn to the card layer, retrying a failed callback.
+
+        A single swallowed failure used to leave the card's dispatch "running"
+        forever. The handler is replay-tolerant, so a few spaced retries are safe;
+        anything still failing is picked up by the reconciler's lost-completion
+        sweep.
+        """
+        handler = self.manager.completion_handler
+        last: BaseException | None = None
+        for attempt in range(len(COMPLETION_RETRY_DELAYS) + 1):
+            if attempt:
+                await asyncio.sleep(COMPLETION_RETRY_DELAYS[attempt - 1])
+            try:
+                if inspect.iscoroutinefunction(handler):
+                    result = handler(self.session_id, payload)
+                else:
+                    result = await self._offload(
+                        "agent.completion_callback",
+                        handler,
+                        self.session_id,
+                        payload,
+                        timeout=30.0,
+                    )
+                if asyncio.iscoroutine(result):
+                    await result
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                last = exc
+                logger.warning(
+                    "Card completion callback failed for session %s (attempt %d/%d): %s",
+                    self.session_id,
+                    attempt + 1,
+                    len(COMPLETION_RETRY_DELAYS) + 1,
+                    exc,
+                )
+        assert last is not None
+        raise last
+
+    def _plan_prompt_retry(self, item: QueuedPrompt, classified: dict[str, Any]):
+        from pa.instance.prompt_retry import plan_retry
+
+        state = self._retry if self._retry and self._retry.get("prompt_id") == item.id else None
+        attempt = int(state["attempts"]) + 1 if state else 1
+        waited = time.monotonic() - float(state["first_failed"]) if state else 0.0
+        return plan_retry(
+            classified, attempt=attempt, waited_seconds=waited, settings=self.settings
+        )
+
+    async def _begin_retry_wait(self, item: QueuedPrompt, classified: dict[str, Any], plan) -> None:
+        """Hold the failed prompt at the head of the queue and re-arm the drain."""
+        previous = self._retry if self._retry and self._retry.get("prompt_id") == item.id else None
+        self._retry = {
+            "prompt_id": item.id,
+            "attempts": plan.attempt,
+            "first_failed": previous["first_failed"] if previous else time.monotonic(),
+            "code": plan.code,
+            "notified": bool(previous and previous.get("notified")),
+        }
+        self._retry_not_before = time.monotonic() + plan.delay_seconds
+        if not any(queued.id == item.id for queued in self._queue):
+            self._queue.insert(0, item)
+        self._arm_retry_timer()
+        if plan.long_wait and not self._retry["notified"]:
+            self._retry["notified"] = True
+            await self._raise_stall(
+                "prompt_failed",
+                item=item,
+                title="Agent is waiting on a provider limit",
+                body=(
+                    f"The provider keeps answering {plan.code} "
+                    f"({classified.get('message') or ''}). PA is still waiting and will "
+                    f"retry in about {int(plan.delay_seconds)}s; the prompt is not lost."
+                ),
+                severity="warning",
+                dedupe_key=f"{self.session_id}:{item.id}",
+            )
+
+    async def _raise_stall(
+        self,
+        kind: str,
+        *,
+        item: QueuedPrompt | None,
+        title: str,
+        body: str,
+        dedupe_key: str,
+        severity: str = "error",
+    ) -> None:
+        """Tell the owner this session is stuck (one deduplicated notification)."""
+        service = getattr(self.manager, "notification_service", None)
+        if service is None:
+            return
+        from pa.notifications.stall import notify_stall
+
+        session = self.session
+        try:
+            await self._offload(
+                "sqlite.notification_write",
+                notify_stall,
+                service,
+                kind=kind,
+                subject_ids={
+                    "realm_id": session.realm_id,
+                    "session_id": session.id,
+                    "card_id": (item.card_id if item else None)
+                    or session.card_id
+                    or session.item_id,
+                    "dispatch_id": session.dispatch_id,
+                    "project_id": (item.project_id if item else None) or session.project_id,
+                },
+                title=title,
+                body=body,
+                severity=severity,
+                dedupe_key=dedupe_key,
+                private_to=None,
+            )
+        except Exception:
+            logger.exception("Could not raise %s stall for session %s", kind, self.session_id)
+
     def _is_connection_loss(self, exc: BaseException) -> bool:
         if isinstance(exc, ConnectionError):
             return True
@@ -2700,21 +3212,71 @@ class AgentSessionRuntime:
             item.id,
             exc,
         )
-        self._append_transcript(
-            "connection_lost",
-            {
-                "message": "Connection to the agent was lost while handling this prompt. It may or may not have reached the agent — if you don't see a response, you may want to retry.",
-                "queued_prompt_id": item.id,
-                "detail": str(exc),
-            },
-        )
+        hung = isinstance(exc, TurnInactivityTimeout)
+        payload: dict[str, Any] = {
+            "message": (
+                "The agent made no progress for too long, so PA stopped it. The "
+                "prompt is kept and will be re-sent when the session recovers."
+                if hung
+                else "Connection to the agent was lost while handling this prompt. It may or may not have reached the agent — if you don't see a response, you may want to retry."
+            ),
+            "queued_prompt_id": item.id,
+            "detail": str(exc),
+        }
+        if hung:
+            payload["reason"] = exc.reason
+            payload["idle_seconds"] = exc.idle_seconds
+        self._append_transcript("connection_lost", payload)
         self.session.status = "recoverable_interrupted"
         await self._checkpoint_runtime_async(lifecycle="recoverable_interrupted")
         self._flush_transcript()
         self.manager.request_recovery(self.session_id)
+        if hung:
+            await self._raise_stall(
+                "hung_turn",
+                item=item,
+                title="Agent turn made no progress",
+                body=(
+                    f"The agent produced no output for {int(exc.idle_seconds)}s and did "
+                    f"not end the cancelled turn within {exc.grace_seconds:g}s, so PA "
+                    "killed the provider. The prompt is queued for recovery and will be "
+                    "re-sent."
+                ),
+                dedupe_key=f"{self.session_id}:{item.id}",
+            )
+        else:
+            await self._raise_stall(
+                "connection_lost",
+                item=item,
+                title="Agent connection lost",
+                body=(
+                    "The connection to the agent dropped mid-turn. PA is recovering the "
+                    f"session and will re-send the prompt. Detail: {exc}"
+                ),
+                severity="warning",
+                dedupe_key=f"{self.session_id}:{item.id}",
+            )
+
+    def _awaiting_provider_delivery(self) -> bool:
+        """A prompt is dequeued or in flight but the provider has not got it yet."""
+        return (
+            self._in_flight is not None or self._draining_prompt is not None
+        ) and not self._delivery_started
+
+    def has_work_to_hold(self) -> bool:
+        """True when a Stop has queued (or about-to-be-delivered) prompts to hold."""
+        return bool(self._queue) or self._awaiting_provider_delivery()
 
     async def cancel(self, *, pause_queue: bool = True) -> None:
+        """Interrupt the current turn.
+
+        ``pause_queue=True`` is a user Stop: the queue (including a prompt Stop
+        pre-empts before the provider got it) is held until the user resumes.
+        Agent-internal interrupts pass ``pause_queue=False`` and keep draining.
+        """
         self._restart_receipts.clear()
+        self._cancel_epoch += 1
+        newly_paused = pause_queue and not self._queue_paused
         if pause_queue:
             self._queue_paused = True
         if self.connection:
@@ -2722,8 +3284,15 @@ class AgentSessionRuntime:
                 await self.connection.cancel()
             except Exception:
                 logger.exception("Cancel failed for session %s", self.session_id)
-        self._append_transcript("cancelled", {"pause_queue": pause_queue})
-        await self._checkpoint_runtime_async(lifecycle="ready")
+        self._append_transcript(
+            "cancelled",
+            {"pause_queue": pause_queue, "queue_paused": self._queue_paused},
+        )
+        if newly_paused:
+            self._append_transcript("queue_paused", {"reason": "stop"})
+        await self._checkpoint_runtime_async(
+            lifecycle="paused" if self._queue_paused and self._queue else "ready"
+        )
         self._flush_transcript()
         await self._drain_transcripts()
 
@@ -2737,6 +3306,8 @@ class AgentSessionRuntime:
     def resume_queue(self) -> None:
         self.store.require_session_delivery_allowed(self.session_id)
         self._queue_paused = False
+        # An explicit resume is an operator asking for a retry now.
+        self._retry_not_before = 0.0
         self._append_transcript("queue_resumed", {})
         self._checkpoint_runtime(lifecycle="queued" if self._queue else "ready")
         self._flush_transcript()
@@ -2765,7 +3336,13 @@ class AgentSessionRuntime:
 
     async def release_provider(self, *, reason: str) -> None:
         """Release an idle process without ending the durable conversation."""
-        if self.prompting or self._queue or self._pending_permissions or self._pending_elicitations:
+        if (
+            self.prompting
+            or self._queue
+            or self._draining_prompt is not None
+            or self._pending_permissions
+            or self._pending_elicitations
+        ):
             raise RuntimeError("Session still has active provider obligations")
         self.session.status = "available"
         self._append_transcript("provider_released", {"reason": reason})
@@ -2788,12 +3365,50 @@ class AgentSessionRuntime:
             self._flush_transcript()
         return removed
 
+    def prompt_started(self, prompt_id: str) -> bool:
+        """True when a prompt left the queue because its turn started or ended."""
+        return (
+            prompt_id in self._recent_started_ids
+            or (self._in_flight is not None and self._in_flight.id == prompt_id)
+            or (self._draining_prompt is not None and self._draining_prompt.id == prompt_id)
+        )
+
     def reorder_queue(self, prompt_ids: list[str]) -> list[QueuedPrompt]:
+        """Apply an explicit order to the queued prompts.
+
+        Duplicate ids keep their first position and unknown ids (already
+        dequeued, or never queued) are ignored, so a stale client can never
+        duplicate or resurrect a prompt. Queued prompts not named keep their
+        relative order after the named ones. The explicit order is
+        authoritative, including across priority classes: later enqueues are
+        placed by priority around it without reshuffling it.
+        """
         by_id = {q.id: q for q in self._queue}
-        ordered = [by_id[i] for i in prompt_ids if i in by_id]
-        remaining = [q for q in self._queue if q.id not in prompt_ids]
+        ordered: list[QueuedPrompt] = []
+        ignored: list[str] = []
+        seen: set[str] = set()
+        for prompt_id in prompt_ids:
+            if prompt_id in seen:
+                continue
+            seen.add(prompt_id)
+            if prompt_id in by_id:
+                ordered.append(by_id[prompt_id])
+            else:
+                ignored.append(prompt_id)
+        remaining = [q for q in self._queue if q.id not in seen]
         self._queue = ordered + remaining
-        self._append_transcript("queue_reordered", {"ids": [q.id for q in self._queue]})
+        self._append_transcript(
+            "queue_reordered",
+            {
+                "ids": [q.id for q in self._queue],
+                "order": "manual",
+                "ignored_ids": ignored,
+                "policy": (
+                    "Explicit order is kept across priority classes; new prompts "
+                    "are inserted by priority without reordering existing ones."
+                ),
+            },
+        )
         self._checkpoint_runtime(lifecycle="queued" if self._queue else "ready")
         self._flush_transcript()
         return list(self._queue)
@@ -3017,6 +3632,16 @@ class AgentSessionRuntime:
             }})
         return rows
 
+    def _starting_prompt_dump(self) -> dict[str, Any] | None:
+        draining = getattr(self, "_draining_prompt", None)
+        if (
+            draining is None
+            or self._in_flight is not None
+            or getattr(self, "_draining_started", False)
+        ):
+            return None
+        return draining.model_dump(mode="json")
+
     def snapshot(self, *, include_transcript: bool = True) -> dict[str, Any]:
         """Return runtime state, optionally including the bounded durable transcript.
 
@@ -3063,6 +3688,8 @@ class AgentSessionRuntime:
             "in_flight": self._in_flight.model_dump(mode="json")
             if self._in_flight
             else None,
+            # Dequeued but not yet in a turn: not in the queue, not in flight.
+            "starting": self._starting_prompt_dump(),
             "models": conn.models if conn else None,
             "modes": conn.modes if conn else None,
             "config_options": conn.config_options if conn else None,
@@ -3139,7 +3766,7 @@ class AgentSessionRuntime:
             prompting=False,
             queue_paused=self._queue_paused,
             queued_prompts=list(self._queue),
-            in_flight=self._in_flight,
+            in_flight=self._in_flight or self._interrupted,
         )
 
     async def close(
@@ -3169,6 +3796,7 @@ class AgentSessionRuntime:
         )
         self._closed = True
         self._queue_paused = True
+        self._clear_retry()
         if self._drain_task and not self._drain_task.done():
             self._drain_task.cancel()
         notification_service = getattr(self.manager, "notification_service", None)
@@ -3253,6 +3881,30 @@ class AgentSessionRuntime:
         return True
 
 
+def goal_owner_principal(dispatch_store: Any, store: Any, dispatch_id: str) -> str | None:
+    """The owner of the durable goal a dispatch was made for, if it was goal-bound."""
+
+    if dispatch_store is None or store is None or not dispatch_id:
+        return None
+    try:
+        record = dispatch_store.get(dispatch_id)
+        provenance = getattr(record, "goal_provenance", None)
+        goal_id = getattr(provenance, "goal_id", None)
+        if not isinstance(goal_id, str) or not goal_id:
+            return None
+        from pa.goals.projection import get_goal_payload
+
+        realm_id = getattr(record, "realm_id", None)
+        payload = get_goal_payload(
+            store, goal_id, realm_id if isinstance(realm_id, str) and realm_id else None
+        )
+        owner = str((payload or {}).get("owner_principal") or "").strip()
+        return owner or None
+    except Exception:  # noqa: BLE001 - fall back to the session's own principal
+        logger.debug("Could not resolve the goal owner for %s", dispatch_id, exc_info=True)
+        return None
+
+
 class AgentSessionManager:
     """Tracks many concurrent ACP sessions (one subprocess each)."""
 
@@ -3296,6 +3948,8 @@ class AgentSessionManager:
         self._recovery_coordinator_task: asyncio.Task[None] | None = None
         self._recovery_wake = asyncio.Event()
         self._recovery_tasks: dict[str, asyncio.Task[None]] = {}
+        self._logged_recovery_blocks: dict[str, str] = {}
+        self._blocked_sessions_signalled = False
         self._admitting_sessions: set[str] = set()
         self._recovery_metrics: dict[str, int] = {
             "attempted": 0,
@@ -3309,6 +3963,7 @@ class AgentSessionManager:
         self.async_runtime: AsyncRuntime | None = None
         self.browser = BrowserManager(settings.data_dir)
         self.workspace_manager = WorkspaceManager(settings, store)
+        self.workspace_manager.reclaim_observer = self._on_lease_reclaimed
         self.workspace_manager.live_runtime = lambda session_id: (
             session_id in self._admitting_sessions
             or ((runtime := self.get(session_id)) is not None and not runtime._closed)
@@ -3387,6 +4042,28 @@ class AgentSessionManager:
         )
         await self._offload(
             "sqlite.card_disposition_append",
+            self.store.append_transcript_events,
+            [event],
+        )
+
+    async def record_dispatch_superseded(
+        self, session_id: str, payload: dict[str, Any]
+    ) -> None:
+        """Note in the transcript that the authority reassigned this dispatch."""
+        runtime = self.get(session_id)
+        if runtime and not getattr(runtime, "_closed", False):
+            runtime._append_transcript("dispatch_superseded", payload)
+            runtime._flush_transcript()
+            await runtime._drain_transcripts()
+            return
+        event = TranscriptEvent(
+            session_id=session_id,
+            seq=self.store.next_transcript_seq(session_id),
+            event_type="dispatch_superseded",
+            payload=payload,
+        )
+        await self._offload(
+            "sqlite.dispatch_superseded_append",
             self.store.append_transcript_events,
             [event],
         )
@@ -3511,7 +4188,13 @@ class AgentSessionManager:
                 ):
                     oldest_pending_admission = created_at
             runtime = self.get(session.id)
-            if admissions and runtime and not runtime._queue and not runtime._in_flight:
+            if (
+                admissions
+                and runtime
+                and not runtime._queue
+                and not runtime._in_flight
+                and not runtime._interrupted
+            ):
                 contradictory_states += 1
             if (
                 session.purpose == "chat"
@@ -3590,6 +4273,24 @@ class AgentSessionManager:
             "agent.recovery_sessions", self.store.list_sessions,
             exclude_statuses=("closed",), include_archived=False, timeout=30.0
         )
+        if not self._blocked_sessions_signalled:
+            # Sessions blocked before this process started never passed through
+            # the transition that announces a block. Announce them once per boot.
+            self._blocked_sessions_signalled = True
+            for blocked_session in sessions:
+                if (
+                    blocked_session.status == RECOVERY_BLOCKED_STATUS
+                    and (blocked_session.recovery_json or {}).get("blocked")
+                ):
+                    try:
+                        await self._offload(
+                            "agent.recovery_block_signal",
+                            self._signal_recovery_block, blocked_session.id,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Could not signal recovery block for %s", blocked_session.id
+                        )
         due: list[AgentSession] = []
         for session in sessions:
             if session.id in self._admitting_sessions:
@@ -3677,6 +4378,7 @@ class AgentSessionManager:
             return
         recovered.session.recovery_json = {}
         await recovered._save_session_preserving_external_browser_async()
+        await self._settle_dispatch_after_recovery_async(session_id)
         self._recovery_metrics["succeeded"] += 1
 
     def require_startup_complete(self) -> None:
@@ -4062,6 +4764,7 @@ class AgentSessionManager:
         except Exception as exc:
             binding_blocked = isinstance(exc, WorkspaceBindingMismatch)
             project_blocked = bool(execution_project_id and _project_recovery_block(exc))
+            deterministic = deterministic_recovery_block(exc)
             workspace_blocked = project_blocked or binding_blocked
             session.status = (
                 RECOVERY_BLOCKED_STATUS if workspace_blocked else "provisioning_failed"
@@ -4080,11 +4783,13 @@ class AgentSessionManager:
                 "state": "blocked" if workspace_blocked else "failed",
                 "stage": "workspace",
                 "retryable": not workspace_blocked,
-                "manual_retry": workspace_blocked,
-                "automatic_retry": not workspace_blocked,
+                "manual_retry": workspace_blocked or deterministic is not None,
+                "automatic_retry": not (workspace_blocked or deterministic),
                 "error_code": (
                     "workspace_binding_mismatch"
                     if binding_blocked
+                    else deterministic["code"]
+                    if deterministic
                     else "project_unavailable_on_instance"
                     if project_blocked
                     else "workspace_provisioning_failed"
@@ -4096,6 +4801,8 @@ class AgentSessionManager:
                     "link its checkout; then retry this session. Close the session "
                     "if it is no longer needed."
                     if project_blocked
+                    else deterministic["remedy"]
+                    if deterministic
                     else "Correct the workspace configuration, then retry"
                 ),
                 "error": str(exc)[:1000],
@@ -4831,6 +5538,9 @@ class AgentSessionManager:
                     if recovered is not None and recovered.session.recovery_json:
                         recovered.session.recovery_json = {}
                         await recovered._save_session_preserving_external_browser_async()
+                        await self._settle_dispatch_after_recovery_async(
+                            recovered.session.id
+                        )
                     self._startup_recovered += 1
                     self._startup_decisions.append(
                         {
@@ -4856,9 +5566,8 @@ class AgentSessionManager:
                     recovery_state = await self._mark_recovery_interrupted(sess, exc)
                     if recovery_state == RECOVERY_BLOCKED_STATUS:
                         session = persisted_by_id.get(sess.session_id or "")
-                        logger.warning(
-                            "ACP recovery blocked for session %s: %s",
-                            sess.session_id,
+                        self._log_recovery_block(
+                            sess.session_id or "",
                             self._recovery_action(session) if session else str(exc),
                         )
                     else:
@@ -5386,6 +6095,10 @@ class AgentSessionManager:
         for event in events:
             if event.event_type not in {"turn_completed", "prompt_failed"}:
                 continue
+            if event.event_type == "prompt_failed" and (event.payload or {}).get("retryable"):
+                # A rate-limit / quota / overload failure is waiting to be retried:
+                # the prompt is still owed to the provider, so keep it across restart.
+                continue
             prompt_id = (event.payload or {}).get("queued_prompt_id") or (
                 event.payload or {}
             ).get("id")
@@ -5437,6 +6150,249 @@ class AgentSessionManager:
             ),
         )
 
+    def _create_attention_notice(
+        self,
+        *,
+        session: AgentSession,
+        key: str,
+        title: str,
+        summary: str,
+        body: str,
+        severity: str = "error",
+        kind: str = "recovery_blocked",
+    ) -> bool:
+        """Create one deduplicated HIGH notice about a session (sync, worker-thread safe).
+
+        A thin adapter over the shared ``notify_stall`` helper. It keeps this
+        notice's own dedupe key, capability, type and "open the session" action,
+        so existing clients and stored notices are unchanged.
+        """
+        service = getattr(self, "notification_service", None)
+        if service is None:
+            return False
+        from urllib.parse import urlencode
+
+        from pa.domain.notifications import (
+            SESSION_ATTENTION_NOTICE_CAPABILITY,
+            NotificationAction,
+            NotificationType,
+            concise_notification_summary,
+        )
+        from pa.notifications.stall import notify_stall
+
+        destination = "/agent?" + urlencode({"session": session.id})
+        try:
+            finder = getattr(getattr(service, "store", None), "find_notification_by_dedup", None)
+            # One notice per cause: skip when it exists, open or dismissed, so a
+            # restart sweep does not bump its coalesced count every boot.
+            if callable(finder) and finder(session.realm_id, key) is not None:
+                return False
+        except Exception:
+            logger.exception("Could not look up session attention notice %s", key)
+            return False
+        created = notify_stall(
+            service,
+            kind=kind,
+            subject_ids={
+                "realm_id": session.realm_id,
+                "session_id": session.id,
+                "card_id": session.card_id,
+                "project_id": session.project_id,
+                "dispatch_id": session.dispatch_id,
+            },
+            title=title,
+            body=body,
+            summary=concise_notification_summary(summary),
+            severity=severity,
+            priority="high",
+            dedupe_key=key,
+            deduplication_key=key,
+            capability=SESSION_ATTENTION_NOTICE_CAPABILITY,
+            notification_type=NotificationType.SERVICE_HEALTH,
+            actions=[
+                NotificationAction(
+                    id="retry",
+                    kind="navigate",
+                    label="Open session and retry",
+                    href=destination,
+                )
+            ],
+            principal_id=f"instance:{self.settings.instance_id}",
+            private_to=session.principal_id or None,
+            extra_fields={"destination_url": destination},
+        )
+        return created is not None
+
+    def _card_title(self, card_id: str | None) -> str:
+        if not card_id:
+            return "(no card)"
+        try:
+            card = self.store.get_card(card_id)
+            return f"{card.title} ({card_id})" if card else card_id
+        except Exception:
+            return card_id
+
+    def _signal_recovery_block(self, session_id: str) -> None:
+        """Tell a person a session is blocked and stop its dispatch waiting on it."""
+        session = self.store.get_session(session_id)
+        if session is None or session.status != RECOVERY_BLOCKED_STATUS:
+            return
+        recovery = dict(session.recovery_json or {})
+        code = str(recovery.get("code") or "recovery_blocked")
+        exhausted = bool(recovery.get("exhausted"))
+        remedy = str(recovery.get("remedy") or self._recovery_action(session))
+        self._create_attention_notice(
+            session=session,
+            key=f"session-recovery-blocked:{session.id}:{code}",
+            title=(
+                "Agent session gave up recovering"
+                if exhausted else "Agent session cannot recover on its own"
+            ),
+            summary=f"{self._card_title(session.card_id)}: {code}. {remedy}",
+            body=(
+                f"Card: {self._card_title(session.card_id)}\n"
+                f"Session: {session.id}\n"
+                f"Reason: {code}"
+                + (f" (after {recovery.get('attempts')} attempts)" if exhausted else "")
+                + f"\nLast error: {recovery.get('last_error') or 'unknown'}\n"
+                f"What to do: {remedy}\n"
+                "PA will not retry this session by itself until the cause changes. "
+                "Open the session to retry it, or close it if it is no longer needed."
+            ),
+        )
+        ledger = self.dispatch_store
+        if ledger is None or not session.dispatch_id:
+            return
+        from pa.execution.dispatch import DispatchEvent
+
+        message = f"Agent session is recovery-blocked ({code}); {remedy}"
+
+        def mutate(record) -> bool:
+            if record.state != "running" or record.session_id != session.id:
+                return False
+            record.last_error = message[:1000]
+            record.error_code = "session_recovery_blocked"
+            record.recoverable = True
+            record.state = "failed"
+            record.events.append(DispatchEvent(
+                seq=(record.events[-1].seq + 1 if record.events else 1),
+                state="failed", message=message[:1000],
+                detail={"session_id": session.id, "recovery_code": code,
+                        "exhausted": exhausted},
+            ))
+            return True
+
+        try:
+            ledger.mutate_current(session.dispatch_id, mutate=mutate)
+        except ValueError:
+            pass  # No such dispatch on this instance.
+
+    async def _settle_dispatch_after_recovery_async(self, session_id: str) -> None:
+        if self.dispatch_store is None:
+            return
+        try:
+            await self._offload(
+                "dispatch.recovery_settle",
+                self._settle_dispatch_after_recovery, session_id,
+            )
+        except Exception:
+            logger.exception("Could not settle dispatch for recovered session %s", session_id)
+
+    def _settle_dispatch_after_recovery(self, session_id: str) -> None:
+        """Undo the recoverable failure recorded when this session was blocked."""
+        ledger = self.dispatch_store
+        session = self.store.get_session(session_id)
+        if ledger is None or session is None or not session.dispatch_id:
+            return
+        from pa.execution.dispatch import DispatchEvent
+
+        def mutate(record) -> bool:
+            if (
+                record.state != "failed" or record.session_id != session_id
+                or record.error_code != "session_recovery_blocked"
+                or record.completion_payload is not None
+                or record.acknowledged_at is not None
+            ):
+                return False
+            record.last_error = None
+            record.error_code = None
+            record.recoverable = True
+            record.state = "running"
+            record.events.append(DispatchEvent(
+                seq=(record.events[-1].seq + 1 if record.events else 1),
+                state="running", message="Agent session recovered; dispatch resumed.",
+                detail={"session_id": session_id},
+            ))
+            return True
+
+        try:
+            ledger.mutate_current(session.dispatch_id, mutate=mutate)
+        except ValueError:
+            pass
+
+    def _on_lease_reclaimed(self, result: dict[str, Any]) -> None:
+        """Record and announce a worktree lease taken from a dead session (worker thread)."""
+        session = self.store.get_session(result["session_id"])
+        if session is None:
+            return
+        rescue = result.get("rescue") or {}
+        ref = rescue.get("ref")
+        where = (
+            f"Uncommitted and unpushed work was saved to {ref} in the repository "
+            f"cache ({result.get('worktree_path')})."
+            if ref else
+            "The work could not be copied to a rescue ref"
+            f" ({rescue.get('error') or rescue.get('reason') or 'unknown'}); the worktree "
+            f"was left untouched at {result.get('worktree_path')}."
+        )
+        ledger = self.dispatch_store
+        if ledger is not None and session.dispatch_id:
+            from pa.execution.dispatch import DispatchEvent
+
+            def mutate(record) -> bool:
+                record.events.append(DispatchEvent(
+                    seq=(record.events[-1].seq + 1 if record.events else 1),
+                    state=record.state,
+                    message="Worktree lease reclaimed from this dead session.",
+                    detail={"lease_id": result.get("lease_id"),
+                            "rescue_ref": ref, "rescue_sha": rescue.get("sha"),
+                            "reason": result.get("reason"),
+                            "requested_by": result.get("requested_by")},
+                ))
+                return True
+
+            try:
+                ledger.mutate_current(session.dispatch_id, mutate=mutate)
+            except ValueError:
+                pass
+        self._create_attention_notice(
+            session=session,
+            key=f"workspace-lease-reclaimed:{result.get('lease_id')}:{result.get('previous_fencing_token')}",
+            title="Worktree lease reclaimed from a dead session",
+            summary=f"{self._card_title(result.get('card_id'))}: {where}",
+            body=(
+                f"Card: {self._card_title(result.get('card_id'))}\n"
+                f"Dead session: {session.id} ({result.get('reason')})\n"
+                f"Taken over for: {result.get('requested_by') or 'a new dispatch'}\n"
+                f"{where}\n"
+                "The old worktree was not deleted. PA reclaims a dead session's lease "
+                "automatically so the card can continue; turn this off with the "
+                "agent_reclaim_dead_session_leases setting."
+            ),
+            severity="warning",
+        )
+
+    def _log_recovery_block(self, session_id: str, reason: str) -> None:
+        """Warn once per process for an unchanged block; later passes are debug."""
+        seen = self._logged_recovery_blocks
+        if seen.get(session_id) == reason:
+            logger.debug(
+                "ACP recovery still blocked for session %s: %s", session_id, reason
+            )
+            return
+        seen[session_id] = reason
+        logger.warning("ACP recovery blocked for session %s: %s", session_id, reason)
+
     async def _mark_recovery_interrupted(
         self, snapshot: SessionSnapshot, exc: BaseException
     ) -> str | None:
@@ -5450,25 +6406,41 @@ class AgentSessionManager:
         config = dict(session.config_json or {})
         # Classify the current failure, not a stale blocked marker. The project
         # may have arrived since the last boot and exposed a different failure.
-        from pa.acp.errors import classify_acp_failure
+        from pa.acp.errors import classify_acp_failure, deterministic_recovery_block
 
         classified = classify_acp_failure(
             exc, provider_id=session.agent_name, stage="session_recovery"
         )
         previous_recovery = dict(session.recovery_json or {})
-        attempts = int(previous_recovery.get("attempts") or 0) + 1
         code = str(classified.get("code") or "recovery_failed")
         binding_blocked = isinstance(exc, WorkspaceBindingMismatch)
         if binding_blocked:
             code = "workspace_binding_mismatch"
+        # Lease conflicts, dispatch-binding mismatches and retained checkouts
+        # cannot succeed on retry: block on the first attempt with a precise code.
+        deterministic = deterministic_recovery_block(exc)
+        if deterministic and not binding_blocked:
+            code = deterministic["code"]
+        # An already-blocked session that fails the same way again is a re-check,
+        # not another attempt: keep the counter and the original timestamps.
+        repeat_block = bool(
+            previous_recovery.get("blocked")
+            and previous_recovery.get("code") == code
+            and previous_recovery.get("last_error") == str(exc)[:1000]
+        )
+        attempts = int(previous_recovery.get("attempts") or 0) + (0 if repeat_block else 1)
         actionable = (
             binding_blocked
+            or deterministic is not None
             or not bool(classified.get("recoverable", True))
-            or "auth" in code
+            or code.startswith("auth_")
             or "credential" in code
             or "config" in code
         )
-        exhausted = attempts >= _RECOVERY_MAX_ATTEMPTS
+        exhausted = (
+            bool(previous_recovery.get("exhausted")) if repeat_block
+            else attempts >= _RECOVERY_MAX_ATTEMPTS
+        )
         lowered_error = str(exc).casefold()
         context_lost = any(
             marker in lowered_error
@@ -5505,6 +6477,8 @@ class AgentSessionManager:
         )
         if binding_blocked:
             remedy = WorkspaceBindingMismatch.remedy
+        elif deterministic is not None:
+            remedy = deterministic["remedy"]
         elif session.project_id and _project_recovery_block(exc):
             remedy = self._recovery_action(session)
         elif context_lost:
@@ -5520,10 +6494,14 @@ class AgentSessionManager:
             )
         else:
             remedy = None
+        previous_recovery_json = dict(session.recovery_json or {})
         session.recovery_json = {
             "version": 1,
             "attempts": attempts,
-            "last_attempt_at": datetime.now(UTC).isoformat(),
+            "last_attempt_at": (
+                previous_recovery.get("last_attempt_at") or datetime.now(UTC).isoformat()
+                if repeat_block else datetime.now(UTC).isoformat()
+            ),
             "last_error": str(exc)[:1000],
             "code": code,
             "blocked": blocked,
@@ -5536,11 +6514,24 @@ class AgentSessionManager:
             ),
             "remedy": remedy,
         }
-        session.status = recovery_state
-        session.updated_at = datetime.now(UTC)
-        await self._offload(
-            "sqlite.agent_session_save", self.store.save_session, session
-        )
+        if not (
+            repeat_block
+            and session.status == recovery_state
+            and session.recovery_json == previous_recovery_json
+        ):
+            session.status = recovery_state
+            session.updated_at = datetime.now(UTC)
+            await self._offload(
+                "sqlite.agent_session_save", self.store.save_session, session
+            )
+        if blocked and not repeat_block:
+            try:
+                await self._offload(
+                    "agent.recovery_block_signal",
+                    self._signal_recovery_block, session.id,
+                )
+            except Exception:
+                logger.exception("Could not signal recovery block for %s", session.id)
         return recovery_state
 
     async def retry_session(self, session_id: str) -> AgentSessionRuntime:
@@ -5591,6 +6582,7 @@ class AgentSessionManager:
             if recovered is None:
                 raise RuntimeError("Session recovery did not create a runtime")
             self._last_error = None
+            await self._settle_dispatch_after_recovery_async(session_id)
             return recovered
 
     @staticmethod
@@ -5617,7 +6609,7 @@ class AgentSessionManager:
                         "source": "recovery",
                     }
                 )
-            queued.insert(0, interrupted)
+            _insert_by_priority(queued, interrupted, front=True)
         for item in queued:
             item.cwd = session.cwd
             merged_env = dict(item.agent_env or {})

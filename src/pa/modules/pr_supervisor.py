@@ -1014,6 +1014,9 @@ class PRSupervisorModule(Module):
         store = PRSupervisorStore(ctx.settings.data_dir / "pr_supervisor.db")
         store.completion_capabilities = ctx.store.card_completion_capabilities
         ctx.register_service("pr_supervisor_store", store)
+        from pa.fleet.workshop_transitions import workshop_transition_publisher
+
+        store.watch_observer = workshop_transition_publisher(ctx).watch_changed
         pages: PageRegistry = ctx.require_service("pages")
         pages.register(
             PageDefinition(
@@ -1050,6 +1053,8 @@ class PRSupervisorModule(Module):
             fleet_registry=ctx.services.get("fleet_registry"),
             peer_table=ctx.services.get("peer_table"),
             async_runtime=async_runtime,
+            endpoint_health=lambda: ctx.services.get("endpoint_health_registry"),
+            notifications=lambda: ctx.services.get("notifications"),
         )
         ctx.register_service("pr_supervisor", service)
         await service.start()
