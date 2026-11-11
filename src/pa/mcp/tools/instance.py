@@ -286,6 +286,27 @@ def register_mcp(mcp, ctx: AppContext) -> None:
             timeout_seconds=45.0, timeout=60.0)
 
     @mcp.tool()
+    async def workspace_tracked_prefix_custody(
+        target: dict[str, Any], idempotency_key: str,
+        action: Literal['prepare', 'verify', 'status'],
+        attachments: list[dict[str, Any]] | None = None,
+    ) -> dict:
+        """Preserve at most 64 changed HEAD prefixes/64 MiB and original empty index.
+
+        Prepare creates a bounded ZIP in at most three 24 MiB parts plus metadata
+        without changing source files. Attach each part durably, then verify its
+        exact part/card_id/attachment_id/sha256 retrieval, in part order.
+        Status observes the same original key after an uncertain result. Does not
+        materialize, relocate, reset, collect or authorize disposal of any worktree.
+        Exact terminal/expired/idle owner, open-file and origin guards apply.
+        """
+        runtime = ctx.require_service('async_runtime')
+        return await runtime.run_blocking('mcp.workspace_tracked_prefix_custody_http',
+            request_local_pa, settings, 'POST', '/api/workspaces/tracked-prefix-custody',
+            json={'target':target, 'idempotency_key':idempotency_key, 'action':action,
+                  'attachments':attachments}, timeout_seconds=120.0, timeout=150.0)
+
+    @mcp.tool()
     async def workspace_materialization_repair(
         lease_id: str, session_id: str, card_id: str, expected_fence: int,
         expected_head: str, idempotency_key: str,

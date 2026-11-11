@@ -208,6 +208,7 @@ async def test_all_ordinary_tool_schemas_match_pre_repair_contract(tmp_path, mon
     baseline.update(json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_materialization_diagnostics.json').read_text()))
     baseline.update(json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_selected_cleanup.json').read_text()))
     baseline.update(json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_untracked_preservation.json').read_text()))
+    baseline.update(json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_tracked_custody.json').read_text()))
     # Status deliberately adds optional owner/operation/fingerprint selectors;
     # Dispatch adds one optional semantic snapshot precondition without changing
     # the legacy timestamp CAS or required arguments. All other contracts remain
