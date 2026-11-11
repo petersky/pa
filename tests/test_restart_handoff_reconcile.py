@@ -78,6 +78,25 @@ def test_other_prompt_and_acceptance_are_not_completion(tmp_path):
     assert store.get_restart_handoff(current.id) == current
 
 
+@pytest.mark.parametrize("has_completion", [False, True])
+def test_failed_quiescing_receipt_requires_exact_completion_without_retry(tmp_path, has_completion):
+    store = CardProjection(tmp_path / "pa.db")
+    current = receipt(store, status="failed", failure_stage="quiescing", attempts=0)
+    if has_completion:
+        completion(store)
+    result = reconcile(store, current)
+    settled = store.get_restart_handoff(current.id)
+    assert result["effect"] == ("confirmed" if has_completion else "unknown")
+    assert settled.status == ("continuation_delivered" if has_completion else "failed")
+    assert settled.idempotency_key == current.idempotency_key
+    assert settled.continuation_prompt_id == current.continuation_prompt_id
+    assert settled.attempts == 0
+    if not has_completion:
+        assert settled == current
+    assert len(store.list_restart_handoffs()) == 1
+    assert result["replayed"] is False
+
+
 def test_route_checks_principal_before_reconciliation():
     request = MagicMock()
     request.app.state.ctx.settings.auth_required = True

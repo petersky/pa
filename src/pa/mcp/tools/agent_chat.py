@@ -118,6 +118,27 @@ def register_mcp(mcp, ctx) -> None:
             timeout_seconds=15.0, max_response_bytes=512 * 1024)
 
     @mcp.tool()
+    def reconcile_agent_restart_handoff(
+        session_id: str, handoff_id: str, expected_version: int,
+    ) -> dict:
+        """Audit exact completion evidence for an existing inactive restart receipt.
+
+        This writes an audit event through the owner API. It never restarts,
+        reopens, rearms or sends a continuation. Missing evidence leaves effect
+        unknown. Read the original receipt first and retain its exact identity
+        and phase version. After an unknown transport outcome, observe that same
+        receipt; do not automatically repeat this audit or create a handoff.
+        Server principal, instance-owner and version fences remain authoritative.
+        """
+        from urllib.parse import quote
+        return request_local_pa(
+            ctx.settings, "POST",
+            f"/api/agent/sessions/{quote(session_id, safe='')}/restart-handoffs/{quote(handoff_id, safe='')}/reconcile",
+            json={"expected_version": expected_version},
+            timeout_seconds=15.0,
+        )
+
+    @mcp.tool()
     def request_agent_session_diagnostics(
         session_id: str, limit: int = 50
     ) -> dict | None:

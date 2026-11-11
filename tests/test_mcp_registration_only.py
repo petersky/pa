@@ -215,6 +215,9 @@ async def test_all_ordinary_tool_schemas_match_pre_repair_contract(tmp_path, mon
     # Fixed-session metadata adds optional snapshot-bound gap assessment. Existing schemas
     # and the assigned-service allowlist remain frozen.
     baseline["get_agent_session_wire_metadata"] = "1996485a6af64be360a6f2d9ab2877a44577e6e2cd2b23d91cbb41fb1cca5f93"
+    # One ordinary adapter for the existing owner-fenced evidence audit route.
+    # It does not expand the assigned-service allowlist or any existing schema.
+    baseline["reconcile_agent_restart_handoff"] = "906117607946c687a261168219bb7d4fb2fe5378699efcb42137867160201e64"
     baseline['get_operation_outcome'] = '89e98961cba2c587d7c207dfee0e485297700204227ddd4100a23e7546524485'
     baseline["recover_operation_outcome"] = "067beb8bc05e49dc3cf8a38d3d6cffcf01ce709996be73ce77a8472701b08131"
     baseline["preview_fleet_placement"] = "2a47f1f27fbe19f5b8c1274692cabb123e2b3f626db65f1d8995573e4e4fbce8"
