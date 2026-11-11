@@ -84,6 +84,22 @@ class WorkspaceUntrackedPreservationRequest(BaseModel):
     action: Literal['preserve', 'status']
 
 
+class WorkspaceCustodyAttachment(BaseModel):
+    model_config = {"extra": "forbid"}
+    part: int = Field(ge=0, le=2)
+    card_id: str = Field(min_length=1, max_length=200)
+    attachment_id: str = Field(pattern=r'^[0-9a-f]{32}$')
+    sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+
+
+class WorkspaceTrackedCustodyRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    target: WorkspaceCleanupTarget
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    action: Literal['prepare', 'verify', 'status']
+    attachments: list[WorkspaceCustodyAttachment] | None = Field(default=None, min_length=1, max_length=3)
+
+
 class WorkspaceMaterializationRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=200)
     card_id: str = Field(min_length=1, max_length=200)
@@ -556,6 +572,70 @@ async def preserve_selected_untracked(request: Request, body: WorkspaceUntracked
             agent._admitting_sessions.discard(lease.session_id)
     key = hashlib.sha256(json.dumps([principal, body.model_dump(mode='json')], sort_keys=True).encode()).hexdigest()
     return await runtime.run_owned('workspace-preserve-untracked:' + key, owned)
+
+
+@router.post('/workspaces/tracked-prefix-custody')
+async def tracked_prefix_custody(request: Request, body: WorkspaceTrackedCustodyRequest) -> dict:
+    """Preserve only changed HEAD prefixes and verify durable attachment retrieval.
+
+    Never alters the original worktree/index or authorizes subsequent collection.
+    """
+    require_user(request)
+    from pa.repository.tracked_custody import TrackedPrefixCustody
+    ctx = request.app.state.ctx
+    agent = ctx.require_service('instance_agent')
+    runtime = ctx.require_service('async_runtime')
+    principal = get_principal_id(request)
+    service = TrackedPrefixCustody(agent.workspace_manager)
+
+    async def owned():
+        if body.action == 'status':
+            return await runtime.run_blocking('workspace.tracked_custody_status', service.operate,
+                target=body.target, principal=principal, idempotency_key=body.idempotency_key, action='status')
+        try:
+            lease = (await runtime.run_blocking('workspace.tracked_custody_lease',
+                agent.workspace_manager.selected_cleanup_leases, [body.target]))[0]
+        except WorkspaceProvisioningError as exc:
+            raise HTTPException(409, str(exc)) from None
+        if lease.session_id in agent._admitting_sessions:
+            raise HTTPException(409, 'Exact custody owner is being admitted')
+        agent._admitting_sessions.add(lease.session_id)
+        try:
+            live = agent.get(lease.session_id)
+            if live is not None and not live._closed:
+                raise HTTPException(409, 'Exact custody owner has a live runtime')
+
+            def operate():
+                paths = []
+                def attachment_guard():
+                    from pa.modules.items import _card_attachment_or_404, _attachment_store
+                    observed = []
+                    for row in body.attachments or []:
+                        _, current = _card_attachment_or_404(request, row.card_id, row.attachment_id)
+                        path = _attachment_store(request).blob_path(current.sha256)
+                        if current.sha256 != row.sha256 or not path.is_file() or path.is_symlink():
+                            raise WorkspaceProvisioningError('Durable custody attachment identity or availability changed')
+                        observed.append(path)
+                    if paths and observed != paths:
+                        raise WorkspaceProvisioningError('Durable custody attachment paths changed')
+                    return observed
+                if body.action == 'verify':
+                    if not body.attachments or [r.part for r in body.attachments] != list(range(len(body.attachments))):
+                        raise WorkspaceProvisioningError('Exact durable attachment identity required')
+                    paths = attachment_guard()
+                return service.operate(target=body.target, principal=principal,
+                    idempotency_key=body.idempotency_key, action=body.action,
+                    attachment_paths=paths, attachment_ids=[r.model_dump() for r in body.attachments or []],
+                    attachment_guard=attachment_guard)
+            try:
+                return await runtime.run_blocking('workspace.tracked_prefix_custody', operate,
+                    timeout=120.0, wait_for_completion=True)
+            except (WorkspaceProvisioningError, ValueError, KeyError) as exc:
+                raise HTTPException(409, str(exc)) from None
+        finally:
+            agent._admitting_sessions.discard(lease.session_id)
+    key = hashlib.sha256(json.dumps([principal, body.model_dump(mode='json')], sort_keys=True).encode()).hexdigest()
+    return await runtime.run_owned('workspace-tracked-custody:' + key, owned)
 
 
 @router.post("/workspaces/reconcile")
