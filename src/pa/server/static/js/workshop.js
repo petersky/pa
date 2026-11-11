@@ -748,12 +748,14 @@
     }
   }
 
+  // Only this server's stream is opened from the page. Browsers allow six
+  // HTTP/1.1 connections per origin and the page already holds four event
+  // streams; a probe plus a stream per remote bay used every remaining slot (an
+  // unreachable peer held its probe until the proxy timed out), so the next
+  // page load queued behind them. Remote bays move on the snapshot stream.
   function floorTransportInstances(data) {
-    return (data.bays || []).filter(function (bay) {
-      return bay.local || bay.connectivity === "connected";
-    }).map(function (bay) {
-      return bay.local ? { id: bay.id, base: "/api/agent", local: true } :
-        { id: bay.id, base: "/api/fleet/instances/" + encodeURIComponent(bay.id) + "/agent" };
+    return (data.bays || []).filter(function (bay) { return bay.local; }).map(function (bay) {
+      return { id: bay.id, base: "/api/agent", local: true };
     });
   }
 
