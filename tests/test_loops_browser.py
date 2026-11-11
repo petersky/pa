@@ -66,6 +66,13 @@ async def test_loops_and_session_alarm(operator_server,tmp_path,width):
             assert await page.evaluate("document.querySelector('#records').textContent.includes('cancelled')")
             assert await page.evaluate("document.documentElement.scrollWidth <= innerWidth")
             assert await page.evaluate("document.querySelectorAll('#records article button').length") == 6  # Delete and History only.
+            # Discovery and list failures remain explicit and recover on refresh.
+            await page.evaluate("""window.loopsFetch=window.fetch;window.fetch=(path,...args)=>String(path).includes('/api/backups/status')||String(path)==='/api/schedules'?Promise.reject(Error('Fixture network unavailable')):window.loopsFetch(path,...args);document.getElementById('refresh').click()""")
+            await wait("document.getElementById('feedback').textContent.includes('Fixture network unavailable') && document.getElementById('managed-loops').textContent.includes('Discovery unavailable')")
+            await page.evaluate("window.fetch=window.loopsFetch;document.getElementById('refresh').click()")
+            await wait("document.querySelectorAll('#records article').length===3 && !document.getElementById('managed-loops').textContent.includes('Loading')")
+            await page.evaluate("document.getElementById('create-loop').click()")
+            assert await page.evaluate("document.getElementById('editor-panel').open && document.activeElement.id==='name'")
             await page.evaluate("""document.getElementById('name').value='UI loop';
                 document.getElementById('payload').value='UI reminder';
                 document.getElementById('source-session').value='viz-session';
@@ -73,12 +80,24 @@ async def test_loops_and_session_alarm(operator_server,tmp_path,width):
                 document.getElementById('editor').requestSubmit();""")
             await wait("[...document.querySelectorAll('#records article')].some(a=>a.querySelector('h2').textContent==='UI loop')")
             action = """(([name,label])=>{const article=[...document.querySelectorAll('#records article')].find(a=>a.querySelector('h2').textContent===name);[...article.querySelectorAll('button')].find(b=>b.textContent===label).click();})"""
+            await page.evaluate("document.getElementById('loop-search').value='UI loop';document.getElementById('loop-search').dispatchEvent(new Event('input'))")
+            assert await page.evaluate("document.querySelectorAll('#records article:not([hidden])').length") == 1
+            await page.evaluate("document.getElementById('loop-search').value='missing';document.getElementById('loop-search').dispatchEvent(new Event('input'))")
+            assert await page.evaluate("!!document.getElementById('no-matches')")
+            await page.evaluate("document.getElementById('loop-search').value='';document.getElementById('loop-search').dispatchEvent(new Event('input'))")
+            for appearance in ['light','dark']:
+                await page.evaluate("window.PATheme.setAppearance('"+appearance+"');document.getElementById('editor-panel').open=false;document.activeElement.blur();document.querySelectorAll('*').forEach(e=>{if(e.scrollTop)e.scrollTop=0});window.scrollTo(0,0)")
+                await wait("getComputedStyle(document.documentElement).getPropertyValue('--pa-bg').trim()==='"+("#f4f5f8" if appearance=="light" else "#0f1117")+"'")
+                assert await page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+                (tmp_path/f'loops-{width}-{appearance}.png').write_bytes(await page.screenshot())
             await page.evaluate(action + "(['UI loop','Edit'])")
             await page.evaluate("document.getElementById('name').value='Edited UI loop';document.getElementById('editor').requestSubmit()")
             await wait("[...document.querySelectorAll('#records h2')].some(a=>a.textContent==='Edited UI loop')")
             for label,state in [('Pause','paused'),('Resume','active'),('Cancel','cancelled')]:
                 await page.evaluate(action + "(['Edited UI loop','"+label+"'])")
                 await wait("[...document.querySelectorAll('#records article')].some(a=>a.querySelector('h2').textContent==='Edited UI loop'&&a.querySelector('pre').textContent.includes('State: "+state+"'))")
+            await page.evaluate("document.getElementById('loop-state').value='cancelled';document.getElementById('loop-state').dispatchEvent(new Event('change'))")
+            assert await page.evaluate("[...document.querySelectorAll('#records article:not([hidden])')].every(a=>a.dataset.state==='cancelled')")
             await page.evaluate(action + "(['Edited UI loop','Delete'])")
             await wait("![...document.querySelectorAll('#records h2')].some(a=>a.textContent==='Edited UI loop')")
         finally:
