@@ -75,6 +75,7 @@
       <span class="acw-title" data-acw-title>Agent</span>
     </div>
     <div class="acw-toolbar-right">
+      {% include "partials/agent/reminders.html" %}
       {% if not compact %}{{ activity_rail }}{% endif %}
       <details class="acw-menu acw-settings-menu">
         <summary title="Agent settings…"><span class="acw-effective-settings" data-acw-effective-settings aria-label="Effective agent settings">Settings unavailable</span></summary>
@@ -227,6 +228,12 @@
     </aside>
 
     <div class="acw-messages scroll-region" data-acw-messages>
+  <section class="acw-history-notice" data-acw-history-notice hidden aria-label="History recovery">
+    <div><span data-acw-history-notice-text role="status" aria-live="polite"></span>
+      <button type="button" class="ghost small" data-acw-latest>Jump to latest</button></div>
+    <pre data-acw-live-preview hidden aria-label="Live preview; history may be incomplete"></pre>
+  </section>
+
       <button type="button" class="ghost small acw-load-older" data-acw-load-older hidden>
         <span class="acw-history-spinner" data-acw-history-spinner aria-hidden="true" hidden></span>
         <span data-acw-load-older-label>Load older messages</span>
@@ -243,11 +250,6 @@
     </div>
   </div>
 
-  <section class="acw-history-notice" data-acw-history-notice hidden aria-label="History recovery">
-    <div><span data-acw-history-notice-text role="status" aria-live="polite"></span>
-      <button type="button" class="ghost small" data-acw-latest>Jump to latest</button></div>
-    <pre data-acw-live-preview hidden aria-label="Live preview; history may be incomplete"></pre>
-  </section>
   <section class="acw-recovery" data-acw-recovery aria-label="Session recovery" hidden>
     <span data-acw-recovery-action role="status" aria-live="polite" aria-atomic="true"></span>
     <button type="button" class="ghost small" data-acw-restart hidden>Resume session</button>
@@ -296,16 +298,14 @@
            multiple hidden>
     <div class="acw-composer-actions">
       <div class="acw-composer-draft-actions">
+        <button type="button" class="ghost acw-stop" data-acw-stop
+                aria-label="Stop response" title="Stop only the current response" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg></button>
         <button type="button" class="ghost acw-attach" data-acw-attach
                 aria-label="Attach images" title="Attach images"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 11.5-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l9-9a3.7 3.7 0 0 1 5.2 5.2l-9 9a1.8 1.8 0 0 1-2.6-2.6l8.3-8.3"/></svg></button>
-        <button type="button" class="ghost small" data-acw-clear-draft
-                aria-label="Clear locally saved draft" hidden>Clear draft</button>
-        <span class="muted small acw-draft-status" data-acw-draft-status
-              role="status" aria-live="polite" hidden></span>
       </div>
+      <span class="muted small acw-draft-status" data-acw-draft-status
+            role="status" aria-live="polite" hidden></span>
       <div class="acw-send-group">
-        <button type="button" class="ghost" data-acw-stop
-                title="Stop only the current response" disabled>Stop response</button>
         <button type="submit" class="primary" data-acw-send>Send</button>
         <details class="acw-send-menu">
           <summary aria-label="Send options">▾</summary>

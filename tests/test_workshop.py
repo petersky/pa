@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import subprocess
 import tempfile
 from copy import deepcopy
@@ -20,6 +21,7 @@ from pa.fleet.workshop import (
     WORKSHOP_PROJECTION_LIMIT,
     WORKSHOP_WORKER_LIMIT,
     build_workshop_snapshot,
+    workshop_floor_view,
 )
 from pa.instance.agent_session import reset_instance_agent
 from pa.modules.fleet import _refresh_workshop_dimensions, _workshop_stream_iteration
@@ -1418,3 +1420,195 @@ def test_retired_watch_preserves_history_without_driving_attention(tmp_path):
     assert row["presentation"]["group"] == "quiet"
     assert row["presentation"]["attention"] is False
     assert row["card"]["pull_requests"][0]["retired_at"] == retired_at.isoformat()
+
+
+def _bump_relative_clocks(value):
+    """Advance every relative-clock field the way a second of wall time would."""
+    bumped = []
+
+    def walk(item):
+        if isinstance(item, dict):
+            for key, child in list(item.items()):
+                if key.endswith("age_seconds") and isinstance(child, int | float):
+                    item[key] = child + 1
+                    bumped.append(key)
+                elif key in {"relative_time", "accessible_label"} and isinstance(
+                    child, str
+                ):
+                    item[key] = child + " (later)"
+                    bumped.append(key)
+                else:
+                    walk(child)
+        elif isinstance(item, list):
+            for child in item:
+                walk(child)
+
+    walk(value)
+    return bumped
+
+
+def test_stream_heartbeats_when_only_relative_ages_tick():
+    ctx = _ctx()
+    ctx.services["dispatch_store"] = SimpleNamespace(
+        list=lambda *, limit: [
+            _Dispatch(
+                progress={
+                    "schema_version": 1,
+                    "freshness": {
+                        "state": "fresh",
+                        "last_activity_at": "2026-07-28T20:00:59+00:00",
+                        "age_seconds": 41,
+                    },
+                    "latest": {"phase": "testing", "summary": "Tests", "blockers": []},
+                }
+            )
+        ]
+    )
+    first = build_workshop_snapshot(ctx, _overview())
+    order = next(item for item in first["work_orders"] if item["id"] == "active")
+    assert order["progress_age_seconds"] == 41
+    event, digest, sequence = _workshop_stream_iteration(first, "", 0)
+    assert "event: snapshot" in event
+
+    second = deepcopy(first)
+    bumped = _bump_relative_clocks(second)
+    assert {"progress_age_seconds", "relative_time"} <= set(bumped)
+    assert second != first
+
+    event, next_digest, next_sequence = _workshop_stream_iteration(
+        second, digest, sequence
+    )
+
+    assert event == ": workshop heartbeat\n\n"
+    assert next_digest == digest
+    assert next_sequence == sequence
+
+
+def test_stream_still_emits_snapshot_when_progress_content_changes():
+    first = build_workshop_snapshot(_ctx(), _overview())
+    _, digest, sequence = _workshop_stream_iteration(first, "", 0)
+    second = deepcopy(first)
+    _bump_relative_clocks(second)
+    second["work_orders"][0]["progress_freshness"] = "stalled"
+
+    event, next_digest, next_sequence = _workshop_stream_iteration(
+        second, digest, sequence
+    )
+
+    assert "event: snapshot" in event
+    assert next_digest != digest
+    assert next_sequence == sequence + 1
+
+
+def _heavy_ctx(tmp_path):
+    ctx = _ctx()
+    supervisor = PRSupervisorStore(tmp_path / "supervisor.db")
+    checks = [
+        {"name": "smoke", "status": "completed", "conclusion": "success"},
+        {"name": "test (0)", "status": "completed", "conclusion": "failure"},
+        {"name": "test (1)", "status": "in_progress", "conclusion": None},
+    ]
+    supervisor.upsert_watch(
+        PRWatch(
+            id="watch-1",
+            realm_id="default",
+            card_id="active",
+            repository="petersky/pa",
+            pr_number=7,
+            pr_url="https://github.com/petersky/pa/pull/7",
+            head_sha="abc123",
+            state={
+                "state": "open",
+                "draft": True,
+                "mergeable_state": "blocked",
+                "review_decision": "REVIEW_REQUIRED",
+                "checks": checks,
+                "raw_urls": {"pull_request": "x" * 500},
+                "stable_green_evidence": {"green": False, "checks": checks * 20},
+            },
+        ),
+        preserve_lease=False,
+    )
+    ctx.services["pr_supervisor_store"] = supervisor
+    return ctx
+
+
+def test_floor_view_is_slim_and_summarises_pull_request_gates(tmp_path):
+    ctx = _heavy_ctx(tmp_path)
+    overview = _overview()
+    overview["nodes"][0]["dimensions"]["activity"]["value"]["sessions"].append(
+        {
+            "id": "chat-1",
+            "realm_id": "default",
+            "title": "chat:abc",
+            "purpose": "chat",
+            "status": "working",
+            "connected": True,
+            "provider": "codex",
+            "updated_at": "2026-07-28T20:01:00+00:00",
+        }
+    )
+    full = build_workshop_snapshot(ctx, overview)
+    assert full["orphan_sessions"], "fixture must include a card-less chat agent"
+
+    floor = workshop_floor_view(full)
+
+    assert floor["view"] == "floor"
+    for dropped in ("areas", "counts", "authority", "default_view"):
+        assert dropped not in floor
+    assert "providers" not in floor["bays"][0]
+    assert "consumer_links" not in floor["bays"][0]["capacity"]
+    assert "edges" not in floor["sync"]
+    for bay in floor["bays"]:
+        for worker in bay["workers"]:
+            assert "card" not in worker and "tool_category" not in worker
+    order = next(item for item in floor["work_orders"] if item["id"] == "active")
+    assert "stage_strip" not in order["presentation"]
+    assert "summary" not in order["card"]
+    pull_request = order["card"]["pull_requests"][0]
+    assert "state" not in pull_request
+    assert pull_request["gate"] == {
+        "pr_state": "open",
+        "draft": True,
+        "mergeable_state": "blocked",
+        "review_decision": "REVIEW_REQUIRED",
+        "checks": {"total": 3, "failing": 1, "pending": 1},
+        "stable_green": False,
+    }
+    # Chat agents with no card stay visible, in compact form with their bay.
+    orphan = next(item for item in floor["orphan_sessions"] if item["id"] == "chat-1")
+    assert orphan["bay_id"] == "local" and orphan["bay_name"] == "Mac mini"
+    assert orphan["state"] == "working" and "card" not in orphan
+    assert len(json.dumps(floor)) * 2 < len(json.dumps(full))
+
+
+def test_floor_view_keeps_every_field_workshop_js_reads(tmp_path):
+    """Guard the UI contract: the slim view must still carry what render() reads."""
+    full = build_workshop_snapshot(_heavy_ctx(tmp_path), _overview())
+    floor = workshop_floor_view(full)
+    order = next(item for item in floor["work_orders"] if item["id"] == "active")
+    # Top-level order fields render()/inspect() in workshop.js read.
+    for name in (
+        "id title lane lane_label dispatch_state dispatch_label activity_state "
+        "activity_label freshness freshness_label progress_freshness "
+        "progress_freshness_label progress_last_activity_at progress_age_seconds "
+        "evaluated_outcome outcome_label agent_turn dispatch_completion "
+        "card_completion card_reconciliation session reservation location live "
+        "attention attention_reasons attention_details updated_at card"
+    ).split():
+        assert name in order, name
+    for name in (
+        "id name zone connectivity connectivity_label activity_freshness "
+        "activity_freshness_label freshness_label activity_observed_at "
+        "activity_age_seconds capacity active queued"
+    ).split():
+        assert name in floor["bays"][0], name
+    assert order["card"]["id"] == "active"
+    assert order["card"]["can_dispatch"] is False
+    assert order["card"]["href"] == "/?card=active"
+    assert order["session"]["relationship_label"] and order["session"]["href"]
+    assert order["location"]["id"] == "local"
+    bay = floor["bays"][0]
+    assert bay["capacity"]["limit"] == 2 and bay["capacity"]["queued_prompts"] == 9
+    assert floor["inventory"]["overflow_href"] and floor["sync"]["nodes"]
+    assert floor["generated_at"] == full["generated_at"]

@@ -14,6 +14,9 @@ MAX_INTERACTION_BYTES = 128 * 1024
 MAX_NOTIFICATION_BYTES = 256 * 1024
 MAX_RESPONSE_BYTES = 64 * 1024
 RESTART_FAILURE_NOTICE_CAPABILITY = "restart-handoff-failure:v1"
+# Informational notices that need a person to look: a session recovery gave up
+# on, or a worktree lease PA took over. Kept in the inbox until dismissed.
+SESSION_ATTENTION_NOTICE_CAPABILITY = "session-attention:v1"
 
 
 def concise_notification_summary(value: str, *, limit: int = 1000) -> str:
@@ -317,7 +320,8 @@ class Notification(BaseModel):
         if (
             self.interaction is None
             and self.type == NotificationType.SERVICE_HEALTH
-            and self.capability == RESTART_FAILURE_NOTICE_CAPABILITY
+            and self.capability
+            in {RESTART_FAILURE_NOTICE_CAPABILITY, SESSION_ATTENTION_NOTICE_CAPABILITY}
         ):
             return True
         return bool(

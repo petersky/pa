@@ -172,6 +172,12 @@ async def telegram_webhook(request: Request):
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=400, detail="Invalid JSON") from exc
+    # An owner reply to a pushed PA notification is an action, not new intake.
+    replies = request.app.state.ctx.services.get("telegram_replies")
+    if replies is not None:
+        outcome = await replies.handle_update(payload, app=request.app)
+        if outcome.handled:
+            return {"accepted": True, "handled": "notification_reply", "code": outcome.code}
     try:
         envelope = TelegramAdapter().normalize(payload, realm_id=settings.primary_realm)
     except AdapterError:

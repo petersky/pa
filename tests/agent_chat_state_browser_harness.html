@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Chat state verification</title>
+<link rel="stylesheet" href="/src/pa/server/static/style.css">
+<script>window.EventSource=class {constructor(){this.readyState=1}addEventListener(){}close(){this.readyState=2}};</script>
+<script src="/src/pa/server/static/js/agent-chat.js" defer></script>
+<style>body{padding:20px}.agent-chat-widget{height:650px;max-width:900px}.acw-messages{height:350px;overflow:auto}#result{white-space:pre-wrap}</style>
+<main><h1>Chat state regression</h1><button id="run">Verify navigation and delayed history</button><pre id="result">Ready</pre>
+<section data-agent-chat data-session-id="other-fixture" data-provider="codex" class="agent-chat-widget">
+<h2 data-acw-title>Loading</h2><div data-acw-status></div>
+<div class="acw-messages" data-acw-messages>
+<section class="acw-history-notice" data-acw-history-notice hidden><span data-acw-history-notice-text></span><button data-acw-latest>Latest</button><pre data-acw-live-preview hidden></pre></section>
+<button data-acw-load-older hidden>Older</button><p data-acw-load-older-status hidden></p><p data-acw-placeholder></p>
+<button data-acw-load-newer hidden>Newer</button><p data-acw-load-newer-status hidden></p></div>
+<form data-acw-form><textarea aria-label="Reply" data-acw-input></textarea><button data-acw-send>Send</button></form>
+<div data-acw-tool-activity><p data-acw-tool-empty>No tools</p></div></section></main>
+<script>
+window.addEventListener('DOMContentLoaded',()=>{document.querySelector('#run').onclick=async()=>{
+ const w=document.querySelector('[data-agent-chat]')._acw,r=document.querySelector('#result');r.textContent='';
+ const check=(ok,label)=>{if(!ok)throw Error(label);r.textContent+='PASS '+label+'\n';};
+ const wait=async f=>{for(let i=0;i<200;i++){if(f())return;await new Promise(r=>setTimeout(r,25));}throw Error('Timeout');};
+ try {
+ for(let i=0;i<3;i++)for(const [id,title] of [['history-fixture','Conversation A'],['other-fixture','Conversation B']]){
+ w.switchSession(id,true);check(w.els.title.textContent!== (id==='history-fixture'?'Conversation B':'Conversation A'),'previous title cleared immediately');
+ await wait(()=>w.els.title.textContent===title&&!w.recentBootstrap);
+ const old=id==='history-fixture'?'other-fixture':'history-fixture';
+ w.applySnapshot({session:{id:old,title:'STALE TITLE'},transcript:[]});
+ w.handleEvent({session_id:old,seq:99999,type:'session_info_update',payload:{title:'STALE EVENT'}});
+ check(w.els.title.textContent===title,'delayed snapshot and event preserve '+title);
+ }
+ w.els.input.value='Draft remains usable';w.renderTranscript([]);w.lastSeq=0;w.hasNewer=false;w.historyPreserveWindow=false;
+ w.handleEvent({seq:1,type:'agent_message_chunk',payload:{message_id:'complete',text:'Opening clause. ',content_mode:'delta'}});
+ const api=w.apiWithTimeout;let release;w.apiWithTimeout=()=>new Promise(resolve=>release=resolve);
+ w.hasOlder=true;w.olderCursor=1;w.loadOlderTranscript();
+ w.handleEvent({seq:2,type:'agent_message_chunk',payload:{message_id:'complete',text:'The complete final ending.',content_mode:'delta'}});
+ w.handleEvent({seq:3,type:'tool_call',payload:{tool_call_id:'fixture-tool',title:'Fixture tool',status:'completed'}});
+ w.handleEvent({seq:4,type:'turn_completed',payload:{}});
+ release({events:[],page:{has_older:false,has_newer:false}});await wait(()=>!w.loadingOlder);w.apiWithTimeout=api;w._renderHistoryNotice();
+ check(w.els.messages.textContent.includes('Opening clause. The complete final ending.'),'complete reply remains in transcript');
+ check(w.els.historyNotice.hidden&&!w.hasOlder,'exhausted short history clears notice');
+ check(w.els.messages.contains(w.els.historyNotice)&&!w.els.form?.contains(w.els.historyNotice),'recovery preview belongs to transcript');
+ check(!w.els.input.disabled&&w.els.input.value==='Draft remains usable','composer stays writable with draft');
+ const a=await fetch('/api/agent/sessions/history-fixture').then(r=>r.json()),b=await fetch('/api/agent/sessions/other-fixture').then(r=>r.json());
+ check(a.session.title==='Conversation A'&&b.session.title==='Conversation B','persisted fixture titles retain identity');
+ r.textContent+='DONE';
+ }catch(e){r.textContent+='FAIL '+e.stack;}
+};});
+</script></html>

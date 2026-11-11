@@ -1,4 +1,5 @@
 """Speculative GC avoids hydrating retained rows and preserves path semantics."""
+import json
 import pytest
 
 import pa.domain.transcript_storage as module
@@ -6,6 +7,28 @@ from pa.core.async_runtime import AsyncRuntime
 from pa.core.performance import capture_retention_phases, retention_phase
 from pa.domain.models import TranscriptEvent
 from pa.domain.transcript_storage import TranscriptStorage
+from pa.core.sqlite_metrics import ObservedConnection
+
+
+def test_larger_speculative_probe_keeps_fresh_deletion_proof_bounded(tmp_path, monkeypatch):
+    storage = TranscriptStorage(tmp_path / "fixture.db")
+    for i in range(1025):
+        path = storage._object_path(f"{i:064x}")
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(b"orphan fixture")
+    probes, proofs = [], []
+    execute = ObservedConnection.execute
+    def measured(self, sql, parameters=(), /):
+        if "json_each(?) AS candidate" in sql:
+            probes.append(len(json.loads(parameters[0])))
+        if "SELECT hash FROM transcript_objects WHERE ref_count>0 AND hash IN" in sql:
+            proofs.append(len(parameters))
+        return execute(self, sql, parameters)
+    monkeypatch.setattr(ObservedConnection, "execute", measured)
+    assert storage.collect_unreferenced_objects() == 1025
+    assert probes == [1024, 1]
+    assert proofs == [128] * 8 + [1]
+    assert not list(storage.objects_dir.glob("*/*.zlib"))
 
 
 @pytest.mark.asyncio

@@ -17,6 +17,181 @@ from pa.repository.workspace import WorkspaceLease, workspace_blocks_admission
 
 
 @pytest.fixture
+def empty_retry(reserved):
+    r = reserved
+    sibling = r.source.model_copy(update={
+        "id": "empty-retry", "external_session_id": None, "execution_binding": {},
+        "config_json": {"provisioning": {"state": "failed"}},
+    }, deep=True)
+    r.store.save_session(sibling)
+    r.sibling = sibling
+    return r
+
+
+@pytest.mark.asyncio
+async def test_canonically_retired_empty_retry_is_not_an_owner_candidate(empty_retry):
+    r = empty_retry
+    closed = await session_close(r.request, r.sibling.id)
+    assert closed["ok"] and not closed["live"]
+    result = await session_close(r.request, r.source.id, preserve_workspace=True)
+    assert result["workspace_preserved"] and result["leases_expired"] == 1
+    current = r.ledger.get(r.origin.dispatch_id)
+    assert current.session_id == r.source.id
+    assert current.events[-1].detail["retired_empty_retry_ids"] == [r.sibling.id]
+    assert (r.path / "preserved.txt").read_text() == "original work and history"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["unclosed", "external", "binding", "lease", "turn", "reservation", "runtime", "ownership", "queue", "cwd", "artifact", "settings"])
+async def test_empty_retry_exclusion_rejects_any_unretired_or_competing_work(empty_retry, case):
+    from pa.domain.models import TranscriptEvent
+    r = empty_retry
+    if case != "unclosed":
+        await session_close(r.request, r.sibling.id)
+    sibling = r.store.get_session(r.sibling.id)
+    if case == "external":
+        sibling.external_session_id = "retained-provider"
+    elif case == "binding":
+        sibling.execution_binding = {"version": 1}
+    elif case == "ownership":
+        sibling.authority_instance_id = "another-authority"
+    elif case == "queue":
+        sibling.config_json["durable_runtime"] = {"queued_prompts": [{"id": "work"}]}
+    elif case == "cwd":
+        sibling.cwd = str(r.path)
+    elif case == "artifact":
+        sibling.config_json["execution_context"] = {"artifact_workspace": {"path": str(r.path)}}
+    elif case == "settings":
+        sibling.config_json["execution_pending_settings"] = {"state": "pending"}
+    elif case == "lease":
+        lease, = r.manager.workspace_manager.list()
+        r.manager.workspace_manager._save(lease.model_copy(update={"id": "other-lease", "session_id": sibling.id}))
+    elif case == "turn":
+        r.store.append_transcript_events([TranscriptEvent(session_id=sibling.id, seq=2,
+            event_type="prompt_accepted", payload={"prompt_id": "work"})])
+    elif case == "reservation":
+        r.manager._admitting_sessions.add(sibling.id)
+    elif case == "runtime":
+        r.manager._runtimes[sibling.id] = AgentSessionRuntime(r.manager, sibling)
+    r.store.save_session(sibling)
+    before = r.ledger.get(r.origin.dispatch_id).model_dump()
+    with pytest.raises(HTTPException):
+        await session_close(r.request, r.source.id, preserve_workspace=True)
+    assert r.ledger.get(r.origin.dispatch_id).model_dump() == before
+    assert r.store.get_session(r.source.id).status == "recovery_blocked"
+    assert (r.path / "preserved.txt").exists()
+
+
+@pytest.fixture
+def reserved(recovery):
+    r = recovery
+    r.source.authority_instance_id = r.origin.authority_instance_id
+    r.source.origin_instance_id = r.origin.target_instance_id
+    r.source.label = f"card:{r.card.id}:dispatch:{r.origin.dispatch_id}"
+    lease, = r.manager.workspace_manager.list()
+    r.source.config_json["execution_context"] = {
+        "session_id": r.source.id, "dispatch_id": r.origin.dispatch_id,
+        "card_id": r.card.id, "project_id": r.origin.project_id,
+        "realm_id": r.origin.realm_id, "principal_id": r.origin.principal_id,
+        "authority_instance": {"id": r.origin.authority_instance_id},
+        "instance": {"id": r.origin.target_instance_id},
+        "repositories": [{"lease_id": lease.id, "repository_id": lease.repository_id,
+                          "repository_url": lease.repository_url,
+                          "worktree_path": lease.worktree_path, "branch": lease.branch,
+                          "base_sha": lease.base_sha, "fencing_token": lease.fencing_token}],
+    }
+    r.source.execution_binding = {
+        "version": 1, "execution_card_id": r.card.id,
+        "execution_project_id": r.origin.project_id,
+        "origin_instance_id": r.origin.target_instance_id,
+        "repository_ids": [lease.repository_id], "lease_ids": [lease.id],
+        "worktree_paths": [lease.worktree_path], "branch": lease.branch,
+        "base_sha": lease.base_sha,
+    }
+    r.store.save_session(r.source)
+    r.origin.session_id = None
+    r.origin.materialization_plan = {"repositories": [
+        {"repository_id": lease.repository_id, "url": lease.repository_url}]}
+    r.ledger.put(r.origin)
+    return r
+
+
+@pytest.mark.asyncio
+async def test_reserved_before_dispatch_publication_can_retire_and_replay(reserved):
+    r = reserved
+    for _ in range(2):
+        result = await session_close(r.request, r.source.id, preserve_workspace=True)
+        assert result["workspace_preserved"]
+    current = r.ledger.get(r.origin.dispatch_id)
+    assert current.session_id == r.source.id
+    assert current.state == "failed"
+    assert len(current.events) == 1
+    assert current.events[0].detail["outcome_inferred"] is False
+    assert r.store.get_session(r.source.id).status == "closed"
+    assert (r.path / "preserved.txt").read_text() == "original work and history"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invalid", ["authority", "origin", "realm", "principal", "card", "project",
+    "label", "context", "lease_fence", "lease_path", "binding", "duplicate", "runtime", "admission", "queue", "prompt"])
+async def test_lost_link_retirement_rejects_ambiguous_or_busy_source(reserved, invalid, monkeypatch):
+    r = reserved
+    if invalid in {"authority", "origin", "realm", "principal", "card", "project"}:
+        field = {"authority": "authority_instance_id", "origin": "origin_instance_id",
+                 "realm": "realm_id", "principal": "principal_id", "card": "card_id",
+                 "project": "project_id"}[invalid]
+        setattr(r.source, field, "other")
+    elif invalid == "label":
+        r.source.label = "same-card-is-not-proof"
+    elif invalid == "context":
+        r.source.config_json["execution_context"]["dispatch_id"] = "another"
+    elif invalid == "binding":
+        r.source.execution_binding["execution_card_id"] = "different"
+    elif invalid.startswith("lease"):
+        repository = r.source.config_json["execution_context"]["repositories"][0]
+        repository["fencing_token" if invalid == "lease_fence" else "worktree_path"] = "different"
+    elif invalid == "duplicate":
+        r.store.save_session(r.source.model_copy(update={"id": "duplicate", "label": "other"}))
+    elif invalid == "runtime":
+        r.manager._runtimes[r.source.id] = AgentSessionRuntime(r.manager, r.source)
+    elif invalid == "admission":
+        r.manager._admitting_sessions.add(r.source.id)
+    elif invalid == "queue":
+        r.source.config_json["durable_runtime"] = {"queued_prompts": [{"id": "work"}]}
+    elif invalid == "prompt":
+        r.origin.initial_prompt_operation = {"id": "delivery-unknown"}
+        r.ledger.put(r.origin)
+    r.store.save_session(r.source)
+    if invalid == "binding":
+        read = r.store.get_session
+        monkeypatch.setattr(r.store, "get_session", lambda key: r.source if key == r.source.id else read(key))
+    before = r.ledger.get(r.origin.dispatch_id).model_dump()
+    with pytest.raises(HTTPException):
+        await session_close(r.request, r.source.id, preserve_workspace=True)
+    assert r.ledger.get(r.origin.dispatch_id).model_dump() == before
+    assert r.store.get_session(r.source.id).status == "recovery_blocked"
+    assert (r.path / "preserved.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_reserved_repair_cas_preserves_concurrent_dispatch_write(reserved):
+    r = reserved
+    compare = r.ledger.compare_and_mutate
+    def race(expected, mutate):
+        current = r.ledger.get(expected.dispatch_id)
+        current.state = "queued"
+        r.ledger.put(current)
+        return compare(expected, mutate)
+    r.ledger.compare_and_mutate = race
+    with pytest.raises(HTTPException) as failure:
+        await session_close(r.request, r.source.id, preserve_workspace=True)
+    assert failure.value.detail["code"] == "reserved_source_compare_conflict"
+    assert r.ledger.get(r.origin.dispatch_id).session_id is None
+    assert r.ledger.get(r.origin.dispatch_id).state == "queued"
+    assert r.store.get_session(r.source.id).status == "recovery_blocked"
+
+
+@pytest.fixture
 def recovery(tmp_path, monkeypatch):
     monkeypatch.delenv("PA_WORKSPACE_ROOT", raising=False)
     settings = Settings(data_dir=tmp_path / "data", workspace_root=tmp_path / "workspaces")

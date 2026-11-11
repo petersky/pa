@@ -307,7 +307,7 @@ async def test_mcp_health_is_attached_to_live_ui_event(tmp_path):
     assert '30 seconds' in payload['pa_mcp']['detail']
     contract = json.loads((Path(__file__).parent / 'fixtures/codex_acp_1_11_mcp_events.json').read_text())
     await client.session_update('native-current', {**contract['success'], 'sessionUpdate': 'tool_call', 'status': 'in_progress', 'rawOutput': None})
-    await client.session_update('native-current', contract['success'])
+    await client.session_update('native-current', {**contract['success'], 'rawInput': None})
     assert runtime._append_transcript.call_args.args[1]['pa_mcp']['state'] == 'connected'
 
 
@@ -566,3 +566,58 @@ async def test_connect_preserves_explicit_startup_evidence_before_new_load_retur
                     assert connection.pa_mcp_health['provider_context_probe']['classification'] == 'startup_confirmed'
             finally:
                 await connection.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_codex_completion_delta_uses_live_start_identity(tmp_path):
+    """Sanitized shape observed in source session 17885dbf's ACP wire."""
+    connection = AgentConnection(Settings(data_dir=tmp_path), MagicMock(), agent_name='codex')
+    client = bind(connection)
+    start = {'sessionUpdate': 'tool_call', 'toolCallId': 'exec-pa-live',
+             'status': 'in_progress', 'title': 'mcp.pa.get_agent_session_liveness',
+             'rawInput': {'server': 'pa', 'tool': 'get_agent_session_liveness', 'arguments': {}},
+             'rawOutput': None, '_meta': {'is_mcp_tool_call': True}}
+    done = {'sessionUpdate': 'tool_call_update', 'toolCallId': 'exec-pa-live',
+            'status': 'completed', 'title': None, 'rawInput': None,
+            'rawOutput': {'result': {'content': [], 'isError': False}, 'error': None}}
+    await client.session_update('native-current', done)
+    assert connection.pa_mcp_health['state'] == 'checking'
+    await client.session_update('native-current', start)
+    await client.session_update('other-session', done)
+    assert connection.pa_mcp_health['state'] == 'checking'
+    await client.session_update('native-current', done)
+    assert connection.pa_mcp_health['state'] == 'connected'
+    await emit(client, 'failed', 'PA MCP failed to start: connection refused')
+    await client.session_update('native-current', done)
+    assert connection.pa_mcp_health['state'] == 'disconnected'
+    await client.session_update('native-current', start)
+    await emit(client, 'failed', 'PA MCP failed to start: timeout')
+    await client.session_update('native-current', done)
+    assert connection.pa_mcp_health['state'] == 'disconnected'
+    await client.session_update('native-current', {**start, 'toolCallId': 'fresh'})
+    await client.session_update('native-current', {**done, 'toolCallId': 'fresh'})
+    assert connection.pa_mcp_health['state'] == 'connected'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('change', [
+    {'rawOutput': {'error': 'transport failure', 'result': {}}},
+    {'rawOutput': {'error': None, 'result': {'isError': True}}},
+    {'rawOutput': None},
+    {'rawInput': {'server': 'other', 'tool': 'list_items'}},
+    {'rawInput': {'server': 'pa', 'tool': 'different_tool'}},
+    {'rawInput': {}},
+    {'status': 'failed'},
+])
+async def test_completion_delta_cannot_hide_failure_or_mismatch(tmp_path, change):
+    connection = AgentConnection(Settings(data_dir=tmp_path), MagicMock(), agent_name='codex')
+    client = bind(connection)
+    await emit(client, 'failed', 'PA MCP failed to start: timeout')
+    await client.session_update('native-current', {
+        'sessionUpdate': 'tool_call', 'toolCallId': 'live', 'status': 'in_progress',
+        'rawInput': {'server': 'pa', 'tool': 'list_items'}})
+    done = {'sessionUpdate': 'tool_call_update', 'toolCallId': 'live', 'status': 'completed',
+            'rawInput': None, 'rawOutput': {'result': {'isError': False}, 'error': None}}
+    await client.session_update('native-current', {**done, **change})
+    await client.session_update('native-current', done)  # Consumed once even on failure.
+    assert connection.pa_mcp_health['state'] == 'disconnected'

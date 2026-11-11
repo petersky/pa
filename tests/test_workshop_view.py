@@ -12,6 +12,10 @@ from pa.browser.manager import BrowserManager, _browser_executable
 
 ROOT = Path(__file__).parents[1]
 WORKSHOP_SCRIPT = ROOT / "src/pa/server/static/js/workshop.js"
+FLOOR_SCRIPTS = [
+    ROOT / "src/pa/server/static/js/workshop-floor-model.js",
+    ROOT / "src/pa/server/static/js/workshop-floor-stream.js",
+]
 STYLE = ROOT / "src/pa/server/static/style.css"
 
 
@@ -175,6 +179,7 @@ def _snapshot() -> dict:
             {
                 "id": "local",
                 "name": "Local instance",
+                "local": True,
                 "zone": "default",
                 "connectivity": "connected",
                 "connectivity_label": "Connected",
@@ -196,8 +201,10 @@ def _snapshot() -> dict:
                         "title": "Compact view session",
                         "state": "working",
                         "live": True,
-                        "tool_category": "testing",
-                        "card": active,
+                        "purpose": "card",
+                        "station": "workbench",
+                        "pose": "test",
+                        "card_id": "active",
                         "provider": "codex",
                         "connected": True,
                         "elapsed_from": "started now",
@@ -238,6 +245,7 @@ def _workshop_markup() -> str:
     <div class="workshop-controls" role="group" aria-label="Workshop layout">
       <button type="button" class="ghost small active" data-workshop-view="floor" aria-pressed="true">Floor view</button>
       <button type="button" class="ghost small" data-workshop-view="compact" aria-pressed="false">Compact view</button>
+      <button type="button" class="ghost small" data-workshop-motion aria-pressed="false">Reduce motion</button>
       <span class="workshop-view-status small" data-workshop-view-status aria-live="polite">Current layout: Floor view</span>
     </div>
   </aside>
@@ -349,7 +357,9 @@ window.__emitWorkshopSnapshot = function (title) {
         + prelude
         + "\nwindow.__workshopMarkup = function () { return "
         + json.dumps(markup).replace("</", "<\\/")
-        + "; };</script><script>"
+        + "; };</script>"
+        + "".join(f"<script>{path.read_text()}</script>" for path in FLOOR_SCRIPTS)
+        + "<script>"
         + WORKSHOP_SCRIPT.read_text()
         + "</script></body></html>"
     )
@@ -404,6 +414,7 @@ class WorkshopCompactViewBrowserTests(unittest.IsolatedAsyncioTestCase):
                   floorVisible: !document.querySelector("[data-workshop-scene]").hidden,
                   compactHidden: document.querySelector("[data-workshop-compact]").hidden,
                   sources: window.__activeSources,
+                  sourceUrls: window.__eventSources.map(function (source) { return source.url; }),
                   operationHeight: document.querySelector(".workshop-operation-card").getBoundingClientRect().height,
                   renderedRows: document.querySelectorAll('[data-workshop-compact-row="work-order"]').length,
                   results: document.querySelector("[data-workshop-results]").textContent,
@@ -415,7 +426,23 @@ class WorkshopCompactViewBrowserTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(initial["view"], "floor")
             self.assertTrue(initial["floorVisible"])
             self.assertTrue(initial["compactHidden"])
-            self.assertEqual(initial["sources"], 2)
+            # Workshop snapshots, card changes (with floor moves) and, on the floor,
+            # the one shared multiplexed session-event stream for this instance.
+            self.assertEqual(initial["sources"], 3, initial["sourceUrls"])
+            self.assertTrue(
+                any(
+                    url.startswith("/api/agent/session-events?")
+                    for url in initial["sourceUrls"]
+                ),
+                initial["sourceUrls"],
+            )
+            self.assertTrue(
+                any(
+                    url.endswith("&include=workshop")
+                    for url in initial["sourceUrls"]
+                ),
+                initial["sourceUrls"],
+            )
             self.assertEqual(initial["renderedRows"], 2)
             self.assertIn("127 loaded work orders omitted", initial["results"])
             self.assertFalse(initial["refreshInsideStatus"])
@@ -867,8 +894,11 @@ class WorkshopCompactViewBrowserTests(unittest.IsolatedAsyncioTestCase):
                   };
                 })()"""
             )
-            self.assertEqual(streams["afterChild"], [2, 2])
-            self.assertEqual(streams["afterReplacement"], [4, 2])
+            # The compact list holds only the two snapshot/card streams; the floor's
+            # shared session-event stream is created on entering the floor view
+            # (initially, and again on the earlier switch back) and released on leaving.
+            self.assertEqual(streams["afterChild"], [4, 2])
+            self.assertEqual(streams["afterReplacement"], [6, 2])
             self.assertEqual(streams["view"], "compact")
             self.assertTrue(streams["compact"])
 

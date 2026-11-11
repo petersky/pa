@@ -96,6 +96,8 @@ from pa.cli.collaboration import collaboration_app
 from pa.cli.config_cmd import config_app
 from pa.cli.goal import goal_app
 from pa.cli.maintain import maintain_app
+from pa.cli.sessions import sessions_app
+from pa.cli.dispatch_repair import dispatch_app
 from pa.cli.notifications import notifications_app
 from pa.cli.telemetry import telemetry_app
 from pa.cli.execution import execution_app
@@ -109,6 +111,8 @@ app.add_typer(collaboration_app, name="collaboration")
 app.add_typer(config_app, name="config")
 app.add_typer(goal_app, name="goal")
 app.add_typer(maintain_app, name="maintain")
+app.add_typer(sessions_app, name="sessions")
+app.add_typer(dispatch_app, name="dispatch")
 app.add_typer(telemetry_app, name="telemetry")
 app.add_typer(notifications_app, name="notifications")
 

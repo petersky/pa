@@ -753,6 +753,8 @@ def _evaluate(
             and not request.allow_concurrent
             and workspace.get("card_id") == request.card_id
             and workspace_blocks_admission(workspace)
+            # A dead owner's lease is reclaimed when the workspace is admitted.
+            and not workspace.get("reclaimable")
             and (
                 not request.resume_session_id
                 or workspace.get("session_id") != request.resume_session_id

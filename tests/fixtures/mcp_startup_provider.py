@@ -41,7 +41,8 @@ def after_load():
     emit_update(history_update())
     time.sleep(0.2)
     emit_update({**history_update(), 'toolCallId': 'live-after-load', 'status': 'in_progress', 'rawOutput': None})
-    emit_update({**history_update(), 'toolCallId': 'live-after-load'})
+    # Real Codex completion deltas omit the start's rawInput identity.
+    emit_update({**history_update(), 'toolCallId': 'live-after-load', 'rawInput': None})
 
 
 for line in sys.stdin:

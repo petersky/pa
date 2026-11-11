@@ -200,7 +200,8 @@ def test_collection_propagates_unlink_failure_without_changing_retained_rows(tmp
     assert storage.list("live")[0].payload == {"text": text}
 
 
-def test_reader_pin_acquired_between_batches_preserves_remaining_bytes(tmp_path, monkeypatch):
+@pytest.mark.parametrize("during_probe", [False, True])
+def test_reader_pin_acquired_between_batches_preserves_remaining_bytes(tmp_path, monkeypatch, during_probe):
     storage = storage_at(tmp_path / "pins")
     orphaned(storage)
     start, ready, release = threading.Event(), threading.Event(), threading.Event()
@@ -216,26 +217,40 @@ def test_reader_pin_acquired_between_batches_preserves_remaining_bytes(tmp_path,
             errors.append(exc)
 
     original = module._gc_object_entries
+    original_lock = module.measured_lock
 
     def enumerated(*args, **kwargs):
         for index, path in enumerate(original(*args, **kwargs)):
-            if index == 128:
+            if during_probe and index == 128:
                 start.set()
                 assert ready.wait(5)
             yield path
 
+    @contextmanager
+    def locked(*args, **kwargs):
+        with original_lock(*args, **kwargs):
+            yield
+        # The read-only probe can look ahead. Pin after the first protected
+        # deletion batch to retain the original between-batch safety check.
+        if not during_probe and kwargs.get("track_deadline", True) and not start.is_set():
+            start.set()
+            assert ready.wait(5)
+
     monkeypatch.setattr(module, "_gc_object_entries", enumerated)
+    monkeypatch.setattr(module, "measured_lock", locked)
     thread = threading.Thread(target=reader)
     thread.start()
     try:
-        assert storage.collect_unreferenced_objects() == 128
-        assert len(list(storage.objects_dir.glob("*/*.zlib"))) == 129
+        removed = 0 if during_probe else 128
+        assert storage.collect_unreferenced_objects() == removed
+        assert len(list(storage.objects_dir.glob("*/*.zlib"))) == 257 - removed
     finally:
         release.set()
         thread.join(5)
     assert not thread.is_alive() and not errors
     monkeypatch.setattr(module, "_gc_object_entries", original)
-    assert storage.collect_unreferenced_objects() == 129
+    monkeypatch.setattr(module, "measured_lock", original_lock)
+    assert storage.collect_unreferenced_objects() == 257 - removed
 
 
 def test_new_reference_published_during_enumeration_survives_batch_recheck(tmp_path, monkeypatch):

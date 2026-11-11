@@ -12,6 +12,14 @@ from pa.core.ui.work_presentation import present_work_item
 from pa.domain.models import CardLane
 from pa.execution.dispatch import TERMINAL_DISPATCH_STATES as CANONICAL_TERMINAL_STATES
 from pa.fleet.control_plane import build_control_plane_status
+from pa.fleet.workshop_stations import (
+    CARRY_STATIONS,
+    VERIFICATION_STATES,
+    active_gate,
+    card_station,
+    pose_for_tool_category,
+    worker_station,
+)
 
 TERMINAL_DISPATCH_STATES = {*CANONICAL_TERMINAL_STATES, "acknowledged"}
 STARTING_DISPATCH_STATES = {
@@ -23,6 +31,7 @@ STARTING_DISPATCH_STATES = {
     "delivering_prompt",
 }
 PRE_SESSION_DISPATCH_STATES = {
+    "admission_pending",
     "waiting_capacity",
     "blocked",
     *STARTING_DISPATCH_STATES,
@@ -291,7 +300,7 @@ def _worker_state(session: dict[str, Any], dispatch: dict[str, Any] | None) -> s
         phase = str(latest.get("phase") or "")
         if state in STARTING_DISPATCH_STATES:
             return "starting"
-        if state == "waiting_capacity":
+        if state in {"waiting_capacity", "admission_pending"}:
             return "queued"
         if state == "blocked":
             return "stalled"
@@ -308,6 +317,29 @@ def _worker_state(session: dict[str, Any], dispatch: dict[str, Any] | None) -> s
         if not (dispatch.get("progress") or {}).get("schema_version"):
             return "unsupported"
     return "quiet-active"
+
+
+def _floor_session_facts(session: dict[str, Any]) -> dict[str, Any]:
+    """Compact per-session facts the Workshop floor places an agent with."""
+    presentation = session.get("presentation") or {}
+    pending = presentation.get("pending_interaction")
+    recovery = presentation.get("recovery") or {}
+    if recovery.get("blocked"):
+        recovery_state = "blocked"
+    elif presentation.get("display_status") == "Restoring your work":
+        recovery_state = "restoring"
+    else:
+        recovery_state = None
+    return {
+        "session_status": session.get("status"),
+        "interaction": (
+            {"kind": pending.get("kind") or "permission", "count": pending.get("count") or 1}
+            if isinstance(pending, dict)
+            else None
+        ),
+        "recovery": recovery_state,
+        "connection": (presentation.get("connection") or {}).get("state"),
+    }
 
 
 def _tool_category(dispatch: dict[str, Any] | None) -> str | None:
@@ -756,6 +788,7 @@ def build_workshop_snapshot(
                         "age_seconds"
                     ),
                     "tool_category": _tool_category(dispatch),
+                    **_floor_session_facts(session),
                     "href": f"/agent?session={session_id}&instance={node.get('id')}",
                     "relationship_kind": "session",
                     "live": activity_state == "fresh" and state == "working",
@@ -791,7 +824,7 @@ def build_workshop_snapshot(
             )
             worker_state = (
                 "queued"
-                if dispatch_state == "waiting_capacity"
+                if dispatch_state in {"waiting_capacity", "admission_pending"}
                 else "stalled"
                 if dispatch_state == "blocked"
                 else "starting"
@@ -814,6 +847,7 @@ def build_workshop_snapshot(
                     "queue_position": queue.get("position")
                     or dispatch.get("queue_position"),
                     "tool_category": None,
+                    "dispatch_state": dispatch_state,
                     "href": None,
                     "relationship_kind": "reservation",
                     "live": False,
@@ -837,6 +871,7 @@ def build_workshop_snapshot(
                     reachability.get("state"), FRESHNESS_LABELS, "Unavailable"
                 ),
                 "observed_at": reachability.get("observed_at"),
+                "last_seen": node.get("last_seen"),
                 "activity_freshness": activity_state,
                 "activity_freshness_label": _label(
                     activity_state, FRESHNESS_LABELS, "Unavailable"
@@ -1390,25 +1425,327 @@ def build_workshop_snapshot(
     }
 
 
-def workshop_semantic_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
-    """Remove observation clocks that must not turn an SSE heartbeat into a rebuild."""
-    volatile = {
+# Absolute observation clocks and server-rendered relative-time text. They advance
+# every second even when nothing happened, so they never count as a change.
+VOLATILE_CLOCK_KEYS = frozenset(
+    {
         "generated_at",
         "observed_at",
-        "age_seconds",
         "activity_observed_at",
-        "activity_age_seconds",
+        "relative_time",
+        # Composed from title, state, outcome and the relative time; the
+        # non-clock parts are already carried by their own fields.
+        "accessible_label",
     }
+)
+
+
+def is_volatile_clock_key(key: str) -> bool:
+    """Whether a snapshot key is a pure, continuously ticking clock."""
+    return key in VOLATILE_CLOCK_KEYS or key == "age_seconds" or key.endswith(
+        "_age_seconds"
+    )
+
+
+def workshop_semantic_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Remove observation clocks that must not turn an SSE heartbeat into a rebuild."""
 
     def normalize(value: Any) -> Any:
         if isinstance(value, dict):
             return {
                 key: normalize(item)
                 for key, item in value.items()
-                if key not in volatile
+                if not (isinstance(key, str) and is_volatile_clock_key(key))
             }
         if isinstance(value, list):
             return [normalize(item) for item in value]
         return deepcopy(value)
 
     return normalize(snapshot)
+
+
+# ---------------------------------------------------------------------------
+# Slim "floor" projection
+# ---------------------------------------------------------------------------
+
+WORKSHOP_VIEWS = ("full", "floor")
+_FAILING_CONCLUSIONS = frozenset(
+    {"failure", "cancelled", "timed_out", "action_required", "startup_failure", "stale"}
+)
+# Card fields that are not already top-level on the work order (title, lane,
+# updated_at and realm are).
+_SLIM_CARD_KEYS = (
+    "id",
+    "project",
+    "preferred_instance",
+    "dispatch_id",
+    "session_id",
+    "target_instance_id",
+    "can_dispatch",
+    "dispatch_unavailable_reason",
+    "branch",
+    "blockers",
+    "historical_dispatch_count",
+    "href",
+)
+_SLIM_RECONCILIATION_KEYS = (
+    "state",
+    "reason",
+    "condition",
+    "recovery_action",
+    "recoverable",
+    "attempts",
+    "next_retry_at",
+)
+_SLIM_COMPLETION_KEYS = ("status", "lane_after", "reason", "extraction_error")
+_SLIM_DELIVERY_KEYS = ("pending", "classification", "last_error", "attempts", "next_retry_at")
+_SLIM_PRESENTATION_KEYS = (
+    "group",
+    "state",
+    "state_label",
+    "reason",
+    "tone",
+    "attention",
+    "attention_code",
+    "in_motion",
+    "terminal",
+    "priority",
+    "signal_label",
+    "checkpoint_state",
+    "occurred_at",
+    "action",
+)
+_SLIM_WORKER_KEYS = (
+    "dispatch_state",
+    "session_status",
+    "interaction",
+    "recovery",
+    "connection",
+    "id",
+    "purpose",
+    "title",
+    "state",
+    "state_label",
+    "provider",
+    "connected",
+    "dispatch_id",
+    "elapsed_from",
+    "latest_progress",
+    "queue_reason",
+    "queue_position",
+    "progress_freshness",
+    "progress_freshness_label",
+    "progress_last_activity_at",
+    "progress_age_seconds",
+    "href",
+    "relationship_kind",
+    "live",
+    "freshness",
+    "freshness_label",
+)
+
+
+def pull_request_gate(watch: dict[str, Any]) -> dict[str, Any]:
+    """Compact merge-gate summary replacing the multi-KB supervisor state blob."""
+    state = watch.get("state") if isinstance(watch.get("state"), dict) else {}
+    checks = [item for item in state.get("checks") or [] if isinstance(item, dict)]
+    failing = sum(
+        str(item.get("conclusion") or "").lower() in _FAILING_CONCLUSIONS
+        for item in checks
+    )
+    pending = sum(str(item.get("status") or "").lower() != "completed" for item in checks)
+    evidence = state.get("stable_green_evidence")
+    return {
+        "id": watch.get("id"),
+        "repository": watch.get("repository"),
+        "pr_number": watch.get("pr_number"),
+        "status": watch.get("status"),
+        "head_sha": watch.get("head_sha"),
+        "url": watch.get("url") or watch.get("pr_url"),
+        "last_error": watch.get("last_error"),
+        "retired_at": watch.get("retired_at"),
+        "gate": {
+            "pr_state": state.get("state"),
+            "draft": state.get("draft"),
+            "mergeable_state": state.get("mergeable_state"),
+            "review_decision": state.get("review_decision"),
+            "checks": {"total": len(checks), "failing": failing, "pending": pending},
+            "stable_green": (
+                evidence.get("green") if isinstance(evidence, dict) else None
+            ),
+        },
+    }
+
+
+def _pick(source: Any, keys: tuple[str, ...]) -> dict[str, Any] | None:
+    if not isinstance(source, dict):
+        return None
+    return {key: source[key] for key in keys if key in source}
+
+
+def _slim_card(card: Any) -> Any:
+    if not isinstance(card, dict):
+        return card
+    slim = _pick(card, _SLIM_CARD_KEYS) or {}
+    slim["pull_requests"] = [
+        pull_request_gate(watch) for watch in card.get("pull_requests") or []
+    ]
+    return slim
+
+
+def _slim_worker(worker: dict[str, Any]) -> dict[str, Any]:
+    slim = _pick(worker, _SLIM_WORKER_KEYS) or {}
+    card = worker.get("card")
+    slim["card_id"] = card.get("id") if isinstance(card, dict) else None
+    return slim
+
+
+def _slim_order(order: dict[str, Any]) -> dict[str, Any]:
+    slim = {
+        key: value
+        for key, value in order.items()
+        if key
+        not in {
+            "card",
+            "presentation",
+            "card_reconciliation",
+            "card_completion",
+            "completion_delivery",
+        }
+    }
+    slim["card"] = _slim_card(order.get("card"))
+    slim["card_completion"] = _pick(order.get("card_completion"), _SLIM_COMPLETION_KEYS)
+    slim["completion_delivery"] = _pick(
+        order.get("completion_delivery"), _SLIM_DELIVERY_KEYS
+    )
+    slim["card_reconciliation"] = _pick(
+        order.get("card_reconciliation"), _SLIM_RECONCILIATION_KEYS
+    )
+    slim["presentation"] = _pick(order.get("presentation"), _SLIM_PRESENTATION_KEYS)
+    return slim
+
+
+def _slim_bay(bay: dict[str, Any]) -> dict[str, Any]:
+    slim = {
+        key: value
+        for key, value in bay.items()
+        if key not in {"providers", "workers", "capacity", "url"}
+    }
+    capacity = bay.get("capacity") or {}
+    slim["capacity"] = {
+        key: capacity.get(key)
+        for key in ("consumed", "limit", "source", "queued_prompts")
+    }
+    slim["workers"] = [_slim_worker(worker) for worker in bay.get("workers") or []]
+    # A down peer is greyed out with "unreachable since", rather than forcing
+    # every one of its workers to look stalled.
+    slim["unreachable_since"] = (
+        None if bay.get("connectivity") == "connected" else bay.get("last_seen")
+    )
+    return slim
+
+
+def _floor_place_workers(
+    snapshot: dict[str, Any],
+    bays: list[dict[str, Any]],
+    orphans: list[dict[str, Any]],
+    orders: dict[str, dict[str, Any]],
+) -> None:
+    """Annotate slim workers with their station and workbench pose."""
+    full_workers = {
+        worker.get("id"): (bay, worker)
+        for bay in snapshot.get("bays") or []
+        for worker in bay.get("workers") or []
+    }
+
+    def place(slim: dict[str, Any]) -> None:
+        bay, worker = full_workers.get(slim.get("id"), ({}, {}))
+        order = orders.get(slim.get("card_id") or "") or {}
+        card = order.get("card") or {}
+        presentation = order.get("presentation") or {}
+        slim["station"] = worker_station(
+            relationship=str(worker.get("relationship_kind") or "session"),
+            bay_connected=bay.get("connectivity") == "connected",
+            state=worker.get("state"),
+            dispatch_state=worker.get("dispatch_state"),
+            interaction=worker.get("interaction"),
+            recovery=worker.get("recovery"),
+            connection=worker.get("connection"),
+            verification=(
+                presentation.get("state") in VERIFICATION_STATES
+                and order.get("lane") != "done"
+            ),
+            gantry=active_gate(card.get("pull_requests")) is not None,
+        )
+        slim["pose"] = pose_for_tool_category(worker.get("tool_category"))
+
+    for bay in bays:
+        for worker in bay["workers"]:
+            place(worker)
+    for worker in orphans:
+        place(worker)
+
+
+def workshop_floor_view(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Project the canonical snapshot to what the Workshop floor actually renders.
+
+    Drops the per-lane ``areas`` duplicate of every card payload, worker-embedded
+    full cards, provider inventories, counts, authority and the multi-KB pull
+    request supervisor state. Orphan sessions (agents with no card) are kept in a
+    compact form because the floor shows them. Every agent and every work order
+    that is not carried by an agent is given the station it stands at.
+    """
+    sync = snapshot.get("sync") or {}
+    bays = [_slim_bay(bay) for bay in snapshot.get("bays") or []]
+    orphans = [
+        {
+            "bay_id": (item.get("bay") or {}).get("id"),
+            "bay_name": (item.get("bay") or {}).get("name"),
+            **_slim_worker(item.get("worker") or {}),
+        }
+        for item in snapshot.get("orphan_sessions") or []
+    ]
+    slim_orders = [_slim_order(order) for order in snapshot.get("work_orders") or []]
+    _floor_place_workers(
+        snapshot, bays, orphans, {order.get("id"): order for order in slim_orders}
+    )
+    carried = {
+        worker.get("card_id")
+        for worker in [w for bay in bays for w in bay["workers"]]
+        if worker.get("card_id") and worker.get("station") in CARRY_STATIONS
+    }
+    now = datetime.now(UTC)
+    work_orders = []
+    for slim in slim_orders:
+        card = slim.get("card") or {}
+        gate = active_gate(card.get("pull_requests"))
+        slim["gantry"] = gate
+        slim["station"] = (
+            None
+            if slim.get("id") in carried
+            else card_station(
+                lane=str(slim.get("lane") or ""),
+                has_dispatch=bool(card.get("dispatch_id") or slim.get("dispatch_current")),
+                has_session=bool(slim.get("session")),
+                presentation_state=(slim.get("presentation") or {}).get("state"),
+                gantry=gate is not None,
+                updated_at=slim.get("updated_at"),
+                now=now,
+            )
+        )
+        work_orders.append(slim)
+    return {
+        "schema": snapshot.get("schema"),
+        "view": "floor",
+        "generated_at": snapshot.get("generated_at"),
+        "realm_id": snapshot.get("realm_id"),
+        "bays": bays,
+        "work_orders": work_orders,
+        "orphan_sessions": orphans,
+        "inventory": snapshot.get("inventory"),
+        "sync": {key: value for key, value in sync.items() if key != "edges"},
+    }
+
+
+def workshop_view(snapshot: dict[str, Any], view: str) -> dict[str, Any]:
+    return workshop_floor_view(snapshot) if view == "floor" else snapshot

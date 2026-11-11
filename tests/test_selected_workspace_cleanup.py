@@ -42,6 +42,35 @@ def test_selected_cleanup_removes_only_selected_and_reports_measured_bytes(tmp_p
     assert git(Path(other.cache_path), 'rev-parse', '--verify', other.branch).returncode == 0
 
 
+@pytest.mark.parametrize('selected_mode', [True, False])
+@pytest.mark.parametrize('pending', ['queued_prompts', 'in_flight', 'pending_permissions', 'pending_elicitations', 'pending_interaction'])
+def test_expired_terminal_offline_owner_retains_pending_work_and_controls(tmp_path, selected_mode, pending):
+    manager, (lease, other) = setup(tmp_path)
+    checkpoint = {pending: ['retained']}
+    manager.store.get_session.return_value = SimpleNamespace(config_json={'durable_runtime': checkpoint})
+    result = manager.collect_garbage(targets=[target(lease)] if selected_mode else None)
+    assert result['cleaned'] == 0
+    assert Path(lease.worktree_path).exists() and Path(other.worktree_path).exists()
+    assert manager.get_by_id(lease.id).cleanup_decision == 'safety_block'
+    assert checkpoint == {pending: ['retained']}
+
+
+def test_queue_appearing_at_last_cleanup_boundary_is_retained(tmp_path):
+    manager, (lease, _) = setup(tmp_path)
+    owner = SimpleNamespace(config_json={'durable_runtime': {}})
+    calls = 0
+    def read(_):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            owner.config_json['durable_runtime']['queued_prompts'] = ['newly accepted']
+        return owner
+    manager.store.get_session.side_effect = read
+    result = manager.collect_garbage(targets=[target(lease)])
+    assert result['cleaned'] == 0 and Path(lease.worktree_path).exists()
+    assert owner.config_json['durable_runtime']['queued_prompts'] == ['newly accepted']
+
+
 @pytest.mark.parametrize('fault', ['unknown', 'fence', 'timestamp', 'duplicate', 'empty'])
 def test_bad_selection_rejected_before_any_selected_or_unselected_mutation(tmp_path, fault):
     manager, leases = setup(tmp_path)
@@ -256,7 +285,8 @@ async def test_selected_api_does_not_reconcile_unselected_and_holds_admission(tm
     from pa.core.async_runtime import AsyncRuntime
     from pa.modules import instance
     manager, leases = setup(tmp_path)
-    manager.store.get_session.return_value = SimpleNamespace(principal_id='user:local')
+    manager.store.get_session.return_value = SimpleNamespace(principal_id='user:local',
+        config_json={'durable_runtime': {'in_flight': None, 'queued_prompts': []}})
     agent = SimpleNamespace(workspace_manager=manager, store=manager.store,
         _admitting_sessions=set(), list_runtimes=lambda:[])
     runtime = AsyncRuntime(max_workers=2,max_queue=2)
@@ -287,7 +317,8 @@ async def test_caller_cancellation_cannot_release_selected_owner_before_effect_f
     from pa.core.async_runtime import AsyncRuntime
     from pa.modules import instance
     manager, leases=setup(tmp_path)
-    manager.store.get_session.return_value=SimpleNamespace(principal_id='user:local')
+    manager.store.get_session.return_value=SimpleNamespace(principal_id='user:local',
+        config_json={'durable_runtime': {'in_flight': None, 'queued_prompts': []}})
     agent=SimpleNamespace(workspace_manager=manager,store=manager.store,_admitting_sessions=set(),list_runtimes=lambda:[])
     runtime=AsyncRuntime(max_workers=2,max_queue=2);await runtime.start()
     started,release,finished=threading.Event(),threading.Event(),threading.Event()

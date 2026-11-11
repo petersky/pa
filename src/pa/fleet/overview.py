@@ -239,41 +239,119 @@ def field(
     }
 
 
+# Fields that change on every probe even when the observed fleet state did not.
+# They refresh the in-memory copy but are not worth an fsync'd rewrite by themselves.
+_PROBE_CLOCK_FIELDS = frozenset(
+    {
+        "observed_at",
+        "last_attempted_at",
+        "last_successful_at",
+        "duration_ms",
+        "last_attempt_duration_ms",
+        "attempt_id",
+    }
+)
+# On-disk copies are rewritten at least this often even when only clocks moved,
+# so a restart never resumes from an arbitrarily old observation.
+PERSIST_REFRESH_SECONDS = 60.0
+
+
+def _persist_signature(value: Any) -> str:
+    """Digest of a cached dimension ignoring per-probe clock/timing fields."""
+    if isinstance(value, dict):
+        value = {k: v for k, v in value.items() if k not in _PROBE_CLOCK_FIELDS}
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, default=str).encode()
+    ).hexdigest()
+
+
 class FleetOverviewCache:
     """Small persistent last-good cache; the PA server remains its only writer."""
 
-    def __init__(self, data_dir: Path) -> None:
+    def __init__(
+        self,
+        data_dir: Path,
+        *,
+        persist_refresh_seconds: float = PERSIST_REFRESH_SECONDS,
+    ) -> None:
         self.path = data_dir / "fleet_overview_cache.json"
         self.dimensions_path = data_dir / "fleet_overview_cache.d"
+        self.persist_refresh_seconds = persist_refresh_seconds
+        self._clock = time.monotonic
         self._lock = RLock()
         self._data: dict[str, dict[str, Any]] = {}
         self._revision = 0
         self._persist_lock = Lock()
         self._persisted_revision = 0
         self._dirty: dict[tuple[str, str], int] = {}
-        try:
-            payload = json.loads(self.path.read_text())
-            if isinstance(payload, dict):
-                self._data = dict(payload.get("instances") or {})
-                self._revision = int(payload.get("revision") or 0)
-        except OSError, ValueError, TypeError:
-            pass
-        for path in self.dimensions_path.glob("*.json"):
+        # Last content written (or loaded) per dimension and when, so an
+        # unchanged probe result does not rewrite and fsync its file.
+        self._persisted: dict[tuple[str, str], tuple[str, float]] = {}
+        loaded_at = self._clock()
+        payloads = []
+        for path in sorted(self.dimensions_path.glob("*.json")):
             try:
                 payload = json.loads(path.read_text())
-                instance_id, dimension = payload["instance_id"], payload["dimension"]
-                current = self._data.setdefault(instance_id, {})
-                if payload["value"] is None:
-                    current.pop(dimension, None)
-                else:
-                    current[dimension] = payload["value"]
-                self._revision = max(self._revision, int(payload["revision"]))
+                payloads.append(
+                    (
+                        payload["instance_id"],
+                        payload["dimension"],
+                        payload["value"],
+                        int(payload["revision"]),
+                    )
+                )
             except (OSError, ValueError, TypeError, KeyError):
                 logger.warning("Ignoring unreadable fleet dimension cache %s", path.name)
+        # The single-file cache predates per-dimension files and is no longer
+        # written. It is only a baseline for installs without a usable
+        # per-dimension cache; otherwise its frozen entries would resurface.
+        if not payloads:
+            try:
+                payload = json.loads(self.path.read_text())
+                if isinstance(payload, dict):
+                    self._data = dict(payload.get("instances") or {})
+                    self._revision = int(payload.get("revision") or 0)
+            except OSError, ValueError, TypeError:
+                pass
+        for instance_id, dimension, value, revision in payloads:
+            current = self._data.setdefault(instance_id, {})
+            if value is None:
+                current.pop(dimension, None)
+            else:
+                current[dimension] = value
+                self._persisted[(instance_id, dimension)] = (
+                    _persist_signature(value),
+                    loaded_at,
+                )
+            self._revision = max(self._revision, revision)
         for dimensions in self._data.values():
             if "activity" in dimensions:
                 dimensions["activity"] = self._compact_activity(dimensions["activity"])
         self._persisted_revision = self._revision
+        if payloads:
+            self._retire_legacy_cache()
+
+    def _retire_legacy_cache(self) -> None:
+        """Delete the frozen single-file cache once per-dimension files carry the state.
+
+        Only called after at least one per-dimension file was read successfully,
+        so the legacy copy is never removed while it is still the only record.
+        """
+        try:
+            size = self.path.stat().st_size
+            self.path.unlink()
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            logger.warning("Could not remove legacy fleet overview cache: %s", exc)
+            return
+        logger.info(
+            "Removed legacy fleet overview cache %s (%d bytes); per-dimension "
+            "files in %s are authoritative",
+            self.path.name,
+            size,
+            self.dimensions_path.name,
+        )
 
     @staticmethod
     def _compact_activity(value: dict[str, Any]) -> dict[str, Any]:
@@ -305,7 +383,25 @@ class FleetOverviewCache:
                 with self._lock:
                     if self._dirty.get((instance_id, dimension)) == revision:
                         self._dirty.pop((instance_id, dimension))
+                    if value is None:
+                        self._persisted.pop((instance_id, dimension), None)
+                    else:
+                        self._persisted[(instance_id, dimension)] = (
+                            _persist_signature(value),
+                            self._clock(),
+                        )
                     self._persisted_revision = max(self._persisted_revision, revision)
+
+    def _needs_write(self, key: tuple[str, str], value: dict[str, Any]) -> bool:
+        """Caller holds ``_lock``. Skip rewrites that only refresh probe clocks."""
+        persisted = self._persisted.get(key)
+        if persisted is None:
+            return True
+        signature, written_at = persisted
+        return (
+            signature != _persist_signature(value)
+            or self._clock() - written_at >= self.persist_refresh_seconds
+        )
 
     def get(self, instance_id: str, dimension: str) -> dict[str, Any] | None:
         with self._lock:
@@ -353,7 +449,8 @@ class FleetOverviewCache:
                 }
             current[dimension] = value
             self._revision += 1
-            self._dirty[(instance_id, dimension)] = self._revision
+            if self._needs_write((instance_id, dimension), value):
+                self._dirty[(instance_id, dimension)] = self._revision
         self._persist()
         return True
 

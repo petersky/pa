@@ -13,7 +13,7 @@ import time
 from datetime import UTC, datetime, timedelta
 from itertools import zip_longest
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 from uuid import uuid4
 
@@ -192,6 +192,9 @@ def _completion_conflict_detail(request: Request, code: str) -> dict:
     detail = {"code": code, "message": code.replace("_", " ").capitalize() + "."}
     if code == 'verification_pending':
         detail['message'] = 'Done was not saved: PA is arranging independent verification of this card’s declared requirements.'
+    if code == 'verification_newer_head_pending':
+        detail['message'] = ('A newer integrated change arrived while you were verifying. Stop: do not retry. '
+                             'PA verifies the latest head by itself when this run ends.')
     if code in {"acceptance_pending", "completion_owner_unconfigured"}:
         detail["message"] = "Done was not saved: this card still requires completion acceptance."
         if not _direct_human_card_action(request):
@@ -270,32 +273,55 @@ def _redact_memory(entry: KnowledgeEntry, principal_id: str) -> KnowledgeEntry:
 
 
 @router.get("/cards/events")
-async def card_events(request: Request, realm: str | None = None) -> StreamingResponse:
+async def card_events(
+    request: Request, realm: str | None = None, include: str | None = None
+) -> StreamingResponse:
+    from pa.fleet.workshop_transitions import SSE_EVENT, floor_topic
     from pa.server.shutdown import is_shutting_down, wait_for_shutdown_or
 
     realm_id = realm or request.app.state.ctx.settings.primary_realm
     broker = request.app.state.ctx.require_service("live_updates")
+    # ``?include=workshop`` additionally delivers dispatch-stage and PR-gate moves
+    # for the Workshop floor as ``workshop-floor`` events.
+    topics = {"cards-changed": realm_id}
+    if "workshop" in (include or "").split(","):
+        topics[SSE_EVENT] = floor_topic(realm_id)
 
     async def stream():
-        queue = broker.subscribe(realm_id)
+        queues = {name: broker.subscribe(topic) for name, topic in topics.items()}
+        getters: dict[str, asyncio.Task[Any]] = {}
+
+        async def next_event() -> tuple[str, dict[str, Any]]:
+            # Getters outlive a cancelled wait, so a completed get is never lost.
+            for name, queue in queues.items():
+                if name not in getters:
+                    getters[name] = asyncio.ensure_future(queue.get())
+            await asyncio.wait(getters.values(), return_when=asyncio.FIRST_COMPLETED)
+            name = next(key for key, task in getters.items() if task.done())
+            return name, getters.pop(name).result()
+
         try:
             yield ": connected\n\n"
             while not is_shutting_down() and not await request.is_disconnected():
                 try:
-                    stopping, event = await wait_for_shutdown_or(
-                        queue.get(), timeout=20.0
+                    stopping, item = await wait_for_shutdown_or(
+                        next_event(), timeout=20.0
                     )
                 except TimeoutError:
                     yield ": keepalive\n\n"
                     continue
-                if stopping or event is None:
+                if stopping or item is None:
                     return
+                name, event = item
                 yield (
-                    "event: cards-changed\n"
+                    f"event: {name}\n"
                     f"data: {json.dumps(event, separators=(',', ':'))}\n\n"
                 )
         finally:
-            broker.unsubscribe(realm_id, queue)
+            for task in getters.values():
+                task.cancel()
+            for name, queue in queues.items():
+                broker.unsubscribe(topics[name], queue)
 
     return StreamingResponse(
         stream(),
@@ -2174,6 +2200,10 @@ def create_card_api(
 ) -> dict:
     store = get_store()
     settings = request.app.state.ctx.settings
+    if data.completion_requirement is not None:
+        from pa.domain.completion import declared_requirement
+        data = data.model_copy(update={"completion_requirement": declared_requirement(
+            data.completion_requirement, keep_active_default=settings.completion_active_milestone_default)})
     payload = data.model_dump(mode="json") | {
         "auto_enrich": data.auto_enrich,
         "enrichment_protected_fields": sorted(explicit_enrichment_fields(data)),
@@ -2743,6 +2773,12 @@ def update_card_api(
         actor_principal = record.principal_id
     settings = request.app.state.ctx.settings
     realm_id = realm or settings.primary_realm
+    if data.completion_requirement is not None:
+        from pa.domain.completion import declared_requirement
+        existing = get_store().get_card(card_id, realm_id=realm_id)
+        if existing is None or existing.completion_requirement != data.completion_requirement:
+            data = data.model_copy(update={"completion_requirement": declared_requirement(
+                data.completion_requirement, keep_active_default=settings.completion_active_milestone_default)})
     payload = {
         "card_id": card_id,
         **data.model_dump(mode="json", exclude_unset=True),

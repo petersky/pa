@@ -131,6 +131,7 @@ def test_existing_preservation_receipt_identity_is_unchanged(tmp_path):
     old = request['target'].model_dump(mode='json')
     old.pop('expected_actual_branch'); old.pop('expected_native_id')
     old.pop('expected_owner_updated_at')
+    old.pop('residual_inventory_sha256')
     fingerprint = dict(target=old, relative_path=request['relative_path'],
         attachment_sha256=request['attachment_sha256'], principal=request['principal'])
     expected = hashlib.sha256(json.dumps(fingerprint, sort_keys=True).encode()).hexdigest()

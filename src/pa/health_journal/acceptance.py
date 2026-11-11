@@ -33,7 +33,8 @@ def verify_acceptance(card, group, assessment, *, repair_sessions=(), repair_dis
     if not assessment.acceptance_scenario or not assessment.accepted_instances:
         raise JournalError('acceptance_scope_required')
     receipts = [_dict(item) for item in getattr(card, 'completion_evidence', [])]
-    current = [r for r in receipts if r.get('requirement_revision') == requirement.get('revision')]
+    valid_revisions = {requirement.get('revision'), *requirement.get('prior_revisions', [])}
+    current = [r for r in receipts if r.get('requirement_revision') in valid_revisions]
     integrated = [r for r in current if r.get('outcome') == 'integrated']
     if integrated and integrated[-1].get('subject_revision') != subject:
         raise JournalError('acceptance_subject_superseded')

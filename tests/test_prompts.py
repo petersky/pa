@@ -23,6 +23,7 @@ from pa.prompts import (
 
 EXPECTED_PROMPT_KEYS = {
     "completion.verify",
+    "completion.verification_failed",
     "health.problem_reporting",
     "health.triage",
     "agent.context.execution_boundary",
@@ -40,6 +41,7 @@ EXPECTED_PROMPT_KEYS = {
     "agent.context.workspace_catalog",
     "agent.message.wrapper",
     "dispatch.remote.default",
+    "pr_supervisor.action.closed",
     "pr_supervisor.action.green",
     "pr_supervisor.action.merged",
     "pr_supervisor.action.required",

@@ -1,4 +1,5 @@
 """Fresh health must retain every event reference and propagate incomplete reads."""
+import json
 import sqlite3
 from unittest.mock import patch
 
@@ -15,7 +16,7 @@ def cold(seq):
                            payload={"text": f"{seq}:" + "x" * (MAX_HOT_PAYLOAD_BYTES + 100)})
 
 
-@pytest.mark.parametrize("count", [0, 1, 129, 385])
+@pytest.mark.parametrize("count", [0, 1, 129, 1025, 2049])
 def test_complete_distinct_references_and_health_across_batch_boundaries(tmp_path, count):
     store = TranscriptStorage(tmp_path / "fixture.db")
     events = [cold(i + 1) for i in range(count)]
@@ -70,7 +71,7 @@ def test_fresh_health_checks_all_files_and_never_caches_missing_result(tmp_path)
 
 def test_failed_reference_read_raises_instead_of_returning_partial_health(tmp_path):
     store = TranscriptStorage(tmp_path / "fixture.db")
-    store.append([cold(i + 1) for i in range(257)])
+    store.append([cold(i + 1) for i in range(1025)])
     expected = store.referenced_hashes()
     fetchone = ObservedCursor.fetchone
     pages = []
@@ -90,6 +91,23 @@ def test_failed_reference_read_raises_instead_of_returning_partial_health(tmp_pa
     assert store.metrics()["missing_objects"] == 0
 
 
+def test_reference_read_pages_are_bounded_and_include_the_last_reference(tmp_path):
+    store = TranscriptStorage(tmp_path / "fixture.db")
+    store.append([cold(i + 1) for i in range(1025)])
+    fetchone = ObservedCursor.fetchone
+    pages = []
+
+    def observe_page(cursor):
+        row = fetchone(cursor)
+        if cursor.description and cursor.description[0][0] == "json_group_array(cold_hash)":
+            pages.append(len(json.loads(row[0])))
+        return row
+
+    with patch.object(ObservedCursor, "fetchone", observe_page):
+        assert len(store.referenced_hashes()) == 1025
+    assert pages == [1024, 1, 0]
+
+
 def test_reference_values_preserve_native_nontext_fallback(tmp_path):
     store = TranscriptStorage(tmp_path / "fixture.db")
     values = ["", "\x00", "a\x00suffix", "雪", 'quote"', b"\x00\x80\xff", b"", 1, 1.25, None]
@@ -106,7 +124,7 @@ def test_reference_values_preserve_native_nontext_fallback(tmp_path):
 
 def test_reference_pages_keep_one_snapshot_during_publication_and_deletion(tmp_path):
     store = TranscriptStorage(tmp_path / "fixture.db")
-    store.append([cold(i + 1) for i in range(257)])
+    store.append([cold(i + 1) for i in range(1025)])
     expected = store.referenced_hashes()
     fetchone = ObservedCursor.fetchone
     published = []

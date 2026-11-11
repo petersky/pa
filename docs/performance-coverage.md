@@ -2,6 +2,12 @@
 > snapshots are now linked to their original Git revision. Earlier statements about
 > retaining all stages describe that revision. See [current retention policy](benchmarks/README.md).
 
+## Current bounded performance work
+
+[One current compact report](performance-current.json) contains the latest bounded source repair, aggregate measurements, failed-probe summary and explicit limits. It is overwritten for the next repair; earlier reports remain in Git history. PR708's GC and PR710's fresh-health repairs are integrated, without deployed acceptance.
+
+Disposable fixtures are removed on success/failure; no raw captures or mirrored histories are retained. All 755 findings and 185 concerns remain open, including native full-compaction latency, uncovered writers, starvation and physical write amplification. Source integration does not establish deployed or whole-card acceptance.
+
 ## Automatic maintenance startup ordering — 2026-11-08
 
 **753 findings / 185 concerns remain open.** [Complete source and workload evidence](benchmarks/systemic-maintenance-startup-order-20261108.json) preserves every earlier row and failure. The extra concern records fixture sibling-task ownership, separately from the unresolved HTTP timeout.

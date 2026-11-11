@@ -109,7 +109,8 @@ class UntrackedPreservation:
                 attachment_sha256: str, principal: str, action: str) -> dict:
         target_identity = target.model_dump(mode='json')
         # Keep existing preservation operation identities byte-for-byte stable.
-        for optional in ('expected_actual_branch', 'expected_native_id', 'expected_owner_updated_at'):
+        for optional in ('expected_actual_branch', 'expected_native_id', 'expected_owner_updated_at',
+                         'residual_inventory_sha256'):
             if target_identity.get(optional) is None:
                 target_identity.pop(optional, None)
         fingerprint = {'target': target_identity, 'relative_path': relative_path,

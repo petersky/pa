@@ -676,6 +676,13 @@ class ConfigBody(BaseModel):
 class ReorderBody(BaseModel):
     prompt_ids: list[str] = Field(default_factory=list)
 
+    @field_validator("prompt_ids")
+    @classmethod
+    def _unique_prompt_ids(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("prompt_ids must not contain duplicates")
+        return value
+
 
 class RecoverSessionBody(BaseModel):
     provider: str | None = None
@@ -2755,11 +2762,17 @@ def list_agent_session_history(
     settings = request.app.state.ctx.settings
     sessions = mgr.store.list_sessions()
     if card_id:
+        lookup = getattr(type(mgr.store), "session_ids_linked_to_card", None)
+        linked_ids = (
+            lookup(mgr.store, card_id, [session.id for session in sessions if session.card_id != card_id])
+            if callable(lookup) else None
+        )
         sessions = [
             session
             for session in sessions
             if session.card_id == card_id
-            or card_id in mgr.store.list_card_ids_for_session(session.id)
+            or (session.id in linked_ids if linked_ids is not None
+                else card_id in mgr.store.list_card_ids_for_session(session.id))
         ]
     if project_id:
         sessions = [session for session in sessions if session.project_id == project_id]
@@ -2773,6 +2786,7 @@ def list_agent_session_history(
         )
         if selected is not None:
             bounded_sessions[-1] = selected
+    card_summaries = _history_card_summaries(request, bounded_sessions)
     result: list[dict[str, Any]] = []
     for session in bounded_sessions:
         session_payload = session.model_dump(mode="json")
@@ -2791,7 +2805,9 @@ def list_agent_session_history(
         result.append(
             {
                 **session_payload,
-                "cards": _session_cards_payload(request, session),
+                "cards": ([{**card, "primary": card["id"] == session.card_id}
+                           for card in card_summaries[session.id]]
+                          if card_summaries is not None else _session_cards_payload(request, session)),
                 "card_ids": mgr.store.list_card_ids_for_session(session.id),
                 "project": _session_project_payload(request, session),
                 "instance_id": settings.instance_id,
@@ -3281,6 +3297,15 @@ def _session_cards_payload(request: Request, session: AgentSession) -> list[dict
     ]
 
 
+def _history_card_summaries(request, sessions, *, _default_payload=_session_cards_payload):
+    # Extensions of the existing payload hook remain authoritative.
+    if _session_cards_payload is not _default_payload:
+        return None
+    store = request.app.state.ctx.store
+    lookup = getattr(type(store), "list_history_card_summaries", None)
+    return lookup(store, [session.id for session in sessions]) if callable(lookup) else None
+
+
 @router.get("/sessions/{session_id}/cards")
 def list_session_cards(request: Request, session_id: str) -> dict:
     mgr = _manager(request)
@@ -3663,6 +3688,7 @@ async def _submit_dispatch_followup(
     from pa.modules.fleet import _merge_dispatch_followup_operation
 
     key = body.idempotency_key
+    target_instance_id = request.app.state.ctx.settings.instance_id
     if body.dispatch_prompt_protocol != PROMPT_IDENTITY_PROTOCOL:
         raise HTTPException(409, detail={
             "code": "dispatch_prompt_protocol_required", "recoverable": True,
@@ -3738,6 +3764,21 @@ async def _submit_dispatch_followup(
                 current.prompt_ack = {**response, "event_type": accepted.event_type,
                                       "event_id": accepted.id, "event_seq": accepted.seq}
                 current.prompt_acknowledged_at = accepted.created_at
+                # On a target that is not the authority this is the only place
+                # its mirror record can learn the work started: the authority
+                # drives its own record to ``running`` but never the target's.
+                # Without this the mirror stays ``starting_session``, so the
+                # completion path (running/completion_pending only) never
+                # queues a /complete and the authority waits forever.
+                if (current.authority_instance_id != target_instance_id
+                        and current.state in {"queued", "materializing", "provisioning",
+                                             "starting_session", "delivering_prompt"}):
+                    ledger.apply_transition(
+                        current, "running", "Prompt accepted by the intended session.",
+                        detail={"session_id": session_id, "event_id": accepted.id,
+                                "event_seq": accepted.seq, "event_type": accepted.event_type,
+                                "followup": False, "target_mirror": True},
+                    )
             await _runtime_offload(
                 runtime, "dispatch.initial_prompt_ack", ledger.mutate_current,
                 record.dispatch_id, mutate=acknowledge, wait_for_completion=True,
@@ -4185,7 +4226,11 @@ async def _session_prompt_owned(request: Request, session_id: str, body: PromptB
 @router.post("/sessions/{session_id}/cancel")
 async def session_cancel(request: Request, session_id: str) -> dict:
     runtime = await _runtime_or_404_async(request, session_id)
-    await runtime.cancel(pause_queue=False)
+    # Stop is the user's explicit "halt": queued prompts wait until Resume.
+    # With nothing queued there is nothing to hold, and pausing would strand the
+    # next message the user types behind an invisible hold. Agent-internal
+    # interrupts call cancel(pause_queue=False) themselves.
+    await runtime.cancel(pause_queue=runtime.has_work_to_hold())
     return {"ok": True, "queue_paused": runtime.queue_paused}
 
 
@@ -4608,6 +4653,142 @@ async def session_close_all(request: Request) -> dict:
     return result
 
 
+def _retired_empty_dispatch_retry(mgr, origin, sibling):
+    """A canonically closed allocation failure is not a competing owner proof."""
+    config = sibling.config_json or {}
+    durable = config.get("durable_runtime") or {}
+    runtime = mgr.get(sibling.id)
+    if (
+        sibling.status != "closed" or sibling.external_session_id or sibling.execution_binding or sibling.cwd
+        or sibling.id in mgr._admitting_sessions or (runtime and not runtime._closed)
+        or sibling.dispatch_id != origin.dispatch_id
+        or sibling.card_id != origin.card_id or sibling.project_id != origin.project_id
+        or sibling.authority_instance_id != origin.authority_instance_id
+        or sibling.origin_instance_id != origin.target_instance_id
+        or sibling.realm_id != origin.realm_id or sibling.principal_id != origin.principal_id
+        or sibling.purpose != "automated_run" or sibling.control_mode != "automation"
+        or durable.get("queued_prompts") or durable.get("in_flight")
+        or (config.get("execution_context") or {}).get("repositories")
+        or (config.get("execution_context") or {}).get("artifact_workspace")
+        or (config.get("execution_pending_settings") or {}).get("state") in {"pending", "failed"}
+        or (config.get("provisioning") or {}).get("state") != "failed"
+        or mgr.store.pending_restart_continuation(session_id=sibling.id)
+        or any(l.session_id == sibling.id for l in mgr.workspace_manager.list())
+    ):
+        return False
+    events = mgr.store.list_transcript_events(sibling.id, limit=2)
+    return (len(events) == 1 and events[0].event_type == "session_closed"
+            and events[0].payload.get("reason") == "orphan_user_close")
+
+
+def _reconcile_reserved_recovery_source(mgr, ledger, origin, source):
+    """Recover a legacy allocation/publication crash cut for retirement only.
+
+    Caller holds the source admission fence. Never adopt by card alone, infer
+    completion, start a provider, or change workspace ownership/fences.
+    """
+    from pa.execution.dispatch import DispatchEvent
+
+    def reject():
+        raise HTTPException(409, detail={"code": "reserved_source_proof_mismatch"})
+
+    context = (source.config_json or {}).get("execution_context") or {}
+    expected = {
+        "session_id": source.id, "dispatch_id": origin.dispatch_id,
+        "card_id": origin.card_id, "project_id": origin.project_id,
+        "realm_id": origin.realm_id, "principal_id": origin.principal_id,
+    }
+    if (
+        origin.session_id is not None or origin.state != "failed"
+        or origin.goal_provenance is not None
+        or origin.target_instance_id != mgr.settings.instance_id
+        or source.authority_instance_id != origin.authority_instance_id
+        or source.origin_instance_id != origin.target_instance_id
+        or source.dispatch_id != origin.dispatch_id
+        or source.card_id != origin.card_id or source.project_id != origin.project_id
+        or source.realm_id != origin.realm_id or source.principal_id != origin.principal_id
+        or source.purpose != "automated_run" or source.control_mode != "automation"
+        or source.label != f"card:{origin.card_id}:dispatch:{origin.dispatch_id}"
+        or any(context.get(k) != v for k, v in expected.items())
+        or (context.get("authority_instance") or {}).get("id") != origin.authority_instance_id
+        or (context.get("instance") or {}).get("id") != origin.target_instance_id
+        or origin.initial_prompt_operation or origin.acknowledged_at
+        or origin.completion_payload is not None or origin.completion_envelope is not None
+        or origin.completion_received_at is not None or origin.terminal_repair_reservation
+        or mgr.store.list_transcript_events(source.id)
+    ):
+        reject()
+    candidates = [s for s in mgr.store.list_sessions()
+                  if s.dispatch_id == origin.dispatch_id or s.label == source.label]
+    retired = [s for s in candidates if s.id != source.id]
+    if any(not _retired_empty_dispatch_retry(mgr, origin, s) for s in retired):
+        reject()
+    repositories = context.get("repositories") or []
+    leases = [l for l in mgr.workspace_manager.list() if l.session_id == source.id]
+    planned = (origin.materialization_plan or {}).get("repositories") or []
+    if (
+        not repositories or len(leases) != len(repositories)
+        or {r.get("lease_id") for r in repositories} != {l.id for l in leases}
+        or {(r.get("repository_id"), r.get("repository_url")) for r in repositories}
+        != {(r.get("repository_id"), r.get("url")) for r in planned}
+    ):
+        reject()
+    binding = source.execution_binding or {}
+    immutable = {
+        "version": 1, "execution_card_id": source.card_id,
+        "execution_project_id": source.project_id,
+        "origin_instance_id": origin.target_instance_id,
+        "repository_ids": [r.get("repository_id") for r in repositories],
+        "lease_ids": [r.get("lease_id") for r in repositories],
+        "worktree_paths": [r.get("worktree_path") for r in repositories],
+        "branch": repositories[0].get("branch"),
+        "base_sha": repositories[0].get("base_sha"),
+    }
+    if any(binding.get(k) != v for k, v in immutable.items()):
+        reject()
+    if any(k in binding and binding[k] != v for k, v in expected.items()):
+        reject()
+    proof = []
+    for repository in repositories:
+        lease = next((l for l in leases if l.id == repository.get("lease_id")), None)
+        if lease is None or any((
+            lease.card_id != source.card_id, lease.project_id != source.project_id,
+            lease.state != "ready", lease.stage != "verified",
+            lease.repository_id != repository.get("repository_id"),
+            lease.repository_url != repository.get("repository_url"),
+            lease.worktree_path != repository.get("worktree_path"),
+            lease.branch != repository.get("branch"),
+            lease.base_sha != repository.get("base_sha"),
+            lease.fencing_token != repository.get("fencing_token"),
+        )):
+            reject()
+        proof.append({"lease_id": lease.id, "fencing_token": lease.fencing_token,
+                      "base_sha": lease.base_sha})
+
+    def reconcile(current):
+        fresh = mgr.store.get_session(source.id)
+        fresh_leases = [l for l in mgr.workspace_manager.list() if l.session_id == source.id]
+        fresh_candidates = [s for s in mgr.store.list_sessions()
+                            if s.dispatch_id == origin.dispatch_id or s.label == source.label]
+        if (fresh != source or fresh_leases != leases
+            or {s.id: s for s in fresh_candidates} != {s.id: s for s in candidates}
+            or any(not _retired_empty_dispatch_retry(mgr, origin, s) for s in retired)):
+            reject()
+        current.session_id = source.id
+        current.events.append(DispatchEvent(
+            seq=current.events[-1].seq + 1 if current.events else 1,
+            state=current.state,
+            message="Reconciled exact reserved source for workspace-preserving retirement.",
+            detail={"kind": "reserved_source_retirement_binding", "session_id": source.id,
+                    "lease_proof": proof, "outcome_inferred": False,
+                    "retired_empty_retry_ids": [s.id for s in retired]},
+        ))
+    try:
+        return ledger.compare_and_mutate(origin, reconcile)
+    except ValueError as exc:
+        raise HTTPException(409, detail={"code": "reserved_source_compare_conflict"}) from exc
+
+
 async def _close_recovery_preserving_workspace(request: Request, mgr, session_id: str) -> dict:
     """Retire an idle failed dispatch source without collecting any workspaces."""
     principal = get_principal_id(request)
@@ -4637,8 +4818,13 @@ async def _close_recovery_preserving_workspace(request: Request, mgr, session_id
                 raise HTTPException(409, detail={"code": "context_boundary_pending_settings"})
             if source.status not in {RECOVERY_BLOCKED_STATUS, "closed"} or not source.dispatch_id:
                 raise HTTPException(409, detail={"code": "recovery_source_not_terminal"})
-            ledger = DispatchStore(mgr.settings.data_dir, read_only=True)
+            ledger = mgr.dispatch_store or DispatchStore(mgr.settings.data_dir, read_only=True)
             origin = await _offload(mgr, "dispatch.recovery_source_read", ledger.get, source.dispatch_id)
+            if origin and origin.session_id is None:
+                if live and not live._closed:
+                    raise HTTPException(409, detail={"code": "reserved_source_runtime_live"})
+                origin = await _offload(mgr, "dispatch.reserved_source_reconcile",
+                    _reconcile_reserved_recovery_source, mgr, ledger, origin, source)
             if (
                 not origin or origin.state not in {"completed", "failed", "cancelled", "acknowledged"}
                 or origin.session_id != source.id or origin.card_id != source.card_id
@@ -4788,7 +4974,15 @@ async def queue_pause(request: Request, session_id: str) -> dict:
 @router.post("/sessions/{session_id}/queue/resume")
 async def queue_resume(request: Request, session_id: str) -> dict:
     runtime = await _runtime_or_404_async(request, session_id)
-    runtime.resume_queue()
+    try:
+        runtime.resume_queue()
+    except ValueError as exc:
+        # Recovery/delivery fences are a conflict with current state, not a
+        # server fault; the queue stays paused.
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "delivery_not_allowed", "message": str(exc)},
+        ) from exc
     await _drain_runtime_transcripts(runtime)
     return {"queue_paused": False}
 
@@ -4806,6 +5000,16 @@ async def queue_remove(request: Request, session_id: str, prompt_id: str) -> dic
     runtime = await _runtime_or_404_async(request, session_id)
     removed = runtime.remove_queued(prompt_id)
     if not removed:
+        if runtime.prompt_started(prompt_id):
+            # Lost the race with the drain: the prompt is already running or
+            # done, which the client treats as "gone" and refreshes.
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "already_started",
+                    "message": "The prompt already left the queue.",
+                },
+            )
         raise HTTPException(status_code=404, detail="Queued prompt not found")
     await _drain_runtime_transcripts(runtime)
     return {"ok": True}

@@ -1,0 +1,70 @@
+.page-loops input, .page-loops textarea, .page-loops select { max-width: 100%; }
+.page-loops pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.page-loops article { padding-block: 1rem; border-bottom: 1px solid var(--border); }
+.page-loops article button { margin: .25rem; }
+[data-acw-reminders-dialog] { width: min(40rem, 90vw); max-height: 80vh; overflow: auto; padding: 1.5rem; background: var(--bg, Canvas); color: var(--text, CanvasText); border: 1px solid var(--border); border-radius: .75rem; }
+[data-acw-reminders-dialog]::backdrop { background: rgb(0 0 0 / .4); }
+[data-acw-reminders-list] article { margin-block: 1rem; overflow-wrap: anywhere; }
+
+/* Loops uses the shell's theme tokens and keeps diagnostics out of routine work. */
+.page-loops .loops-workspace { max-width: 1120px; margin: 1.5rem auto; padding: 0 1rem 3rem; color: var(--pa-text); }
+.loops-workspace * { box-sizing: border-box; }
+.loops-workspace h1 { font-size: 2.25rem; letter-spacing: -.04em; margin: 0 0 .5rem; }
+.loops-workspace h2 { font-size: 1.1rem; margin: 0; }
+.loops-workspace p { margin: .5rem 0; line-height: 1.55; }
+.loops-header, .loops-section-heading, .loop-card-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.loops-header { margin-bottom: 2rem; }
+.loops-header p, .loops-section-heading p, .loops-help, .loops-label { color: var(--pa-text-muted); }
+.loops-header .loops-eyebrow { color: var(--pa-accent); font-size: .7rem; font-weight: 700; letter-spacing: .15em; margin-bottom: .75rem; }
+.loops-workspace button { min-height: 2.4rem; padding: .5rem .85rem; border-radius: .5rem; cursor: pointer; }
+.loops-workspace .loops-primary, .loops-workspace #save { background: var(--pa-accent); color: white; border: 1px solid var(--pa-accent); white-space: nowrap; }
+.loops-library, .loops-editor, .loops-sources { margin-top: 1.5rem; }
+.loops-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; padding: 1.1rem 0; }
+.loops-toolbar label:first-child { flex: 1; min-width: 180px; }
+.loops-toolbar label { display: grid; gap: .4rem; font-size: .8rem; font-weight: 600; }
+.loops-workspace input:not([type=checkbox]), .loops-workspace select, .loops-workspace textarea { width: 100%; min-height: 2.5rem; padding: .6rem .7rem; border: 1px solid var(--pa-border); border-radius: .4rem; background: var(--pa-surface); color: var(--pa-text); font: inherit; }
+.loops-workspace #loop-count { font-size: .8rem; padding-bottom: .7rem; color: var(--pa-text-muted); }
+.loops-workspace article.loop-card { padding: 1.25rem; margin: .75rem 0; border: 1px solid var(--pa-border); border-radius: .8rem; background: var(--pa-surface); box-shadow: var(--pa-shadow); }
+.loop-card-heading h2 { overflow-wrap: anywhere; }
+.loop-status { background: var(--pa-accent-subtle); color: var(--pa-text); font-size: .75rem; border-radius: 2rem; padding: .25rem .65rem; text-transform: capitalize; }
+.loop-card[data-state=paused] .loop-status, .loop-card[data-state=cancelled] .loop-status { background: var(--pa-bg); color: var(--pa-text-muted); }
+.loop-facts { display: grid; grid-template-columns: 1fr 1fr 1.4fr; gap: 1.5rem; margin: 1.25rem 0 .75rem; overflow-wrap: anywhere; }
+.loops-label { font-size: .7rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
+.loop-facts p { font-size: .9rem; margin: .35rem 0 0; }
+.loop-actions { display: flex; flex-wrap: wrap; align-items: start; gap: .5rem; margin: .75rem 0; }
+.page-loops .loop-actions button { margin: 0; }
+.loops-workspace summary { cursor: pointer; padding: .5rem 0; font-size: .85rem; color: var(--pa-text-muted); }
+.loop-more { padding: 0 .5rem; }
+.loop-more button { display: block; margin-top: .5rem !important; }
+.loops-workspace pre { max-height: 24rem; overflow: auto; background: var(--pa-bg); padding: 1rem; border-radius: .4rem; font-size: .8rem; }
+.loops-health { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; font-size: .8rem; color: var(--pa-text-muted); }
+.loops-health details[open] { width: 100%; }
+.loops-empty { padding: 2rem; text-align: center; border: 1px dashed var(--pa-border); border-radius: .75rem; color: var(--pa-text-muted); }
+.loops-editor { border: 1px solid var(--pa-border); border-radius: .75rem; background: var(--pa-surface); padding: 1rem 1.25rem; scroll-margin-top: 5rem; }
+.loops-editor > summary { color: var(--pa-text); font-weight: 600; font-size: 1rem; }
+.loops-editor fieldset { border: 0; border-top: 1px solid var(--pa-border); padding: 1rem 0; margin: 1.5rem 0 0; min-width: 0; }
+.loops-editor legend { font-size: .9rem; font-weight: 600; padding-right: .75rem; }
+.loops-editor fieldset > p, .loops-advanced > p { display: flex; flex-wrap: wrap; gap: 1rem; }
+.loops-editor label { display: grid; gap: .5rem; flex: 1 1 200px; font-size: .85rem; }
+.loops-editor label:has(input[type=checkbox]) { display: flex; align-items: center; }
+.loops-editor textarea { resize: vertical; }
+.loops-form-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1.5rem; }
+.loops-workspace .loops-error { color: var(--pa-danger); overflow-wrap: anywhere; }
+#feedback:not(:empty) { padding: 1rem; margin: 1rem 0; border: 1px solid var(--pa-border); border-radius: .5rem; }
+#managed-loops { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 1rem; margin-top: 1rem; }
+#managed-loops article { padding: 1rem; border: 1px solid var(--pa-border); border-radius: .6rem; background: var(--pa-surface); min-width: 0; overflow-wrap: anywhere; }
+#managed-loops article > a { font-weight: 600; }
+#managed-loops article > p { font-size: .85rem; }
+.loops-provider { margin-top: 1.5rem; border-left: 3px solid var(--pa-border); padding: .5rem 1rem; color: var(--pa-text-muted); font-size: .85rem; }
+.loops-workspace :focus-visible { outline: 2px solid var(--pa-accent); outline-offset: 3px; }
+@media(max-width: 640px) {
+ .page-loops .loops-workspace { margin-top: 1rem; padding: 0 .25rem 2rem; }
+ .loops-header { align-items: start; flex-direction: column; }
+ .loop-facts { grid-template-columns: 1fr; gap: .75rem; }
+ #managed-loops { grid-template-columns: 1fr; }
+ .loops-toolbar label { flex: 1; }
+ .loops-toolbar #loop-count { width: 100%; }
+ .loops-editor { padding: .75rem; }
+}
+[data-appearance="dark"] .loops-workspace .loops-primary,
+[data-appearance="dark"] .loops-workspace #save { color: var(--pa-bg); }

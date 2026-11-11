@@ -7,13 +7,17 @@
   <div class="workshop-controls" role="group" aria-label="Workshop layout">
     <button type="button" class="ghost small active" data-workshop-view="floor" aria-pressed="true">Floor view</button>
     <button type="button" class="ghost small" data-workshop-view="compact" aria-pressed="false">Compact view</button>
+    <button type="button" class="ghost small" data-workshop-motion aria-pressed="false">Reduce motion</button>
     <span class="workshop-view-status small" data-workshop-view-status aria-live="polite">Current layout: Floor view</span>
   </div>
 </div>
 {% endset %}
 
 {% set main %}
-<div id="pa-workshop-root" class="workshop" data-realm="{{ primary_realm }}">
+<div id="pa-workshop-root" class="workshop" data-realm="{{ primary_realm }}"
+     data-default-view="{{ workshop_default_view | default('floor') }}"
+     data-floor-chat-agents="{{ 'true' if workshop_floor_chat_agents | default(true) else 'false' }}"
+     data-floor-motion="{{ workshop_floor_motion | default('auto') }}">
   <script type="application/json" id="pa-workshop-data">{{ workshop | tojson }}</script>
   <header class="workshop-header">
     <div>

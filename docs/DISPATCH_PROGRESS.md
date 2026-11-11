@@ -142,3 +142,76 @@ and startup/MCP registration must not depend on every historical side-channel
 payload validating under the current schema.
 Provider-specific derivation may extend the normalizer only with deliberate
 user-visible content or explicitly allowlisted lifecycle metadata.
+
+## Dispatch leases and fencing (stage 2)
+
+A running remote dispatch carries an explicit **lease** on its authority record.
+The lease is the liveness signal the authority's stale-running sweeper uses; it
+replaces inferring liveness from "time since the last progress event".
+
+Fields on `DispatchRecord` (JSON payload of the `dispatches` row; no indexed
+column, so no migration): `lease_protocol`, `lease_id` (`<dispatch_id>:<fence>`),
+`lease_fence`, `lease_holder_instance_id`, `lease_granted_at`,
+`lease_renewed_at`, `lease_expires_at`, `lease_ttl_seconds`, and, on the target
+mirror only, `lease_superseded_at` / `lease_superseded_by_fence`.
+
+**Negotiation.** The authority's materialize request offers
+`lease_protocols: ["dispatch-lease/v1"]` plus its `lease_fence` and `lease_id`.
+A target that supports it records its fence on its mirror and answers with
+`lease_protocol` and the echoed `lease_fence`; the authority sets
+`lease_protocol` only on an exact match. An older target ignores the fields and
+answers without them, so that dispatch is never leased and keeps the status-probe
+behaviour (`dispatch_stale_running_seconds` / `dispatch_lost_remote_seconds`).
+A local dispatch (authority == target) never negotiates a lease: it is covered by
+session liveness and `DispatchRecord.lease_is_fresh()` is always true for it.
+
+**Grant and renew.** The lease is granted when the dispatch commits `running`
+(the target acknowledged the prompt) with TTL `dispatch_lease_ttl_seconds`.
+Every accepted progress event, every heartbeat (both ingested by
+`POST /api/fleet/dispatch/{id}/progress`) and every status probe that confirms
+the dispatch is still running extends `lease_expires_at` in the same commit as
+the evidence; the expiry only moves forward and a settled dispatch is never
+revived. Heartbeats are already gated on real provider activity, so a hung
+provider stops renewing; a quiet but healthy turn is renewed by the probe below.
+
+**Expiry.** The sweeper does nothing while the lease is fresh. After expiry it
+probes the target (`GET /api/fleet/dispatch/{id}/status`) exactly as in stage 1:
+a held completion is adopted, a confirmation renews the lease, and a target that
+answers "unknown" or "dead" fails the dispatch immediately. A target that cannot
+answer is given `dispatch_lease_grace_seconds` after expiry, then the dispatch
+fails recoverably (`remote_dispatch_lease_expired`), the owner is notified and
+it is re-offered (`dispatch_reoffer_lost_remote`). Records without a lease use
+the stage-1 time thresholds unchanged.
+
+**Fence.** `lease_fence` starts at 1 and is incremented by every
+`retry_with_capacity` (operator retry or re-offer), which also clears the lease
+and the negotiated protocol so the new holder renegotiates. A target sends its
+fence in the `X-PA-Lease-Fence` header on every progress, heartbeat and
+`/complete` request. A fence lower than the record's current one is rejected
+with `409 {"code": "stale_lease_fence", "current_fence": N, "recoverable":
+false}` and changes nothing. The current holder's completion still wins, an
+acknowledged completion still replays idempotently, and a request without the
+header (older target) is checked only by the existing provenance rules. On that
+409 the target stops reporting: the progress service and the completion outbox
+mark the mirror superseded (`lease_superseded_at`, completion class
+`superseded`), no longer retry, and the session transcript gets a
+`dispatch_superseded` note. Failing a dispatch alone does not bump the fence, so
+the holder's late completion for a failed-but-not-reassigned dispatch is still
+adopted.
+
+### How stage 3 (target-pulled claims) reuses this
+
+Stage 3 negotiates `dispatch-claim/v1` in the same handshake (a sibling of
+`lease_protocols`, same fallback to push when absent). The authority keeps the
+queue; a target claims an admitted dispatch with
+`POST /api/fleet/dispatch-claims` and the authority answers by performing the
+existing grant: `lease_fence` is bumped (or the current value is assigned),
+`lease_id`/`lease_holder_instance_id` name the claimer and `lease_expires_at` is
+set to now + TTL, atomically with the `queued -> claimed` transition. Nothing in
+the lease model changes: the claim response carries the fence, the claimer sends
+`X-PA-Lease-Fence` on every progress/heartbeat/complete (the same renewal and
+fencing paths), a lease that is not renewed lapses and the same sweeper
+re-offers it by returning the dispatch to the queue with a bumped fence, and a
+superseded claimer gets `stale_lease_fence`. What stage 3 adds is only the
+claim endpoint and an explicit renewal call for targets that have nothing to
+report; the push worker and status probe can then be retired.

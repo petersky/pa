@@ -242,7 +242,18 @@ def _done_evidence_is_safe(
             evidence.pr_watch_id,
         )
 
-    blockers = [watch for watch in watches if watch.status != PRWatchStatus.MERGED]
+    # A PR that was closed unmerged, or whose supervision was retired, is
+    # history once the card integrates a different PR. It only blocks Done when
+    # the disposition itself names it as the integration (the "current"
+    # integration PR is the watch the disposition evidence references).
+    # Active/blocked siblings still block: another PR is genuinely in flight.
+    superseded = {PRWatchStatus.CLOSED, PRWatchStatus.RETIRED}
+    blockers = [
+        watch
+        for watch in watches
+        if watch.status != PRWatchStatus.MERGED
+        and not (watch.status in superseded and watch.id != evidence.pr_watch_id)
+    ]
     if blockers:
         blocker = blockers[0]
         state = str((blocker.state or {}).get("state") or blocker.status.value)

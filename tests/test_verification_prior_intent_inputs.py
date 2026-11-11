@@ -152,7 +152,9 @@ def test_prior_intent_sees_only_committed_publication(system,lookup):
     card,old,record=older(system,control_operations={'original':'retry'})
     ledger=system.ctx.services['dispatch_store']
     read=(lambda:ledger.verification_prior_intent(record.dispatch_id)) if lookup=='id' else (lambda:ledger.verification_prior_intent_by_authority(record.authority_instance_id,record.idempotency_key))
-    before=read();record.control_operations={'published':'retry'}
+    # Control operations are append-only idempotency receipts (put() never lets a
+    # writer drop one committed by someone else), so publish by adding a key.
+    before=read();record.control_operations={**record.control_operations,'published':'retry'}
     entered,release=threading.Event(),threading.Event()
     def latch(boundary):
         if boundary=='commit_before':entered.set();assert release.wait(2)
@@ -165,7 +167,7 @@ def test_prior_intent_sees_only_committed_publication(system,lookup):
                 assert read()==before
             finally:release.set()
             future.result(timeout=2)
-        assert read().control_operations=={'published':'retry'}
+        assert read().control_operations=={'original':'retry','published':'retry'}
         assert before.control_operations=={'original':'retry'}
     finally:release.set();ledger._fault_injector=None
 

@@ -19,6 +19,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from croniter import croniter
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
+from pa.core.sqlite_metrics import ObservedConnection
+
 
 class Trigger(BaseModel):
     model_config = ConfigDict(extra='forbid')
@@ -78,6 +80,7 @@ class Schedule(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     trigger: Trigger
     destination: Destination
+    additional_destinations: list[Destination] = Field(default_factory=list, max_length=15)
     payload: JsonValue
     context_refs: dict[str, str] = Field(default_factory=dict, max_length=30)
     enabled: bool = True
@@ -89,6 +92,9 @@ class Schedule(BaseModel):
 
     @model_validator(mode='after')
     def validate_expiry(self):
+        targets = [(d.kind, d.target) for d in [self.destination, *self.additional_destinations]]
+        if len(set(targets)) != len(targets):
+            raise ValueError('duplicate delivery destinations')
         if isinstance(self.payload, str) and not self.payload:
             raise ValueError('text payload cannot be empty')
         if len(json.dumps(self.payload, ensure_ascii=False, allow_nan=False).encode()) > 16000:
@@ -125,13 +131,39 @@ class Ledger:
               owner TEXT NOT NULL, key TEXT NOT NULL, fingerprint TEXT NOT NULL,
               response TEXT NOT NULL, PRIMARY KEY(owner,key));
             ''')
+            columns = {row['name'] for row in db.execute('PRAGMA table_info(schedules)')}
+            if 'cancelled' not in columns:
+                db.execute('ALTER TABLE schedules ADD COLUMN cancelled INTEGER NOT NULL DEFAULT 0')
+
+    def _new_connection(self):
+        db = sqlite3.connect(self.path, timeout=5, isolation_level=None, factory=ObservedConnection)
+        db.row_factory = sqlite3.Row
+        return db
 
     @contextmanager
-    def connect(self):
-        db = sqlite3.connect(self.path, timeout=5, isolation_level=None)
-        db.row_factory = sqlite3.Row
+    def _source_reader(self):
+        # Source polling makes independent single-SELECT reads. Autocommit and
+        # closed cursors give each query fresh committed owners/cursors without
+        # holding a snapshot or connection pool across requests or workers.
+        db = self._new_connection()
         try:
-            db.execute('BEGIN IMMEDIATE')
+            db.execute('PRAGMA query_only=ON')
+            yield db
+        finally:
+            db.close()
+
+    @contextmanager
+    def connect(self, *, read_only=False):
+        db = self._new_connection()
+        try:
+            if read_only:
+                # Keep multi-query reads on one committed snapshot without
+                # reserving the sole writer slot. Claims/mutations still fence
+                # their authoritative reads with BEGIN IMMEDIATE below.
+                db.execute('PRAGMA query_only=ON')
+                db.execute('BEGIN')
+            else:
+                db.execute('BEGIN IMMEDIATE')
             yield db
             db.commit()
         except BaseException:
@@ -156,6 +188,9 @@ class Ledger:
 
     def create(self, owner, key, spec: Schedule, now: float):
         data = spec.model_dump(mode='json')
+        # Preserve historical command fingerprints when the new option is unused.
+        if not data['additional_destinations']:
+            data.pop('additional_destinations')
         def mutate(db):
             sid = str(uuid4())
             # A past once is due immediately; intervals anchor to creation.
@@ -170,32 +205,70 @@ class Ledger:
         if row is None:
             raise KeyError(sid)
         return {**json.loads(row['spec']), 'id': sid, 'owner': owner,
-                'version': row['version'], 'next_due': row['next_due'], 'occurrence_count': row['count']}
+                'cancelled':bool(row['cancelled']), 'version': row['version'], 'next_due': row['next_due'], 'occurrence_count': row['count']}
 
     def get(self, owner, sid, include_deleted=False):
-        with self.connect() as db:
+        with self.connect(read_only=True) as db:
             return self._get(db, owner, sid, include_deleted)
 
     def list(self, owner):
         return self.list_page(owner)['schedules']
 
-    def list_page(self, owner, cursor=None, limit=50):
+    def list_page(self, owner, cursor=None, limit=50, session_id=None, pending_only=False, now=None):
         if not 1 <= limit <= 200:
             raise ValueError('page limit must be between 1 and 200')
-        with self.connect() as db:
-            rows = db.execute("SELECT id FROM schedules WHERE owner=? AND deleted=0 AND id>? ORDER BY id LIMIT ?",
-                              (owner, cursor or '', limit + 1)).fetchall()
-            records = []
-            for row in rows[:limit]:
+        with self.connect(read_only=True) as db:
+            # Filter before pagination so reminders beyond the first page remain discoverable.
+            clauses = ["owner=?", "deleted=0", "id>?"]
+            args = [owner, cursor or '']
+            if session_id:
+                clauses.append("""(json_extract(spec,'$.context_refs.session')=? OR
+                  json_extract(spec,'$.context_refs.session_id')=? OR
+                  (json_extract(spec,'$.destination.kind')='agent_session' AND json_extract(spec,'$.destination.target')=?) OR
+                  EXISTS (SELECT 1 FROM json_each(json_extract(spec,'$.additional_destinations')) d
+                    WHERE json_extract(d.value,'$.kind')='agent_session' AND json_extract(d.value,'$.target')=?))""")
+                args.extend([session_id]*4)
+            rows = db.execute("SELECT id FROM schedules WHERE " + " AND ".join(clauses) + " ORDER BY id", args)
+            candidates = []
+            for row in rows:
                 record = self._get(db, owner, row['id'])
                 record.update(self._summary(db, row['id']))
-                records.append(record)
-            return {'schedules':records, 'next_cursor':rows[limit-1]['id'] if len(rows)>limit else None}
+                record['state'] = self.lifecycle(record, now)
+                if not pending_only or record['state'] in {'active', 'pending', 'failed'}:
+                    candidates.append(record)
+                if len(candidates) > limit:
+                    break
+            return {'schedules':candidates[:limit], 'next_cursor':candidates[limit-1]['id'] if len(candidates)>limit else None}
 
-    def update(self, owner, sid, key, spec: Schedule, version: int, now: float, delete=False, command_args=None):
+    @staticmethod
+    def lifecycle(record, now=None):
+        import time
+        now = time.time() if now is None else now
+        if record.get('cancelled'):
+            return 'cancelled'
+        if not record['enabled']:
+            return 'paused'
+        if record.get('pending'):
+            return 'pending'
+        if record.get('failed'):
+            return 'failed'
+        if record.get('expires_at') and datetime.fromisoformat(record['expires_at']).timestamp() <= now:
+            return 'expired'
+        if record.get('max_occurrences') and record['occurrence_count'] >= record['max_occurrences']:
+            return 'completed'
+        if record['trigger']['kind'] == 'once' and record['next_due'] is None:
+            return 'completed'
+        return 'idle' if record['trigger']['kind'] == 'manual' else 'active'
+
+    def update(self, owner, sid, key, spec: Schedule, version: int, now: float, delete=False, command_args=None, cancel=False):
         data = spec.model_dump(mode='json')
+        # Preserve historical command fingerprints when the new option is unused.
+        if not data['additional_destinations']:
+            data.pop('additional_destinations')
         def mutate(db):
             old = self._get(db, owner, sid)
+            if old.get('cancelled') and not delete:
+                raise ValueError('cancelled schedule is terminal; create a new loop')
             if old['version'] != version:
                 raise ValueError('schedule version conflict')
             # Preserve cadence for pause/resume; changing trigger anchors anew.
@@ -205,18 +278,27 @@ class Ledger:
                        (encode(data), due, int(delete), sid))
             if old['trigger'] != data['trigger']:
                 db.execute('UPDATE schedules SET backlog=NULL WHERE id=?', (sid,))
-            if old['destination'] != data['destination']:
-                db.execute("UPDATE occurrences SET destination=? WHERE schedule_id=? AND state IN ('pending','failed')",
-                           (spec.destination.model_dump_json(), sid))
-            if delete:
+            old_targets = [old['destination'], *old.get('additional_destinations', [])]
+            targets = [data['destination'], *data.get('additional_destinations', [])]
+            if old_targets != targets:
+                for occurrence in db.execute("SELECT id,envelope FROM occurrences WHERE schedule_id=? AND state IN ('pending','failed')", (sid,)).fetchall():
+                    slot = json.loads(occurrence['envelope']).get('delivery_index', 0)
+                    if slot < len(targets):
+                        db.execute('UPDATE occurrences SET destination=? WHERE id=?', (encode(targets[slot]), occurrence['id']))
+                    else:
+                        db.execute("UPDATE occurrences SET state='cancelled' WHERE id=?", (occurrence['id'],))
+            if cancel:
+                db.execute('UPDATE schedules SET cancelled=1 WHERE id=?', (sid,))
+            if delete or cancel:
                 db.execute("UPDATE occurrences SET state='cancelled' WHERE schedule_id=? AND state IN ('pending','failed')", (sid,))
-                return {'id': sid, 'deleted': True}
+                if delete:
+                    return {'id': sid, 'deleted': True}
             return self._get(db, owner, sid)
-        return self.command(owner, key, 'update', command_args if command_args is not None else [sid, version, data, delete], mutate)
+        return self.command(owner, key, 'update', command_args if command_args is not None else [sid, version, data, delete, cancel], mutate)
 
     def _occurrence(self, db, row, identity, due, now, missed=0, event_time=None):
         spec = Schedule.model_validate_json(row['spec'])
-        if not spec.enabled or row['deleted'] or (spec.expires_at and now >= spec.expires_at.timestamp()):
+        if not spec.enabled or row['deleted'] or row['cancelled'] or (spec.expires_at and now >= spec.expires_at.timestamp()):
             return None
         if spec.max_occurrences and row['count'] >= spec.max_occurrences:
             return None
@@ -231,11 +313,16 @@ class Ledger:
             pending = db.execute("SELECT * FROM occurrences WHERE schedule_id=? AND state='pending' AND attempts=0 AND json_extract(envelope,'$.delivery_started_at') IS NULL", (row['id'],)).fetchall()
             for item in pending:
                 previous = json.loads(item['envelope'])
-                envelope['coalesced_count'] += 1 + previous['coalesced_count']
-                envelope['missed_count'] += previous['missed_count']
+                if previous.get('delivery_index', 0) == 0:
+                    envelope['coalesced_count'] += 1 + previous['coalesced_count']
+                    envelope['missed_count'] += previous['missed_count']
                 db.execute("UPDATE occurrences SET state='coalesced' WHERE id=?", (item['id'],))
-        db.execute('INSERT INTO occurrences(id,schedule_id,identity,envelope,destination,next_retry) VALUES (?,?,?,?,?,?)',
-                   (oid, row['id'], identity, encode(envelope), spec.destination.model_dump_json(), now))
+        for index, destination in enumerate([spec.destination, *spec.additional_destinations]):
+            delivery_id = oid if index == 0 else str(uuid4())
+            delivery_identity = identity if index == 0 else identity + ':delivery:' + str(index)
+            delivery_envelope = {**envelope, 'occurrence_id':delivery_id, 'delivery_index':index}
+            db.execute('INSERT INTO occurrences(id,schedule_id,identity,envelope,destination,next_retry) VALUES (?,?,?,?,?,?)',
+                       (delivery_id, row['id'], delivery_identity, encode(delivery_envelope), destination.model_dump_json(), now))
         db.execute('UPDATE schedules SET count=count+1 WHERE id=?', (row['id'],))
         return oid
 
@@ -270,7 +357,7 @@ class Ledger:
 
     def tick(self, now):
         with self.connect() as db:
-            for row in db.execute('SELECT * FROM schedules WHERE deleted=0 AND next_due<=?', (now,)).fetchall():
+            for row in db.execute('SELECT * FROM schedules WHERE deleted=0 AND cancelled=0 AND next_due<=?', (now,)).fetchall():
                 spec = Schedule.model_validate_json(row['spec'])
                 if not spec.enabled:
                     continue
@@ -310,31 +397,42 @@ class Ledger:
                 db.execute('UPDATE schedules SET next_due=?,backlog=NULL WHERE id=?', (following, row['id']))
 
     def pending(self, now, limit=100):
-        with self.connect() as db:
+        with self.connect(read_only=True) as db:
             return [dict(row) for row in db.execute('''SELECT o.* FROM occurrences o JOIN schedules s ON s.id=o.schedule_id
-              WHERE o.state='pending' AND o.next_retry<=? AND s.deleted=0
+              WHERE o.state='pending' AND o.next_retry<=? AND s.deleted=0 AND s.cancelled=0
               AND json_extract(s.spec,'$.enabled')=1 ORDER BY next_retry LIMIT ?''', (now, limit))]
 
+    def occurrence_owner(self, oid):
+        """(owner, schedule_id) of an occurrence, or None."""
+        with self.connect() as db:
+            row = db.execute('SELECT s.owner AS owner, o.schedule_id AS schedule_id FROM occurrences o '
+                             'JOIN schedules s ON s.id=o.schedule_id WHERE o.id=?', (oid,)).fetchone()
+            return (row['owner'], row['schedule_id']) if row else None
+
     def finish(self, oid, now, *, accepted=False, error=None):
+        """Record one delivery attempt and return the occurrence's resulting state."""
         with self.connect() as db:
             row = db.execute('SELECT * FROM occurrences WHERE id=?', (oid,)).fetchone()
             if row['state'] not in {'pending', 'delivering'}:
-                return
+                return row['state']
             attempts = row['attempts'] + 1
             state = 'delivered' if accepted else ('failed' if attempts >= 8 else 'pending')
             db.execute('UPDATE occurrences SET state=?,attempts=?,next_retry=?,delivered_at=?,error=? WHERE id=?',
                        (state, attempts, now + min(3600, 2 ** attempts), now if accepted else None, error, oid))
             db.execute("UPDATE occurrences SET envelope='{}' WHERE schedule_id=? AND state IN ('delivered','cancelled','coalesced') AND id NOT IN (SELECT id FROM occurrences WHERE schedule_id=? ORDER BY rowid DESC LIMIT 1000)",
                        (row['schedule_id'], row['schedule_id']))
+            return state
 
     def history(self, owner, sid):
-        with self.connect() as db:
+        with self.connect(read_only=True) as db:
             self._get(db, owner, sid)
             return [dict(r) for r in db.execute('SELECT * FROM occurrences WHERE schedule_id=? ORDER BY rowid DESC LIMIT 100', (sid,))]
 
     def retry(self, owner, sid, oid, key, now):
         def mutate(db):
-            self._get(db, owner, sid)
+            record = self._get(db, owner, sid)
+            if record.get('cancelled'):
+                raise ValueError('cancelled schedule is terminal')
             row = db.execute('SELECT state FROM occurrences WHERE id=? AND schedule_id=?', (oid, sid)).fetchone()
             if row is None:
                 raise KeyError(oid)
@@ -354,7 +452,7 @@ class Ledger:
             row = db.execute('SELECT * FROM occurrences WHERE id=?', (oid,)).fetchone()
             schedule = db.execute('SELECT * FROM schedules WHERE id=?', (row['schedule_id'],)).fetchone()
             spec = Schedule.model_validate_json(schedule['spec'])
-            if row['state'] != 'pending' or schedule['deleted'] or not spec.enabled:
+            if row['state'] != 'pending' or schedule['deleted'] or schedule['cancelled'] or not spec.enabled:
                 return None
             envelope = json.loads(row['envelope'])
             # Freeze bytes before first send so a lost reply can be retried through
@@ -367,6 +465,7 @@ class Ledger:
     def _summary(self, db, sid):
         row = db.execute("""SELECT
           SUM(CASE WHEN state IN ('pending','delivering') THEN 1 ELSE 0 END) AS pending,
+          SUM(CASE WHEN state='failed' THEN 1 ELSE 0 END) AS failed,
           MAX(delivered_at) AS last_successful_delivery,
           MIN(CASE WHEN state='pending' THEN next_retry END) AS next_retry
           FROM occurrences WHERE schedule_id=?""", (sid,)).fetchone()
@@ -379,7 +478,7 @@ class Ledger:
                 'last_occurrence':dict(latest) if latest else None}
 
     def status(self, owner, sid):
-        with self.connect() as db:
+        with self.connect(read_only=True) as db:
             self._get(db, owner, sid)
             return self._summary(db, sid)
 
@@ -389,11 +488,11 @@ class Ledger:
         Backoff and exhaustion do not erase overdue delivery. Paused/deleted
         schedules are excluded until actionable again; acceptance clears it.
         """
-        with self.connect() as db:
+        with self.connect(read_only=True) as db:
             row = db.execute("""SELECT COUNT(*) AS overdue_delivery_count,
               MIN(json_extract(o.envelope,'$.due_at')) AS oldest_overdue_due_at
               FROM occurrences o JOIN schedules s ON s.id=o.schedule_id
-              WHERE s.owner=? AND s.deleted=0 AND json_extract(s.spec,'$.enabled')=1
+              WHERE s.owner=? AND s.deleted=0 AND s.cancelled=0 AND json_extract(s.spec,'$.enabled')=1
                 AND o.state IN ('pending','delivering','failed')
                 AND json_extract(o.envelope,'$.due_at')<?""", (owner, now)).fetchone()
             return dict(row)
