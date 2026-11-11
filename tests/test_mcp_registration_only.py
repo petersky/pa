@@ -235,6 +235,8 @@ async def test_all_ordinary_tool_schemas_match_pre_repair_contract(tmp_path, mon
     # Attachment uploads add an optional stable retry key; existing arguments
     # and response shape are preserved. Canonical events now carry its receipt.
     baseline["create_card_attachment"] = "d1c942d1cb5cd840e8c4b2c9649de9972d2e3c9adbbde5ee93f7f1b6e52071f0"
+    # One metadata-only inspection tool; existing schemas and restricted allowlist unchanged.
+    baseline['get_agent_session_workspace_binding'] = 'd97d126a6265107a620d2590d5de5c476e7c0fdab0d4ec41515ea5ae0d2f9c6f'
     assert actual == baseline
 
 

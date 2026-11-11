@@ -5210,6 +5210,49 @@ class CardProjection:
             ).fetchone()
         return self._row_to_session(refreshed)
 
+    def binding_inspection_session(self, session_id: str) -> dict | None:
+        """Do not read config, prompts, answers, recovery errors or transcripts."""
+        with self._conn() as conn:
+            row = conn.execute('''SELECT id, principal_id, authority_instance_id, status, origin_instance_id,
+                external_session_id, updated_at,
+                CASE WHEN length(CAST(execution_binding_json AS BLOB)) <= 16384
+                    THEN execution_binding_json END AS binding_json
+                FROM agent_sessions WHERE id=?''', (session_id,)).fetchone()
+        if row is None:
+            return None
+        if row['binding_json'] is None:
+            raise ValueError('Saved binding exceeds inspection capacity')
+        result = {k: row[k] for k in ('id', 'principal_id', 'authority_instance_id',
+                  'external_session_id', 'updated_at', 'status', 'origin_instance_id')}
+        result['execution_binding'] = json.loads(row['binding_json'])
+        return result
+
+    def binding_inspection_history(self, session_id: str, *, limit: int, offset: int) -> dict:
+        """Read a fixed-size page without loading oversized JSON or raw payloads."""
+        from pa.instance.binding_inspection import decode_binding, REASONS
+        if not 1 <= limit <= 32 or not 0 <= offset <= 4096:
+            raise ValueError('Binding history bounds invalid')
+        with self._conn() as conn:
+            identity = conn.execute('''SELECT COUNT(*), MAX(changed_at || id) FROM (
+                SELECT changed_at,id FROM agent_execution_binding_history WHERE session_id=?
+                ORDER BY changed_at,id LIMIT 4098)''', (session_id,)).fetchone()
+            rows = conn.execute('''SELECT id, reason, changed_at,
+                CASE WHEN length(CAST(prior_binding_json AS BLOB)) <= 16384
+                    THEN prior_binding_json END AS prior_json,
+                CASE WHEN length(CAST(binding_json AS BLOB)) <= 16384
+                    THEN binding_json END AS current_json
+                FROM agent_execution_binding_history WHERE session_id=?
+                ORDER BY changed_at,id LIMIT ? OFFSET ?''', (session_id, limit + 1, offset)).fetchall()
+        items = [{'id': r['id'], 'changed_at': r['changed_at'],
+                  'reason': r['reason'] if r['reason'] in REASONS else 'unrecognized',
+                  'prior_binding': decode_binding(r['prior_json']),
+                  'binding': decode_binding(r['current_json'])} for r in rows[:limit]]
+        return {'items': items, 'offset': offset, 'limit': limit,
+                'next_offset': offset + limit if len(rows) > limit and offset + limit <= 4096 else None,
+                'truncated': len(rows) > limit, 'retention_complete': 'unknown',
+                'snapshot_count': identity[0], 'count_is_lower_bound': identity[0] == 4098,
+                'snapshot_last': identity[1]}
+
     def list_session_execution_binding_history(self, session_id: str) -> list[dict]:
         with self._conn() as conn:
             rows = conn.execute(
