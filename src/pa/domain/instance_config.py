@@ -64,6 +64,9 @@ class InstanceConfig(BaseModel):
     dispatch_lost_remote_seconds: int = Field(default=21600, ge=0, le=90 * 24 * 3600)
     # Silence before an authority asks the target about a running remote dispatch (0 = never; old behaviour).
     dispatch_stale_running_seconds: int = Field(default=1800, ge=0, le=30 * 24 * 3600)
+    # How long completion reconciliation waits on a session that stays unavailable
+    # before delivering the completion without it (0 = wait forever; old behaviour).
+    reconciliation_session_unavailable_seconds: int = Field(default=3600, ge=0, le=30 * 24 * 3600)
     # Dispatch lease: a running remote dispatch whose target negotiated the lease is
     # live while its lease is fresh; progress, heartbeats and a confirmed probe renew it
     # (0 = grant no leases; older stale-running behaviour only).

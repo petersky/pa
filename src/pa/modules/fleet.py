@@ -15143,7 +15143,11 @@ async def fleet_agent_proxy(
         if proxied_path.endswith("/events") or proxied_path == "session-events"
         else 120.0
     )
-    client = httpx.AsyncClient(timeout=httpx.Timeout(120.0, read=read_timeout))
+    # A short connect timeout: an unreachable peer must fail fast instead of
+    # holding a browser connection for the OS TCP timeout (~75 s).
+    client = httpx.AsyncClient(
+        timeout=httpx.Timeout(120.0, connect=5.0, read=read_timeout)
+    )
     try:
         upstream_request = client.build_request(
             request.method,

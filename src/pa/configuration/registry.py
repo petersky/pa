@@ -504,6 +504,17 @@ _DEFINITIONS = (
         validator="range:0:2592000",
     ),
     _s(
+        "reconciliation_session_unavailable_seconds",
+        "int",
+        3600,
+        'Seconds completion reconciliation waits on a session that stays unavailable before delivering the completion without it (0 waits forever).',
+        "Execution",
+        58,
+        'Without a limit a dispatch whose reconciliation session never reconnects stays running forever; 0 restores that.',
+        apply="live",
+        validator="range:0:2592000",
+    ),
+    _s(
         "dispatch_lease_ttl_seconds",
         "int",
         300,
