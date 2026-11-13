@@ -25,6 +25,7 @@ from pa.domain.models import CardSummarySource, CardUpdate
 logger = logging.getLogger(__name__)
 PROMPT_VERSION = "card-summary-v3"
 MAX_SUMMARY_CHARS = 600
+SUMMARY_GRACE_CHARS = 200
 ANTHROPIC_VERSION = "2023-06-01"
 SUBMIT_SUMMARY_TOOL = "submit_summary"
 ProviderCall = Callable[[str, str], Awaitable[str]]
@@ -146,8 +147,6 @@ def sanitize_summary(value: str) -> str:
         reject(SummaryFailureCode.CONTENT, "The summary contains a reasoning block instead of final output.")
     text = re.sub(r"\s+", " ", value).strip().strip('"')
     text = re.sub(r"^(summary\s*:\s*)", "", text, flags=re.IGNORECASE)
-    if len(text) > MAX_SUMMARY_CHARS:
-        reject(SummaryFailureCode.TOO_LONG, f"Summary has {len(text)} characters; the limit is 600.")
     if re.match(r"^(?:[-*•]|\d+[.)])\s", text):
         reject(SummaryFailureCode.ENUMERATION, "The provider returned an enumeration instead of prose.")
     sentences = re.findall(r".+?(?:[.!?](?=\s|$)|$)", text)
@@ -155,6 +154,9 @@ def sanitize_summary(value: str) -> str:
         reject(SummaryFailureCode.EMPTY_OUTPUT, "The provider returned an empty summary.")
     if len([item for item in sentences if item.strip()]) > 3:
         reject(SummaryFailureCode.SENTENCES, "The summary exceeds the three-sentence limit.")
+    limit = MAX_SUMMARY_CHARS + SUMMARY_GRACE_CHARS
+    if len(text) > limit:
+        text = text[:limit - 1].rstrip() + "…"
     return text
 
 

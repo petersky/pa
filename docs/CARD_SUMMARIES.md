@@ -54,8 +54,10 @@ provider, model, redaction-safe authentication source, authority, retry policy, 
 guidance, and last classified failure. They never expose credential values.
 
 CARD_DATA isolation is unchanged: card title and body remain untrusted text inside
-`CARD_DATA_JSON`. Summaries are still sanitized to 1–3 sentences and at most 600
-characters.
+`CARD_DATA_JSON`. The summary prompt and provider schema request 1–3 sentences
+within 600 characters. Runtime sanitization allows 200 extra characters of grace:
+summaries up to 800 characters are preserved, and longer summaries are truncated
+with an ellipsis within that 800-character cap instead of failing on length.
 
 ## Retry and migration policy
 
