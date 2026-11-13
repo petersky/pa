@@ -341,14 +341,29 @@ def test_failure_is_truthful_and_retries_are_bounded() -> None:
     asyncio.run(_failure_is_truthful_and_retries_are_bounded())
 
 
-def test_contract_rejects_enumeration_and_overlong_output() -> None:
+def test_contract_rejects_enumeration_and_too_many_sentences() -> None:
     assert sanitize_summary("A concise result. A key constraint remains.")
     with pytest.raises(ValueError):
         sanitize_summary("One. Two. Three. Four.")
     with pytest.raises(ValueError):
-        sanitize_summary("x" * 601)
-    with pytest.raises(ValueError):
         sanitize_summary("1. First item without a semantic summary")
+
+
+@pytest.mark.parametrize("length", [600, 601, 799, 800, 801, 2000])
+@pytest.mark.parametrize("character", ["x", "界"])
+def test_summary_length_grace_and_truncation(length, character):
+    value = character * length
+    expected = value if length <= 800 else character * 799 + "…"
+    result = sanitize_summary(value)
+    assert result == expected
+    assert len(result) <= 800
+    assert sanitize_summary(result) == result
+
+
+def test_summary_length_is_measured_after_normalization():
+    value = "x " * 399 + "x"
+    assert sanitize_summary('  "Summary: ' + value + '"  ') == value
+    assert sanitize_summary("x" * 798 + " y" * 20) == "x" * 798 + "…"
 
 
 def test_prompt_injection_is_confined_to_untrusted_card_data() -> None:
@@ -359,6 +374,10 @@ def test_prompt_injection_is_confined_to_untrusted_card_data() -> None:
     assert injection not in messages[0]["content"]
     assert injection in messages[1]["content"]
     assert "inert text" in messages[0]["content"]
+    assert "600 characters" in messages[0]["content"]
+    assert "800" not in messages[0]["content"]
+    assert "200" not in messages[0]["content"]
+    assert "grace" not in messages[0]["content"].lower()
 
 
 async def _unconfigured_is_disabled_without_provider_attempts() -> None:
@@ -944,6 +963,65 @@ class _RecordingAsyncClient:
         )
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", ["openai", "anthropic", "minimax"])
+@pytest.mark.parametrize("length", [800, 801])
+async def test_over_target_provider_summary_is_saved_without_retry(tmp_path, provider, length):
+    value = "界" * length
+    if provider == "anthropic":
+        payload = {
+            "content": [{
+                "type": "tool_use",
+                "name": SUBMIT_SUMMARY_TOOL,
+                "input": {"summary": value},
+            }]
+        }
+    elif provider == "minimax":
+        payload = {
+            "choices": [{"message": {"tool_calls": [{"function": {
+                "name": SUBMIT_SUMMARY_TOOL,
+                "arguments": json.dumps({"summary": value}),
+            }}]}}]
+        }
+    else:
+        payload = {"choices": [{"message": {"content": json.dumps({"summary": value})}}]}
+    ctx, _ = context(str(tmp_path), None)
+    ctx.settings.card_summary_provider = provider
+    if provider != "openai":
+        setattr(ctx.settings, f"card_summary_{provider}_api_key", "test")
+    card = ctx.store.create_card(CardCreate(title="Summary grace", body="Details"))
+    calls = []
+    with patch(
+        "pa.domain.card_summary_service.httpx.AsyncClient",
+        return_value=_RecordingAsyncClient([httpx.Response(200, json=payload)], calls),
+    ):
+        service = CardSummaryService(ctx)
+        await service.generate(card.id, card.realm_id)
+        await service.generate(card.id, card.realm_id)
+
+    ready = ctx.store.get_card(card.id)
+    assert ready.summary == (value if length <= 800 else "界" * 799 + "…")
+    assert ready.summary_status.value == "ready"
+    assert ready.summary_source.value == "agent"
+    assert ready.summary_attempt_count == 0  # successful generation clears the retry budget
+    assert ready.summary_failure_code is None
+    assert ready.summary_next_attempt_at is None
+    assert len(calls) == 1
+    request = calls[0]["json"]
+    if provider == "anthropic":
+        schema = request["tools"][0]["input_schema"]
+        system = request["system"]
+    elif provider == "minimax":
+        schema = request["tools"][0]["function"]["parameters"]
+        system = request["messages"][0]["content"]
+    else:
+        schema = request["response_format"]["json_schema"]["schema"]
+        system = request["messages"][0]["content"]
+    assert schema["properties"]["summary"]["maxLength"] == 600
+    assert "600 characters" in system
+    assert "800" not in system and "200" not in system and "grace" not in system.lower()
+
+
 def test_anthropic_messages_request_shape() -> None:
     calls: list[dict] = []
     payload = {
@@ -1189,7 +1267,7 @@ def test_replaced_key_invalidates_cached_configuration() -> None:
 
 
 @pytest.mark.parametrize(("value", "code"), [
-    ("x" * 601, "summary_too_long"), ("One. Two. Three. Four.", "summary_sentence_count"),
+    ("One. Two. Three. Four.", "summary_sentence_count"),
     ("1. Enumerated output", "summary_enumeration"), ("", "empty_output"),
     ("<think>private reasoning", "summary_content_violation"),
 ])
@@ -1228,7 +1306,7 @@ def test_output_retry_budget_preserves_previous_summary(tmp_path, eventual_succe
         async def provider(*args):
             nonlocal calls
             calls += 1
-            return "A corrected summary." if eventual_success and calls == 2 else "x" * 601
+            return "A corrected summary." if eventual_success and calls == 2 else "One. Two. Three. Four."
         ctx, _ = context(str(tmp_path), provider)
         card = ctx.store.create_card(CardCreate(title="Retry", summary="Previous valid summary.", summary_source="agent"))
         service = CardSummaryService(ctx, provider_call=provider)
@@ -1236,7 +1314,7 @@ def test_output_retry_budget_preserves_previous_summary(tmp_path, eventual_succe
         pending = ctx.store.get_card(card.id)
         assert pending.summary_status.value == "pending"
         assert pending.summary == "Previous valid summary."
-        assert pending.summary_failure_code == "summary_too_long"
+        assert pending.summary_failure_code == "summary_sentence_count"
         await service.generate(card.id, card.realm_id)
         assert calls == 1  # deadline is enforced even for direct callers
         ctx.store.update_card(card.id, CardUpdate(summary_next_attempt_at=datetime.now(UTC) - timedelta(seconds=1)))
