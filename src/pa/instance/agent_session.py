@@ -5327,6 +5327,14 @@ class AgentSessionManager:
             return None
         if session.purpose == "automated_run" and session.control_mode == "human":
             return None
+        recovery = dict(session.recovery_json or {})
+        if (session.status == RECOVERY_BLOCKED_STATUS and recovery.get("blocked")
+                and (recovery.get("exhausted")
+                     or recovery.get("code") == "workspace_binding_mismatch")):
+            # A retained queue is an obligation, not permission to retry a
+            # known incompatible/exhausted admission on every service start.
+            # Explicit recovery controls and the queued checkpoint stay intact.
+            return None
         if session.status in AUTO_RECOVERY_SESSION_STATUSES:
             return "status"
         if (

@@ -51,3 +51,18 @@ separately reviewed admission-serialized CAS prepare/apply/status contract.
 The maintainer must establish that proof before proposing any production repair.
 Four queued prompts across the two PA owners and the five-field Eschaton mismatch
 therefore remain preserved; this reader does not make those roots collectible.
+
+## Activation prerequisite: retain known recovery blocks
+
+An inspection-only service rollout must not implicitly retry an incompatible
+owner merely because its durable checkpoint contains queued work. Automatic
+startup recovery excludes sessions whose durable status is `recovery_blocked`
+and whose block is exhausted or classified `workspace_binding_mismatch`.
+The queue, native identity, binding, settings and original attempt count stay
+intact. Explicit recovery controls are unchanged, and a non-exhausted missing
+project may still become eligible when its project becomes available.
+
+This guard is a source prerequisite, not authorization to install or restart PA.
+The current lifecycle owner must separately assess any unresolved restart-effect
+receipt and preserve current rollback proof before proposing activation. A
+preview with no pending handoffs does not settle an older UNKNOWN receipt.
