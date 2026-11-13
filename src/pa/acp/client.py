@@ -1809,6 +1809,8 @@ class AgentConnection:
         principal_id: str | None = None,
         project_id: str | None = None,
         cwd: str | None = None,
+        queued_prompt_id: str | None = None,
+        restart_attempt: int | None = None,
     ) -> str:
         if self.session is not None:
             await self._offload("sqlite.recovery_provider_prompt_guard",
@@ -1847,13 +1849,20 @@ class AgentConnection:
         )
 
         message_id = str(uuid4())
+        # Local diagnostic correlation only: never add these fields to the
+        # provider request or infer missing historical identities.
+        wire_identity = {"session_id": self.session.external_session_id,
+                         "message_id": message_id}
+        if queued_prompt_id is not None:
+            wire_identity["queued_prompt_id"] = queued_prompt_id
+        if restart_attempt is not None:
+            wire_identity["attempt"] = restart_attempt
         self._wire_log(
             "out",
             {
                 "method": "session/prompt",
                 "params": {
-                    "session_id": self.session.external_session_id,
-                    "message_id": message_id,
+                    **wire_identity,
                     "message": message,
                 },
             },
@@ -1915,6 +1924,7 @@ class AgentConnection:
             "in",
             {
                 "method": "session/prompt",
+                **wire_identity,
                 "result": {"stop_reason": stop_reason, "usage": usage},
             },
         )

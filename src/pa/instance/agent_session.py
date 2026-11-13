@@ -2369,6 +2369,14 @@ class AgentSessionRuntime:
                 merged[key] = self.agent_env[key]
         return merged
 
+    def _prompt_wire_identity(self, item: QueuedPrompt) -> dict:
+        """Reuse execution-boundary receipt validation for local diagnostics only."""
+        identity = {"queued_prompt_id": item.id}
+        receipt = self._restart_continuation_receipt(item)
+        if receipt is not None:
+            identity["restart_attempt"] = receipt.attempts
+        return identity
+
     async def _run_prompt(self, item: QueuedPrompt) -> str:
         if item.admission_pending:
             async with self._prompt_admission_lock:
@@ -2580,6 +2588,7 @@ class AgentSessionRuntime:
                 try:
                     await self._offload("sqlite.recovery_delivery_guard",
                         self.store.require_session_delivery_allowed, self.session_id)
+                    wire_identity = self._prompt_wire_identity(item)
                     if self._cancel_epoch != cancel_epoch:
                         # Last chance: the provider has not seen this prompt, so
                         # honour Stop and keep the prompt (the finally below
@@ -2593,6 +2602,7 @@ class AgentSessionRuntime:
                         principal_id=item.principal_id,
                         project_id=item.project_id,
                         cwd=item.cwd,
+                        **wire_identity,
                     )
                     protocol_completed, selection_stop_reason = True, stop_reason
                     self._delivered_prompt_id = item.id
