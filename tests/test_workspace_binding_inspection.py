@@ -243,3 +243,30 @@ def test_rejection_code_cannot_carry_an_arbitrary_payload():
     from pa.instance.binding_inspection import BindingInspectionConflict
     with pytest.raises(ValueError,match='Unsupported inspection rejection category'):
         BindingInspectionConflict('PRIVATE_PAYLOAD')
+
+
+def test_real_lease_api_timestamp_encoding_is_part_of_exact_fingerprint(tmp_path):
+    from pa.config import Settings
+    from pa.repository.workspace import WorkspaceManager, WorkspaceLease
+    from pa.instance.binding_inspection import LEASE_FIELDS, BindingInspectionConflict
+    mgr,s,_,args=fixture(tmp_path)
+    workspace=WorkspaceManager(Settings(data_dir=tmp_path/'data',workspace_root=tmp_path/'trees'),mgr.store)
+    workspace._save(WorkspaceLease(id='lease',repository_id='repo',repository_url='test',
+        session_id='s',card_id='card',project_id='project',cache_path='/cache',
+        worktree_path='/original',branch='pa/original',base_sha='a'*40,fencing_token=392,
+        expires_at=datetime.now(UTC)+timedelta(days=1)))
+    mgr.workspace_manager=workspace
+    api=workspace.list(card_id='card')[0].model_dump(mode='json')
+    exact=[{k:api[k]for k in LEASE_FIELDS}]
+    assert exact[0]['updated_at'].endswith('Z')
+    assert exact==workspace.binding_inspection_leases('s')
+    args['expected_lease_hash']=fingerprint(exact)
+    assert inspect_binding(mgr,'s',**args)['different_fields']==[]
+    normalized=[dict(exact[0],updated_at=datetime.fromisoformat(exact[0]['updated_at']).isoformat())]
+    assert datetime.fromisoformat(normalized[0]['updated_at'])==datetime.fromisoformat(exact[0]['updated_at'])
+    assert fingerprint(normalized)!=fingerprint(exact)
+    with pytest.raises(BindingInspectionConflict) as error:
+        inspect_binding(mgr,'s',**(args|{'expected_lease_hash':fingerprint(normalized)}))
+    assert error.value.code=='lease_snapshot_changed'
+    assert workspace.binding_inspection_leases('s')==exact
+    assert mgr.store.get_session('s')==s

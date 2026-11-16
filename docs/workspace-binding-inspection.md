@@ -18,8 +18,13 @@ and workspace lease APIs:
 - `expected_lease_hash`: the same hash of the session's lease rows, ordered by ID,
   with exactly these fields: `id`, `session_id`, `repository_id`, `card_id`,
   `project_id`, `worktree_path`, `branch`, `base_sha`, `fencing_token`, `state`,
-  `updated_at`. Include cleaned leases. Timestamps use the stored ISO string
-  (normalize API UTC `Z` to `+00:00` before hashing).
+  `updated_at`. Include cleaned leases. Preserve the exact timestamp string
+  from the supported lease API. Do not convert UTC `Z` to `+00:00` before
+  hashing: the lease writer stores JSON-mode UTC strings with `Z`, and the
+  inspection reader hashes the stored strings exactly. Equal datetime instants
+  with different string encodings produce different fingerprints. A legacy
+  representation mismatch must remain rejected and be investigated; never try
+  alternate hash encodings merely to satisfy the guard.
 
 Only the authenticated session owner or an authenticated administrator may read.
 Authority, session version, native identity, complete binding hash and lease
