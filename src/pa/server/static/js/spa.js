@@ -3,6 +3,52 @@
   var homeRefreshFocusKey = null;
   var boardRefreshFocus = null;
 
+  function startCardAgentSession(detail, button, widget) {
+    if (widget.dataset.explicitlyStarted) return;
+    widget.dataset.explicitlyStarted = "1";
+    button.disabled = true;
+    button.textContent = "Starting…";
+    button.setAttribute("aria-busy", "true");
+    var status = detail.querySelector("[data-card-agent-start-status]");
+    var link = detail.querySelector("[data-card-agent-created-link]");
+    var check = detail.querySelector("[data-card-agent-check]");
+    function show(message) {
+      if (status) { status.hidden = false; status.textContent = message; }
+    }
+    show("Creating card conversation…");
+    var timer = window.setTimeout(function () {
+      if (!widget.isConnected) return;
+      button.removeAttribute("aria-busy");
+      button.textContent = "Still starting…";
+      if (check) check.hidden = false;
+      show("Session creation is taking longer than expected. Check the card conversations before starting again; this request may still complete.");
+    }, 15000);
+    widget._acw.init({
+      onCreated: function (identity) {
+        window.clearTimeout(timer);
+        if (!widget.isConnected) return true;
+        var href = "/agent?session=" + encodeURIComponent(identity.sessionId);
+        if (identity.ownerInstanceId) href += "&instance=" + encodeURIComponent(identity.ownerInstanceId);
+        button.removeAttribute("aria-busy");
+        button.textContent = "Session created";
+        if (link) { link.href = href; link.hidden = false; }
+        show("Session created. Opening the conversation… Use Open created session if navigation does not complete.");
+        // Use the returned identity, never the card's previously selected worker.
+        window.location.assign(href);
+        return true;
+      },
+      onError: function (error) {
+        window.clearTimeout(timer);
+        if (!widget.isConnected) return;
+        button.removeAttribute("aria-busy");
+        button.textContent = "Check card conversations";
+        if (check) check.hidden = false;
+        show("Could not finish starting the conversation: " + error.message +
+          ". Creation may have completed. Refresh the Agent tab and check card conversations before starting again.");
+      },
+    });
+  }
+
   function normalizePath(path) {
     if (!path) return "/";
     var clean = String(path).split("?")[0].split("#")[0];
@@ -2252,11 +2298,7 @@
           }).catch(function () {});
           return;
         }
-        if (widget.dataset.explicitlyStarted) return;
-        widget.dataset.explicitlyStarted = "1";
-        agentButton.disabled = true;
-        agentButton.textContent = "Starting…";
-        widget._acw.init();
+        startCardAgentSession(detail, agentButton, widget);
       }
     }
   });
@@ -2265,7 +2307,11 @@
     if (!event.target.matches("[data-card-agent-parallel-reason]")) return;
     var details = event.target.closest(".parallel-execution-control");
     var button = details && details.querySelector("[data-card-agent-start-new]");
-    if (button) button.disabled = !event.target.value.trim();
+    if (button) {
+      var detail = button.closest("[data-card-detail]");
+      var widget = detail && detail.querySelector('[data-card-agent-pane="new"] [data-agent-chat]');
+      button.disabled = !!(widget && widget.dataset.explicitlyStarted) || !event.target.value.trim();
+    }
   });
 
   document.body.addEventListener("keydown", function (event) {

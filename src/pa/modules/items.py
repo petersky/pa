@@ -963,7 +963,7 @@ def _card_agent_context(request: Request, card) -> dict:
         else []
     )
     execution_index = build_card_execution_index(
-        ctx, sessions=related_sessions, dispatches=dispatch_records
+        ctx, sessions=related_sessions, dispatches=dispatch_records, card_id=card.id
     )
     fleet = ctx.services.get("fleet_registry")
     instances = (

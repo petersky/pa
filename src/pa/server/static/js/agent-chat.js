@@ -1067,12 +1067,15 @@
     return Promise.resolve(null);
   };
 
-  AgentChatWidget.prototype.init = function () {
+  AgentChatWidget.prototype.init = function (options) {
     const self = this;
+    options = options || {};
     if (this.destroyed || !this.root.isConnected) return;
     if (this.sessionId) {
-      this.openSession(this.sessionId, this.ownerInstanceId, { replace: true }).catch(function () {});
-      return;
+      if (options.onCreated && options.onCreated({
+        sessionId: this.sessionId, ownerInstanceId: this.ownerInstanceId || "",
+      }) === true) return Promise.resolve(null);
+      return this.openSession(this.sessionId, this.ownerInstanceId, { replace: true }).catch(function () {});
     }
     const body = {
       attach_default: this.createLabel === "default" && !this.cardId,
@@ -1081,6 +1084,7 @@
       title: this.cardId ? "Card agent" : null,
     };
     if (this.root.dataset.fresh === "1") body.fresh = true;
+    if (this.cardId) body.initiating_workflow = { kind: "card_chat", card_id: this.cardId };
     if (this.preferredProvider) body.provider = this.preferredProvider;
     const boot = this.api("/sessions", {
       method: "POST",
@@ -1088,14 +1092,22 @@
     });
 
     const generation = this.subscriptionGeneration;
-    boot
+    return boot
       .then(function (snap) {
         if (self.destroyed || generation !== self.subscriptionGeneration) return;
         self.startupRetryCount = 0;
         const sid = (snap.session && snap.session.id) || (snap.id) || self.sessionId;
+        if (!sid) throw new Error("Session creation returned no session identity.");
         if (self.drafts) self.drafts.promoteSession(sid);
         self.sessionId = sid;
         self.root.dataset.sessionId = sid;
+        // A card start can hand off directly without waiting for another owner /
+        // snapshot lookup in its embedded widget. The saved identity is enough
+        // to open the exact conversation, even when its live connection stalls.
+        if (options.onCreated && options.onCreated({
+          sessionId: sid,
+          ownerInstanceId: (snap.session && snap.session.origin_instance_id) || "",
+        }) === true) return snap;
         if (self.newChat) {
           const url = new URL(window.location.href);
           url.searchParams.delete("new");
@@ -1107,6 +1119,14 @@
       })
       .catch(function (err) {
         if (self.destroyed) return;
+        // A failed create response can be ambiguous. Card controls retain their
+        // start guard and expose inspection rather than automatically POST again.
+        if (options.onError) {
+          options.onError(err);
+          self.setPlaceholder("Failed to start session: " + err.message);
+          self.setStatus("error");
+          return;
+        }
         if (self.retryAfterStartupRecovery(err)) return;
         const code = apiErrorCode(err);
         if (code === "session_not_live" || code === "session_deleted") {
