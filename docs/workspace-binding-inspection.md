@@ -27,6 +27,17 @@ identity/fence/version must match. The session, lease snapshot and history page
 are read again before returning; a concurrent change yields409. Read preconditions
 are not mutation CAS tokens or admission permission. Responses are private/no-store.
 
+HTTP409 returns `detail.code` with a fixed rejection category:
+`authority_precondition_changed`, `saved_authority_changed`,
+`session_version_changed`, `native_identity_changed`, `binding_hash_changed`,
+`lease_snapshot_changed`, or `snapshot_changed_during_read`.
+`binding_snapshot_unavailable` means data shape, bounds or decoding could not be
+established; it does not assert a stale request. No current values, hashes,
+private payloads or exception messages are returned. All rejection guards remain
+in effect. A category identifies the first failed check, not every mismatch or
+historical prompt outcome. Reobserve supported metadata before constructing a
+new read request; never guess tokens or normalize a saved binding to make it pass.
+
 `history_limit` defaults to16, maximum32; `history_offset` is bounded to4096.
 The next offset continues the same fixed session-version read. A stale precondition
 requires a new independently observed snapshot, never a retry of a mutation.

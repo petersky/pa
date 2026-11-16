@@ -193,3 +193,53 @@ def test_mcp_forwards_exact_read_preconditions_without_mutation():
     assert 's%2Fpath/workspace-binding' in call.call_args.args[2]
     assert call.call_args.kwargs['params']['expected_native_id']==''
     assert call.call_args.kwargs['params']['history_offset']==16
+
+
+@pytest.mark.parametrize('changed,code', [
+    ({'expected_session_version':'2000-01-01T00:00:00Z'}, 'session_version_changed'),
+    ({'expected_native_id':'PRIVATE_NATIVE'}, 'native_identity_changed'),
+    ({'expected_binding_hash':'0'*64}, 'binding_hash_changed'),
+    ({'expected_lease_hash':'0'*64}, 'lease_snapshot_changed'),
+    ({'expected_authority_instance_id':'PRIVATE_AUTHORITY'}, 'authority_precondition_changed'),
+])
+def test_http_rejection_categories_keep_all_preconditions_and_private_values(tmp_path, changed, code):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from pa.modules.agent_chat import router
+    mgr,s,leases,args=fixture(tmp_path)
+    app=FastAPI();app.state.ctx=SimpleNamespace(settings=SimpleNamespace(instance_id='instance'))
+    app.include_router(router)
+    params=dict(expected_authority_instance_id='instance',expected_session_version=s.updated_at.isoformat(),
+        expected_native_id='native',expected_binding_hash=args['expected_binding_hash'],
+        expected_lease_hash=args['expected_lease_hash'])
+    with patch('pa.modules.agent_chat._manager',return_value=mgr),patch('pa.modules.agent_chat.get_principal_id',return_value='owner'),TestClient(app) as client:
+        response=client.get('/agent/observability/v1/sessions/s/workspace-binding',params=params|changed)
+    assert response.status_code==409
+    assert response.json()=={'detail':{'code':code}}
+    assert response.headers['cache-control']=='private, no-store'
+    assert 'PRIVATE' not in response.text and 'DO_NOT_EMIT' not in response.text
+    assert mgr.store.get_session('s')==s and mgr.store.list_transcript_events('s')==[]
+
+
+@pytest.mark.parametrize('error', [ValueError('PRIVATE_JSON'), RecursionError('PRIVATE_DEPTH')])
+def test_unknown_data_failure_is_not_mislabeled_as_stale_and_never_echoes_error(tmp_path,error):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from pa.modules.agent_chat import router
+    mgr,s,leases,args=fixture(tmp_path)
+    app=FastAPI();app.state.ctx=SimpleNamespace(settings=SimpleNamespace(instance_id='instance'))
+    app.include_router(router)
+    params=dict(expected_authority_instance_id='instance',expected_session_version=s.updated_at.isoformat(),
+        expected_native_id='native',expected_binding_hash=args['expected_binding_hash'],expected_lease_hash=args['expected_lease_hash'])
+    with patch('pa.modules.agent_chat._manager',return_value=mgr),patch('pa.modules.agent_chat.get_principal_id',return_value='owner'),patch.object(mgr.store,'binding_inspection_session',side_effect=error),TestClient(app) as client:
+        response=client.get('/agent/observability/v1/sessions/s/workspace-binding',params=params)
+    assert response.status_code==409
+    assert response.json()=={'detail':{'code':'binding_snapshot_unavailable'}}
+    assert response.headers['cache-control']=='private, no-store'
+    assert 'PRIVATE' not in response.text
+
+
+def test_rejection_code_cannot_carry_an_arbitrary_payload():
+    from pa.instance.binding_inspection import BindingInspectionConflict
+    with pytest.raises(ValueError,match='Unsupported inspection rejection category'):
+        BindingInspectionConflict('PRIVATE_PAYLOAD')
