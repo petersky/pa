@@ -14,6 +14,18 @@ REASONS = {'workspace_binding_initialized', 'workspace_materialized',
     'stale_data_dir_cwd_removed', 'missing_cwd_removed'}
 
 
+class BindingInspectionConflict(ValueError):
+    """Fixed rejection category, never saved values or exception payloads."""
+
+    def __init__(self, code):
+        if code not in {'saved_authority_changed', 'session_version_changed',
+                        'native_identity_changed', 'binding_hash_changed',
+                        'lease_snapshot_changed', 'snapshot_changed_during_read'}:
+            raise ValueError('Unsupported inspection rejection category')
+        self.code = code
+        super().__init__(code.replace('_', ' '))
+
+
 def fingerprint(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True,
         separators=(',', ':')).encode()).hexdigest()
@@ -80,14 +92,16 @@ def inspect_binding(manager, session_id, *, owner_instance_id, principal_id,
     if not principal_id or (session['principal_id'] != principal_id and not is_admin):
         raise PermissionError('Session is owned by another principal')
     if session['authority_instance_id'] != owner_instance_id:
-        raise ValueError('Saved authority changed')
-    if (datetime.fromisoformat(session['updated_at']) != expected_session_version
-            or (session['external_session_id'] or '') != expected_native_id
-            or fingerprint(session['execution_binding'] or {}) != expected_binding_hash):
-        raise ValueError('Saved session/native/binding version changed')
+        raise BindingInspectionConflict('saved_authority_changed')
+    if datetime.fromisoformat(session['updated_at']) != expected_session_version:
+        raise BindingInspectionConflict('session_version_changed')
+    if (session['external_session_id'] or '') != expected_native_id:
+        raise BindingInspectionConflict('native_identity_changed')
+    if fingerprint(session['execution_binding'] or {}) != expected_binding_hash:
+        raise BindingInspectionConflict('binding_hash_changed')
     leases = manager.workspace_manager.binding_inspection_leases(session_id)
     if fingerprint(leases) != expected_lease_hash:
-        raise ValueError('Lease identity/fence/version snapshot changed')
+        raise BindingInspectionConflict('lease_snapshot_changed')
     history = manager.store.binding_inspection_history(session_id,
         limit=history_limit, offset=history_offset)
     observed = binding_metadata(session['execution_binding'] or {})
@@ -124,7 +138,7 @@ def inspect_binding(manager, session_id, *, owner_instance_id, principal_id,
             or manager.workspace_manager.binding_inspection_leases(session_id) != leases
             or manager.store.binding_inspection_history(session_id,
                 limit=history_limit, offset=history_offset) != history):
-        raise ValueError('Inspection snapshot changed during read')
+        raise BindingInspectionConflict('snapshot_changed_during_read')
     result = {'schema_version': 1, 'session_id': session['id'],
         'authority_instance_id': owner_instance_id,
         'session_state': session['status'], 'origin_instance_id': session['origin_instance_id'],

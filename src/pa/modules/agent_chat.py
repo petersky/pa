@@ -1958,10 +1958,11 @@ async def inspect_session_workspace_binding(
 ) -> dict:
     """Inspect fixed provenance only; never connect, recover, renew, or deliver."""
     from sqlite3 import Error as SQLiteError
-    from pa.instance.binding_inspection import inspect_binding
+    from pa.instance.binding_inspection import BindingInspectionConflict, inspect_binding
     owner = request.app.state.ctx.settings.instance_id
     if expected_authority_instance_id != owner:
-        raise HTTPException(409, 'Authority precondition changed')
+        return JSONResponse({'detail': {'code': 'authority_precondition_changed'}},
+                            status_code=409, headers={'Cache-Control': 'private, no-store'})
     if expected_session_version.tzinfo is None:
         raise HTTPException(422, 'Session version must include timezone')
     user = getattr(request.state, 'user', None)
@@ -1980,8 +1981,12 @@ async def inspect_session_workspace_binding(
         raise HTTPException(404, 'Session not found') from None
     except PermissionError:
         raise HTTPException(403, 'Session is owned by another principal') from None
+    except BindingInspectionConflict as exc:
+        return JSONResponse({'detail': {'code': exc.code}}, status_code=409,
+                            headers={'Cache-Control': 'private, no-store'})
     except (ValueError, RecursionError):
-        raise HTTPException(409, 'Binding inspection precondition, shape, or snapshot unavailable') from None
+        return JSONResponse({'detail': {'code': 'binding_snapshot_unavailable'}},
+                            status_code=409, headers={'Cache-Control': 'private, no-store'})
     except (OSError, SQLiteError, TimeoutError):
         raise HTTPException(503, 'Binding inspection temporarily unavailable; outcome unknown') from None
 

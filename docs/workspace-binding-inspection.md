@@ -18,14 +18,30 @@ and workspace lease APIs:
 - `expected_lease_hash`: the same hash of the session's lease rows, ordered by ID,
   with exactly these fields: `id`, `session_id`, `repository_id`, `card_id`,
   `project_id`, `worktree_path`, `branch`, `base_sha`, `fencing_token`, `state`,
-  `updated_at`. Include cleaned leases. Timestamps use the stored ISO string
-  (normalize API UTC `Z` to `+00:00` before hashing).
+  `updated_at`. Include cleaned leases. Preserve the exact timestamp string
+  from the supported lease API. Do not convert UTC `Z` to `+00:00` before
+  hashing: the lease writer stores JSON-mode UTC strings with `Z`, and the
+  inspection reader hashes the stored strings exactly. Equal datetime instants
+  with different string encodings produce different fingerprints. A legacy
+  representation mismatch must remain rejected and be investigated; never try
+  alternate hash encodings merely to satisfy the guard.
 
 Only the authenticated session owner or an authenticated administrator may read.
 Authority, session version, native identity, complete binding hash and lease
 identity/fence/version must match. The session, lease snapshot and history page
 are read again before returning; a concurrent change yields409. Read preconditions
 are not mutation CAS tokens or admission permission. Responses are private/no-store.
+
+HTTP409 returns `detail.code` with a fixed rejection category:
+`authority_precondition_changed`, `saved_authority_changed`,
+`session_version_changed`, `native_identity_changed`, `binding_hash_changed`,
+`lease_snapshot_changed`, or `snapshot_changed_during_read`.
+`binding_snapshot_unavailable` means data shape, bounds or decoding could not be
+established; it does not assert a stale request. No current values, hashes,
+private payloads or exception messages are returned. All rejection guards remain
+in effect. A category identifies the first failed check, not every mismatch or
+historical prompt outcome. Reobserve supported metadata before constructing a
+new read request; never guess tokens or normalize a saved binding to make it pass.
 
 `history_limit` defaults to16, maximum32; `history_offset` is bounded to4096.
 The next offset continues the same fixed session-version read. A stale precondition
