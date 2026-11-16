@@ -28,6 +28,9 @@ def _session_payload(session: Any) -> dict[str, Any]:
     return {
         "id": str(_value(session, "id", "")),
         "purpose": _value(session, "purpose", "unknown"),
+        "label": _value(session, "label"),
+        "card_id": _value(session, "card_id"),
+        "initiating_workflow": dict(_value(session, "initiating_workflow", {}) or {}),
         "title": _value(session, "title") or _value(session, "label") or "Card agent",
         "status": str(_value(session, "status", "unknown")),
         "provider": _value(session, "agent_name") or "Unknown provider",
@@ -88,6 +91,7 @@ def build_card_execution_index(
     *,
     sessions: Iterable[Any],
     dispatches: Iterable[Any],
+    card_id: str | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Join dispatches and ACP rows once by durable dispatch/session identity."""
@@ -97,7 +101,29 @@ def build_card_execution_index(
         for session in sessions
         if (payload := _session_payload(session))["id"]
     }
-    sources = [s for s in by_session.values() if s["purpose"] == "chat"]
+    sources = []
+    conversations = []
+    for session in by_session.values():
+        if session["purpose"] != "chat":
+            continue
+        workflow = session["initiating_workflow"]
+        # Legacy card starts already recorded the exact label and primary card.
+        # A mere association with a card does not make a source chat a card start.
+        created_here = bool(card_id) and (
+            (workflow.get("kind") == "card_chat" and workflow.get("card_id") == card_id)
+            or (session["label"] == f"card:{card_id}" and session["card_id"] == card_id)
+        )
+        if not created_here:
+            sources.append(session)
+            continue
+        owner = session["owner_instance_id"] or ctx.settings.instance_id
+        href = f"/agent?session={session['id']}&instance={owner}"
+        conversations.append({
+            **session,
+            "exact_href": href,
+            "primary_action": {"kind": "view", "label": "Open card conversation", "href": href},
+        })
+    conversations.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
     executions: list[dict[str, Any]] = []
     consumed_sessions: set[str] = set()
 
@@ -202,8 +228,14 @@ def build_card_execution_index(
     primary = active[0]["primary_action"] if active else (
         executions[0]["primary_action"] if executions else {"kind": "dispatch", "label": "Dispatch"}
     )
+    if not active and conversations and (
+        not executions
+        or str(conversations[0].get("updated_at") or "") > str(executions[0]["updated_at"])
+    ):
+        primary = conversations[0]["primary_action"]
     return {
         "source_conversations": sources,
+        "card_conversations": conversations,
         "executions": executions,
         "active": active,
         "exclusive_active": bool(active),

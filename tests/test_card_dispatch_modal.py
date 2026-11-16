@@ -270,3 +270,52 @@ def test_shared_modal_preserves_focus_and_workshop_uses_live_dispatch_state() ->
         "function renderQuery", 1
     )[0]
     assert "data-workshop-dispatch" not in order_button
+
+
+def test_agent_tab_opens_new_card_chat_instead_of_older_completed_worker() -> None:
+    from datetime import UTC, datetime, timedelta
+    from html.parser import HTMLParser
+    from pa.domain.models import AgentSession
+
+    with tempfile.TemporaryDirectory() as tmp:
+        app = Kernel.boot(settings=Settings(
+            data_dir=Path(tmp), instance_id="local", instance_name="Local",
+            instance_url="http://pa.test:8080", agent_enabled=False,
+            subscribed_realms=["default"], peers=[],
+        )).build_app()
+        with TestClient(app) as client:
+            store = app.state.ctx.store
+            card = store.create_card(CardCreate(title="Card conversation"))
+            now = datetime.now(UTC)
+            for saved in [
+                AgentSession(id="old-worker", agent_name="codex", card_id=card.id,
+                             status="closed", external_session_id="native-worker",
+                             updated_at=now - timedelta(minutes=1)),
+                AgentSession(id="created-chat", agent_name="codex", card_id=card.id,
+                             purpose="chat", label=f"card:{card.id}", updated_at=now),
+                AgentSession(id="real-source", agent_name="codex", card_id=card.id,
+                             purpose="chat", label="default", updated_at=now),
+            ]:
+                store.save_session(saved)
+            response = client.get(f"/partials/cards/{card.id}/agent")
+        assert response.status_code == 200
+        class Elements(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.elements = []
+
+            def handle_starttag(self, tag, attrs):
+                self.elements.append((tag, dict(attrs)))
+
+        parser = Elements()
+        parser.feed(response.text)
+        conversation = next(attrs for tag, attrs in parser.elements
+                            if attrs.get("data-card-conversation-id") == "created-chat")
+        assert conversation["href"] == "/agent?session=created-chat&instance=local"
+        assert not any(attrs.get("data-card-conversation-id") == "real-source"
+                       for tag, attrs in parser.elements)
+        assert any(tag == "a" and "session=real-source" in attrs.get("href", "")
+                   for tag, attrs in parser.elements)
+        status = next(attrs for tag, attrs in parser.elements
+                      if "data-card-agent-start-status" in attrs)
+        assert status["role"] == "status"

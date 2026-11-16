@@ -130,3 +130,49 @@ def test_concurrent_remote_start_requires_an_explicit_reason() -> None:
         allow_concurrent=True, concurrent_reason="Independent release validation"
     )
     assert body.concurrent_reason == "Independent release validation"
+
+
+@pytest.mark.parametrize("legacy", [True, False])
+def test_card_chat_is_accessible_without_becoming_a_worker(legacy):
+    ctx = SimpleNamespace(settings=SimpleNamespace(instance_id="local"))
+    now = datetime.now(UTC)
+    chat = session(
+        id="created-chat", purpose="chat", card_id="card-1", updated_at=now,
+        label="card:card-1" if legacy else None,
+        initiating_workflow={} if legacy else {"kind": "card_chat", "card_id": "card-1"},
+    )
+    old = session(id="old-worker", status="closed", external_session_id="native",
+                  updated_at=now - timedelta(minutes=1))
+    source = session(id="source", purpose="chat", card_id="card-1")
+    result = build_card_execution_index(
+        ctx, card_id="card-1", sessions=[source, old, chat], dispatches=[]
+    )
+    assert [item["id"] for item in result["card_conversations"]] == [chat.id]
+    assert [item["id"] for item in result["source_conversations"]] == [source.id]
+    assert result["primary_action"]["href"] == "/agent?session=created-chat&instance=local"
+    assert result["primary_action"]["label"] == "Open card conversation"
+    assert not result["exclusive_active"]
+    assert [item["session_id"] for item in result["executions"]] == [old.id]
+    # Linking this chat to a different card does not rewrite its origin.
+    other = build_card_execution_index(ctx, card_id="other", sessions=[chat], dispatches=[])
+    assert not other["card_conversations"]
+    assert other["source_conversations"][0]["id"] == chat.id
+    # A live worker keeps priority and parallel-work policy.
+    old.status = "prompting"
+    active = build_card_execution_index(ctx, card_id="card-1", sessions=[old, chat], dispatches=[])
+    assert active["primary_action"]["href"].startswith("/agent?session=old-worker&")
+    assert active["exclusive_active"]
+
+
+def test_card_start_browser_regressions():
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is required for card start browser regression checks")
+    root = Path(__file__).parents[1]
+    result = subprocess.run([node, str(root / "tests/card_agent_start_node_harness.js")],
+                            capture_output=True, text=True, cwd=root, timeout=20)
+    assert result.returncode == 0, result.stdout + result.stderr
