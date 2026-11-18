@@ -1,6 +1,6 @@
 """Bounded, instance-local discussion notes and durable start-selected receipts.
 
-Notes never create cards or authorize execution. Admission freezes selected notes
+Notes alone never create cards or authorize execution. Admission freezes work notes
 before any side effect; card and dispatch ledgers own their individual effects.
 This state is separate from provider-owned session configuration and transcripts.
 """

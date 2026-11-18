@@ -279,6 +279,8 @@ async def test_worker_escalates_when_the_automatic_budget_is_spent(tmp_path):
     assert hooks.executed == []
     assert len(hooks.escalations) == 1
     assert hooks.escalations[0]["dedupe_key"].startswith("budget:")
+    assert "work request remains in effect" in hooks.escalations[0]["body"]
+    assert "approv" not in hooks.escalations[0]["body"]
 
 
 @pytest.mark.asyncio
@@ -428,7 +430,8 @@ async def test_downgrade_feedback_is_capped_per_card_and_skips_pr_churn(tmp_path
     assert len(hooks.prompts) == 1  # only one of the two dispatches may use it
 
 
-def test_complete_then_worker_continues_the_session_and_counts_the_budget(tmp_path):
+@pytest.mark.parametrize("root_cause", [False, True])
+def test_complete_then_worker_continues_the_session_and_counts_the_budget(tmp_path, root_cause):
     """End to end on a shared store: /complete evaluates, the worker prompts the
     bound session with the evaluator's reason, and the budget is consumed."""
     from unittest.mock import AsyncMock
@@ -455,7 +458,13 @@ def test_complete_then_worker_continues_the_session_and_counts_the_budget(tmp_pa
                 target_instance_id=settings.instance_id,
                 session_id="worker-session",
                 state="completion_pending",
-                completion_payload={"stop_reason": "max_tokens"},
+                completion_payload=(
+                    {"stop_reason": "end_turn", "final_outcome_text": "The symptom comes from a shared lifecycle helper; its callers need correcting.",
+                     "card_disposition": {"contract": "pa.card-disposition/v1", "lane": "active",
+                                          "outcome": "Root cause found; necessary related correction remains.",
+                                          "evidence": {"integration_required": False}}}
+                    if root_cause else {"stop_reason": "max_tokens"}
+                ),
             )
         )
         outbox = CompletionOutbox(ledger, "isolated-peer-token")
@@ -482,8 +491,12 @@ def test_complete_then_worker_continues_the_session_and_counts_the_budget(tmp_pa
 
         assert sent.await_count == 1
         message = sent.await_args.args[2].message
-        assert "Continue from where you left off" in message
-        assert "stop_reason=max_tokens" in message
+        if root_cause:
+            assert "standing authority" in message and "necessary adjacent corrections" in message
+            assert "Card boundaries" in message
+        else:
+            assert "Continue from where you left off" in message
+            assert "stop_reason=max_tokens" in message
         record = ledger.get("dispatch-1")
         action = next(
             a
