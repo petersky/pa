@@ -49,15 +49,15 @@ def test_explicit_worker_choices_and_existing_mode_survive_recovery(wire_app, ch
     assert restored["execution_selection"]["provider_confirmation"]["effective"]["reasoning"] == "xhigh"
 
 
-def test_linked_new_worker_does_not_inherit_source_full_access(wire_app):
+def test_linked_new_worker_gets_its_own_permission_default(wire_app):
     client, _ = wire_app
-    source = client.post("/api/agent/sessions", json={"label": "source-chat"}).json()["session"]
+    source = client.post("/api/agent/sessions", json={"label": "source-chat", "mode_id": "read-only"}).json()["session"]
     created = client.post("/api/agent/sessions", json={
         "context_source_session_id": source["id"], "label": "linked-worker",
         "purpose": "automated_run",
     })
     assert created.status_code == 200, created.text
-    assert source["mode_id"] == "agent-full-access"
+    assert source["mode_id"] == "read-only"
     assert created.json()["session"]["mode_id"] == "agent-full-access"
 
 

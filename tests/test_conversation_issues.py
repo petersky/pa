@@ -177,7 +177,7 @@ async def test_first_selected_work_inherits_primary_card_project_and_worker_defa
         _apply_dispatch_mode_default(body)
         seen.append(body)
         assert body.project_id == project.id
-        assert body.mode_id == "workspace-write"
+        assert body.mode_id == "agent-full-access"
         assert body.model_id == "gpt-6.1-sol[xhigh]"
         assert body.execution_preferences.options["fast-mode"].value == "on"
         return {"dispatch_id": "first-attempt"}
