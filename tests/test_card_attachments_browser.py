@@ -69,6 +69,12 @@ async def test_attachment_details_full_lifecycle(operator_server, tmp_path):
               lostAttachmentResponse=true;throw new TypeError('simulated response loss after server commit');}return response;};""")
         await submit('[data-attachment-form="upload"]')
         await wait_for("document.querySelector('[data-attachment-status]').textContent.includes('Outcome is unconfirmed')")
+        # A different action must not replace the section and lose the original
+        # request/key while its outcome is still unknown.
+        await fill('[data-attachment-form="link"] [name=name]', "Wait for earlier save")
+        await fill('[data-attachment-form="link"] [name=resource_url]', "https://example.org/pending")
+        await submit('[data-attachment-form="link"]')
+        await wait_for("document.querySelector('[data-attachment-status]').textContent.includes('Finish retrying')")
         await submit('[data-attachment-form="upload"]')
         await wait_for("document.querySelectorAll('[data-attachment-id]').length===3")
         await page.evaluate("window.fetch=realAttachmentFetch")
@@ -76,8 +82,17 @@ async def test_attachment_details_full_lifecycle(operator_server, tmp_path):
         await fill(link + ' [name=name]', "Resource specification")
         await fill(link + ' [name=resource_url]', "https://example.org/spec")
         await fill(link + ' [name=description]', "User supporting link")
+        # The save succeeds but refreshing card details fails. Retry must replay
+        # that same durable operation rather than create a duplicate link.
+        await page.evaluate("""window.failedAttachmentRefresh=false;window.fetch=async function(url,options){
+          if(!failedAttachmentRefresh && String(url).includes('/partials/cards/') && String(url).includes('/detail')){
+            failedAttachmentRefresh=true;return new Response('unavailable',{status:503});}
+          return realAttachmentFetch(url,options);};""")
+        await submit(link)
+        await wait_for("document.querySelector('[data-attachment-status]').textContent.includes('Retry this same action to refresh')")
         await submit(link)
         await wait_for("document.querySelectorAll('[data-attachment-id]').length===4")
+        await page.evaluate("window.fetch=realAttachmentFetch")
         link_id = await page.evaluate("[...document.querySelectorAll('[data-attachment-id]')].find(e=>e.innerText.includes('Resource specification')).dataset.attachmentId")
         link_item = f'[data-attachment-id="{link_id}"]'
         await fill(link_item + ' [name=resource_url]', "https://example.org/revised")
