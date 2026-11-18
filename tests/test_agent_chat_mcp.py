@@ -21,10 +21,11 @@ def test_mcp_standalone_execution_declares_worker_purpose():
     mcp = FakeMcp()
     with patch("pa.mcp.local_api.request_local_pa", return_value={}) as api:
         register_mcp(mcp, SimpleNamespace(settings=SimpleNamespace()))
-        mcp.functions["start_execution"]({}, "stable-worker")
+        mcp.functions["start_execution"]({}, "stable-worker", additional_directories=["/tmp/workspace"])
     body = api.call_args.kwargs["json"]
     assert body["purpose"] == "automated_run" and body["surface"] == "execution"
     assert body["label"] == "execution-mcp:stable-worker"
+    assert body["additional_directories"] == ["/tmp/workspace"]
     assert "mode_id" not in body
 
 
