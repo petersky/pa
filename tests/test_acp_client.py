@@ -1181,7 +1181,7 @@ class AgentSessionRestoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             store = MagicMock()
             acp = MagicMock()
-            acp.initialize = AsyncMock(return_value={"agentCapabilities": {}})
+            acp.initialize = AsyncMock(return_value={"agentCapabilities": {"sessionCapabilities": {"additionalDirectories": {}}}})
             acp.new_session = AsyncMock(
                 return_value=SimpleNamespace(session_id="agent-session")
             )
@@ -1189,10 +1189,12 @@ class AgentSessionRestoreTests(unittest.TestCase):
             context.__aenter__ = AsyncMock(return_value=(acp, MagicMock()))
             context.__aexit__ = AsyncMock()
             socket = Path(tmp) / "runtime" / "owner.sock"
+            extra = Path(tmp).resolve() / "extra"
+            extra.mkdir()
             from pa.auth.users import UserDirectory
-            UserDirectory(Path(tmp)).ensure_default_user()
+            UserDirectory(Path(tmp) / "data").ensure_default_user()
             connection = AgentConnection(
-                Settings(data_dir=Path(tmp), instance_id="owner-instance"),
+                Settings(data_dir=Path(tmp) / "data", instance_id="owner-instance"),
                 store,
                 agent_name="codex",
                 provider_spec=AgentProviderSpec(
@@ -1228,8 +1230,9 @@ class AgentSessionRestoreTests(unittest.TestCase):
                         AsyncMock(return_value=None),
                     ),
                 ):
-                    await connection.connect(principal_id="user:local")
+                    await connection.connect(principal_id="user:local", initial_configuration=SessionConfigurationRequest.from_values(mode_id="workspace-write", additional_directories=[str(extra)]))
                 environment = spawn.call_args.kwargs["env"]
+                self.assertEqual(environment["INITIAL_AGENT_MODE"], "workspace-write")
                 self.assertEqual(environment["DISABLE_MCP_CONFIG_FILTERING"], "true")
                 config = json.loads(environment["CODEX_CONFIG"])
                 self.assertEqual(config["default_permissions"], "pa-owner")
@@ -1242,7 +1245,7 @@ class AgentSessionRestoreTests(unittest.TestCase):
                 kwargs = acp.new_session.await_args.kwargs
                 self.assertEqual(
                     kwargs["additional_directories"],
-                    [str(socket.parent)],
+                    [str(extra), str(socket.parent)],
                 )
                 stdio_probe.assert_not_called()
 
@@ -1386,7 +1389,7 @@ class AgentSessionRestoreTests(unittest.TestCase):
                 return_value={
                     "agentCapabilities": {
                         "loadSession": True,
-                        "sessionCapabilities": {"resume": None},
+                        "sessionCapabilities": {"resume": None, "additionalDirectories": {}},
                     }
                 }
             )
@@ -1396,14 +1399,17 @@ class AgentSessionRestoreTests(unittest.TestCase):
             context = MagicMock()
             context.__aenter__ = AsyncMock(return_value=(acp, MagicMock()))
             context.__aexit__ = AsyncMock()
+            extra = Path(tmp).resolve() / "extra"
+            extra.mkdir()
             existing = AgentSession(
                 id="pa-session",
                 agent_name="generic",
                 external_session_id="agent-session",
                 status="disconnected",
+                config_json={"configuration": {"requested": {"additional_directories": [str(extra)]}}},
             )
             connection = AgentConnection(
-                Settings(data_dir=Path(tmp)),
+                Settings(data_dir=Path(tmp) / "data"),
                 store,
                 provider_spec=AgentProviderSpec(
                     id="generic",
@@ -1426,9 +1432,10 @@ class AgentSessionRestoreTests(unittest.TestCase):
             asyncio.run(run())
 
             acp.load_session.assert_awaited_once_with(
-                cwd=str(Path(tmp)),
+                cwd=str(Path(tmp) / "data"),
                 session_id="agent-session",
                 mcp_servers=[],
+                additional_directories=[str(extra)],
             )
             acp.resume_session.assert_not_awaited()
             acp.new_session.assert_not_awaited()

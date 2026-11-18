@@ -13,6 +13,7 @@ def register_mcp(mcp, ctx):
         execution_preferences: dict,
         idempotency_key: str,
         title: str | None = None,
+        additional_directories: list[str] | None = None,
         project_id: str | None = None,
     ) -> dict:
         """Start an owned standalone session using explicit selection and a stable label. Card work must use durable fleet dispatch."""
@@ -27,6 +28,7 @@ def register_mcp(mcp, ctx):
             json={
                 "label": "execution-mcp:" + idempotency_key,
                 "title": title,
+                "additional_directories": additional_directories or [],
                 "project_id": project_id,
                 "purpose": "automated_run",
                 "surface": "execution",

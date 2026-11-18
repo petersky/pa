@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 
@@ -55,6 +56,7 @@ class SessionConfigurationRequest:
     mode_id: str | None = None
     reasoning: str | None = None
     model_provider: str | None = None
+    additional_directories: tuple[str, ...] = ()
     config: dict[str, str | bool] = field(default_factory=dict)
 
     @classmethod
@@ -66,6 +68,7 @@ class SessionConfigurationRequest:
         reasoning: str | None = None,
         model_provider: str | None = None,
         config: dict[str, str | bool] | None = None,
+        additional_directories: Iterable[str] | None = None,
     ) -> SessionConfigurationRequest:
         parsed_model, selector_reasoning = parse_model_selector(model_id)
         explicit_reasoning = str(reasoning).strip() if reasoning else None
@@ -105,7 +108,15 @@ class SessionConfigurationRequest:
                     f"values {resolved_reasoning!r} and {value!r} were requested."
                 )
             resolved_reasoning = value
+        directories = []
+        for directory in additional_directories or ():
+            if not isinstance(directory, str) or not Path(directory).is_absolute():
+                raise ACPConfigurationError("Additional directories must be absolute paths")
+            normalized = str(Path(directory).resolve())
+            if normalized not in directories:
+                directories.append(normalized)
         return cls(
+            additional_directories=tuple(directories),
             model_id=parsed_model,
             mode_id=str(mode_id).strip() if mode_id else None,
             reasoning=resolved_reasoning,
@@ -117,6 +128,7 @@ class SessionConfigurationRequest:
     def from_dict(cls, value: dict[str, Any] | None) -> SessionConfigurationRequest:
         value = dict(value or {})
         return cls.from_values(
+            additional_directories=value.get("additional_directories"),
             model_id=value.get("model_id"),
             mode_id=value.get("mode_id"),
             reasoning=value.get("reasoning"),
@@ -132,10 +144,12 @@ class SessionConfigurationRequest:
             or self.reasoning
             or self.model_provider
             or self.config
+            or self.additional_directories
         )
 
     def as_dict(self) -> dict[str, Any]:
         return {
+            "additional_directories": list(self.additional_directories),
             "model_id": self.model_id,
             "mode_id": self.mode_id,
             "reasoning": self.reasoning,
@@ -147,6 +161,7 @@ class SessionConfigurationRequest:
         config = dict(self.config)
         config.update(patch.config)
         return SessionConfigurationRequest(
+            additional_directories=patch.additional_directories or self.additional_directories,
             model_id=patch.model_id or self.model_id,
             mode_id=patch.mode_id or self.mode_id,
             reasoning=patch.reasoning or self.reasoning,

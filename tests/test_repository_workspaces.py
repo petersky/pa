@@ -900,7 +900,7 @@ def test_agent_session_provisions_before_provider_start_and_persists_context(
 
     context = runtime.session.config_json["execution_context"]
     assert runtime.session.config_json["provisioning"]["state"] == "ready"
-    assert context["provider_context"]["sandbox"] == "workspace-write"
+    assert context["provider_context"]["sandbox"] == "danger-full-access"
     assert context["repositories"][0]["branch"].startswith("pa/card-1-")
     assert runtime.session.cwd == context["cwd"]
     assert Path(runtime.session.cwd).is_dir()

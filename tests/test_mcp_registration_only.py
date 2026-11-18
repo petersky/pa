@@ -238,6 +238,8 @@ async def test_all_ordinary_tool_schemas_match_pre_repair_contract(tmp_path, mon
     baseline["create_card_attachment"] = "d1c942d1cb5cd840e8c4b2c9649de9972d2e3c9adbbde5ee93f7f1b6e52071f0"
     # One metadata-only inspection tool; existing schemas and restricted allowlist unchanged.
     baseline['get_agent_session_workspace_binding'] = 'd97d126a6265107a620d2590d5de5c476e7c0fdab0d4ec41515ea5ae0d2f9c6f'
+    # Session creation adds optional additional workspace directories.
+    baseline["start_execution"] = "a707b08ddc8dd925cdd13e93c9db52f328bd5631835ee7f444f133f7c32be927"
     # Three explicit ordinary result tools; existing schemas and the assigned
     # Goal-service allowlist remain unchanged.
     baseline.update(json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_completion_records.json').read_text()))

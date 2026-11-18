@@ -87,9 +87,12 @@ From upstream feature list (confirm with probe):
   `gpt-5.6-sol[high]` are admitted as model `gpt-5.6-sol` plus reasoning `high`.
 - Slash commands: `/status`, `/mcp`, `/skills`, `/review`, `/review-branch`, `/review-commit`, `/compact`, `/logout`, plus configured skills.
 - Modes: `read-only`, `workspace-write`, `agent`, `agent-full-access` via `INITIAL_AGENT_MODE`.
-  New human chats default to `agent-full-access`; new card/background workers
-  default to `workspace-write`. Explicit selections and resumed sessions retain
-  their mode. `workspace-write` uses on-request approval with the user/ACP reviewer,
+  New chats and card/background workers default to `agent-full-access`. Explicit selections and resumed sessions retain
+  their mode. Full access uses `never` approvals and `danger-full-access`, including
+  network access. It does not enforce a workspace filesystem sandbox.
+  The adapter sends this mode policy on every turn; setting
+  `sandbox_workspace_write.network_access=true` in `CODEX_CONFIG` cannot change
+  a built-in mode. `workspace-write` uses on-request approval with the user/ACP reviewer,
   allowing PA's separate auto-approve preference to answer native permission requests.
   `agent` uses Codex's native Auto review, whose decisions do not reach PA's ACP
   permission callback. PA does not override that intentionally selected mode.
@@ -150,3 +153,25 @@ MCP tools include `agent_provider_install`, `agent_provider_configure`,
 - OS keyring availability depends on how the PA service user/session is configured;
   Codex may use `~/.codex/auth.json` when configured for file storage. Treat it as a secret.
 - Do not sync API keys via realm sync; configure each host (or use fleet proxy configure which writes only on the peer).
+
+## Additional directories
+
+Create-session requests accept `additional_directories`, an array of existing
+absolute directory paths on the execution instance. The new-session dialog accepts
+one path per line. Surface preferences accept the same field, and
+`PA_AGENT_ADDITIONAL_DIRECTORIES` supplies instance defaults as a JSON array.
+Nonempty explicit session directories take precedence over surface and instance defaults.
+PA saves the requested directories with the session and sends them on ACP
+new/load/resume/fork, alongside the private owner socket directory for Codex.
+Recovery retains saved paths rather than adopting changed instance defaults.
+Directories do not replace the leased cwd or permit direct writes to PA service
+data or another managed workspace. Providers must advertise the ACP additional
+directories capability; unsupported providers fail admission. Start a new session to change them. Full-access mode already has filesystem
+access; additional directories also inform provider workspace and skill discovery.
+
+Verified against installed `@agentclientprotocol/codex-acp` 2.7.0:
+`AgentMode`, `getInitialAgentMode`, and `sendPrompt` in `dist/index.js`.
+`INITIAL_AGENT_MODE` is supported; Gemini-specific environment variables are not
+a Codex permission contract. Official references:
+[permissions](https://learn.chatgpt.com/docs/permissions) and
+[security](https://learn.chatgpt.com/docs/agent-approvals-security).

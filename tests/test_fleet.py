@@ -54,7 +54,7 @@ class FleetRegistryReloadTests(unittest.TestCase):
             with self.subTest(provider=provider):
                 body = RemoteAgentStartBody(provider=provider)
                 _apply_dispatch_mode_default(body)
-                self.assertEqual(body.mode_id, "workspace-write")
+                self.assertEqual(body.mode_id, "agent-full-access" if provider == "codex" else "workspace-write")
 
         explicit = RemoteAgentStartBody(provider="codex", mode_id="agent")
         _apply_dispatch_mode_default(explicit)

@@ -24,6 +24,7 @@ class SurfaceAgentPrefs(BaseModel):
     model_id: str | None = None
     mode_id: str | None = None
     effort: str | None = None
+    additional_directories: list[str] = Field(default_factory=list)
     config: dict = Field(default_factory=dict)
     execution_preferences: ExecutionPreferences = Field(default_factory=ExecutionPreferences)
 

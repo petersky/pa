@@ -1171,6 +1171,17 @@ _DEFINITIONS = (
         list_ops=True,
     ),
     _s(
+        "agent_additional_directories",
+        "list_str",
+        [],
+        "Default additional ACP workspace directories.",
+        "Agent",
+        35,
+        "Existing absolute paths on this instance; applied only to new sessions. PA service data and other managed workspaces are excluded.",
+        apply="reload",
+        list_ops=True,
+    ),
+    _s(
         "agent_enabled",
         "bool",
         True,
