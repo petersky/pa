@@ -1848,13 +1848,17 @@
   document.body.addEventListener("htmx:configRequest", function (event) {
     var detail = event.detail;
     var source = detail && detail.elt;
-    if (source && source.matches(".board-column-body")) {
+    var column = source && source.closest(".board-column-body");
+    if (column) {
       var refreshUrl = new URL(detail.path, window.location.origin);
-      var loaded = source.querySelectorAll(".compact-card[data-card-id]").length;
-      if (loaded && refreshUrl.searchParams.get("lane") === "done" &&
+      var loaded = column.querySelectorAll(".compact-card[data-card-id]").length;
+      if (refreshUrl.pathname === "/partials/cards" &&
+          refreshUrl.searchParams.get("lane") === "done" &&
           !refreshUrl.searchParams.get("attention")) {
-        refreshUrl.searchParams.set("limit", String(Math.max(loaded,
-          Number(refreshUrl.searchParams.get("limit")) || 10)));
+        var requested = Math.max(loaded, Number(column.dataset.loadedLimit) || 10,
+          Number(refreshUrl.searchParams.get("limit")) || 10);
+        column.dataset.loadedLimit = String(requested);
+        refreshUrl.searchParams.set("limit", String(requested));
         detail.path = refreshUrl.pathname + refreshUrl.search;
       }
     }
