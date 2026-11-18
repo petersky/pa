@@ -81,6 +81,8 @@
       {% for result in completion_records['items'] %}<p><a href="/results?card_id={{ card.id | urlencode }}&amp;realm={{ card.realm_id | urlencode }}&amp;record={{ result.record_id | urlencode }}">{{ result.title }}</a> — {{ result.summary | truncate(240, true) }}</p>{% else %}<p class="muted">No structured results recorded. Existing outputs remain in the Agent and Activity tabs.</p>{% endfor %}
     </section>
 
+    {% include "partials/card-attachments.html" %}
+
     <div class="card-detail-tabs"
          role="tablist"
          aria-label="Card detail sections"

@@ -11,6 +11,12 @@ from pa.domain.models import CardKind, CardLane, ItemKind, ItemStatus
 from pa.domain.completion_records import CompletionRecordInput
 
 
+def _attachment_key(value: str) -> dict:
+    if not value.strip():
+        raise ValueError("idempotency_key cannot be empty")
+    return {"Idempotency-Key": value.strip()}
+
+
 def register_mcp(mcp, ctx: AppContext) -> None:
     from pa.mcp.local_api import request_local_pa
 
@@ -290,6 +296,73 @@ def register_mcp(mcp, ctx: AppContext) -> None:
                     )
                 },
             )
+
+    @mcp.tool()
+    def create_card_resource_link(card_id: str, name: str, resource_url: str,
+                                  idempotency_key: str, description: str = "", realm: str = "default") -> dict:
+        """Attach an http(s) resource URL; no target fetching or execution authorization.
+
+        Uses the same durable manifest and 64-attachment quota as files. Name up
+        to 200 characters, description 4000, URL 4096. Use a stable retry key.
+        """
+        return request_local_pa(ctx.settings, "POST", f"/api/cards/{quote(card_id, safe='')}/attachment-links",
+            params={"realm": realm}, headers=_attachment_key(idempotency_key),
+            json={"name": name, "description": description, "resource_url": resource_url})
+
+    @mcp.tool()
+    def update_card_attachment(card_id: str, attachment_id: str, expected_revision: int,
+                               idempotency_key: str, name: str | None = None,
+                               description: str | None = None, resource_url: str | None = None,
+                               expected_version: str | None = None, realm: str = "default") -> dict:
+        """Edit metadata/URL only. Echo revision and optional card updated_at from materials.
+
+        Name up to 200, description 4000, http(s) URL 4096 characters. Omitted
+        fields stay unchanged. File content editing and replacement are separate.
+        Saves an immutable revision with provenance, without starting execution.
+        """
+        return request_local_pa(ctx.settings, "PATCH", f"/api/cards/{quote(card_id, safe='')}/attachments/{quote(attachment_id, safe='')}",
+            params={"realm": realm}, headers=_attachment_key(idempotency_key),
+            json={k: v for k, v in {"expected_revision": expected_revision, "expected_version": expected_version,
+                  "name": name, "description": description, "resource_url": resource_url}.items() if v is not None})
+
+    @mcp.tool()
+    def get_card_attachment_content(card_id: str, attachment_id: str, realm: str = "default") -> dict:
+        """Read editable UTF-8 source up to 1 MiB and its CAS versions; discovery stays compact.
+
+        Unsupported formats return an explicit replacement/download path.
+        """
+        return request_local_pa(ctx.settings, "GET", f"/api/cards/{quote(card_id, safe='')}/attachments/{quote(attachment_id, safe='')}/content", params={"realm": realm})
+
+    @mcp.tool()
+    def edit_card_attachment_content(card_id: str, attachment_id: str, content: str,
+                                     expected_revision: int, idempotency_key: str,
+                                     expected_version: str | None = None, realm: str = "default") -> dict:
+        """Save UTF-8 text/HTML/JSON source up to 1 MiB as a revision; JSON must validate.
+
+        Echo the versions from get_card_attachment_content. Use replacement for
+        unsupported formats. Original revisions and completion evidence survive.
+        """
+        return request_local_pa(ctx.settings, "PUT", f"/api/cards/{quote(card_id, safe='')}/attachments/{quote(attachment_id, safe='')}/content",
+            params={"realm": realm}, headers=_attachment_key(idempotency_key),
+            json={"content": content, "expected_revision": expected_revision, "expected_version": expected_version})
+
+    @mcp.tool()
+    def replace_card_attachment(card_id: str, attachment_id: str, source_path: str,
+                                expected_revision: int, idempotency_key: str,
+                                filename: str | None = None, media_type: str = "application/octet-stream",
+                                expected_version: str | None = None, realm: str = "default") -> dict:
+        """Replace file bytes (25 MiB/file, 100 MiB current card total), keeping the ID.
+
+        Metadata is preserved; old revisions/evidence keep original bytes. Echo
+        revision and optional card updated_at from materials; use a stable key.
+        """
+        path = Path(source_path).expanduser().resolve()
+        if not path.is_file():
+            raise ValueError("source_path must be an existing regular file")
+        with path.open("rb") as source:
+            return request_local_pa(ctx.settings, "PUT", f"/api/cards/{quote(card_id, safe='')}/attachments/{quote(attachment_id, safe='')}/replace",
+                params={"realm": realm, "expected_revision": expected_revision, "expected_version": expected_version},
+                headers=_attachment_key(idempotency_key), files={"file": (safe_filename(filename or path.name), source, media_type)})
 
     @mcp.tool()
     def remove_card_attachment(

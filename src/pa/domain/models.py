@@ -387,6 +387,14 @@ class CardAttachment(BaseModel):
     card_id: str
     realm_id: str = "default"
     filename: str
+    name: str = Field(default="", max_length=200)
+    description: str = Field(default="", max_length=4000)
+    kind: Literal["file", "resource_link"] = "file"
+    resource_url: str | None = Field(default=None, max_length=4096)
+    revision: int = Field(default=1, ge=1)
+    modified_at: datetime | None = None
+    modified_by_principal: str | None = None
+    modified_by_instance: str | None = None
     media_type: str = "application/octet-stream"
     size: int = Field(ge=0)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -616,6 +624,7 @@ class EventType(StrEnum):
     CARD_DELETED = "card_deleted"
     ATTACHMENT_CREATED = "attachment_created"
     ATTACHMENT_REMOVED = "attachment_removed"
+    ATTACHMENT_UPDATED = "attachment_updated"
     COMPLETION_RECORD_CREATED = "completion_record_created"
     PROJECT_CREATED = "project_created"
     PROJECT_UPDATED = "project_updated"

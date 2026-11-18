@@ -1,0 +1,53 @@
+<section class="card-detail-section card-attachments" data-card-attachments data-card-id="{{ card.id }}" data-realm="{{ card.realm_id }}" data-version="{{ card.updated_at.isoformat() }}" aria-labelledby="attachments-title-{{ card.id }}">
+  <h3 id="attachments-title-{{ card.id }}">Attachments ({{ card.attachments | length }})</h3>
+  <p class="muted small">Supporting files and resource links · 64 attachments, 25 MiB per file, 100 MiB total. Saving material does not start work.</p>
+  <p role="status" aria-live="polite" data-attachment-status></p>
+  <div class="attachment-list">
+  {% for attachment in card.attachments %}
+    {% set info = attachment_presentation(attachment) %}
+    {% set base = '/api/cards/' ~ card.id ~ '/attachments/' ~ attachment.attachment_id %}
+    {% set query = '?realm=' ~ (card.realm_id | urlencode) %}
+    <article class="attachment-item" data-attachment-id="{{ attachment.attachment_id }}" data-revision="{{ attachment.revision }}">
+      <h4>{{ attachment.name or attachment.filename }}</h4>
+      <p class="muted small">{{ 'Resource link' if attachment.kind == 'resource_link' else attachment.media_type }}{% if attachment.kind == 'file' %} · {{ attachment.size }} bytes · {{ attachment.filename }}{% endif %} · Revision {{ attachment.revision }}</p>
+      {% if attachment.description %}<p>{{ attachment.description }}</p>{% endif %}
+      <div class="attachment-actions">
+        {% if info.target %}<a href="{{ info.target }}" target="_blank" rel="noopener noreferrer">Open resource</a>{% else %}<a href="{{ base }}/preview{{ query }}" target="_blank" rel="noopener noreferrer">{{ 'View / open' if info.preview != 'unsupported' else 'Preview information' }}</a>{% endif %}
+        <a href="{{ base }}{{ query }}&amp;download=true">Download{{ ' link' if attachment.kind == 'resource_link' else '' }}</a>
+        {% if info.editable and attachments_writable %}<button type="button" class="ghost small" data-attachment-edit-content>Edit content</button>{% endif %}
+      </div>
+      {% if info.preview == 'unsupported' %}<p class="muted small">No browser preview or content editor for this format. Download it or use Replace file below.</p>{% elif attachment.kind == 'file' and not info.editable %}<p class="muted small">Content editing is unavailable for this format or size. Use Replace file below.</p>{% endif %}
+      {% if attachments_writable %}
+      <details><summary>Edit details{{ ' / URL' if attachment.kind == 'resource_link' else '' }}</summary>
+        <form data-attachment-form="metadata">
+          <label>Name <input name="name" maxlength="200" value="{{ attachment.name or attachment.filename }}" required></label>
+          <label>Description <textarea name="description" maxlength="4000" rows="2">{{ attachment.description }}</textarea></label>
+          {% if attachment.kind == 'resource_link' %}<label>Resource URL <input name="resource_url" type="url" maxlength="4096" value="{{ attachment.resource_url or '' }}" required></label>{% endif %}
+          <button type="submit" class="small">Save details</button>
+        </form>
+      </details>
+      {% if attachment.kind == 'file' %}
+      <details><summary>Replace file</summary>
+        <p class="muted small">Upload new content for this attachment. Its ID and description stay the same; earlier revisions and completion evidence keep their original bytes.</p>
+        <form data-attachment-form="replace"><label>Replacement file <input name="file" type="file" required></label><button type="submit" class="small">Replace file</button></form>
+      </details>
+      <form data-attachment-form="content" hidden>
+        <label>Edit UTF-8 source (up to 1 MiB)<textarea name="content" rows="12" spellcheck="false"></textarea></label>
+        <p class="muted small">Saves a new content revision. HTML is edited as source; JSON must be valid.</p>
+        <button type="submit" class="small">Save content</button><button type="button" class="ghost small" data-attachment-cancel-content>Cancel</button>
+      </form>
+      {% endif %}
+      <details><summary>Remove attachment reference</summary>
+        <p class="muted small">Removes this reference from the card. Description and evidence references may block removal. Originals retained by completion records remain accessible there.</p>
+        <form data-attachment-form="remove"><button type="submit" class="small danger">Remove reference</button></form>
+      </details>
+      {% endif %}
+      <details class="small muted"><summary>Provenance</summary><p>Added by {{ attachment.created_by_principal }} on {{ attachment.created_by_instance }} · {{ attachment.created_at.isoformat() }}</p>{% if attachment.modified_at %}<p>Last edited by {{ attachment.modified_by_principal }} on {{ attachment.modified_by_instance }} · {{ attachment.modified_at.isoformat() }}</p>{% endif %}<p class="attachment-digest">SHA-256 {{ attachment.sha256 }}</p><a href="/card-history?card_id={{ card.id | urlencode }}&amp;realm={{ card.realm_id | urlencode }}">Revision history</a></details>
+    </article>
+  {% else %}<p class="muted">No supporting materials yet.</p>{% endfor %}
+  </div>
+  {% if attachments_writable %}
+  <details><summary>Upload a file</summary><form data-attachment-form="upload"><label>File (up to 25 MiB) <input type="file" name="file" required></label><button type="submit" class="small">Upload file</button></form></details>
+  <details><summary>Add a resource link</summary><form data-attachment-form="link"><label>Name <input name="name" maxlength="200" required></label><label>Resource URL <input type="url" name="resource_url" maxlength="4096" placeholder="https://…" required></label><label>Description <textarea name="description" maxlength="4000" rows="2"></textarea></label><button type="submit" class="small">Add link</button></form></details>
+  {% else %}<p class="muted small">You can view materials. Attachment changes require an editor.</p>{% endif %}
+</section>
