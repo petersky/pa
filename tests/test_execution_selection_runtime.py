@@ -50,7 +50,8 @@ def required(value):
     return {"intent": "required", "value": value}
 
 
-def test_recovery_preserves_native_identity_and_receipt_after_defaults_change(wire_app):
+@pytest.mark.parametrize("prompted", [False, True])
+def test_recovery_preserves_identity_and_receipt_after_defaults_change(wire_app, prompted):
     from pa.execution.selection import ExecutionPreferences, SelectionPolicy
     from pa.execution.selection_service import service_for
 
@@ -70,6 +71,8 @@ def test_recovery_preserves_native_identity_and_receipt_after_defaults_change(wi
     original = created.json()
     sid = original["session"]["id"]
     manager = app.state.ctx.services["instance_agent"]
+    if prompted:
+        client.portal.call(manager.get(sid).connection.prompt, "fixture first turn")
     service = service_for(app.state.ctx)
     service.store.save_policy(
         "default",
@@ -95,7 +98,7 @@ def test_recovery_preserves_native_identity_and_receipt_after_defaults_change(wi
     assert (
         recovered["session"]["external_session_id"]
         == original["session"]["external_session_id"]
-    )
+    ) is prompted
     assert (
         recovered["execution_selection"]["decision"]["decision_id"]
         == original["execution_selection"]["decision"]["decision_id"]
@@ -246,8 +249,9 @@ def test_real_native_confirmation_settings_lineage_and_linked_boundary(wire_app)
     resumed = client.portal.call(recover_changed_settings)
     assert (
         resumed["session"]["external_session_id"]
-        == snap["session"]["external_session_id"]
+        != snap["session"]["external_session_id"]
     )
+    assert resumed["session"]["id"] == sid
     assert (
         resumed["execution_selection"]["provider_confirmation"]["effective"][
             "reasoning"

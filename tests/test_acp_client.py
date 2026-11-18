@@ -875,6 +875,28 @@ class AgentConfigurationCompatibilityTests(unittest.TestCase):
                 asyncio.run(connection.prompt("must stay local"))
         prompt.assert_not_awaited()
 
+    def test_prompt_requires_durable_delivery_invalidation(self) -> None:
+        prompt = AsyncMock()
+        with tempfile.TemporaryDirectory() as tmp:
+            connection, store = self._connection(
+                tmp, SimpleNamespace(prompt=prompt), options=[]
+            )
+            native_id = connection.session.external_session_id
+            connection.session.config_json = {"native_prompt_delivery": {
+                "version": 1, "native_id": native_id, "state": "never_prompted",
+            }}
+
+            def failed_save(session):
+                self.assertEqual(session.config_json["native_prompt_delivery"], {
+                    "version": 1, "native_id": native_id, "state": "attempted",
+                })
+                raise RuntimeError("durable save unavailable")
+
+            store.save_session.side_effect = failed_save
+            with self.assertRaisesRegex(RuntimeError, "durable save unavailable"):
+                asyncio.run(connection.prompt("queued first input"))
+        prompt.assert_not_awaited()
+
     def test_on_connect_acknowledges_cursor_vendor_methods(self) -> None:
         wire = MagicMock()
         client = PAClient(MagicMock(), wire_logger=wire)
@@ -1606,6 +1628,68 @@ class AgentSessionRestoreTests(unittest.TestCase):
             self.assertEqual(existing.status, "connected")
 
     def test_strict_restore_never_falls_back_to_new_session(self) -> None:
+        for evidence in ({}, {"version": 1, "native_id": "provider-session", "state": "attempted"}, {"version": 1, "native_id": "wrong-native", "state": "never_prompted"}):
+            with tempfile.TemporaryDirectory() as tmp:
+                acp = MagicMock()
+                acp.initialize = AsyncMock(
+                    return_value={
+                        "agentCapabilities": {
+                            "loadSession": True,
+                            "sessionCapabilities": {"resume": {"supported": True}},
+                        }
+                    }
+                )
+                acp.resume_session = AsyncMock(side_effect=TimeoutError("private resume failed"))
+                acp.load_session = AsyncMock(side_effect=RuntimeError("load failed"))
+                acp.new_session = AsyncMock()
+                context = MagicMock()
+                context.__aenter__ = AsyncMock(return_value=(acp, MagicMock()))
+                context.__aexit__ = AsyncMock()
+                existing = AgentSession(
+                    id="pa-session",
+                    agent_name="codex",
+                    external_session_id="provider-session",
+                    status="closed",
+                    config_json={"native_prompt_delivery": evidence},
+                )
+                connection = AgentConnection(
+                    Settings(data_dir=Path(tmp)),
+                    MagicMock(),
+                    provider_spec=AgentProviderSpec(
+                        id="codex", display_name="Codex", command="agent"
+                    ),
+                )
+
+                async def run() -> None:
+                    with (
+                        patch("pa.acp.client.spawn_agent", return_value=context),
+                        patch("pa.acp.client.pa_mcp_servers", return_value=[]),
+                    ):
+                        with self.assertRaisesRegex(
+                            RuntimeError, "could not be restored"
+                        ):
+                            await connection.connect(
+                                resume_external_id="provider-session",
+                                existing_session=existing,
+                                require_restore=True,
+                            )
+
+                asyncio.run(run())
+                acp.resume_session.assert_awaited_once()
+                acp.load_session.assert_awaited_once()
+                acp.new_session.assert_not_awaited()
+                self.assertEqual(existing.id, "pa-session")
+                self.assertEqual(existing.external_session_id, "provider-session")
+                self.assertEqual(
+                    [(row['method'], row['outcome'], row['category'])
+                     for row in connection.restore_attempts],
+                    [('session/resume', 'failed', 'timeout'),
+                     ('session/load', 'failed', 'exception')],
+                )
+                self.assertNotIn('private', json.dumps(connection.restore_attempts))
+
+
+    def test_confirmed_unprompted_codex_starts_fresh_preserving_identity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             acp = MagicMock()
             acp.initialize = AsyncMock(
@@ -1618,21 +1702,22 @@ class AgentSessionRestoreTests(unittest.TestCase):
             )
             acp.resume_session = AsyncMock(side_effect=TimeoutError("private resume failed"))
             acp.load_session = AsyncMock(side_effect=RuntimeError("load failed"))
-            acp.new_session = AsyncMock()
+            acp.new_session = AsyncMock(return_value=SimpleNamespace(session_id="fresh-native"))
             context = MagicMock()
             context.__aenter__ = AsyncMock(return_value=(acp, MagicMock()))
             context.__aexit__ = AsyncMock()
             existing = AgentSession(
                 id="pa-session",
-                agent_name="generic",
+                agent_name="codex",
                 external_session_id="provider-session",
                 status="closed",
+                config_json={"native_prompt_delivery": {"version": 1, "native_id": "provider-session", "state": "never_prompted"}},
             )
             connection = AgentConnection(
                 Settings(data_dir=Path(tmp)),
                 MagicMock(),
                 provider_spec=AgentProviderSpec(
-                    id="generic", display_name="Generic", command="agent"
+                    id="codex", display_name="Codex", command="agent"
                 ),
             )
 
@@ -1641,28 +1726,22 @@ class AgentSessionRestoreTests(unittest.TestCase):
                     patch("pa.acp.client.spawn_agent", return_value=context),
                     patch("pa.acp.client.pa_mcp_servers", return_value=[]),
                 ):
-                    with self.assertRaisesRegex(
-                        RuntimeError, "could not be restored"
-                    ):
-                        await connection.connect(
-                            resume_external_id="provider-session",
-                            existing_session=existing,
-                            require_restore=True,
-                        )
+                    result = await connection.connect(
+                        resume_external_id="provider-session",
+                        existing_session=existing,
+                        require_restore=True,
+                    )
+                    self.assertIs(result, existing)
 
             asyncio.run(run())
-            acp.resume_session.assert_awaited_once()
-            acp.load_session.assert_awaited_once()
-            acp.new_session.assert_not_awaited()
+            acp.resume_session.assert_not_awaited()
+            acp.load_session.assert_not_awaited()
+            acp.new_session.assert_awaited_once()
             self.assertEqual(existing.id, "pa-session")
-            self.assertEqual(existing.external_session_id, "provider-session")
-            self.assertEqual(
-                [(row['method'], row['outcome'], row['category'])
-                 for row in connection.restore_attempts],
-                [('session/resume', 'failed', 'timeout'),
-                 ('session/load', 'failed', 'exception')],
-            )
-            self.assertNotIn('private', json.dumps(connection.restore_attempts))
+            self.assertEqual(existing.external_session_id, "fresh-native")
+            self.assertEqual(existing.config_json["native_prompt_delivery"], {
+                "version": 1, "native_id": "fresh-native", "state": "never_prompted",
+            })
 
     def test_resolve_session_load_target_helpers(self) -> None:
         async def run() -> None:

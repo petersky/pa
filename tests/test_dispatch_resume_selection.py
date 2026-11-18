@@ -45,6 +45,8 @@ def setup_resume(wire_app):
 @pytest.mark.parametrize("restore", [False, True])
 def test_resume_retains_new_authority_receipt_and_original_native_identity(wire_app, restore):
     client, app, manager, runtime, receipt, record = setup_resume(wire_app)
+    # Native identity retention applies to a thread that has received input.
+    client.portal.call(runtime.connection.prompt, "fixture first turn")
     original = deepcopy(runtime.session.config_json)
     external = runtime.session.external_session_id
     if restore:
