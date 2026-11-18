@@ -124,6 +124,11 @@ async def test_attachment_details_full_lifecycle(operator_server, tmp_path):
             assert client.get(f"/api/cards/{card.id}/attachments/{uploaded_id}?revision=1").text == "User uploaded content"
         await page.evaluate("document.querySelector('[data-card-attachments]').scrollIntoView()")
         (evidence_dir / "card-attachments-desktop.png").write_bytes(await manager.screenshot(scope))
+        await manager.resize(scope, width=720, height=500, device_scale_factor=2)
+        assert await page.evaluate("document.querySelector('[data-card-detail]').scrollHeight <= document.querySelector('[data-card-detail]').clientHeight + 2")
+        # Supporting materials scroll with the summary; they must not enlarge
+        # the pinned header and clip keyboard-reachable Agent/Activity panels.
+        assert await page.evaluate("document.querySelector('[data-card-attachments]').closest('[data-card-tab-panel]').dataset.cardTabPanel === 'summary'")
         await manager.resize(scope, width=390, height=844)
         assert await page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         (evidence_dir / "card-attachments-mobile.png").write_bytes(await manager.screenshot(scope))

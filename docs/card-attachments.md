@@ -1,4 +1,4 @@
-Card details list durable supporting files and resource links above the detail tabs.
+Card details list durable supporting files and resource links first in the Summary tab.
 Use **Edit details** for names/descriptions and resource URLs, **Edit content** for
 UTF-8 source, and **Replace file** for new bytes. Source editing supports text,
 Markdown, HTML, JSON, XML, CSS, JavaScript and CSV up to 1 MiB; JSON must validate.

@@ -81,8 +81,6 @@
       {% for result in completion_records['items'] %}<p><a href="/results?card_id={{ card.id | urlencode }}&amp;realm={{ card.realm_id | urlencode }}&amp;record={{ result.record_id | urlencode }}">{{ result.title }}</a> — {{ result.summary | truncate(240, true) }}</p>{% else %}<p class="muted">No structured results recorded. Existing outputs remain in the Agent and Activity tabs.</p>{% endfor %}
     </section>
 
-    {% include "partials/card-attachments.html" %}
-
     <div class="card-detail-tabs"
          role="tablist"
          aria-label="Card detail sections"
@@ -122,6 +120,7 @@
              tabindex="0"
              aria-labelledby="card-tab-summary-{{ card.id }}"
              data-card-tab-panel="summary">
+      {% include "partials/card-attachments.html" %}
       {% set repeats_title = (card.summary or '').strip() == card.title.strip() or card.summary_source.value == 'fallback' %}
       <section class="card-detail-section" aria-labelledby="card-summary-title">
         <div class="section-heading-inline">
