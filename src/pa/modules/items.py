@@ -57,6 +57,8 @@ from pa.core.ui.instance_identity import (
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.core.ui.work_presentation import child_work_status, present_work_item
 from pa.domain.card_enrichment import explicit_enrichment_fields
+from pa.domain.card_limits import ATTACHMENT_BYTES, CARD_ATTACHMENT_BYTES, CARD_ATTACHMENTS, material_limits
+from pa.domain.card_material import removal_result
 from pa.domain.completion_records import CompletionRecordInput, get_record, list_records, results_url, retained_attachment
 from pa.domain.models import (
     CardAttachment,
@@ -98,9 +100,9 @@ router = APIRouter()
 ui_router = APIRouter()
 logger = logging.getLogger(__name__)
 
-MAX_CARD_ATTACHMENTS = 10
-MAX_CARD_ATTACHMENT_BYTES = 25 * 1024 * 1024
-MAX_CARD_ATTACHMENTS_TOTAL_BYTES = 100 * 1024 * 1024
+MAX_CARD_ATTACHMENTS = CARD_ATTACHMENTS
+MAX_CARD_ATTACHMENT_BYTES = ATTACHMENT_BYTES
+MAX_CARD_ATTACHMENTS_TOTAL_BYTES = CARD_ATTACHMENT_BYTES
 ATTACHMENT_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 SAFE_IMAGE_TYPES = {
     "image/avif",
@@ -2626,6 +2628,19 @@ def get_card_api(request: Request, card_id: str, realm: str | None = None) -> di
             "execution_version": card.execution_version}
 
 
+@router.get("/cards/{card_id}/materials")
+def card_materials_api(request: Request, card_id: str, realm: str | None = None) -> dict:
+    """Discover current material without returning descriptions or artifact bytes."""
+    card = get_card_api(request, card_id, realm)
+    query = urlencode({"realm": card["realm_id"]})
+    base = f"/api/cards/{quote(card_id, safe='')}"
+    return {"card_id": card_id, "realm_id": card["realm_id"],
+            "updated_at": card["updated_at"], "execution_version": card["execution_version"],
+            "description_characters": len(card["body"]), "card_url": base + "?" + query,
+            "history_url": base + "/history?" + query, "limits": material_limits(),
+            "attachments": [{**a, "url": base + "/attachments/" + quote(a["attachment_id"], safe='') + "?" + query} for a in card["attachments"]]}
+
+
 def _card_history_payload(
     request: Request,
     card_id: str,
@@ -2650,6 +2665,18 @@ def _card_history_payload(
     except EventHistoryError as exc:
         raise HTTPException(status_code=422, detail=exc.as_detail()) from exc
     return {"card_id": card_id, "realm_id": realm_id, **page}
+
+
+def _card_material_history_context(request):
+    card_id = request.query_params.get("card_id", "")
+    realm_id = request.query_params.get("realm") or _active_realm(request)
+    card = get_store().get_card(card_id, realm_id=realm_id)
+    if not card:
+        raise HTTPException(404, "Card not found")
+    page = _card_history_payload(request, card_id, realm_id, limit=50, cursor=request.query_params.get("cursor"))
+    events = [row for row in page["events"] if row["event"]["type"].startswith("attachment_")
+              or {"body", "attachments"}.intersection(row["event"].get("field_intent", []))]
+    return {"card": card, "material_events": events, "history_page": page, "material_limits": material_limits()}
 
 
 @router.get("/cards/{card_id}/history", response_model=dict)
@@ -2940,7 +2967,7 @@ def _publish_card_attachment(
 
     This whole operation runs in an owned executor invocation: cancellation of
     the HTTP waiter cannot abandon the post-commit receipt update. Replay is
-    checked before mutable card state (including the ten-attachment limit).
+    checked before mutable card state (including attachment quotas).
     """
     store = get_store()
     key, fingerprint, replay = _begin_operation(
@@ -3144,18 +3171,35 @@ def download_card_attachment_api(
 
 @router.delete("/cards/{card_id}/attachments/{attachment_id}")
 def remove_card_attachment_api(
-    request: Request, card_id: str, attachment_id: str, realm: str | None = None
+    request: Request, card_id: str, attachment_id: str, realm: str | None = None,
+    expected_version: datetime | None = None,
 ) -> dict:
     realm_id = realm or request.app.state.ctx.settings.primary_realm
-    _card_attachment_or_404(request, card_id, attachment_id, realm_id)
-    card = get_store().remove_attachment(
-        card_id,
-        attachment_id,
-        realm_id=realm_id,
-        principal_id=get_principal_id(request),
-        instance_id=request.app.state.ctx.settings.instance_id,
-    )
-    return {**card.model_dump(mode="json"), "completion_status": card.completion_status}
+    store = get_store()
+    key, fingerprint, replay = _begin_operation(request, operation="card.attachment.remove", realm_id=realm_id,
+        payload={"card_id": card_id, "attachment_id": attachment_id,
+                 "expected_version": expected_version.isoformat() if expected_version else None})
+    if replay is not None:
+        return replay
+    try:
+        card = store.remove_attachment(card_id, attachment_id, realm_id=realm_id,
+            principal_id=get_principal_id(request), instance_id=request.app.state.ctx.settings.instance_id,
+            expected_version=expected_version, idempotency_key=key, request_fingerprint=fingerprint)
+        if card is None:
+            raise HTTPException(404, "Attachment not found")
+    except CardVersionConflict as exc:
+        store.fail_operation(key, "stale_card_version")
+        raise HTTPException(409, {"code": "stale_card_version", "message": "Card changed. Refresh its materials before removing the attachment.",
+                                  "actual_version": exc.actual.isoformat()}) from exc
+    except ValueError as exc:
+        store.fail_operation(key, "attachment_referenced")
+        raise HTTPException(409, {"code": "attachment_referenced", "message": str(exc)}) from exc
+    except Exception as exc:
+        store.fail_operation(key, type(exc).__name__)
+        raise
+    result = removal_result(card, attachment_id, retained_attachment(store, card_id, realm_id, attachment_id) is not None)
+    store.complete_operation(key, result)
+    return result
 
 
 @router.post("/items", status_code=201)
@@ -4294,6 +4338,9 @@ class ItemsModule(Module):
         pages.register(PageDefinition(id="results", path="/results", label="Card results", icon="file-text",
                                       template="pages/completion-results.html", nav=False,
                                       context_builder=_completion_results_context))
+        pages.register(PageDefinition(id="card-history", path="/card-history", label="Card material history", icon="file-text",
+                                      template="pages/card-material-history.html", nav=False,
+                                      context_builder=_card_material_history_context))
         pages.register(
             PageDefinition(
                 id="home",

@@ -13,11 +13,12 @@ from uuid import uuid4
 
 from pa.core.io import atomic_write_json
 from pa.domain.models import CardAttachment
+from pa.domain.card_limits import ATTACHMENT_BYTES, CARD_ATTACHMENT_BYTES, CARD_ATTACHMENTS
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
-MAX_CARD_BYTES = 100 * 1024 * 1024
-MAX_CARD_ATTACHMENTS = 10
+MAX_ATTACHMENT_BYTES = ATTACHMENT_BYTES
+MAX_CARD_BYTES = CARD_ATTACHMENT_BYTES
+MAX_CARD_ATTACHMENTS = CARD_ATTACHMENTS
 CHUNK_BYTES = 1024 * 1024
 
 

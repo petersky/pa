@@ -14,6 +14,7 @@ from pa.config import Settings
 from pa.core.async_runtime import AsyncRuntime
 from pa.domain.conversation_issues import ConversationIssues, Issue, IssueConflict, IssueEdit, StartIssues
 from pa.domain.models import AgentSession, CardCreate, ProjectCreate, RepositoryCreate
+from pa.domain.models import CardUpdate
 from pa.domain.projection import CardProjection
 from pa.instance.agent_session import AgentSessionManager
 from pa.modules.conversation_issues import edit_issues, get_issues, start_issues, _preferences
@@ -39,6 +40,132 @@ def setup(tmp_path):
 
 def ten_issues():
     return IssueEdit(revision=0, issues=[Issue(id=f"issue-{i}", title=f"Issue {i}", group="Small fixes" if i < 2 else "", deferred=i == 9) for i in range(10)])
+
+
+@pytest.mark.asyncio
+async def test_rich_issue_and_linked_specification_stay_inert_then_reuse_card(setup, monkeypatch):
+    store, _, req, _ = setup
+    project_id = store.get_session("discussion").project_id
+    specification = "S" * 6916
+    card = store.create_card(CardCreate(title="Full specification", body=specification, project_id=project_id))
+    dispatch = AsyncMock(return_value={"dispatch_id": "linked-work"})
+    monkeypatch.setattr("pa.modules.fleet.dispatch_fleet_work", dispatch)
+    state = await edit_issues(req(), "discussion", IssueEdit(revision=0, issues=[Issue(id="spec", title="Concise discovery", detail="Read linked specification", card_id=card.id)]))
+    assert dispatch.await_count == 0 and len(store.list_cards()) == 1
+    assert state["issues"][0]["card_execution_version"] == card.execution_version
+    assert specification not in json.dumps(state)
+    body = StartIssues(request_id="linked-start", revision=state["revision"], issue_ids=["spec"])
+    result = await start_issues(req("linked-start"), "discussion", body)
+    assert result["requests"][0]["groups"][0]["card_id"] == card.id
+    sent = dispatch.call_args.args[1]
+    assert sent.expected_execution_version == card.execution_version
+    assert store.get_card(card.id).body == specification
+    await get_issues(req(), "discussion")
+    await start_issues(req("linked-start"), "discussion", body)
+    assert dispatch.await_count == 1 and len(store.list_cards()) == 1
+    assert store.get_session("discussion").card_id is None
+
+
+@pytest.mark.asyncio
+async def test_changed_link_requires_review_before_freezing_or_dispatch(setup, monkeypatch):
+    store, _, req, _ = setup
+    card = store.create_card(CardCreate(title="Specification", project_id=store.get_session("discussion").project_id))
+    state = await edit_issues(req(), "discussion", IssueEdit(revision=0, issues=[Issue(id="spec", title="Review", card_id=card.id)]))
+    current = store.update_card(card.id, CardUpdate(body="Changed scope"))
+    dispatch = AsyncMock(return_value={"dispatch_id": "reviewed-work"})
+    monkeypatch.setattr("pa.modules.fleet.dispatch_fleet_work", dispatch)
+    with pytest.raises(HTTPException) as stale:
+        await start_issues(req("linked-start"), "discussion", StartIssues(request_id="linked-start", revision=1, issue_ids=["spec"]))
+    assert stale.value.status_code == 409 and stale.value.detail["code"] == "conversation_link_changed"
+    notebook = ConversationIssues(store).read("discussion")
+    assert notebook["requests"] == [] and not notebook["issues"][0].get("request_id")
+    reviewed = state["editable_issues"]
+    reviewed[0]["card_execution_version"] = current.execution_version
+    updated = await edit_issues(req(), "discussion", IssueEdit(revision=1, issues=reviewed))
+    assert dispatch.await_count == 0
+    result = await start_issues(req("linked-start"), "discussion", StartIssues(request_id="linked-start", revision=updated["revision"], issue_ids=["spec"]))
+    assert result["requests"][0]["state"] == "admitted"
+    assert dispatch.call_args.args[1].expected_execution_version == current.execution_version
+
+
+@pytest.mark.asyncio
+async def test_link_changed_after_freeze_blocks_without_expanding_saved_scope(setup, monkeypatch):
+    store, _, req, _ = setup
+    card = store.create_card(CardCreate(title="Specification", project_id=store.get_session("discussion").project_id))
+    await edit_issues(req(), "discussion", IssueEdit(revision=0, issues=[Issue(id="spec", title="Reviewed scope", card_id=card.id)]))
+    original = store.link_session_card
+    def change_after_freeze(*args, **kwargs):
+        result = original(*args, **kwargs)
+        store.update_card(card.id, CardUpdate(body="Material changed during admission"))
+        return result
+    monkeypatch.setattr(store, "link_session_card", change_after_freeze)
+    dispatch = AsyncMock()
+    monkeypatch.setattr("pa.modules.fleet.dispatch_fleet_work", dispatch)
+    result = await start_issues(req("linked-start"), "discussion", StartIssues(request_id="linked-start", revision=1, issue_ids=["spec"]))
+    assert result["requests"][0]["state"] == "blocked"
+    assert result["requests"][0]["error"]["code"] == "conversation_link_changed"
+    assert dispatch.await_count == 0 and len(store.list_cards()) == 1
+    assert ConversationIssues(store).read("discussion")["requests"][0]["groups"][0]["card_execution_version"] == card.execution_version
+
+
+@pytest.mark.asyncio
+async def test_link_edit_is_realm_and_project_scoped(setup):
+    store, _, req, _ = setup
+    other = store.create_card(CardCreate(title="Other realm", realm_id="other"))
+    with pytest.raises(HTTPException) as denied:
+        await edit_issues(req(), "discussion", IssueEdit(revision=0, issues=[Issue(id="spec", title="Link", card_id=other.id)]))
+    assert denied.value.status_code == 404
+    from pa.domain.models import ProjectMembership, ProjectUpdate
+    project = store.create_project(ProjectCreate(title="Private"))
+    store.update_project(project.id, ProjectUpdate(memberships=[ProjectMembership(principal_id="user:other")]))
+    private = store.create_card(CardCreate(title="Private", project_id=project.id))
+    with pytest.raises(HTTPException) as denied:
+        await edit_issues(req(), "discussion", IssueEdit(revision=0, issues=[Issue(id="spec", title="Link", card_id=private.id)]))
+    assert denied.value.status_code == 403
+    assert ConversationIssues(store).read("discussion")["issues"] == []
+
+
+@pytest.mark.asyncio
+async def test_legacy_frozen_issues_accept_unchanged_round_trip(setup, monkeypatch):
+    store, _, req, _ = setup
+    monkeypatch.setattr("pa.modules.fleet.dispatch_fleet_work", AsyncMock(return_value={"dispatch_id": "old-work"}))
+    await edit_issues(req(), "discussion", ten_issues())
+    await start_issues(req(), "discussion", StartIssues(request_id="start-1234", revision=1, issue_ids=["issue-0"]))
+    notes = ConversationIssues(store)
+    state = notes.read("discussion")
+    for issue in state["issues"]:
+        issue.pop("card_id", None)
+        issue.pop("card_execution_version", None)
+    with store._conn() as conn:
+        notes._save(conn, "discussion", state)
+    first = await edit_issues(req(), "discussion", IssueEdit(revision=state["revision"], issues=state["issues"]))
+    again = await edit_issues(req(), "discussion", IssueEdit(revision=state["revision"], issues=state["issues"]))
+    assert first == again and first["issues"][0]["request_id"] == "start-1234"
+
+
+def test_issue_limits_and_link_scope_are_explicit():
+    assert len(Issue(id="long", title="Cleanup", detail="x" * 6916).detail) == 6916
+    with pytest.raises(ValueError):
+        Issue(id="overflow", title="Overflow", detail="x" * 16001)
+    with pytest.raises(ValueError, match="own work scope"):
+        IssueEdit(revision=0, issues=[Issue(id="linked", title="Link", group="Other work", card_id="card")])
+    with pytest.raises(ValueError, match="only once"):
+        IssueEdit(revision=0, issues=[Issue(id="a", title="A", card_id="card"), Issue(id="b", title="B", card_id="card")])
+
+
+@pytest.mark.asyncio
+async def test_mcp_issue_schema_advertises_nested_limits():
+    from mcp.server.mcpserver import MCPServer
+    from pa.mcp.tools.agent_chat import register_mcp
+    mcp = MCPServer("issue-schema")
+    register_mcp(mcp, SimpleNamespace(settings=SimpleNamespace()))
+    tool = next(t for t in await mcp.list_tools() if t.name == "update_conversation_issues")
+    schema = tool.input_schema
+    assert schema["properties"]["issues"]["maxItems"] == 100
+    issue = schema["$defs"]["Issue"]["properties"]
+    assert issue["detail"]["maxLength"] == 16000
+    assert issue["title"]["maxLength"] == 300
+    assert "card_id" in issue and "card_execution_version" in issue
 
 
 @pytest.mark.asyncio

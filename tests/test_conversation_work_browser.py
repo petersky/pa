@@ -8,10 +8,90 @@ from fastapi import HTTPException
 from pa.browser.manager import BrowserManager, _browser_executable
 from pa.browser.session import BrowserScope, BrowserSessionManager
 from pa.domain.conversation_issues import ConversationIssues, Issue, IssueEdit
-from pa.domain.models import CardCreate, ProjectCreate, TranscriptEvent
+from pa.domain.models import CardCreate, CardUpdate, ProjectCreate, TranscriptEvent
 from tests.test_card_status_browser import operator_server
 from tests.test_chat_threads_browser import add_threads_fixture
 from tests.test_local_operator_acceptance import operator_app
+
+
+@pytest.mark.skipif(not _browser_executable(), reason="Chrome is required")
+@pytest.mark.asyncio
+async def test_rich_specification_link_edit_conflict_and_retry(operator_server, tmp_path, monkeypatch):
+    app, base = operator_server
+    ctx = app.state.ctx
+    agent = add_threads_fixture(app)
+    session = agent.get("thread-root").session
+    project = ctx.store.create_project(ProjectCreate(title="Rich specifications"))
+    session.project_id = project.id
+    ctx.store.save_session(session)
+    specification = ctx.store.create_card(CardCreate(title="Full specification", body="S" * 6916, project_id=project.id))
+    notes = ConversationIssues(ctx.store)
+    notes.edit(session.id, IssueEdit(revision=0, issues=[Issue(id="spec", title="Concise discussion summary")]))
+    calls = []
+    async def dispatch(request, body):
+        from pa.modules.fleet import _check_dispatch_preview
+        _check_dispatch_preview(body, ctx.store.get_card(body.card_id))
+        calls.append(body)
+        return {"dispatch_id": "linked-specification"}
+    monkeypatch.setattr("pa.modules.fleet.dispatch_fleet_work", dispatch)
+    browser = BrowserManager(tmp_path / "browser")
+    manager = BrowserSessionManager(browser, instance_id="rich-spec-browser")
+    scope = BrowserScope("user:local", "rich-spec-browser", "rich-spec-browser")
+    try:
+        await manager.attach(scope, url=base + "/fixture/threads?session=thread-root", width=1280, height=1000)
+        page = manager.resolve(scope).page
+        async def wait_for(expression):
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                if await page.evaluate(expression):
+                    return
+                await asyncio.sleep(.05)
+            pytest.fail(expression + "\n" + str(await page.evaluate("document.body.innerText")))
+        await wait_for("!!document.querySelector('[data-issues-list] textarea')")
+        await page.evaluate("document.querySelector('[data-conversation-issues]').open = true; document.querySelector('[data-issues-list] details').open = true")
+        await page.evaluate("""(() => {
+          const detail = document.querySelector('[data-issues-list] textarea');
+          detail.value = 'x'.repeat(16001); detail.dispatchEvent(new Event('input'));
+          document.querySelector('[data-issues-list] button').click();
+        })()""")
+        await wait_for("document.querySelector('[data-issues-status]').textContent.includes('text is unchanged')")
+        assert await page.evaluate("document.querySelector('[data-issues-list] textarea').value.length") == 16001
+        assert notes.read(session.id)["revision"] == 1
+        await page.evaluate("""(() => {
+          const detail = document.querySelector('[data-issues-list] textarea');
+          detail.value = 'D'.repeat(6916); detail.dispatchEvent(new Event('input'));
+          const card = document.querySelector('[aria-label="Specification card ID (optional)"]');
+          card.value = """ + repr(specification.id) + """; card.dispatchEvent(new Event('input'));
+          document.querySelector('[data-issues-list] button').click();
+        })()""")
+        await wait_for("document.querySelector('[data-issues-status]').textContent === 'Issue list saved.'")
+        assert notes.read(session.id)["issues"][0]["card_id"] == specification.id
+        assert len(ctx.store.list_cards()) == 1 and not calls
+        await page.navigate_and_wait(base + "/fixture/threads?session=thread-root")
+        await wait_for("document.querySelector('[data-issues-list] textarea')?.value.length === 6916")
+        ctx.store.update_card(specification.id, CardUpdate(body="Changed specification"))
+        await page.evaluate("document.querySelector('[data-conversation-issues]').open = true; document.querySelector('[data-issues-list] input[type=checkbox]').click(); document.querySelector('[data-issues-start]').click()")
+        await wait_for("document.querySelector('[data-issues-status]').textContent.includes('Linked card material changed')")
+        assert not calls and not notes.read(session.id)["requests"]
+        await page.evaluate("document.querySelector('[data-issues-list] details').open = true; [...document.querySelectorAll('[data-issues-list] button')].find(b => b.textContent === 'Use current card version').click()")
+        await wait_for("document.querySelector('[data-issues-status]').textContent === 'Issue list saved.'")
+        await page.evaluate("document.querySelector('[data-issues-start]').click()")
+        await wait_for("document.querySelector('[data-issues-receipts]').textContent.includes('Work admitted')")
+        assert len(calls) == 1 and calls[0].card_id == specification.id
+        assert len(ctx.store.list_cards()) == 1
+        await page.navigate_and_wait(base + "/fixture/threads?session=thread-root")
+        await wait_for("document.querySelector('[data-issues-receipts]').textContent.includes('Work admitted')")
+        assert len(calls) == 1
+        await page.evaluate("document.querySelector('[role=tablist] [role=tab] [data-issues-count]').closest('button').click(); document.querySelector('[data-issues-list] details').open = true")
+        (tmp_path / "rich-specification-link.png").write_bytes(await manager.screenshot(scope))
+    finally:
+        for runtime in agent._runtimes.values():
+            runtime.connection = None
+            runtime._in_flight = None
+            runtime._queue = []
+        agent._runtimes.clear()
+        await manager.close()
+        await browser.close()
 
 
 @pytest.mark.skipif(not _browser_executable(), reason="Chrome is required")

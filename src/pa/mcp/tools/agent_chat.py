@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Annotated
 
+from pydantic import Field
+
+from pa.domain.conversation_issues import Issue, IssueEdit
 
 
 def register_mcp(mcp, ctx) -> None:
@@ -41,15 +45,19 @@ def register_mcp(mcp, ctx) -> None:
         return request_local_pa(ctx.settings, "GET", f"/api/agent/sessions/{session_id}/issues", timeout_seconds=15.0)
 
     @mcp.tool()
-    def update_conversation_issues(session_id: str, revision: int, issues: list[dict]) -> dict:
+    def update_conversation_issues(session_id: str, revision: int, issues: Annotated[list[Issue], Field(max_length=100)]) -> dict:
         """Edit discussion notes without creating cards or executing work.
 
         Supply the current revision and editable_issues from get; retain started issues.
-        Each issue has id, title, optional detail/group and deferred boolean.
+        At most 100 issues; title 300, detail 16,000, group 80 characters.
+        For overflow, create a card with the full body/attachments and set card_id.
+        Linked cards cannot be grouped; Start selected uses the existing card.
+        PA captures its execution_version and rejects stale material at start.
         Public request_id is read-only and ignored on input; other extras are rejected.
         """
+        body = IssueEdit(revision=revision, issues=issues)
         return request_local_pa(ctx.settings, "PUT", f"/api/agent/sessions/{session_id}/issues",
-                                json={"revision": revision, "issues": issues}, timeout_seconds=15.0)
+                                json=body.model_dump(mode="json"), timeout_seconds=15.0)
 
     @mcp.tool()
     def start_conversation_issues(session_id: str, revision: int, issue_ids: list[str], request_id: str) -> dict:

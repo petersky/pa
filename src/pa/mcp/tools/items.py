@@ -110,6 +110,26 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         )
 
     @mcp.tool()
+    def get_card(card_id: str, realm: str = "default") -> dict:
+        """Read the current full description, attachments, updated_at and execution_version.
+
+        Prefer list_card_summaries for discovery and get_card_materials for a compact
+        manifest. Use updated_at as expected_version when editing; history retains
+        prior descriptions and provenance. Reading or editing does not start work.
+        """
+        return request_local_pa(ctx.settings, "GET", f"/api/cards/{quote(card_id, safe='')}", params={"realm": realm})
+
+    @mcp.tool()
+    def get_card_materials(card_id: str, realm: str = "default") -> dict:
+        """Read compact supporting-material links, hashes, versions and exact limits.
+
+        No description or artifact bytes. Fetch the current card/history or the
+        authorized attachment URL only when needed; dispatch retains its admitted
+        material snapshot. Changed material does not authorize expanding active work.
+        """
+        return request_local_pa(ctx.settings, "GET", f"/api/cards/{quote(card_id, safe='')}/materials", params={"realm": realm})
+
+    @mcp.tool()
     def create_card(
         idempotency_key: str,
         title: str = "",
@@ -244,7 +264,12 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         media_type: str = "application/octet-stream",
         idempotency_key: str | None = None,
     ) -> dict:
-        """Attach a durable fleet blob. Supply a stable key for recoverable retries."""
+        """Attach a durable fleet blob: at most 64 files/card, 25 MiB/file, 100 MiB/card.
+
+        Supply a stable key for recoverable retries. Overflow: link a separate
+        specification card or remove unused references. Limits reject, never truncate.
+        Adding material does not authorize execution or expand active work.
+        """
         if idempotency_key is not None and not idempotency_key.strip():
             raise ValueError("idempotency_key cannot be empty")
         path = Path(source_path).expanduser().resolve()
@@ -268,14 +293,24 @@ def register_mcp(mcp, ctx: AppContext) -> None:
 
     @mcp.tool()
     def remove_card_attachment(
-        card_id: str, attachment_id: str, realm: str = "default"
+        card_id: str, attachment_id: str, realm: str = "default",
+        expected_version: str | None = None, idempotency_key: str | None = None,
     ) -> dict:
-        """Remove an attachment reference through a durable realm event."""
+        """Remove a current reference; completion-record evidence remains accessible.
+
+        Echo updated_at as expected_version and use a stable idempotency_key for
+        conflict protection and safe retries. Known description/evidence links block
+        removal unless the original is retained in a completion record. The result
+        states whether evidence is retained; other links cease to work on removal.
+        """
+        if idempotency_key is not None and not idempotency_key.strip():
+            raise ValueError("idempotency_key cannot be empty")
         return request_local_pa(
             ctx.settings,
             "DELETE",
             f"/api/cards/{card_id}/attachments/{attachment_id}",
-            params={"realm": realm},
+            params={"realm": realm, "expected_version": expected_version},
+            headers={"Idempotency-Key": idempotency_key.strip()} if idempotency_key else None,
         )
 
     @mcp.tool()

@@ -243,6 +243,10 @@ async def test_all_ordinary_tool_schemas_match_pre_repair_contract(tmp_path, mon
     # Three explicit ordinary result tools; existing schemas and the assigned
     # Goal-service allowlist remain unchanged.
     baseline.update(json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_completion_records.json').read_text()))
+    # Rich materials deliberately type issue entries, add two canonical reads,
+    # and add optional CAS/idempotency selectors to removal. Restricted tools
+    # and every other ordinary schema retain their existing contracts.
+    baseline.update(json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_card_materials.json').read_text()))
     assert actual == baseline
 
 

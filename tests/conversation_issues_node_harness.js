@@ -4,7 +4,7 @@ const vm = require("node:vm");
 const memory = new Map();
 const window = {location: {href: "http://fixture/"}};
 function element(tag) {
-  return {tag, children: [], events: {}, addEventListener(name, callback) {this.events[name] = callback;},
+  return {tag, children: [], events: {}, dataset: {}, attributes: {}, setAttribute(name, value) {this.attributes[name] = value;}, addEventListener(name, callback) {this.events[name] = callback;},
     append(...children) {this.children.push(...children);}, appendChild(child) {this.children.push(child);}, replaceChildren() {this.children = [];}};
 }
 vm.runInNewContext(fs.readFileSync("src/pa/server/static/js/conversation-issues.js", "utf8"), {
@@ -77,6 +77,38 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   edited.save([{id: "one", title: "<script>text</script>", request_id: "internal-only"}]); await tick();
   assert.equal(saved.issues[0].request_id, undefined, "clients cannot assign work claims");
   assert.equal(edited.state.revision, 2);
+  let unsafeSaves = 0;
+  const overflow = controller(() => {unsafeSaves++; return Promise.resolve({});});
+  overflow.save([{id: "large", detail: "x".repeat(16001)}]);
+  assert.equal(unsafeSaves, 0);
+  assert.equal(overflow.dirty, true);
+  assert.match(overflow.lastMessage, /text is unchanged/);
+  // Unsaved fields survive polls, errors and edits to other rows. A single
+  // save includes all pending row drafts under the same list revision CAS.
+  const draft = controller(() => {unsafeSaves++; return Promise.resolve({});});
+  draft.dirty = true; draft.panel = {contains: () => false};
+  draft.load(); draft.start(body);
+  assert.equal(unsafeSaves, 0, "poll and start cannot replace unsaved material");
+  assert.match(draft.lastMessage, /Save your issue edits/);
+  let draftSubmission;
+  const multi = controller((_path, options) => {draftSubmission = JSON.parse(options.body); return Promise.reject(new Error("revision conflict"));});
+  multi.drafts = new Map([["a", {detail: "retained first draft"}], ["b", {detail: "retained second draft"}]]);
+  multi.save([{id: "a", detail: "old"}, {id: "b", detail: "old"}]); await tick();
+  assert.deepEqual(draftSubmission.issues.map(i => i.detail), ["retained first draft", "retained second draft"]);
+  assert.equal(multi.drafts.size, 2);
+  assert.equal(multi.dirty, true);
+  assert.match(multi.lastMessage, /edits are retained/);
+  const fields = controller(() => {throw new Error("render cannot start work");});
+  Object.assign(fields, {list: element("ul"), receipts: element("div")});
+  fields.widget.root = {querySelector: () => ({})};
+  fields.state.issues = [{id: "safe", title: "Title", detail: "<script>text</script>", card_id: "card", card_execution_version: "reviewed"}];
+  proto.render.call(fields);
+  const details = fields.list.children[0].children.find(e => e.tag === "details");
+  const detailField = details.children.find(e => e.tag === "textarea");
+  assert.equal(detailField.value, "<script>text</script>");
+  detailField.value = "changed draft"; detailField.events.input();
+  assert.equal(fields.drafts.get("safe").detail, "changed draft");
+  assert.equal(fields.dirty, true);
   // Rendering restored receipts uses Work, including blocked groups that
   // already created a card. Older peers without realm metadata still work.
   const restored = controller(() => {throw new Error("render must not start work");});
