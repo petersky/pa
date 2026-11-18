@@ -15,6 +15,18 @@ def register_mcp(mcp, ctx: AppContext) -> None:
     from pa.mcp.local_api import request_local_pa
 
     @mcp.tool()
+    def list_items(
+        kind: ItemKind | None = None, status: ItemStatus | None = None
+    ) -> list[dict]:
+        """List goals, tasks, projects, and concerns."""
+        return request_local_pa(
+            ctx.settings,
+            "GET",
+            "/api/items",
+            params={"kind": kind, "status": status},
+        )
+
+    @mcp.tool()
     def submit_completion_record(card_id: str, envelope: CompletionRecordInput, idempotency_key: str, realm: str = "default") -> dict:
         """Save a substantive result; does not accept, deploy, or change a lane.
 
@@ -46,18 +58,6 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         """Read an immutable substantive result, its references and PA provenance."""
         return request_local_pa(ctx.settings, "GET", f"/api/cards/{quote(card_id, safe='')}/completion-records/{quote(record_id, safe='')}",
                                 params={"realm": realm}, bound_result=True)
-
-    @mcp.tool()
-    def list_items(
-        kind: ItemKind | None = None, status: ItemStatus | None = None
-    ) -> list[dict]:
-        """List goals, tasks, projects, and concerns."""
-        return request_local_pa(
-            ctx.settings,
-            "GET",
-            "/api/items",
-            params={"kind": kind, "status": status},
-        )
 
     @mcp.tool()
     def record_card_acceptance(

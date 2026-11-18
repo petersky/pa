@@ -21,10 +21,13 @@ Agent-reported implementation evidence for card
 
 The relevant regression run covered `test_completion_records`, browser verification,
 attachments/operation receipts, completion actor/requirements/provider transport,
-prompts, card sessions, history display/filter, MCP domain schemas/registration,
+prompts, card sessions, history display/filter, MCP bootstrap/domain schemas/registration,
 and the assigned-service allowlist. All passed. The boot smoke test and `uv build`
 also passed with isolated settings. Tests were rerun after the final persistence
 and lock-boundary changes.
+
+The original first MCP registration (`list_items`) remains first, preserving
+duplicate-registration detection behavior as the three new tools are added.
 
 ## Actual browser verification
 
