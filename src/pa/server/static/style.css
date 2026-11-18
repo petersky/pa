@@ -5827,3 +5827,7 @@ a.ghost:hover {
 }
 
 .acw-stop svg { width: 100%; height: 100%; }
+/* Substantive card reports share the regular page and evidence typography. */
+.completion-results { display: grid; gap: 1rem; max-width: 70rem; margin-inline: auto; }
+.completion-results .result-record { min-width: 0; overflow-wrap: anywhere; }
+.completion-results .result-summary { font-size: 1.1em; }

@@ -2050,6 +2050,9 @@ def fetch_fleet_attachment(
     attachment = next(
         (item for item in card.attachments if item.attachment_id == attachment_id), None
     )
+    if attachment is None:
+        from pa.domain.completion_records import retained_attachment
+        attachment = retained_attachment(request.app.state.ctx.store, card_id, realm_id, attachment_id)
     if (
         not attachment
         or attachment.realm_id != realm_id
@@ -2891,10 +2894,10 @@ def progress_capabilities(request: Request) -> dict[str, Any]:
     }
 
 
-def _assigned_local_dispatch(request: Request, *, completion: bool = False, require_live: bool = True) -> DispatchRecord:
+def _assigned_local_dispatch(request: Request, *, completion: bool = False, result: bool = False, require_live: bool = True) -> DispatchRecord:
     """Authenticate one restricted local session capability and derive its dispatch."""
 
-    capability = getattr(request.state, "completion_session_capability" if completion else "assigned_session_capability", None) or ""
+    capability = getattr(request.state, "result_session_capability" if result else "completion_session_capability" if completion else "assigned_session_capability", None) or ""
     session_id = request.headers.get("X-PA-Assigned-Session-ID", "").strip()
     asserted_dispatch_id = request.headers.get(
         "X-PA-Assigned-Dispatch-ID", ""
@@ -2913,7 +2916,7 @@ def _assigned_local_dispatch(request: Request, *, completion: bool = False, requ
             dispatch_id=record.dispatch_id,
             session_id=session.id,
             target_instance_id=ctx.settings.instance_id,
-            purpose="completion-acceptance" if completion else "assigned-session",
+            purpose="completion-record" if result else "completion-acceptance" if completion else "assigned-session",
         )
     if (
         not capability
@@ -2933,7 +2936,7 @@ def _assigned_local_dispatch(request: Request, *, completion: bool = False, requ
             or record.state in {"failed", "cancelled", "completed", "acknowledged"}
             or record.acknowledged_at is not None
         ))
-        or (record.goal_provenance is not None if completion else record.goal_provenance is None)
+        or (record.goal_provenance is not None if completion or result else record.goal_provenance is None)
     ):
         raise HTTPException(
             status_code=403,

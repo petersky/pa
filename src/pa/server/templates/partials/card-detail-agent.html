@@ -1,6 +1,7 @@
 {% from "macros/instance_identity.html" import instance_identity %}
 <div class="card-tab-loaded" data-card-tab-loaded data-execution-index-provenance="{{ execution_index.provenance }}">
   <span class="sr-only">Resume session</span>
+  <p><a href="/results?card_id={{ card.id | urlencode }}&amp;realm={{ card.realm_id | urlencode }}">View card results</a></p>
   <div class="section-heading-inline">
     <div><h3>Card workers</h3></div>
     {% if agent_enabled | default(true) %}<div class="button-row">

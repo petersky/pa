@@ -8,10 +8,44 @@ from urllib.parse import quote
 from pa.attachments import safe_filename
 from pa.core.context import AppContext
 from pa.domain.models import CardKind, CardLane, ItemKind, ItemStatus
+from pa.domain.completion_records import CompletionRecordInput
 
 
 def register_mcp(mcp, ctx: AppContext) -> None:
     from pa.mcp.local_api import request_local_pa
+
+    @mcp.tool()
+    def submit_completion_record(card_id: str, envelope: CompletionRecordInput, idempotency_key: str, realm: str = "default") -> dict:
+        """Save a substantive result; does not accept, deploy, or change a lane.
+
+        v1: title (200), summary (2000), 1–32 Markdown sections, up to 64 typed
+        references, total 64 KiB. Publish larger evidence with create_card_attachment;
+        reference its ID and SHA-256. Supersession appends and preserves history.
+        Retry identical arguments and key; conflicting key reuse is rejected.
+        PA derives session/dispatch provenance from this ordinary dispatch binding.
+        """
+        key = idempotency_key.strip()
+        if not key:
+            raise ValueError("idempotency_key cannot be empty")
+        return request_local_pa(ctx.settings, "POST", f"/api/cards/{quote(card_id, safe='')}/completion-records",
+                                params={"realm": realm}, json=envelope.model_dump(mode="json"),
+                                headers={"Idempotency-Key": key}, bound_result=True)
+
+    @mcp.tool()
+    def list_completion_records(card_id: str, realm: str = "default", limit: int = 20, offset: int = 0) -> dict:
+        """List compact substantive results, newest first; follow next_offset.
+
+        Limit 1–50; details and references are retrieved by get_completion_record.
+        No records means no structured results, not verified acceptance.
+        """
+        return request_local_pa(ctx.settings, "GET", f"/api/cards/{quote(card_id, safe='')}/completion-records",
+                                params={"realm": realm, "limit": limit, "offset": offset}, bound_result=True)
+
+    @mcp.tool()
+    def get_completion_record(card_id: str, record_id: str, realm: str = "default") -> dict:
+        """Read an immutable substantive result, its references and PA provenance."""
+        return request_local_pa(ctx.settings, "GET", f"/api/cards/{quote(card_id, safe='')}/completion-records/{quote(record_id, safe='')}",
+                                params={"realm": realm}, bound_result=True)
 
     @mcp.tool()
     def list_items(

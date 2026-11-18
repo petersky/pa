@@ -306,6 +306,7 @@ def request_local_pa(
     allow_not_found: bool = False,
     timeout_seconds: float = 10.0,
     bound_completion: bool = False,
+    bound_result: bool = False,
     max_response_bytes: int | None = None,
 ):
     method = method.upper()
@@ -347,6 +348,13 @@ def request_local_pa(
         raise LocalPAServerUnavailable(
             "Assigned Goal sessions cannot invoke this ordinary PA tool."
         )
+    if bound_result:
+        if assigned_mode or bound_completion or method not in {"GET", "POST"} or not re.fullmatch(r"/api/cards/[A-Za-z0-9-]{1,80}/completion-records(?:/[A-Za-z0-9-]{1,80})?", path):
+            raise LocalPAServerUnavailable("Result binding only authorizes card result submission and reads.")
+        assigned_dispatch_id = os.environ.get(COMPLETION_DISPATCH_ENV, "").strip()
+        assigned_session_id = os.environ.get(COMPLETION_SESSION_ENV, "").strip()
+        if not assigned_dispatch_id or not assigned_session_id:
+            raise LocalPAServerUnavailable("Result submission requires an ordinary dispatch/session binding.")
     if bound_completion:
         if assigned_mode or method != "PATCH" or not re.fullmatch(r"/api/cards/[A-Za-z0-9-]{1,80}", path) or not json or not json.get("completion_acceptance") or not set(json).issubset({"completion_acceptance", "expected_version"}):
             raise LocalPAServerUnavailable("Completion binding only authorizes the ordinary acceptance producer.")
@@ -355,7 +363,7 @@ def request_local_pa(
         if not assigned_dispatch_id or not assigned_session_id:
             raise LocalPAServerUnavailable("Completion acceptance requires a durable ordinary dispatch/session binding.")
     token = ""
-    if not assigned_mode and not bound_completion:
+    if not assigned_mode and not bound_completion and not bound_result:
         token = os.environ.get("PA_LOCAL_API_TOKEN", "").strip()
         if not token:
             users = UserDirectory(settings.data_dir).list_users()
@@ -371,14 +379,15 @@ def request_local_pa(
             dispatch_id=assigned_dispatch_id,
             session_id=assigned_session_id,
             target_instance_id=expected_instance_id,
-            purpose="completion-acceptance" if bound_completion else "assigned-session",
+            purpose="completion-record" if bound_result else "completion-acceptance" if bound_completion else "assigned-session",
         )
-        if assigned_mode or bound_completion
+        if assigned_mode or bound_completion or bound_result
         else ""
     )
     correlation_id = str(uuid4())
     request_headers = {
         "Authorization": (
+            f"SessionResult {assigned_capability}" if bound_result else
             f"SessionAcceptance {assigned_capability}" if bound_completion else
             f"GoalSession {assigned_capability}"
             if assigned_mode or bound_completion
@@ -386,7 +395,7 @@ def request_local_pa(
         ),
         "X-Request-ID": correlation_id,
     }
-    if assigned_mode or bound_completion:
+    if assigned_mode or bound_completion or bound_result:
         request_headers["X-PA-Assigned-Dispatch-ID"] = assigned_dispatch_id
         request_headers["X-PA-Assigned-Session-ID"] = assigned_session_id
     reserved_headers = {

@@ -349,9 +349,33 @@ _register(
     key="agent.context.card",
     purpose="Wrap the selected card title and body for the agent.",
     scope="card",
-    version=1,
+    version=2,
     template="""# Card: {{ card.title }}
-{{ card.body }}""",
+{{ card.body }}
+
+## Substantive results
+For a substantive deliverable, use `submit_completion_record` before ending work;
+administrative disposition or dispatch acknowledgement is not a result record.
+The v1 envelope requires schema_version=1, title (max 200 characters), summary
+(max 2000), and sections (1–32 objects with heading and human-readable Markdown
+content). Choose sections appropriate to the task: findings, evidence, validation
+and limits for an audit; requirements, design, handoff and next steps for a design.
+No code or PR fields are required. Total envelope limit is 64 KiB; references
+are optional (max 64). Put larger artifacts in `create_card_attachment` first,
+then reference kind=attachment, label, attachment_id and sha256. Never use worker
+paths or temporary URLs as durable evidence. External references require
+kind=external, label and an HTTPS url; existing same-card results can be cited
+with kind=completion_record, label and record_id.
+Use a distinct stable idempotency_key for each result. After an uncertain response,
+look up the operation and retry identical content with the original key; do not
+create a new key merely because delivery was uncertain. Read results with
+`list_completion_records` / `get_completion_record`. For a revision, submit a new
+record with supersedes_record_id; earlier results and provenance remain intact.
+PA records author/session/dispatch provenance. Saving a result does not accept
+claims, authorize next steps, change a lane, deploy, or satisfy PR/acceptance gates.
+Report verification limits candidly in the content. Agent tools use the current
+ordinary dispatch binding; direct API submissions cannot invent session provenance.
+""",
     variables=(
         _v("card.title", "Card title.", "Synthetic delivery card"),
         _v(

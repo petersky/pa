@@ -616,6 +616,7 @@ class EventType(StrEnum):
     CARD_DELETED = "card_deleted"
     ATTACHMENT_CREATED = "attachment_created"
     ATTACHMENT_REMOVED = "attachment_removed"
+    COMPLETION_RECORD_CREATED = "completion_record_created"
     PROJECT_CREATED = "project_created"
     PROJECT_UPDATED = "project_updated"
     PROJECT_ARCHIVED = "project_archived"

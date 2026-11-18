@@ -57,6 +57,7 @@ from pa.core.ui.instance_identity import (
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.core.ui.work_presentation import child_work_status, present_work_item
 from pa.domain.card_enrichment import explicit_enrichment_fields
+from pa.domain.completion_records import CompletionRecordInput, get_record, list_records, results_url, retained_attachment
 from pa.domain.models import (
     CardAttachment,
     CardCreate,
@@ -839,6 +840,7 @@ def _card_summary_context(request: Request, card) -> dict:
             ))
     return {
         "card": card,
+        "completion_records": list_records(store, card.id, realm_id, limit=3),
         "summary_diagnostics": summary_service.diagnostics(),
         "browser_signed_in": browser_signed_in(request),
         "card_sign_in_url": sign_in_url("/?" + urlencode({"card": card.id, "realm": realm_id})),
@@ -2913,7 +2915,8 @@ def _attachment_store(request: Request) -> AttachmentStore:
 
 
 def _card_attachment_or_404(
-    request: Request, card_id: str, attachment_id: str, realm: str | None = None
+    request: Request, card_id: str, attachment_id: str, realm: str | None = None,
+    *, include_retained: bool = False,
 ):
     realm_id = realm or request.app.state.ctx.settings.primary_realm
     card = get_store().get_card(card_id, realm_id=realm_id)
@@ -2922,6 +2925,8 @@ def _card_attachment_or_404(
     attachment = next(
         (item for item in card.attachments if item.attachment_id == attachment_id), None
     )
+    if attachment is None and include_retained:
+        attachment = retained_attachment(get_store(), card_id, realm_id, attachment_id)
     if not attachment:
         raise HTTPException(status_code=404, detail="Attachment not found")
     return card, attachment
@@ -2970,6 +2975,112 @@ def _publish_card_attachment(
     return result
 
 
+def _result_card(request, card_id, realm):
+    realm_id = realm or request.app.state.ctx.settings.primary_realm
+    card = get_store().get_card(card_id, realm_id=realm_id)
+    if not card:
+        raise HTTPException(404, "Card not found")
+    if getattr(request.state, "result_session_capability", None) is not None:
+        from pa.modules.fleet import _assigned_local_dispatch
+        record = _assigned_local_dispatch(request, result=True, require_live=False)
+        if record.card_id != card_id or record.realm_id != realm_id:
+            raise HTTPException(403, {"code": "result_actor_scope_mismatch"})
+        return card, record
+    return card, None
+
+
+@router.post("/cards/{card_id}/completion-records", status_code=201)
+def submit_completion_record_api(
+    request: Request, card_id: str, body: CompletionRecordInput,
+    _idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=300)],
+    realm: str | None = None,
+) -> dict:
+    if not _idempotency_key.strip():
+        raise HTTPException(422, {"code": "idempotency_key_required"})
+    card, dispatch = _result_card(request, card_id, realm)
+    store = get_store()
+    principal = dispatch.principal_id if dispatch else get_principal_id(request)
+    provenance = {"session_id": dispatch.session_id if dispatch else None,
+                  "dispatch_id": dispatch.dispatch_id if dispatch else None,
+                  "principal_id": principal, "instance_id": request.app.state.ctx.settings.instance_id}
+    key, fingerprint, replay = _begin_operation(request, operation="card.completion_record.create", realm_id=card.realm_id,
+                                               payload={"card_id": card.id, "envelope": body.model_dump(mode="json"), **provenance})
+    if replay is not None:
+        return replay
+    try:
+        # Fetch/pin evidence before acquiring the canonical mutation lock. The
+        # writer revalidates references against current card state before append.
+        for reference in body.references:
+            if reference.kind == "attachment":
+                attachment = next((a for a in card.attachments if a.attachment_id == reference.attachment_id and a.sha256 == reference.sha256), None)
+                attachment = attachment or retained_attachment(store, card.id, card.realm_id, reference.attachment_id, reference.sha256)
+                if not attachment:
+                    raise ValueError("Attachment ID/hash must identify durable evidence on this card")
+                _ensure_attachment_available(request, attachment).retain_result_evidence(attachment.sha256)
+        result = store.add_completion_record(card.id, card.realm_id, body, **provenance,
+                                             idempotency_key=key, request_fingerprint=fingerprint)
+    except ValueError as exc:
+        store.fail_operation(key, "invalid_completion_record")
+        raise HTTPException(422, {"code": "invalid_completion_record", "message": str(exc)}) from exc
+    except Exception as exc:
+        store.fail_operation(key, type(exc).__name__)
+        raise
+    store.complete_operation(key, result)
+    return result
+
+
+@router.get("/cards/{card_id}/completion-records")
+def list_completion_records_api(request: Request, card_id: str, realm: str | None = None,
+                                limit: Annotated[int, Query(ge=1, le=50)] = 20,
+                                offset: Annotated[int, Query(ge=0, le=100_000)] = 0) -> dict:
+    card, _dispatch = _result_card(request, card_id, realm)
+    return list_records(get_store(), card.id, card.realm_id, limit=limit, offset=offset)
+
+
+@router.get("/cards/{card_id}/completion-records/{record_id}")
+def get_completion_record_api(request: Request, card_id: str, record_id: str, realm: str | None = None) -> dict:
+    card, _dispatch = _result_card(request, card_id, realm)
+    record = get_record(get_store(), card.id, record_id, card.realm_id)
+    if not record:
+        raise HTTPException(404, "Completion record not found")
+    return record.model_dump(mode="json")
+
+
+def _completion_results_context(request):
+    card_id, realm = request.query_params.get("card_id", ""), request.query_params.get("realm")
+    # Historical session summaries contain only the globally unique card ID.
+    # Resolve its actual realm without changing compact session list contracts.
+    if realm is None:
+        linked = get_store().get_card(card_id)
+        if linked:
+            realm = linked.realm_id
+    card, _dispatch = _result_card(request, card_id, realm)
+    record_id = request.query_params.get("record")
+    record = get_record(get_store(), card.id, record_id, card.realm_id) if record_id else None
+    if record_id and record is None:
+        raise HTTPException(404, "Completion record not found")
+    try:
+        offset = int(request.query_params.get("offset", "0"))
+        if not 0 <= offset <= 100_000:
+            raise ValueError()
+    except ValueError:
+        raise HTTPException(422, "Invalid result offset")
+    reference_links = []
+    if record:
+        for reference in record.references:
+            url = reference.url if reference.kind == "external" else (
+                f"/api/cards/{quote(card.id, safe='')}/attachments/{quote(reference.attachment_id, safe='')}?" + urlencode({"realm": card.realm_id})
+                if reference.kind == "attachment" else results_url(card.id, card.realm_id, reference.record_id))
+            reference_links.append({"label": reference.label, "url": url, "kind": reference.kind, "sha256": reference.sha256,
+                                    "removed": reference.kind == "attachment" and not any(a.attachment_id == reference.attachment_id for a in card.attachments)})
+    with get_store()._conn() as conn:
+        successors = conn.execute("SELECT record_id, json_extract(payload, '$.title') AS title FROM completion_records WHERE realm_id=? AND card_id=? AND json_extract(payload, '$.supersedes_record_id')=? ORDER BY created_at, record_id",
+                                  (card.realm_id, card.id, record_id)).fetchall() if record else []
+    return {"card": card, "record": record, "completion_records": list_records(get_store(), card.id, card.realm_id, offset=offset),
+            "reference_links": reference_links, "successors": successors, "results_url": results_url,
+            "acceptance_receipts": [e for e in card.completion_evidence if e.outcome in {"accepted", "human_override"}], "offset": offset}
+
+
 @router.post("/cards/{card_id}/attachments", status_code=201)
 async def create_card_attachment_api(
     request: Request,
@@ -3010,7 +3121,7 @@ def download_card_attachment_api(
     realm: str | None = None,
     download: bool = False,
 ) -> FileResponse:
-    _card, attachment = _card_attachment_or_404(request, card_id, attachment_id, realm)
+    _card, attachment = _card_attachment_or_404(request, card_id, attachment_id, realm, include_retained=True)
     blobs = _ensure_attachment_available(request, attachment)
     inline = (
         attachment.media_type in SAFE_IMAGE_TYPES
@@ -4180,6 +4291,9 @@ class ItemsModule(Module):
 
         ctx.register_service("card_summary_service", CardSummaryService(ctx))
         pages: PageRegistry = ctx.require_service("pages")
+        pages.register(PageDefinition(id="results", path="/results", label="Card results", icon="file-text",
+                                      template="pages/completion-results.html", nav=False,
+                                      context_builder=_completion_results_context))
         pages.register(
             PageDefinition(
                 id="home",
