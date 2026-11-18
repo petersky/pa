@@ -33,7 +33,7 @@ def test_chat_status_supports_ack_states_diagnostics_and_accessibility() -> None
     ):
         assert state in script
     assert 'setAttribute("role", "status")' in script
-    assert "Diagnostics and raw payload" in script
+    assert "Status diagnostics" in script
     assert "Copy raw payload" in script
-    assert "Awaiting durable PA authority acknowledgement" in script
+    assert "Saving card status…" in script
     assert "[data-card-disposition-status" in style

@@ -342,6 +342,22 @@ def compose_session_prompt(
         realm_id=realm,
     )
     prompts = list(seed_prompts or [])
+    # Read the original durable selection through the card, rather than the
+    # current worker session. Recovery and successor leases keep the same scope.
+    from pa.domain.conversation_issues import ConversationIssues
+
+    start = ConversationIssues(store).starts_for_cards(
+        {card.id}, realm_id=realm, include_scope=True
+    ).get(card.id) if card else None
+    prompts.append(PROMPTS.render("agent.context.work_intent", provider=provider))
+    if start:
+        prompts.append(PROMPTS.render("agent.context.authorized_work", {
+            "source_session_id": start["session_id"],
+            "request_id": start["request_id"],
+            "accepted_at": start["accepted_at"],
+            "card_id": card.id,
+            "selection": "\n".join(f"- {i['id']}: {i['title']}" for i in start["selection"]),
+        }, provider=provider))
     if session.purpose == "chat":
         prompts.append(PROMPTS.render("agent.context.conversation_work", provider=provider))
     branch = session.initiating_workflow or {}

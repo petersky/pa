@@ -11,6 +11,7 @@ from pa.core.async_runtime import AsyncRuntime, BlockingOperationTimeout
 from pa.domain.conversation_issues import ConversationIssues, IssueConflict, IssueEdit, StartIssues, fingerprint
 from pa.domain.models import CardCreate
 from pa.execution.selection import ExecutionPreferences, SelectionConstraints
+from pa.prompts import PROMPTS
 
 router = APIRouter(prefix="/agent/sessions")
 
@@ -219,12 +220,20 @@ async def _execute(request, session_id, request_id, manager, notes):
                             if existing is None:
                                 inputs.pop("mode_id")
                         group["dispatch_inputs"] = inputs
+                        # The existing dispatch payload is the cross-instance
+                        # continuation record. Freeze intent beside its inputs,
+                        # so retries cannot reinterpret historical card notes.
+                        group["dispatch_message"] = PROMPTS.render("agent.context.authorized_work", {
+                            "card_id": group["card_id"], "source_session_id": session_id,
+                            "request_id": request_id, "accepted_at": record["accepted_at"],
+                            "selection": "\n".join(f"- {i['id']}: {i['title']}" for i in group["issues"]),
+                        }).text
                         await _call(manager, notes.update_request, session_id, request_id, groups=groups)
                     project_id = group.get("project_id", context["project_id"])
                     if project_id:
                         await _check_project(request, manager, project_id, context["realm_id"])
                     body = FleetDispatchBody(**group["dispatch_inputs"], card_id=group["card_id"], project_id=project_id,
-                        message="Implement only the selected scope recorded on this card. Preserve its completion requirements and existing authorization. Source conversation: " + session_id,
+                        message=group.get("dispatch_message") or "Implement only the selected scope recorded on this card. Preserve its completion requirements and existing authorization. Source conversation: " + session_id,
                         idempotency_key=key + ":dispatch")
                     # Re-enter only the canonical idempotent admission, with the
                     # frozen body and identity. Routine pending/transport states

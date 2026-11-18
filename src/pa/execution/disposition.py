@@ -32,7 +32,7 @@ class CardDispositionV1(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     contract: Literal["pa.card-disposition/v1"]
-    lane: Literal[CardLane.ACTIVE, CardLane.WAITING, CardLane.DONE]
+    lane: Literal[CardLane.INBOX, CardLane.ACTIVE, CardLane.WAITING, CardLane.DONE]
     outcome: str = Field(min_length=1, max_length=4000)
     evidence: CardDispositionEvidenceV1
 

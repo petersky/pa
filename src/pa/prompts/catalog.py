@@ -30,6 +30,55 @@ def _register(**kwargs) -> None:
 
 
 _register(
+    key="agent.context.work_intent",
+    purpose="Honor bounded user intent across turns without inventing approval gates.",
+    scope="session", version=1,
+    template="""## Work intent and results
+An explicit bounded user fix/start request authorizes the selected work once.
+Honor that scope through retry, resume, handoff and successor attempts. A later
+explicit instruction supersedes older create-only or deferred notes for that
+scope; do not ask for separate routine authorization. Discussion and create-only
+requests remain inert until an actual fix/start request. Never start unrelated
+Inbox cards or expand the selected scope.
+Existing tool, sandbox and external permission boundaries still apply. If one
+prevents progress, name the concrete action and reason and use its native
+permission or correlated interaction with the provider's exact choices. Do not
+invent approval options or use PA bookkeeping as a reason to request permission.
+Lead the final result with the substantive outcome, actual work remaining and
+next actor. Turn completion, task completion, acceptance and card lane are
+independent. A finished creation or research turn does not finish implementation
+on its subject. Preserve Inbox for captured work; Waiting requires a real
+external dependency. Do not invent blockers or substitute Waiting because of a
+contract limitation. Keep internal contract jargon in diagnostics. Preserve
+existing agent/model/permission defaults and completion/PR requirements.""",
+)
+
+_register(
+    key="agent.context.authorized_work",
+    purpose="Carry the original selected-work receipt into every card attempt.",
+    scope="session", version=1,
+    template="""## Saved selected-work request
+The user explicitly requested this selected work. This durable request remains
+authorized for this card across retries and successor attempts; no routine
+reconfirmation is needed. Older create-only/deferred notes describe earlier
+intent and do not veto this request. Follow later user corrections and concrete
+permission boundaries, and preserve the card's completion requirements.
+Card: {{ card_id }}
+Source conversation: {{ source_session_id }}
+Request: {{ request_id }} (accepted {{ accepted_at }})
+Selected scope (requirements and evidence are on this card):
+{{ selection }}""",
+    variables=(
+        _v("card_id", "Selected card", "card-1"),
+        _v("source_session_id", "Original conversation", "session-1"),
+        _v("request_id", "Stable selected-work receipt", "start-1234"),
+        _v("accepted_at", "Original acceptance time", "2026-11-17T00:00:00Z"),
+        _v("selection", "Frozen selected issue IDs and titles", "- issue-1: Fix status"),
+    ), max_characters=10000,
+)
+
+
+_register(
     key="agent.context.conversation_work",
     purpose="Keep discussion, issue capture and explicitly selected execution separate.",
     scope="session", version=2,
@@ -458,17 +507,19 @@ _register(
     key="session.recovery.resume",
     purpose="Safely resume a prompt whose turn was interrupted by shutdown or recovery.",
     scope="session",
-    version=1,
+    version=2,
     template="""PA recovered this queued turn after an interrupted session. Re-read the current card,
 repository, worktree, and external state before continuing. Do not assume a prior
-command, push, review, or merge completed unless the current systems confirm it.""",
+command, push, review, or merge completed unless the current systems confirm it.
+Retain the original bounded fix/start authorization; recovery does not require
+separate approval. Honor later user corrections and native permission boundaries.""",
 )
 
 _register(
     key="card.reconciliation.disposition",
     purpose="Recover a missing card disposition without repeating the prior turn.",
     scope="card-reconciliation",
-    version=2,
+    version=3,
     template="""Your preceding card-linked turn ended without a valid
 `pa.card-disposition/v1` payload. Do not repeat implementation unless current
 verification finds a problem.
@@ -485,8 +536,8 @@ unavailable, report that problem and do not guess.
 Return exactly one JSON object and no Markdown or prose:
 {
   "contract": "pa.card-disposition/v1",
-  "lane": "active | waiting | done",
-  "outcome": "concise verified outcome",
+  "lane": "inbox | active | waiting | done",
+  "outcome": "substantive verified result, actual work remaining and next actor",
   "evidence": {
     "integration_required": false,
     "pr_watch_id": "watch id or null",
@@ -499,6 +550,11 @@ Return exactly one JSON object and no Markdown or prose:
 The JSON example shows a no-integration outcome. Change `integration_required` to
 true only when the card actually requires repository integration.
 
+Preserve `inbox` for captured work that has not been selected to start. Finishing
+card creation or research does not complete the implementation described by that
+card. A later explicit fix/start request supersedes older create-only/deferred
+notes for its selected scope; retain that authorization without reconfirmation.
+Do not invent a blocker, external dependency or Waiting lane to end a turn.
 Use `active` only when verification found implementation or agent-owned corrective
 work still in progress. Use `waiting` for every open or unmerged pull request and
 for external pending work. Use `done` only when project completion policy is

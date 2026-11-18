@@ -1013,6 +1013,18 @@ class PostTurnEvaluator:
             status = "Attempt ended; waiting on an external integration condition."
             lane_ok = lane == "waiting"
             confidence = 0.86
+        elif disposition_lane == "inbox" and not snapshot.blockers:
+            # Capturing/researching a card can finish a turn while the proposed
+            # implementation remains unstarted. Never auto-start that work.
+            decision = PostTurnDecision.FOLLOWUP_RECORD_REQUIRED
+            rationale = "The turn recorded captured work in Inbox; implementation remains unstarted."
+            actions = [_action(
+                FollowupActionName.RECORD_TURN_OUTCOME,
+                {"reason": rationale}, snapshot,
+            )]
+            status = str(disposition.get("outcome") or snapshot.final_outcome_text or "Work captured in Inbox.")[:1000]
+            lane_ok = lane == "inbox"
+            confidence = 0.9
         elif disposition_lane == "waiting" and not snapshot.blockers:
             # The agent itself parked the card. Prompting it again would only
             # burn the follow-up budget; the waiting condition owns the wake-up.

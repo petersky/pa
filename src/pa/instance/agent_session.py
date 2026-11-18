@@ -3436,23 +3436,25 @@ class AgentSessionRuntime:
         future = self._pending_permissions.get(request_id)
         if not future or future.done():
             return False
-        if allow:
-            if not option_id:
-                pending = self._permission_requests.get(request_id) or {}
-                options = pending.get("options") or []
-                for kind in ("allow_once", "allow_always"):
-                    for opt in options:
-                        if isinstance(opt, dict) and opt.get("kind") == kind:
-                            option_id = opt.get("optionId") or opt.get("option_id")
-                            break
-                    if option_id:
-                        break
-                if not option_id and options and isinstance(options[0], dict):
-                    option_id = options[0].get("optionId") or options[0].get(
-                        "option_id"
-                    )
+        pending = self._permission_requests.get(request_id) or {}
+        options = [opt for opt in (pending.get("options") or []) if isinstance(opt, dict)]
+        if not option_id and allow:
+            # Compatibility for boolean clients selects only a native allow
+            # option, never an arbitrary first choice.
+            for kind in ("allow_once", "allow_always"):
+                option_id = next((opt.get("optionId") or opt.get("option_id")
+                                  for opt in options if opt.get("kind") == kind), None)
+                if option_id:
+                    break
             if not option_id:
                 return False
+        if option_id:
+            selected = next((opt for opt in options
+                             if (opt.get("optionId") or opt.get("option_id")) == option_id), None)
+            if selected is None:
+                raise ValueError("Choose one of the permission provider's current options.")
+            allow = str(selected.get("kind") or "").startswith("allow")
+            # Native rejection is a selected option too, not cancellation.
             response = permission_selected(option_id)
         else:
             response = permission_cancelled()
@@ -3477,8 +3479,8 @@ class AgentSessionRuntime:
                 notice,
                 InteractionResponse(
                     idempotency_key=f"session-permission:{request_id}:{uuid4()}",
-                    choice_id=option_id if allow else None,
-                    cancel=not allow,
+                    choice_id=option_id,
+                    cancel=not bool(option_id),
                 ),
                 principal_id=principal_id or self.session.principal_id or "user:local",
             )

@@ -97,7 +97,7 @@ class ConversationIssues:
         with self.store._conn() as conn:
             return self._read(conn, session_id)
 
-    def starts_for_cards(self, card_ids: set[str], *, realm_id: str) -> dict[str, dict]:
+    def starts_for_cards(self, card_ids: set[str], *, realm_id: str, include_scope: bool = False) -> dict[str, dict]:
         """Read saved starts through card associations, without resuming work."""
         if not card_ids:
             return {}
@@ -123,6 +123,11 @@ class ConversationIssues:
                         "state": "admitted" if group.get("dispatch_id") else record["state"],
                         "accepted_at": record["accepted_at"], "error": record.get("error"),
                     }
+                    if include_scope:
+                        receipt["selection"] = [
+                            {"id": issue["id"], "title": issue["title"]}
+                            for issue in group["issues"]
+                        ]
                     if receipt["accepted_at"] >= result.get(card_id, {}).get("accepted_at", ""):
                         result[card_id] = receipt
         return result
@@ -195,6 +200,6 @@ class ConversationIssues:
                 "editable_issues": [{k: v for k, v in i.items() if k != "request_id"} for i in state["issues"]], "requests": [
             {k: v for k, v in r.items() if k not in {"context", "fingerprint"}} | {
                 "realm_id": r["context"]["realm_id"],
-                "groups": [{k: v for k, v in g.items() if k not in {"issues", "dispatch_inputs"}} for g in r["groups"]]
+                "groups": [{k: v for k, v in g.items() if k not in {"issues", "dispatch_inputs", "dispatch_message"}} for g in r["groups"]]
             } for r in state["requests"]
         ]}

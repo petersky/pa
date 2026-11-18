@@ -293,8 +293,9 @@ def test_concurrent_creation_uses_one_deterministic_notification(
     assert receipt.acknowledged_at is not None
 
 
+@pytest.mark.parametrize("selected", ["allow_once", "reject_once"])
 def test_acp_permission_chat_and_bell_share_one_correlated_lifecycle(
-    tmp_path: Path,
+    tmp_path: Path, selected: str,
 ) -> None:
     kernel = _kernel(tmp_path)
     runtime = _agent_runtime(kernel)
@@ -330,14 +331,14 @@ def test_acp_permission_chat_and_bell_share_one_correlated_lifecycle(
         notification_id = runtime._permission_notification_ids["permission-1"]
         assert await runtime.respond_permission(
             "permission-1",
-            allow=True,
-            option_id="allow_once",
+            allow=selected == "allow_once",
+            option_id=selected,
             principal_id="user:local",
         )
         return notification_id, await pending
 
     notification_id, protocol_result = asyncio.run(run())
-    assert protocol_result.outcome.option_id == "allow_once"
+    assert protocol_result.outcome.option_id == selected
     notice = kernel.ctx.store.get_notification(notification_id)
     assert notice.interaction.state == InteractionState.DELIVERED
     events = kernel.ctx.store.list_transcript_events(runtime.session_id)

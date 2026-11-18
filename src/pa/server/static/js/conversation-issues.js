@@ -156,7 +156,7 @@
       });
       if (receipt.error) {
         const message = typeof receipt.error === "string" ? receipt.error : receipt.error.message;
-        section.appendChild(element("p", message && !/\b[a-z]+_[a-z_]+\b/.test(message) ? message : "Start blocked. Review the saved card and current constraints."));
+        section.appendChild(element("p", message || "PA could not start the saved request. Open diagnostics for the specific failure."));
         const details = element("details"); details.append(element("summary", "Start diagnostics"), element("pre", JSON.stringify(receipt.error, null, 2))); section.appendChild(details);
       }
       if (receipt.state === "blocked") self.retryButton(section, receipt.submission);
@@ -169,13 +169,9 @@
     this.controls();
   };
   Controller.prototype.retryButton = function (parent, body) {
-    const button = element("button", "Review start"); button.type = "button";
-    button.addEventListener("click", () => {
-      button.disabled = true;
-      parent.appendChild(element("p", "Check the saved card's project and execution settings. PA will recheck permissions, resources and capacity using this same request."));
-      const resume = element("button", "Resume saved request"); resume.type = "button";
-      resume.addEventListener("click", () => this.start(body)); parent.appendChild(resume);
-    }); parent.appendChild(button);
+    if (!body) return;
+    const button = element("button", "Retry saved request"); button.type = "button";
+    button.addEventListener("click", () => this.start(body)); parent.appendChild(button);
   };
   root.PAConversationIssues = Controller;
 })(window);

@@ -57,7 +57,7 @@ def add_threads_fixture(app):
     async def fixture(request: Request):
         sid = request.query_params.get("session", "thread-root")
         widget = env.get_template("partials/agent/chat-widget.html").render(session_id=sid, current_instance_id=ctx.settings.instance_id, auto_start=False)
-        scripts = "".join(f'<script src="/static/js/{name}.js" defer></script>' for name in ["csrf", "agent-chat-drafts", "agent-chat-draft-widget", "conversation-threads", "agent-chat"])
+        scripts = "".join(f'<script src="/static/js/{name}.js" defer></script>' for name in ["csrf", "agent-chat-drafts", "agent-chat-draft-widget", "conversation-threads", "conversation-issues", "agent-chat"])
         return HTMLResponse('<!doctype html><html lang="en" data-theme="pa" data-appearance="light" data-pa-instance-id="' + ctx.settings.instance_id + '" data-pa-principal-id="user:local"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/themes/pa/light.css"><title>Parallel threads</title>' + scripts + '<body><main style="height:95vh">' + widget + '''</main><script>
 addEventListener('DOMContentLoaded', () => {
   addEventListener('error', e => {window.fixtureError=e.message;});
@@ -97,7 +97,7 @@ async def test_switch_and_reload_parallel_threads_keep_drafts_history_queues_and
         # selection/reload; navigating never answers it.
         root_runtime = agent.get("thread-root")
         root_runtime._pending_permissions["root-permission"] = object()
-        root_runtime._permission_requests["root-permission"] = {"request_id": "root-permission", "tool_call": {"title": "Permission only for root"}, "options": []}
+        root_runtime._permission_requests["root-permission"] = {"request_id": "root-permission", "tool_call": {"title": "Permission only for root"}, "options": [{"optionId": "once", "name": "Allow once", "kind": "allow_once"}]}
         await manager.type_text(scope, selector="[data-acw-input]", text="Draft for root")
         await manager.click(scope, selector='[data-thread-list] a[href*="thread-sibling"]')
         await wait_for(selected("thread-sibling"))
