@@ -1001,6 +1001,7 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             lanes = client.get("/work?group=lane")
             self.assertEqual(lanes.status_code, 200)
             self.assertIn('data-board-group="lane"', lanes.text)
+            self.assertIn('hx-sync="closest .board-column-body:replace"', lanes.text)
             self.assertIn('data-board-lane="active"', lanes.text)
             self.assertIn('aria-label="Work board"', lanes.text)
             self.assertIn('name="group" value="lane"', lanes.text)
@@ -1084,6 +1085,29 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             for title in omitted:
                 self.assertIn(title, expanded.text)
             self.assertNotIn("data-done-show-more", expanded.text)
+
+    def test_expanded_done_prefix_crosses_storage_page_and_refreshes_order(self):
+        with TestClient(self.app) as client:
+            store = self.app.state.ctx.store
+            cards = [store.create_card(CardCreate(
+                title=f"Expanded outcome {i:03d}", lane=CardLane.DONE,
+            )) for i in range(115)]
+            url = "/partials/cards?lane=done&q=Expanded&limit=110"
+            first = client.get(url)
+            self.assertEqual(first.status_code, 200)
+            ids = re.findall(r'<article[^>]*data-card-id="([^"]+)"', first.text)
+            self.assertEqual(len(ids), 110)
+            self.assertEqual(len(set(ids)), 110)
+            self.assertIn("limit=115", first.text)
+            store.update_card(cards[0].id, CardUpdate(title="Expanded outcome updated"))
+            refreshed = client.get(url)
+            refreshed_ids = re.findall(r'<article[^>]*data-card-id="([^"]+)"', refreshed.text)
+            self.assertEqual(len(refreshed_ids), 110)
+            self.assertEqual(len(set(refreshed_ids)), 110)
+            self.assertEqual(refreshed_ids[0], cards[0].id)
+            final = client.get("/partials/cards?lane=done&q=Expanded&limit=115")
+            self.assertEqual(len(re.findall(r'<article[^>]*data-card-id="([^"]+)"', final.text)), 115)
+            self.assertNotIn("data-done-show-more", final.text)
 
     def test_first_page_response_exposes_matching_csrf_for_mutation(self) -> None:
         with TestClient(self.app) as client:

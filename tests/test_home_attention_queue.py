@@ -380,8 +380,8 @@ class HomeAttentionQueueRouteTests(unittest.TestCase):
                 self.assertIn("Showing 20 of 25", pages[1].text)
                 self.assertIn("Showing 25 of 25", pages[2].text)
                 self.assertIn(f"attention={attention}", pages[0].text)
-                self.assertIn("offset=10", pages[0].text)
-                self.assertIn("offset=20", pages[1].text)
+                self.assertIn("limit=20", pages[0].text)
+                self.assertIn("limit=25", pages[1].text)
                 self.assertIn("data-filter-show-more", pages[0].text)
                 self.assertIn("data-filter-show-more", pages[1].text)
                 self.assertNotIn("data-filter-show-more", pages[2].text)
@@ -730,6 +730,29 @@ class HomeAttentionQueueManagedBrowserTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(zoomed["cards"], zoomed)
         self.assertTrue(zoomed["preserved"])
+
+    async def test_work_refresh_preserves_expanded_filter_and_scroll_anchor(self):
+        session = self.manager.resolve(self.scope)
+        result = await session.page.evaluate("""(() => {
+          const view = document.getElementById('app-view');
+          view.innerHTML = '<div class="board-column-body" style="height:200px;overflow:auto"></div>';
+          const column = view.firstElementChild;
+          const rows = () => Array.from({length: 35}, (_, i) =>
+            `<article class="compact-card" data-card-id="row-${i}" style="height:40px">${i}</article>`).join('');
+          column.innerHTML = rows(); column.scrollTop = 400;
+          const detail = {elt:column, path:'/partials/cards?attention=outcome', headers:{}};
+          document.body.dispatchEvent(new CustomEvent('htmx:configRequest', {detail}));
+          document.body.dispatchEvent(new CustomEvent('htmx:beforeSwap', {detail:{target:column}}));
+          column.insertAdjacentHTML('afterbegin', '<article class="compact-card" data-card-id="new" style="height:40px">new</article>');
+          document.body.dispatchEvent(new CustomEvent('htmx:afterSwap', {detail:{target:column}}));
+          const continuation = {elt:column, path:'/partials/cards?attention=outcome&offset=35&limit=10', headers:{}};
+          document.body.dispatchEvent(new CustomEvent('htmx:configRequest', {detail:continuation}));
+          return {limit:new URL(detail.path, location.origin).searchParams.get('limit'),
+            scroll:column.scrollTop, continuation:continuation.path};
+        })()""")
+        self.assertEqual(result["limit"], "35")
+        self.assertEqual(result["scroll"], 440)
+        self.assertIn("offset=35&limit=10", result["continuation"])
 
     async def test_filtered_continuation_appends_and_restores_focus(self) -> None:
         session = self.manager.resolve(self.scope)
