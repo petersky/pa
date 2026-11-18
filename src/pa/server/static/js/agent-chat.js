@@ -6029,6 +6029,7 @@
         : usage.totalTokens;
       const contextParts = [];
       if (primaryCard) {
+        contextParts.push('<a data-session-results href="/results?card_id=' + encodeURIComponent(primaryCard.id) + '">Results</a>');
         contextParts.push('<a href="/work?card=' + encodeURIComponent(primaryCard.id) +
           '" title="Current card">Card · ' + escapeHtml(primaryCard.title) + "</a>");
       } else if (project) {

@@ -76,6 +76,10 @@
     </details>
     {% endif %}
     {% include "partials/card-progress.html" %}
+    <section class="panel" aria-label="Card results" data-card-results>
+      <h3><a href="/results?card_id={{ card.id | urlencode }}&amp;realm={{ card.realm_id | urlencode }}">Results ({{ completion_records.total }})</a></h3>
+      {% for result in completion_records['items'] %}<p><a href="/results?card_id={{ card.id | urlencode }}&amp;realm={{ card.realm_id | urlencode }}&amp;record={{ result.record_id | urlencode }}">{{ result.title }}</a> — {{ result.summary | truncate(240, true) }}</p>{% else %}<p class="muted">No structured results recorded. Existing outputs remain in the Agent and Activity tabs.</p>{% endfor %}
+    </section>
 
     <div class="card-detail-tabs"
          role="tablist"

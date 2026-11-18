@@ -164,6 +164,8 @@ def _is_assigned_service_route(request: Request) -> bool:
 
 
 def _is_assigned_session_route(request: Request) -> bool:
+    if request.headers.get("authorization", "").startswith("SessionResult "):
+        return request.method in {"GET", "POST"} and bool(re.fullmatch(r"/api/cards/[A-Za-z0-9-]{1,80}/completion-records(?:/[A-Za-z0-9-]{1,80})?", request.url.path))
     if request.headers.get("authorization", "").startswith("SessionAcceptance "):
         return request.method == "PATCH" and bool(re.fullmatch(r"/api/cards/[A-Za-z0-9-]{1,80}", request.url.path))
     if (request.method, request.url.path) in {
@@ -319,6 +321,8 @@ class AuthMiddleware:
         if provider_run_credential_supplied:
             request.state.provider_run_credential = auth_header[8:].strip()
         completion_capability_supplied = auth_header.startswith("SessionAcceptance ")
+        result_capability_supplied = auth_header.startswith("SessionResult ")
+        request.state.result_session_capability = auth_header[len("SessionResult "):].strip() if result_capability_supplied else None
         request.state.completion_session_capability = auth_header[len("SessionAcceptance "):].strip() if completion_capability_supplied else None
         assigned_session_capability_supplied = auth_header.startswith("GoalSession ")
         if assigned_session_capability_supplied:
@@ -386,7 +390,7 @@ class AuthMiddleware:
                 )
                 and not (
                     _is_assigned_session_route(request)
-                    and (assigned_session_capability_supplied or completion_capability_supplied)
+                    and (assigned_session_capability_supplied or completion_capability_supplied or result_capability_supplied)
                 )
                 and not (
                     is_fleet_instance_route and request.state.instance_authenticated

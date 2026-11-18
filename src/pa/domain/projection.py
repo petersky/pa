@@ -748,6 +748,8 @@ class CardProjection:
                 self._legacy_integrity_upgrade_required = True
             init_intake_schema(conn)
             init_limbic_schema(conn)
+            from pa.domain.completion_records import init_schema as init_results_schema
+            init_results_schema(conn)
 
     def _migrate_schema(self, conn: sqlite3.Connection) -> None:
         card_cols = {
@@ -1330,6 +1332,9 @@ class CardProjection:
             self._apply_attachment_created(event)
         elif event.type == EventType.ATTACHMENT_REMOVED:
             self._apply_attachment_removed(event)
+        elif event.type == EventType.COMPLETION_RECORD_CREATED:
+            from pa.domain.completion_records import apply_record
+            apply_record(self, event)
         elif event.type == EventType.LEASE_GRANTED:
             self._apply_lease(event)
         elif event.type == EventType.LEASE_RELEASED:
@@ -2856,6 +2861,11 @@ class CardProjection:
         else:
             self._upsert_card(card)
         return card
+
+    @serialized_mutation
+    def add_completion_record(self, card_id, realm_id, data, **provenance):
+        from pa.domain.completion_records import append_record
+        return append_record(self, card_id, realm_id, data, **provenance)
 
     @serialized_mutation
     def add_attachment(
@@ -7089,6 +7099,7 @@ class CardProjection:
         # connection, so concurrent readers retain the last-good snapshot.
         with self._conn() as conn:
             conn.execute("DELETE FROM cards WHERE realm_id = ?", (realm_id,))
+            conn.execute("DELETE FROM completion_records WHERE realm_id = ?", (realm_id,))
             # Goal state and its event/index projections are all derived from the
             # same durable realm log.  Leaving any of them behind makes an ID
             # canonicalization rebuild append a second logical entity beside the

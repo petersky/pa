@@ -348,6 +348,21 @@ class AttachmentStore:
             shutil.rmtree(temporary, ignore_errors=True)
             raise
 
+    def retain_result_evidence(self, sha256: str) -> None:
+        """Keep immutable result evidence after card removal or worker cleanup.
+
+        Hard links share bytes with the content-addressed blob and survive the
+        existing unreferenced-blob collector. Result history has no automatic
+        deletion policy; these pins are deliberately retained with that history.
+        """
+        source = self.blob_path(sha256)
+        pins = self.root / "result-pins"
+        pins.mkdir(parents=True, exist_ok=True)
+        try:
+            os.link(source, pins / sha256)
+        except FileExistsError:
+            pass
+
     def garbage_collect(
         self,
         referenced: Iterable[CardAttachment],
