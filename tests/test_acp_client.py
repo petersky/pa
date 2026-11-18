@@ -875,6 +875,28 @@ class AgentConfigurationCompatibilityTests(unittest.TestCase):
                 asyncio.run(connection.prompt("must stay local"))
         prompt.assert_not_awaited()
 
+    def test_prompt_requires_durable_delivery_invalidation(self) -> None:
+        prompt = AsyncMock()
+        with tempfile.TemporaryDirectory() as tmp:
+            connection, store = self._connection(
+                tmp, SimpleNamespace(prompt=prompt), options=[]
+            )
+            native_id = connection.session.external_session_id
+            connection.session.config_json = {"native_prompt_delivery": {
+                "version": 1, "native_id": native_id, "state": "never_prompted",
+            }}
+
+            def failed_save(session):
+                self.assertEqual(session.config_json["native_prompt_delivery"], {
+                    "version": 1, "native_id": native_id, "state": "attempted",
+                })
+                raise RuntimeError("durable save unavailable")
+
+            store.save_session.side_effect = failed_save
+            with self.assertRaisesRegex(RuntimeError, "durable save unavailable"):
+                asyncio.run(connection.prompt("queued first input"))
+        prompt.assert_not_awaited()
+
     def test_on_connect_acknowledges_cursor_vendor_methods(self) -> None:
         wire = MagicMock()
         client = PAClient(MagicMock(), wire_logger=wire)
