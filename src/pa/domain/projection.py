@@ -5986,6 +5986,18 @@ class CardProjection:
             reason_code="operator_dismissed",
         )
 
+    def restart_evidence_identity(self, session_id: str, handoff_id: str) -> dict | None:
+        """Metadata only: never load continuation text, config or recovery errors."""
+        with self._conn() as conn:
+            row = conn.execute('''SELECT s.principal_id, s.authority_instance_id,
+                s.external_session_id AS native_id, s.updated_at AS session_version,
+                s.status AS session_status, h.instance_id, h.status,
+                h.phase_version, h.attempts, h.updated_at AS receipt_updated_at,
+                h.continuation_prompt_id AS prompt_id
+                FROM agent_sessions s JOIN agent_restart_handoffs h ON h.session_id=s.id
+                WHERE s.id=? AND h.id=?''', (session_id, handoff_id)).fetchone()
+        return dict(row) if row is not None else None
+
     def reconcile_restart_handoff(
         self, handoff_id: str, *, session_id: str, expected_version: int,
         owner_instance_id: str, principal_id: str,

@@ -152,6 +152,28 @@ def register_mcp(mcp, ctx) -> None:
             timeout_seconds=15.0, max_response_bytes=512 * 1024)
 
     @mcp.tool()
+    def get_restart_canonical_evidence(
+        session_id: str, handoff_id: str, expected_authority_instance_id: str,
+        expected_version: int, expected_attempt: int, expected_session_version: str,
+        expected_native_id: str, after_seq: int = -1, limit: int = 64,
+        expected_snapshot: str | None = None,
+    ) -> dict:
+        """Read bounded canonical evidence; no audit or receipt/session mutation.
+
+        Missing/cold/pruned evidence never establishes non-delivery. Exact prompt
+        completion is separate from explicit receipt-attempt attribution.
+        """
+        from urllib.parse import quote
+        return request_local_pa(ctx.settings, 'GET',
+            f'/api/agent/observability/v1/sessions/{quote(session_id, safe="")}/restart-handoffs/{quote(handoff_id, safe="")}/canonical-evidence',
+            params=dict(expected_authority_instance_id=expected_authority_instance_id,
+                expected_version=expected_version, expected_attempt=expected_attempt,
+                expected_session_version=expected_session_version, expected_native_id=expected_native_id,
+                after_seq=after_seq, limit=limit,
+                **({'expected_snapshot': expected_snapshot} if expected_snapshot is not None else {})),
+            timeout_seconds=15.0, max_response_bytes=128 * 1024)
+
+    @mcp.tool()
     def reconcile_agent_restart_handoff(
         session_id: str, handoff_id: str, expected_version: int,
     ) -> dict:

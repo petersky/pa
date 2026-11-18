@@ -1699,6 +1699,45 @@ async def retry_restart_handoff(
     return {**handoff.model_dump(mode="json"), "observation": restart_observation_fields(handoff, session=session, runtime=mgr.get(session_id))}
 
 
+@router.get("/observability/v1/sessions/{session_id}/restart-handoffs/{handoff_id}/canonical-evidence")
+async def read_restart_canonical_evidence(
+    request: Request, session_id: str, handoff_id: str,
+    expected_authority_instance_id: str = Query(min_length=1, max_length=200),
+    expected_version: int = Query(ge=0), expected_attempt: int = Query(ge=0),
+    expected_session_version: datetime = Query(),
+    expected_native_id: str = Query(max_length=200),
+    after_seq: int = Query(-1, ge=-1), limit: int = Query(64, ge=1, le=128),
+    expected_snapshot: str | None = Query(None, pattern=r'^[0-9a-f]{64}$'),
+) -> dict:
+    """Canonical metadata only. No audit, receipt transition or provider access."""
+    from sqlite3 import Error as SQLiteError
+    from pa.instance.restart_evidence import inspect_restart_evidence
+    owner = request.app.state.ctx.settings.instance_id
+    headers = {'Cache-Control': 'private, no-store'}
+    if expected_authority_instance_id != owner:
+        return JSONResponse({'detail': 'Evidence authority changed'}, status_code=409, headers=headers)
+    if expected_session_version.tzinfo is None or (after_seq >= 0 and expected_snapshot is None):
+        return JSONResponse({'detail': 'Version timezone and paged snapshot required'}, status_code=422, headers=headers)
+    manager = _manager(request)
+    try:
+        result = await _offload(manager, 'restart.canonical_evidence_read',
+            inspect_restart_evidence, manager.store, session_id, handoff_id,
+            owner_instance_id=owner, principal_id=get_principal_id(request),
+            is_admin=getattr(getattr(request.state, 'user', None), 'role', None)=='admin',
+            expected_version=expected_version, expected_attempt=expected_attempt,
+            expected_session_version=expected_session_version, expected_native_id=expected_native_id,
+            after_seq=after_seq, limit=limit, expected_snapshot=expected_snapshot, timeout=10.0)
+        return JSONResponse(result, headers=headers)
+    except PermissionError:
+        return JSONResponse({'detail': 'Evidence owner mismatch'}, status_code=403, headers=headers)
+    except LookupError:
+        return JSONResponse({'detail': 'Exact evidence identity unavailable'}, status_code=404, headers=headers)
+    except (ValueError, RecursionError):
+        return JSONResponse({'detail': 'Evidence precondition or snapshot unavailable'}, status_code=409, headers=headers)
+    except (OSError, SQLiteError, TimeoutError):
+        return JSONResponse({'detail': 'Evidence unavailable; effect unknown'}, status_code=503, headers=headers)
+
+
 @router.post("/sessions/{session_id}/restart-handoffs/{handoff_id}/reconcile")
 async def reconcile_restart_handoff(
     request: Request, session_id: str, handoff_id: str,
