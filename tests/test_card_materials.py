@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from pa.domain.models import CardUpdate
+from pa.domain.models import CardEvent, EventType
 from pa.domain.projection import CardProjection
 from tests.test_attachment_operation_receipts import publication, upload
 from tests.test_completion_records import envelope, submit
@@ -63,6 +64,15 @@ def test_removal_cas_and_durable_replay_after_lost_response(publication, tmp_pat
     assert receipt["operation"] == "card.attachment.remove"
     different = client.delete(url, headers=headers)
     assert different.status_code == 409 and different.json()["detail"]["code"] == "idempotency_conflict"
+
+
+def test_material_history_keeps_legacy_events_without_field_intent(publication):
+    app, client, card = publication
+    app.state.ctx.store.commit_event(CardEvent(type=EventType.CARD_UPDATED, card_id=card.id, realm_id=card.realm_id,
+        author_principal="legacy:author", author_instance="legacy:instance", payload={"body": "Retained legacy specification"}))
+    page = client.get(f"/card-history?card_id={card.id}")
+    assert page.status_code == 200, page.text
+    assert "Retained legacy specification" in page.text and "legacy:author" in page.text
 
 
 def test_referenced_attachment_removal_explains_evidence_retention(publication):

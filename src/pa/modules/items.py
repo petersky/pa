@@ -2675,7 +2675,7 @@ def _card_material_history_context(request):
         raise HTTPException(404, "Card not found")
     page = _card_history_payload(request, card_id, realm_id, limit=50, cursor=request.query_params.get("cursor"))
     events = [row for row in page["events"] if row["event"]["type"].startswith("attachment_")
-              or {"body", "attachments"}.intersection(row["event"].get("field_intent", []))]
+              or {"body", "attachments"}.intersection(row["event"]["payload"])]
     return {"card": card, "material_events": events, "history_page": page, "material_limits": material_limits()}
 
 
