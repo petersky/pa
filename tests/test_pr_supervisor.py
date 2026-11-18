@@ -2514,6 +2514,16 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         update = self.domain.update_card.call_args
         self.assertEqual(update.args[1].lane, CardLane.DONE)
 
+    async def test_partial_or_missing_originating_outcome_cannot_complete_merged_card(self):
+        service = await self.make_service([])
+        service.dispatch_store = MagicMock()
+        current = self.store.get_watch("watch-1").model_copy(update={"dispatch_id": "origin"})
+        self.domain.update_card.reset_mock()
+        for payload in (None, {"lane": "active", "outcome": "Remaining acceptance work"}):
+            service.dispatch_store.get.return_value = SimpleNamespace(card_disposition_payload=payload)
+            await service._complete_merged_card(current)
+            self.domain.update_card.assert_not_called()
+
     async def test_pending_restart_blocks_merge_completion_and_cleanup(self) -> None:
         service = await self.make_service([])
         self.domain.pending_restart_continuation.return_value = True

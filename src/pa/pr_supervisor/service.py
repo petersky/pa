@@ -2804,6 +2804,16 @@ class PRSupervisor:
                 "card_completion_errors",
             )
             return
+        # Integration proves a PR landed, not that the originating task finished.
+        # A partial implementation or an absent final contract must keep its owner.
+        if watch.dispatch_id and self.dispatch_store:
+            dispatch = await self._offload(
+                "dispatch.record_read", self.dispatch_store.get, watch.dispatch_id
+            )
+            payload = getattr(dispatch, "card_disposition_payload", None)
+            if not isinstance(payload, dict) or payload.get("lane") in {"active", "inbox"}:
+                await self._defer_card_completion(watch, "originating_task_completion_pending")
+                return
         linked_watches = await self._offload(
             "sqlite.pr_supervisor_watch_read",
             self.store.list_watches,
