@@ -1001,6 +1001,7 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             lanes = client.get("/work?group=lane")
             self.assertEqual(lanes.status_code, 200)
             self.assertIn('data-board-group="lane"', lanes.text)
+            self.assertIn('hx-sync="closest .board-column-body:replace"', lanes.text)
             self.assertIn('data-board-lane="active"', lanes.text)
             self.assertIn('aria-label="Work board"', lanes.text)
             self.assertIn('name="group" value="lane"', lanes.text)
