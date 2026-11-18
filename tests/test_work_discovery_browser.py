@@ -53,6 +53,15 @@ async def test_done_expansion_survives_live_refresh(operator_server, tmp_path):
         await wait_count(30)
         after = await page.evaluate("Array.from(document.querySelectorAll('#lane-done [data-card-id]')).map(e=>e.dataset.cardId)")
         assert after == before and len(set(after)) == 30
+        completed = store.create_card(CardCreate(title="Newly completed", lane="done"))
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            ids = await page.evaluate("Array.from(document.querySelectorAll('#lane-done article[data-card-id]')).map(e=>e.dataset.cardId)")
+            if ids and ids[0] == completed.id:
+                break
+            await asyncio.sleep(.05)
+        assert ids[0] == completed.id
+        assert len(ids) == len(set(ids)) == 30
     finally:
         await browser.close()
 
