@@ -79,7 +79,7 @@ async def test_actual_card_lists_revisions_after_worker_closes(operator_server, 
         await manager.open(scope, url=base + f"/results?card_id={card.id}&record={first['record_id']}")
         await wait_for("!!document.querySelector('.result-record strong')")
         await manager.click(scope, selector="aside[aria-label='Later revisions'] a")
-        await wait_for("document.querySelector('[data-result-id]').dataset.resultId === '" + second["record_id"] + "'")
+        await wait_for("document.querySelector('[data-result-id]')?.dataset.resultId === '" + second["record_id"] + "'")
         assert "Requirements and next steps" in await page.evaluate("document.body.innerText")
         # Stable direct URLs and mobile layout both retain the complete report.
         await manager.resize(scope, width=390, height=844)
