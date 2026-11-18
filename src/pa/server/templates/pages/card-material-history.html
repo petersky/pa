@@ -1,0 +1,23 @@
+<section class="page-stack card-material-history" aria-labelledby="material-history-title">
+  <header class="page-header">
+    <a href="/work?card={{ card.id | urlencode }}&amp;realm={{ card.realm_id | urlencode }}">← {{ card.title }}</a>
+    <h1 id="material-history-title">Description and material history</h1>
+    <p>Immutable saved revisions and their authors. Descriptive changes do not start work or authorize expanding an active task.</p>
+    <p class="muted">Current limits: {{ material_limits.card_attachments }} attachments, 25 MiB each, 100 MiB total per card. Discussion details allow {{ material_limits.issue_detail_characters }} characters; link a card for a larger specification.</p>
+  </header>
+  {% for row in material_events %}
+  {% set event = row.event %}
+  <article class="panel" id="event-{{ row.event_hash }}">
+    <h2>{{ event.type | replace('_', ' ') | title }}</h2>
+    <p>{{ event.author_principal }} · {{ event.author_instance }} · <time datetime="{{ event.timestamp }}">{{ event.timestamp }}</time></p>
+    <p class="muted">Revision {{ row.event_hash }} · {{ row.projection_effect }}</p>
+    {% if 'body' in event.payload %}<details><summary>Description at this revision ({{ event.payload.body | length }} characters)</summary><pre>{{ event.payload.body }}</pre></details>{% endif %}
+    {% if event.type.startswith('attachment_') %}<pre>{{ event.payload | tojson(indent=2) }}</pre>{% endif %}
+    {% if event.payload.attachments %}<details><summary>Original attachment manifest</summary><pre>{{ event.payload.attachments | tojson(indent=2) }}</pre></details>{% endif %}
+  </article>
+  {% else %}<p>No material changes on this history page.</p>{% endfor %}
+  <nav aria-label="Material history pages">
+    {% if request.query_params.get('cursor') %}<a href="/card-history?card_id={{ card.id | urlencode }}&amp;realm={{ card.realm_id | urlencode }}">First page</a>{% endif %}
+    {% if history_page.next_cursor %}<a href="/card-history?card_id={{ card.id | urlencode }}&amp;realm={{ card.realm_id | urlencode }}&amp;cursor={{ history_page.next_cursor | urlencode }}">Next history page</a>{% endif %}
+  </nav>
+</section>

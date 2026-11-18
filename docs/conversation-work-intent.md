@@ -55,3 +55,42 @@ with a correlated error. Permission defaults are unchanged.
 This change does not implement completion-record envelopes or attachment
 management owned by cards `73fe8fa7-793c-4f2d-b133-42e579580d22` and
 `a69a703a-87a4-43df-8e10-66eb871e0ea8`.
+
+## Rich specifications and supporting material
+
+Keep titles and summaries concise. An issue accepts a 300-character title and
+16,000-character detail (100 issues per conversation, 20 per start). The MCP
+schema and UI advertise these bounds; overflow fails validation without truncation.
+For larger specifications, create an Inbox card with the full description and
+durable attachments, then set the issue's `card_id`. The issue retains a compact
+link and `card_execution_version`, not a copy of the specification or artifact
+bytes. Linked cards must have an accessible project in the conversation's realm;
+each is a separate work scope and cannot be grouped or linked twice in one list.
+
+Saving notes, linking a card, editing its description or adding/removing material
+does not start work. Start selected reuses a linked card and its completion
+requirements through canonical fleet admission, including normal duplicate-work
+and lease checks. Changes to the reviewed card invalidate the saved link. Review
+the card and use its current `execution_version` (the UI offers **Use current card
+version**) before starting. A change after the start receipt is frozen blocks that
+receipt; review and start the card directly. It never silently adopts new scope.
+An admitted worker keeps its material snapshot; retrieving newer material is not
+permission to expand the active task.
+
+Use `list_card_summaries` for discovery, `get_card_materials` for current links,
+hashes, versions and quotas, and `get_card` for the full description when needed.
+Description edits use `update_card` with the read `updated_at` as `expected_version`
+and a stable idempotency key. Card details link to immutable description and
+material history, including author, instance and stable event revision. The normal
+history API/MCP remains the source for full event provenance and pagination.
+
+All upload, storage and dispatch paths share a 64-attachment count limit, 25 MiB
+per file and 100 MiB per card. The larger count accommodates many small supporting
+files without increasing the byte budget. For more, use a linked specification
+card or remove unused references. File creation supports keyed retries; removal
+also accepts a stable idempotency key and `expected_version` to prevent stale
+deletion. A known description/completion-evidence reference blocks removal unless
+the original is retained by a completion record. The removal receipt states whether
+that original remains accessible; otherwise existing attachment links stop working.
+New attachment editing/replacement and resource-link UI remain owned by the related
+attachment-management card above.

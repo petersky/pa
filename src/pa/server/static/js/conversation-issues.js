@@ -37,10 +37,14 @@
       if (ids.length > 20) return self.message("Start at most 20 issues at once.");
       self.start({request_id: crypto.randomUUID(), revision: self.state.revision, issue_ids: ids});
     });
+    this.panel.querySelector("[data-issues-reload]").addEventListener("click", function () {
+      if (self.busy) return;
+      self.dirty = false; if (self.drafts) self.drafts.clear(); self.state = null; self.load();
+    });
   }
   Controller.prototype.message = function (text) { if (this.status) this.status.textContent = text; };
   Controller.prototype.reset = function () {
-    this.generation++; clearTimeout(this.timer); this.loading = null; this.busy = false; this.state = null; this.changed = false; this.stale = false; this.selected.clear();
+    this.generation++; clearTimeout(this.timer); this.loading = null; this.busy = false; this.state = null; this.changed = false; this.dirty = false; this.drafts = new Map(); this.stale = false; this.selected.clear();
     if (!this.panel) return;
     this.list.replaceChildren(); this.receipts.replaceChildren(); this.addText.value = "";
     this.count(); this.controls();
@@ -74,7 +78,7 @@
     const self = this, sid = this.widget.sessionId, generation = this.generation, apiBase = this.widget.apiBase;
     if (!sid || this.widget.destroyed || this.widget.ownerResolutionPending || this.loading) return;
     // Background reads must not replace a title being edited or race a mutation.
-    if (this.busy || (this.panel && this.panel.contains(document.activeElement) &&
+    if (this.busy || this.dirty || (this.panel && this.panel.contains(document.activeElement) &&
         /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName))) { this.schedule(); return; }
     const revision = this.readRevision = this.readRevision || 0;
     const entry = this.loading = {};
@@ -82,7 +86,7 @@
     const path = "/sessions/" + encodeURIComponent(sid) + "/issues";
     const request = this.widget.apiWithTimeout ? this.widget.apiWithTimeout(path, 5000) : this.widget.api(path);
     entry.promise = request.then(function (state) {
-      if (!current() || self.busy || revision !== self.readRevision) return;
+      if (!current() || self.busy || self.dirty || revision !== self.readRevision) return;
       if (self.panel && self.panel.contains(document.activeElement) && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
       const previous = self.state;
       if (previous && state.revision < previous.revision) return;
@@ -100,12 +104,15 @@
   };
   Controller.prototype.save = function (issues, after) {
     if (this.busy || !this.state) return;
+    if (this.drafts) issues = issues.map(i => Object.assign({}, i, this.drafts.get(i.id) || {}));
+    const limit = this.state.limits ? this.state.limits.issue_detail_characters : 16000;
+    if (issues.some(i => Array.from(i.detail || "").length > limit)) { this.dirty = true; return this.message("Issue detail exceeds " + limit.toLocaleString() + " characters. Put the full specification on a card and link its card ID. Your text is unchanged."); }
     const self = this, sid = this.widget.sessionId, generation = this.generation;
     this.readRevision = (this.readRevision || 0) + 1; this.busy = true; this.controls();
     const clean = issues.map(i => { const copy = Object.assign({}, i); delete copy.request_id; return copy; });
     this.widget.api("/sessions/" + encodeURIComponent(sid) + "/issues", {method: "PUT", body: JSON.stringify({revision: this.state.revision, issues: clean})})
-      .then(function (state) { if (!self.current(sid, generation)) return; self.state = state; if (after) after(); self.render(); self.message("Issue list saved."); })
-      .catch(function (error) { if (self.current(sid, generation)) self.message(error.message + " The list will refresh automatically; your composer is unchanged."); })
+      .then(function (state) { if (!self.current(sid, generation)) return; self.dirty = false; if (self.drafts) self.drafts.clear(); self.state = state; if (after) after(); self.render(); self.message("Issue list saved."); })
+      .catch(function (error) { if (self.current(sid, generation)) { self.dirty = true; self.message(error.message + " Your edits are retained. Reload saved issues explicitly to discard edits and review the latest list."); } })
       .finally(function () { if (self.current(sid, generation)) { self.busy = false; self.controls(); } });
   };
   Controller.prototype.editSelected = function (edit) {
@@ -114,6 +121,7 @@
   };
   Controller.prototype.start = function (body) {
     if (this.busy) return;
+    if (this.dirty) return this.message("Save your issue edits or reload the saved list before starting work.");
     const self = this, sid = this.widget.sessionId, generation = this.generation, key = "pa:conversation-start:" + sid;
     try { localStorage.setItem(key, JSON.stringify(body)); } catch (_) { return this.message("Cannot retain a retry identity in this browser. Enable site storage before starting work."); }
     this.readRevision = (this.readRevision || 0) + 1; this.busy = true; this.controls(); this.message("Accepting selected work…");
@@ -137,8 +145,49 @@
       check.addEventListener("change", () => { if (check.checked) self.selected.add(issue.id); else self.selected.delete(issue.id); });
       title.value = issue.title; title.maxLength = 300; title.dataset.started = check.dataset.started;
       title.setAttribute("aria-label", "Issue title");
-      title.addEventListener("change", () => self.save(self.state.issues.map(i => i.id === issue.id ? Object.assign({}, i, {title: title.value}) : i)));
       row.append(check, title, element("small", [issue.group, issue.deferred ? "Deferred" : "", issue.request_id ? "Work requested" : ""].filter(Boolean).join(" · ")));
+      const details = element("details"), detail = element("textarea"), cardId = element("input"), save = element("button", "Save issue");
+      const limit = self.state.limits ? self.state.limits.issue_detail_characters : 16000;
+      details.appendChild(element("summary", "Details and specification"));
+      detail.value = issue.detail || ""; detail.rows = 5; detail.dataset.started = check.dataset.started;
+      detail.setAttribute("aria-label", "Issue detail (up to " + limit + " characters)");
+      cardId.value = issue.card_id || ""; cardId.dataset.started = check.dataset.started;
+      cardId.setAttribute("aria-label", "Specification card ID (optional)");
+      cardId.placeholder = "Existing specification card ID (optional)";
+      let reviewedVersion = issue.card_execution_version;
+      function rememberDraft() {
+        const linked = cardId.value.trim() || null;
+        if (!self.drafts) self.drafts = new Map();
+        self.drafts.set(issue.id, {
+          title: title.value, detail: detail.value, card_id: linked,
+          card_execution_version: linked === issue.card_id ? reviewedVersion : null,
+        });
+        self.dirty = true;
+      }
+      [title, detail, cardId].forEach(input => input.addEventListener("input", rememberDraft));
+      function saveIssue() {
+        rememberDraft();
+        self.save(self.state.issues);
+      }
+      save.type = "button"; save.dataset.started = check.dataset.started; save.addEventListener("click", saveIssue);
+      details.append(element("p", "Up to " + limit.toLocaleString() + " characters. For larger material, create a card with the full description and attachments, then link its ID. A linked card cannot be grouped."), detail, cardId, save);
+      if (issue.card_id) {
+        const link = element("a", "Review specification card");
+        link.href = "/work?card=" + encodeURIComponent(issue.card_id) + "&realm=" + encodeURIComponent(self.state.realm_id || "default");
+        details.appendChild(link);
+        if (!issue.request_id) {
+          const refresh = element("button", "Use current card version"); refresh.type = "button";
+          refresh.addEventListener("click", function () {
+            if (self.busy) return;
+            const sid = self.widget.sessionId, generation = self.generation, apiBase = self.widget.apiBase;
+            self.widget.api("/sessions/" + encodeURIComponent(sid) + "/issues/cards/" + encodeURIComponent(issue.card_id))
+              .then(function (card) { if (!self.current(sid, generation) || apiBase !== self.widget.apiBase) return; reviewedVersion = card.execution_version; saveIssue(); })
+              .catch(function (error) { if (self.current(sid, generation)) self.message(error.message); });
+          });
+          details.appendChild(refresh);
+        }
+      }
+      row.appendChild(details);
       self.list.appendChild(row);
     });
     this.state.requests.forEach(function (receipt) {

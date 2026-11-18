@@ -171,11 +171,13 @@
     <details class="acw-issues" data-conversation-issues>
       <summary>Issues <span data-issues-count role="status" aria-label="Issue count" aria-live="polite" aria-atomic="true">(loading…)</span></summary>
       <p class="muted small">Discuss, group, or start selected work</p>
+      <p class="muted small">Titles: 300 characters. Details: 16,000 characters. For larger specifications, create a card with the full description and supporting files, then link its card ID. Saving or linking material does not start work.</p>
       <p class="muted small" data-issues-status role="status" aria-live="polite">Discussion notes do not start work.</p>
       <ol data-issues-list></ol>
       <label>Add issues, one per line<textarea rows="2" data-issues-add-text placeholder="What should we keep track of?"></textarea></label>
       <div class="acw-issue-actions">
         <button type="button" class="ghost small" data-issues-add>Add to list</button>
+        <button type="button" class="ghost small" data-issues-reload>Reload saved issues (discard edits)</button>
         <input data-issues-group-name maxlength="80" placeholder="Group name (optional)" aria-label="Group name">
         <button type="button" class="ghost small" data-issues-group>Group selected</button>
         <button type="button" class="ghost small" data-issues-defer>Defer</button>

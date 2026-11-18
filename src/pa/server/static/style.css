@@ -5544,7 +5544,11 @@ a.ghost:hover {
 .acw-issues summary { cursor: pointer; font-weight: 600; }
 .acw-issues summary span { margin-left: .6rem; font-weight: 400; }
 .acw-issues ol { margin: .4rem 0; padding: 0; list-style: none; max-height: 12rem; overflow: auto; }
-.acw-issues li { display: flex; gap: .4rem; align-items: center; margin: .2rem 0; }
+.acw-issues li { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin: .2rem 0; }
+.acw-issues li > details { flex-basis: 100%; min-width: 0; padding: .3rem; border-bottom: 1px solid var(--border); }
+.acw-issues li > details button, .acw-issues li > details a { margin: .3rem; }
+.card-material-history pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 28rem; overflow: auto; }
+.card-material-history .muted { overflow-wrap: anywhere; }
 .acw-issues li input[type="checkbox"] { width: auto; flex: 0 0 auto; }
 .acw-issues li input:not([type="checkbox"]) { flex: 1; min-width: 8rem; min-height: 0; height: 1.75rem; padding: .2rem; font-size: .85rem; }
 .acw-issues li small { max-width: 30%; }

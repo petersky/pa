@@ -18,6 +18,8 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from pydantic import ValidationError
 
+from pa.domain.card_limits import CARD_ATTACHMENT_BYTES, CARD_ATTACHMENTS
+
 from pa.core.operation_budget import current_operation, measured_lock, report_work_progress
 from pa.core.performance import retention_phase
 from pa.core.sqlite_metrics import ObservedConnection
@@ -2876,11 +2878,11 @@ class CardProjection:
         card = self.get_card(attachment.card_id, realm_id=attachment.realm_id)
         if not card:
             raise ValueError("Card not found")
-        if len(card.attachments) >= 10:
-            raise ValueError("A card can have at most 10 attachments")
+        if len(card.attachments) >= CARD_ATTACHMENTS:
+            raise ValueError(f"A card can have at most {CARD_ATTACHMENTS} attachments; remove unused references or use a linked specification card")
         if (
             sum(item.size for item in card.attachments) + attachment.size
-            > 100 * 1024 * 1024
+            > CARD_ATTACHMENT_BYTES
         ):
             raise ValueError("Card attachments exceed the 100 MB total limit")
         payload = attachment.model_dump(mode="json")
@@ -2909,12 +2911,28 @@ class CardProjection:
         realm_id: str,
         principal_id: str,
         instance_id: str,
+        expected_version: datetime | None = None,
+        idempotency_key: str | None = None,
+        request_fingerprint: str | None = None,
     ) -> Card | None:
         card = self.get_card(card_id, realm_id=realm_id)
         if not card or not any(
             item.attachment_id == attachment_id for item in card.attachments
         ):
             return None
+        if expected_version is not None and card.updated_at != expected_version:
+            raise CardVersionConflict(card_id, expected_version, card.updated_at)
+        from pa.domain.card_material import removal_result
+        from pa.domain.completion_records import retained_attachment
+        retained = retained_attachment(self, card_id, realm_id, attachment_id) is not None
+        if not retained and (attachment_id in card.body or any(
+            attachment_id in reference for evidence in card.completion_evidence for reference in evidence.references
+        )):
+            raise ValueError("Attachment is referenced by the description or completion evidence. Update those references or retain the original in a completion record before removing it.")
+        # Keep the result in the same event as the removal, so rebuilding the
+        # operation ledger can recover an acknowledgement lost after commit.
+        updated_at = datetime.now(UTC)
+        result_card = card.model_copy(update={"attachments": [a for a in card.attachments if a.attachment_id != attachment_id], "updated_at": updated_at})
         event = CardEvent(
             type=EventType.ATTACHMENT_REMOVED,
             realm_id=realm_id,
@@ -2923,8 +2941,13 @@ class CardProjection:
             author_instance=instance_id,
             payload={
                 "attachment_id": attachment_id,
-                "card_updated_at": datetime.now(UTC).isoformat(),
+                "card_updated_at": updated_at.isoformat(),
             },
+            source_operation="card.attachment.remove",
+            causal_card_version=card.updated_at.isoformat(),
+            idempotency_key=idempotency_key,
+            request_fingerprint=request_fingerprint,
+            operation_result=removal_result(result_card, attachment_id, retained) if idempotency_key else None,
         )
         self.commit_event(event)
         return self.get_card(card_id, realm_id=realm_id)
