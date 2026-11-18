@@ -1477,6 +1477,18 @@ class AgentConnection:
             },
         )
 
+        # Only positive, native-ID-bound evidence authorizes a fresh Codex
+        # thread. Missing rollout/list entries are never delivery evidence.
+        delivery = (existing_session.config_json or {}).get("native_prompt_delivery", {}) if existing_session else {}
+        if (
+            spec.id == "codex"
+            and resume_external_id
+            and delivery == {"version": 1, "native_id": resume_external_id, "state": "never_prompted"}
+        ):
+            logger.info("Starting fresh Codex thread for confirmed never-prompted native session")
+            resume_external_id = None
+            require_restore = False
+
         session_cwd = cwd or str(self.settings.data_dir)
         self.session_cwd = session_cwd
         restored = False
@@ -1552,7 +1564,7 @@ class AgentConnection:
                     except Exception as exc:
                         record_restore_attempt(self.restore_attempts, restore_method, restore_started, 'failed', exc)
                         logger.warning(
-                            "ACP %s failed (%s); trying the next restore method",
+                            "ACP %s restore attempt failed (%s)",
                             restore_method,
                             _format_acp_error(exc),
                         )
@@ -1629,6 +1641,15 @@ class AgentConnection:
                     )
 
         assert self.session is not None
+        if not restored and spec.id == "codex":
+            self.session.config_json = {
+                **(self.session.config_json or {}),
+                "native_prompt_delivery": {
+                    "version": 1,
+                    "native_id": self.session.external_session_id,
+                    "state": "attempted" if native_branch else "never_prompted",
+                },
+            }
         if mcp and spec.id == "codex" and self.session.external_session_id:
             self._client.begin_live_mcp_session(self.session.external_session_id)
             self._mcp_observer = (self._client, self.session.external_session_id)
@@ -1842,6 +1863,16 @@ class AgentConnection:
         if cwd:
             self.session_cwd = cwd
             self.session.cwd = cwd
+        # Persist uncertainty before crossing the provider boundary. A crash or
+        # failed RPC must never leave positive non-delivery evidence behind.
+        self.session.config_json = {
+            **(self.session.config_json or {}),
+            "native_prompt_delivery": {
+                "version": 1,
+                "native_id": self.session.external_session_id,
+                "state": "attempted",
+            },
+        }
         self.session.status = "prompting"
         self.session.updated_at = datetime.now(UTC)
         await self._offload(
