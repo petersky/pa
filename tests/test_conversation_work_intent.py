@@ -1,4 +1,4 @@
-"""Bounded authorization and turn results survive PA bookkeeping boundaries."""
+"""User intent and turn results survive PA bookkeeping boundaries."""
 import json
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -14,9 +14,45 @@ from pa.execution.dispatch import DispatchRecord
 from pa.execution.disposition import decide_card_disposition, extract_card_disposition
 from pa.execution.post_turn import FollowupActionName, PostTurnDecision, PostTurnEvaluator
 from pa.modules.conversation_issues import edit_issues, get_issues, start_issues
+from pa.prompts import PROMPTS
 from tests.test_conversation_issues import setup
 from tests.test_local_operator_acceptance import operator_app
 from tests.test_post_turn_evaluation import context_for, snapshot
+
+
+def test_standing_authority_guidance_needs_no_start_receipt(setup):
+    store, manager, _, _ = setup
+    worker = AgentSession(id="standing-worker", agent_name="codex", purpose="automated_run", mode_id="workspace-write")
+    store.save_session(worker)
+    result = compose_session_prompt(store, manager.settings, worker,
+        "Keep the existing workflow healthy; investigate a shared root cause and correct its callers.")
+    guidance = next(p.text for p in result.prompts if p.key == "agent.context.work_intent")
+    assert "standing authority" in guidance and "necessary related corrections" in guidance
+    assert "card and issue boundaries organize" in guidance
+    assert "explicit user restriction" in guidance and "Historical wording is not a permanent veto" in guidance
+    assert not any(p.key == "agent.context.authorized_work" for p in result.prompts)
+    assert not store.list_cards() and not ConversationIssues(store).read(worker.id)["requests"]
+    assert store.get_session(worker.id).mode_id == "workspace-write"
+    for key in ("agent.context.conversation_work", "session.recovery.resume", "card.reconciliation.disposition"):
+        assert "standing authority" in PROMPTS.render(key).text
+
+
+@pytest.mark.asyncio
+async def test_standing_work_uses_existing_admission_without_fresh_permission_field(setup, monkeypatch):
+    store, _, req, _ = setup
+    dispatch = AsyncMock(return_value={"dispatch_id": "standing-worker"})
+    monkeypatch.setattr("pa.modules.fleet.dispatch_fleet_work", dispatch)
+    await edit_issues(req(), "discussion", IssueEdit(revision=0, issues=[Issue(
+        id="root-cause", title="Correct shared callers", detail="Necessary correction under the ongoing workflow maintenance instruction.")]))
+    body = StartIssues(request_id="standing-intent-work", revision=1, issue_ids=["root-cause"])
+    first = await start_issues(req(body.request_id), "discussion", body)
+    again = await start_issues(req(body.request_id), "discussion", body)
+    assert first["requests"] == again["requests"] and first["requests"][0]["state"] == "admitted"
+    assert dispatch.await_count == 1 and len(store.list_cards()) == 1
+    assert set(body.model_dump()) == {"request_id", "revision", "issue_ids"}
+    message = dispatch.call_args.args[1].message
+    assert "standing authority" in message and "necessary adjacent corrections" in message
+    assert "The user explicitly requested" not in message
 
 
 @pytest.mark.asyncio
@@ -42,7 +78,7 @@ async def test_later_start_keeps_one_receipt_and_authorized_scope_on_successor(s
     assert (await start_issues(req(body.request_id), source.id, body))["requests"] == first["requests"]
     assert dispatch.await_count == 1
     assert body.request_id in dispatch.call_args.args[1].message
-    assert "Older create-only/deferred notes" in dispatch.call_args.args[1].message
+    assert "Interpret older create-only/deferred notes" in dispatch.call_args.args[1].message
     assert len(store.list_cards()) == 2
     assert not first["issues"][1].get("request_id")
     assert not first["issues"][0]["deferred"] and first["issues"][1]["deferred"]
@@ -53,7 +89,7 @@ async def test_later_start_keeps_one_receipt_and_authorized_scope_on_successor(s
         receipt = next(p.text for p in composed.prompts if p.key == "agent.context.authorized_work")
         assert body.request_id in receipt and "discussion" in receipt
         assert "fix: Fix the selected behavior" in receipt and "Unrelated" not in receipt
-        assert "Older create-only/deferred notes" in receipt
+        assert "Interpret older create-only/deferred notes" in receipt
         assert store.get_session(sid).mode_id == "workspace-write"
     assert not ConversationIssues(store).starts_for_cards({captured.id}, realm_id="default")
     assert not ConversationIssues(store).starts_for_cards({card_id}, realm_id="other")
@@ -115,6 +151,7 @@ def test_mcp_start_retries_use_the_same_http_identity(monkeypatch):
         return {"request_id": kwargs["json"]["request_id"]}
     monkeypatch.setattr("pa.mcp.local_api.request_local_pa", request)
     register_mcp(SimpleNamespace(tool=tool), SimpleNamespace(settings=object()))
+    assert "standing authority" in registered["start_conversation_issues"].__doc__
     for _ in range(2):
         assert registered["start_conversation_issues"]("source", 4, ["selected"], "start-same") == {"request_id": "start-same"}
     assert calls[0] == calls[1]
@@ -172,3 +209,29 @@ def test_successor_dispatch_retains_original_cross_instance_instruction(operator
         assert remote.call_args.args[2].card_id == card.id
         again = client.post(f"/api/fleet/dispatch-jobs/{item.dispatch_id}/actions/{action.action_id}", json=body, headers=headers)
         assert again.status_code == 202 and remote.await_count == 1
+
+
+def test_automatic_limit_is_a_resource_error_not_a_new_permission_gate(operator_app):
+    with TestClient(operator_app) as client:
+        ctx = operator_app.state.ctx
+        ctx.settings.post_turn_max_automatic_followups = 0
+        item = snapshot(disposition={"lane": "active"})
+        evaluation = PostTurnEvaluator().evaluate(context_for(item))
+        action = next(a for a in evaluation.recommended_actions if a.name == FollowupActionName.PROMPT_SAME_SESSION)
+        ledger = ctx.services["dispatch_store"]
+        ledger.put(DispatchRecord(dispatch_id=item.dispatch_id, mutation_id="continue", card_id=item.card_id,
+            authority_instance_id=ctx.settings.instance_id, authority_url="http://testserver", target_instance_id="target",
+            session_id=item.session_id, state="completed", post_turn_evaluations=[evaluation], turn_end_snapshots=[item]))
+        client.get("/api/health")
+        response = client.post(f"/api/fleet/dispatch-jobs/{item.dispatch_id}/actions/{action.action_id}",
+            headers={"X-CSRF-Token": client.cookies.get("pa_csrf")},
+            json={"evaluation_id": evaluation.evaluation_id, "action_id": action.action_id,
+                  "expected_authority_version": evaluation.observed_authority_version, "idempotency_key": "continue-original"})
+        assert response.status_code == 409, response.text
+        detail = response.json()["detail"]
+        assert detail["code"] == "automatic_followup_limit_reached" and detail["session_id"] == item.session_id
+        assert "work request remains in effect" in detail["message"]
+        assert "approv" not in detail["message"]
+        persisted = ledger.get(item.dispatch_id)
+        saved = next(a for a in persisted.post_turn_evaluations[-1].recommended_actions if a.action_id == action.action_id)
+        assert not saved.human_approval_required and not persisted.post_turn_action_receipts

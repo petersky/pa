@@ -12463,16 +12463,21 @@ async def execute_post_turn_action(
         )
         automatic_used = automatic_followups_used(record.post_turn_evaluations)
         budget = request.app.state.ctx.settings.post_turn_max_automatic_followups
-        if not inherited or automatic_followup_budget_exhausted(
-            record.post_turn_evaluations, budget
-        ):
+        if not inherited:
             action.human_approval_required = True
             action.status_reason = (
-                "Withheld for operator approval: continuation scope was not inherited "
-                "or the automatic follow-up budget is exhausted (setting "
-                "post_turn_max_automatic_followups). Approve this action to continue."
+                "The automatic action no longer matches PA's same-session "
+                "continuation. Review the changed target or instruction."
             )
         else:
+            if automatic_followup_budget_exhausted(record.post_turn_evaluations, budget):
+                raise HTTPException(409, detail={
+                    "code": "automatic_followup_limit_reached",
+                    "message": "PA reached its automatic continuation limit. The work request remains in effect. Resume the same agent session or adjust the continuation limit.",
+                    "setting": "post_turn_max_automatic_followups",
+                    "used": automatic_used, "limit": budget,
+                    "session_id": record.session_id,
+                })
             action.audit.append(
                 {
                     "event": "authorized",

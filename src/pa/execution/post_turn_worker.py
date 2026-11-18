@@ -424,13 +424,14 @@ class PostTurnWorker:
                 return await self._escalate_once(
                     record,
                     f"budget:{record.dispatch_id}",
-                    title="Automatic follow-ups used up",
+                    title="Automatic continuation limit reached",
                     body=(
                         f"PA already continued this work "
                         f"{automatic_followups_used(record.post_turn_evaluations)} "
-                        "times on its own and stopped (setting "
-                        "post_turn_max_automatic_followups). Review it and "
-                        "approve the next step or take over."
+                        "times and reached its configured continuation limit. "
+                        "The work request remains in effect. Inspect progress "
+                        "and resume the same agent session or adjust the "
+                        "automatic continuation limit."
                     ),
                 )
         if needs_approval:

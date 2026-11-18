@@ -53,12 +53,13 @@ def register_mcp(mcp, ctx) -> None:
 
     @mcp.tool()
     def start_conversation_issues(session_id: str, revision: int, issue_ids: list[str], request_id: str) -> dict:
-        """Start selected, bounded work only after an explicit user fix/start request.
+        """Start work called for by user intent or standing authority.
 
-        Discussion, speculation and listing issues are not execution permission.
+        Honor discussion-only/create-only restrictions in conversational context;
+        a mention alone does not start unrelated work. No fresh permission token
+        is required for ordinary work, root causes or necessary related fixes.
         Reuse the exact request_id/selection/revision after timeout or reload.
-        That saved request retains its bounded authorization across recovery;
-        later explicit starts supersede older create-only notes for this scope.
+        The receipt coordinates recovery and deduplication, not new authorization.
         PA creates/links cards and admits workers using existing permission and
         workspace fencing. Accepted/admitted is not task completion.
         """

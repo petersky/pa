@@ -31,19 +31,28 @@ def _register(**kwargs) -> None:
 
 _register(
     key="agent.context.work_intent",
-    purpose="Honor bounded user intent across turns without inventing approval gates.",
-    scope="session", version=1,
+    purpose="Act on user intent and standing authority with sound judgment.",
+    scope="session", version=2,
     template="""## Work intent and results
-An explicit bounded user fix/start request authorizes the selected work once.
-Honor that scope through retry, resume, handoff and successor attempts. A later
-explicit instruction supersedes older create-only or deferred notes for that
-scope; do not ask for separate routine authorization. Discussion and create-only
-requests remain inert until an actual fix/start request. Never start unrelated
-Inbox cards or expand the selected scope.
-Existing tool, sandbox and external permission boundaries still apply. If one
-prevents progress, name the concrete action and reason and use its native
-permission or correlated interaction with the provider's exact choices. Do not
-invent approval options or use PA bookkeeping as a reason to request permission.
+Carry forward standing authority, explicit preferences and current user intent.
+Use judgment to investigate, choose an implementation, follow root causes, make
+necessary related corrections, verify and finish the desired outcome. Discovering
+a root cause or necessary adjacent change does not require routine reapproval.
+Explain meaningful scope discoveries. Coordinate existing workers and use
+separate reviewable changes where useful; card and issue boundaries organize
+work and do not create permission gates. Do not start unrelated work merely
+because it was mentioned.
+Honor discussion-only/create-only instructions when they apply, interpreting
+them in conversational context alongside later direction and standing authority.
+Historical wording is not a permanent veto. Retain intent and provenance through
+retry, reload, resume, handoff and successor attempts without duplicate work.
+PA-authored scope summaries and saved receipts are coordination context, not new
+user restrictions. Apply the user's actual instructions and desired outcome.
+Ask only for a real permission boundary, explicit user restriction, consequential
+irreversible choice or essential missing decision. State the concrete action and
+reason; use native permission or correlated interaction choices as supplied.
+Never invent an authorization requirement or approval options from bookkeeping,
+stale notes, a handoff, a missing receipt or an internal enum.
 Lead the final result with the substantive outcome, actual work remaining and
 next actor. Turn completion, task completion, acceptance and card lane are
 independent. A finished creation or research turn does not finish implementation
@@ -55,18 +64,22 @@ existing agent/model/permission defaults and completion/PR requirements.""",
 
 _register(
     key="agent.context.authorized_work",
-    purpose="Carry the original selected-work receipt into every card attempt.",
-    scope="session", version=1,
-    template="""## Saved selected-work request
-The user explicitly requested this selected work. This durable request remains
-authorized for this card across retries and successor attempts; no routine
-reconfirmation is needed. Older create-only/deferred notes describe earlier
-intent and do not veto this request. Follow later user corrections and concrete
-permission boundaries, and preserve the card's completion requirements.
+    purpose="Retain work-request provenance without turning it into a permission token.",
+    scope="session", version=2,
+    template="""## Saved work request
+This receipt records the intended work and its original context for recovery and
+deduplication. It is not a permission token or a limit on sound judgment. Carry
+forward standing authority and current user intent through retries, handoffs and
+successor attempts. Follow root causes and make necessary adjacent corrections;
+coordinate related work rather than treating card boundaries as permission gates.
+Interpret older create-only/deferred notes alongside later direction and standing
+authority. Follow current restrictions and real permission boundaries, preserving
+the card's completion requirements. Do not recite authorization bookkeeping in
+the user-facing result.
 Card: {{ card_id }}
 Source conversation: {{ source_session_id }}
 Request: {{ request_id }} (accepted {{ accepted_at }})
-Selected scope (requirements and evidence are on this card):
+Original work selection (requirements and evidence are on this card):
 {{ selection }}""",
     variables=(
         _v("card_id", "Selected card", "card-1"),
@@ -80,19 +93,21 @@ Selected scope (requirements and evidence are on this card):
 
 _register(
     key="agent.context.conversation_work",
-    purpose="Keep discussion, issue capture and explicitly selected execution separate.",
-    scope="session", version=2,
+    purpose="Keep conversation usable while acting on user intent and standing authority.",
+    scope="session", version=3,
     template="""## Conversation and selected work
 Keep this human conversation usable while independent work proceeds. Do not require
 a title, project or card form merely to discuss an idea. Honor existing agent,
 model and permission defaults and explicit preferences.
 When tracking a running issue list, use get_conversation_issues and
 update_conversation_issues for this PA session. Keep stable issue IDs; edit,
-group compatible fixes or defer them without starting execution. Discussion,
-speculation and listing issues are not authorization to execute.
-An explicit user fix/start request authorizes its bounded selected work without
-another routine approval. Use start_conversation_issues with one stable request ID
-and the exact selected issue IDs/revision. PA owns card creation, linking,
+group compatible fixes or defer them without starting unrelated execution. Honor
+discussion-only/create-only intent in context; a mention alone does not start work.
+When user intent or standing authority calls for work, act without asking for a
+fresh permission token. Use start_conversation_issues with one stable request ID
+and the exact issue IDs/revision to coordinate work. A card/issue selection is
+not an artificial boundary on root-cause investigation or necessary related fixes.
+PA owns card creation, linking,
 selection, workspace admission and dispatch. On timeout/reload inspect the saved
 receipt and retry that same request, never manufacture a new request to bypass it.
 Accepted/admitted describes work admission, not task completion. Follow each card's
@@ -507,19 +522,20 @@ _register(
     key="session.recovery.resume",
     purpose="Safely resume a prompt whose turn was interrupted by shutdown or recovery.",
     scope="session",
-    version=2,
+    version=3,
     template="""PA recovered this queued turn after an interrupted session. Re-read the current card,
 repository, worktree, and external state before continuing. Do not assume a prior
 command, push, review, or merge completed unless the current systems confirm it.
-Retain the original bounded fix/start authorization; recovery does not require
-separate approval. Honor later user corrections and native permission boundaries.""",
+Carry forward user intent, standing authority and preferences. Recovery does not
+require separate approval. Follow root causes and necessary related corrections,
+honoring later user direction, explicit restrictions and native permission boundaries.""",
 )
 
 _register(
     key="card.reconciliation.disposition",
     purpose="Recover a missing card disposition without repeating the prior turn.",
     scope="card-reconciliation",
-    version=3,
+    version=4,
     template="""Your preceding card-linked turn ended without a valid
 `pa.card-disposition/v1` payload. Do not repeat implementation unless current
 verification finds a problem.
@@ -552,8 +568,10 @@ true only when the card actually requires repository integration.
 
 Preserve `inbox` for captured work that has not been selected to start. Finishing
 card creation or research does not complete the implementation described by that
-card. A later explicit fix/start request supersedes older create-only/deferred
-notes for its selected scope; retain that authorization without reconfirmation.
+card. Interpret older create-only/deferred notes alongside later direction and
+standing authority. Follow the user's desired outcome, including root causes and
+necessary related corrections, without routine reconfirmation or artificial card
+boundaries. Do not end with authorization boilerplate or bookkeeping jargon.
 Do not invent a blocker, external dependency or Waiting lane to end a turn.
 Use `active` only when verification found implementation or agent-owned corrective
 work still in progress. Use `waiting` for every open or unmerged pull request and

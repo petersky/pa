@@ -45,10 +45,11 @@ def test_copied_history_is_context_not_workspace_authority(setup):
     assert "Agent session: target" in prompt.text
 
 
-def test_chat_guidance_uses_durable_selected_work_without_authorizing_discussion(setup):
+def test_chat_guidance_carries_standing_intent_while_discussion_stays_inert(setup):
     store, manager, _, _ = setup
     prompt = compose_session_prompt(store, manager.settings, store.get_session("discussion"), "Discuss ten possible fixes.")
-    assert "listing issues are not authorization to execute" in prompt.text
+    assert "a mention alone does not start work" in prompt.text
+    assert "standing authority calls for work" in prompt.text
     assert "start_conversation_issues with one stable request ID" in prompt.text
     assert "not task completion" in prompt.text
     assert not store.list_cards()

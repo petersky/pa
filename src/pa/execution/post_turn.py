@@ -286,8 +286,20 @@ STOPPED_EARLY_CONTINUATION = (
     "remaining requested outcome.",
 )
 
+CONTINUE_OUTCOME = (
+    "Continue the requested outcome.",
+    "Continue using the user's current intent and standing authority. Follow "
+    "the root cause and make necessary adjacent corrections to finish the "
+    "outcome; explain meaningful discoveries and coordinate related workers. "
+    "Card boundaries and recovery do not require routine reapproval. Honor "
+    "explicit restrictions and real permission boundaries.",
+)
+
 _AUTHORIZED_CONTINUATION_PROMPTS = {
     STOPPED_EARLY_CONTINUATION,
+    CONTINUE_OUTCOME,
+    # Retain already-issued action bindings across recovery. This allowlist
+    # fences PA-authored action integrity, not the agent's implementation scope.
     (
         "Address recorded validation failures.",
         "Continue from the recorded turn and address the failed validations. "
@@ -307,7 +319,7 @@ def is_authorized_same_session_continuation(
     decision: PostTurnDecision,
     session_id: str | None,
 ) -> bool:
-    """Return whether a prompt is the bounded continuation PA already authorized."""
+    """Recognize a PA-issued continuation of the same session's user outcome."""
     return (
         decision == PostTurnDecision.FURTHER_AGENT_WORK_NEEDED
         and action.name == FollowupActionName.PROMPT_SAME_SESSION
@@ -326,7 +338,7 @@ def continuation_context(
 ) -> str:
     """PA's own explanation, appended when an authorized continuation is sent.
 
-    The stored action prompt stays exactly the bounded text PA pre-authorized;
+    The stored action prompt stays exactly the text PA originally issued;
     this recorded evidence is added at send time so the agent learns why it is
     being asked to continue.
     """
@@ -1058,11 +1070,8 @@ class PostTurnEvaluator:
                     _action(
                         FollowupActionName.PROMPT_SAME_SESSION,
                         {
-                            "purpose": "Continue the incomplete card outcome.",
-                            "prompt": (
-                                "Continue from the neutral turn-end snapshot and "
-                                "complete the remaining requested outcome."
-                            ),
+                            "purpose": CONTINUE_OUTCOME[0],
+                            "prompt": CONTINUE_OUTCOME[1],
                             "session_id": snapshot.session_id,
                         },
                         snapshot,

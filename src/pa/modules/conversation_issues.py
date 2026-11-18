@@ -1,4 +1,4 @@
-"""Discussion-only issue lists and explicit, durable work admission."""
+"""Conversation issue lists and durable admission under existing user intent."""
 from __future__ import annotations
 
 import asyncio
@@ -233,6 +233,9 @@ async def _execute(request, session_id, request_id, manager, notes):
                     if project_id:
                         await _check_project(request, manager, project_id, context["realm_id"])
                     body = FleetDispatchBody(**group["dispatch_inputs"], card_id=group["card_id"], project_id=project_id,
+                        # Retain the exact legacy instruction on an ambiguous
+                        # replay. Current guidance interprets it with standing
+                        # authority and later user direction, not as a new gate.
                         message=group.get("dispatch_message") or "Implement only the selected scope recorded on this card. Preserve its completion requirements and existing authorization. Source conversation: " + session_id,
                         idempotency_key=key + ":dispatch")
                     # Re-enter only the canonical idempotent admission, with the

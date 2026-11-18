@@ -1,4 +1,4 @@
-/* Discussion notes stay inert until the human explicitly starts a selection. */
+/* Issue notes stay inert; durable work requests carry intent and recovery. */
 (function (root) {
   "use strict";
   function element(tag, text) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; return e; }
@@ -89,7 +89,7 @@
       if (previous && !self.panel.open && state.issues.some(i => !previous.issues.some(old => old.id === i.id))) self.changed = true;
       self.state = state; self.stale = false; self.count();
       if (!previous || JSON.stringify([previous.issues, previous.requests]) !== JSON.stringify([state.issues, state.requests])) self.render();
-      if (!previous) self.message("Discussion list · " + state.issues.length + " issues. Nothing starts until Start selected.");
+      if (!previous) self.message("Issue list · " + state.issues.length + " issues. Work requests and progress appear below.");
     }).catch(function (error) {
       if (current() && revision === self.readRevision) { self.stale = true; self.count(); self.message(error.message); }
     }).finally(function () {
@@ -104,7 +104,7 @@
     this.readRevision = (this.readRevision || 0) + 1; this.busy = true; this.controls();
     const clean = issues.map(i => { const copy = Object.assign({}, i); delete copy.request_id; return copy; });
     this.widget.api("/sessions/" + encodeURIComponent(sid) + "/issues", {method: "PUT", body: JSON.stringify({revision: this.state.revision, issues: clean})})
-      .then(function (state) { if (!self.current(sid, generation)) return; self.state = state; if (after) after(); self.render(); self.message("Issue list saved. Discussion only."); })
+      .then(function (state) { if (!self.current(sid, generation)) return; self.state = state; if (after) after(); self.render(); self.message("Issue list saved."); })
       .catch(function (error) { if (self.current(sid, generation)) self.message(error.message + " The list will refresh automatically; your composer is unchanged."); })
       .finally(function () { if (self.current(sid, generation)) { self.busy = false; self.controls(); } });
   };
