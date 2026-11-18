@@ -2519,7 +2519,7 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         service.dispatch_store = MagicMock()
         current = self.store.get_watch("watch-1").model_copy(update={"dispatch_id": "origin"})
         self.domain.update_card.reset_mock()
-        for payload in (None, {}, {"lane": "active", "outcome": "Remaining acceptance work"}):
+        for payload in (None, {}, {"lane": "active"}, {"lane": "waiting", "outcome": "Remaining acceptance work"}):
             service.dispatch_store.get.return_value = SimpleNamespace(card_disposition_payload=payload)
             await service._complete_merged_card(current)
             self.domain.update_card.assert_not_called()

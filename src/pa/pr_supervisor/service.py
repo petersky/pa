@@ -2811,7 +2811,7 @@ class PRSupervisor:
                 "dispatch.record_read", self.dispatch_store.get, watch.dispatch_id
             )
             payload = getattr(dispatch, "card_disposition_payload", None)
-            if not isinstance(payload, dict) or payload.get("lane") not in {"done", "waiting"}:
+            if not isinstance(payload, dict) or payload.get("lane") != "done":
                 await self._defer_card_completion(watch, "originating_task_completion_pending")
                 return
         linked_watches = await self._offload(
