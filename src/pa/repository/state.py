@@ -108,7 +108,9 @@ class GitInspector:
         if check and result.returncode:
             message = result.stderr.strip() or result.stdout.strip() or "Git failed"
             raise GitInspectionError(message[:500])
-        return result.stdout
+        # Failed optional probes may echo unresolved revision expressions.
+        # Their stdout is not repository metadata.
+        return result.stdout if result.returncode == 0 else ""
 
     async def _run_async(
         self, path: Path, *args: str, check: bool = True
@@ -140,7 +142,9 @@ class GitInspector:
         if check and result.returncode:
             message = result.stderr.strip() or result.stdout.strip() or "Git failed"
             raise GitInspectionError(message[:500])
-        return result.stdout
+        # Failed optional probes may echo unresolved revision expressions.
+        # Their stdout is not repository metadata.
+        return result.stdout if result.returncode == 0 else ""
 
     async def inspect_async(
         self,

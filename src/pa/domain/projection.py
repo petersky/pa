@@ -945,6 +945,11 @@ class CardProjection:
             "CREATE INDEX IF NOT EXISTS idx_agent_sessions_project_history "
             "ON agent_sessions(realm_id, project_id, status, updated_at DESC)"
         )
+        # Fleet admission needs only these two fields, without scanning large session rows.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_agent_sessions_id_status "
+            "ON agent_sessions(id, status)"
+        )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_agent_sessions_status_updated "
             "ON agent_sessions(status, updated_at DESC)"
