@@ -87,7 +87,7 @@ def main():
                 "agentInfo": {"name": "pa-selection-test-fixture", "version": "1"},
                 "agentCapabilities": {
                     "loadSession": True,
-                    "sessionCapabilities": {"resume": {}},
+                    "sessionCapabilities": {"resume": {}, "additionalDirectories": {}},
                     "promptCapabilities": {"image": True},
                 },
                 "authMethods": [],

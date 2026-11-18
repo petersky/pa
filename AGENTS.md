@@ -38,9 +38,9 @@ files under the data dir) — there is no separate database, cache, or broker to
 - **Isolate instance state with `PA_DATA_DIR`.** For a throwaway dev instance, set
   `PA_DATA_DIR=.dev/pa-data`, then `uv run pa init --name dev` once before `pa serve`.
   This avoids touching the host default `~/.pa`.
-- **Disable the ACP agent in this VM:** set `PA_AGENT_ENABLED=false` before `pa serve`.
-  The default (`true`) tries to spawn an external `agent`/`codex` CLI that is not installed
-  here and is unnecessary for web/API testing.
+- For web/API tests that do not need ACP, set `PA_AGENT_ENABLED=false` before
+  `pa serve`. Leave it enabled when testing agent integration; verify the selected
+  provider is installed on the execution instance.
 - **Mutating REST endpoints require CSRF + idempotency.** POST/PATCH need a double-submit
   CSRF token (cookie `pa_csrf` echoed in the `X-CSRF-Token` header — grab it from any GET
   with a cookie jar) and creation endpoints also require an `Idempotency-Key` header. The

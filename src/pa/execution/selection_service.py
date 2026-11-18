@@ -936,6 +936,7 @@ def selected_configuration(
         model_provider=selected.get("native_model_provider")
         if selected.get("connection_revision")
         else selected.get("model_provider"),
+        additional_directories=authority.additional_directories,
         mode_id=authority.mode_id,
         config=selected.get("options", {}),
     )

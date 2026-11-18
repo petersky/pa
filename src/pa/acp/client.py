@@ -1205,6 +1205,23 @@ class AgentConnection:
             initial_configuration = SessionConfigurationRequest.from_dict(
                 ((existing_session.config_json or {}).get("configuration") or {}).get("requested")
             )
+        if existing_session is None and not (initial_configuration and initial_configuration.additional_directories):
+            initial_configuration = SessionConfigurationRequest.from_dict({
+                **(initial_configuration.as_dict() if initial_configuration else {}),
+                "additional_directories": self.settings.agent_additional_directories,
+            })
+        for directory in initial_configuration.additional_directories if initial_configuration else ():
+            root = Path(directory)
+            data_root = self.settings.data_dir.resolve()
+            if root == data_root or root in data_root.parents or data_root in root.parents:
+                raise ACPConfigurationError("Additional directories cannot include PA service data")
+            managed_root = self.settings.workspace_root
+            if managed_root and (root == managed_root or managed_root in root.parents or root in managed_root.parents):
+                own_root = Path(cwd).resolve() if cwd else None
+                if own_root is None or not (root == own_root or own_root in root.parents):
+                    raise ACPConfigurationError("Additional directories cannot admit another managed workspace")
+            if not root.is_dir():
+                raise ACPConfigurationError("Additional directories must exist on the execution instance")
         if not self.settings.agent_enabled:
             raise RuntimeError("Agent connection disabled (PA_AGENT_ENABLED=false)")
         await self._abort_connect_if_shutting_down(stage="preflight")
@@ -1238,11 +1255,11 @@ class AgentConnection:
         # socket directory explicitly or Codex cancels the MCP startup before
         # the child can connect.  This grants only the per-instance runtime
         # directory, not PA_DATA_DIR or another mutable PA store.
-        mcp_additional_directories: list[str] | None = None
+        mcp_additional_directories = list(initial_configuration.additional_directories) if initial_configuration else []
         if provider_id == "codex" and mcp:
             directories = owner_sandbox_directories(self.settings)
             if directories:
-                mcp_additional_directories = directories
+                mcp_additional_directories = list(dict.fromkeys([*mcp_additional_directories, *directories]))
         if mcp:
             try:
                 owner_health = await self._offload(
@@ -1407,6 +1424,8 @@ class AgentConnection:
                 raise ACPConfigurationError("CODEX_CONFIG must be an object for model admission")
             native_config["model"] = initial_configuration.model_id
             child_env["CODEX_CONFIG"] = json.dumps(native_config)
+        if spec.id == "codex" and existing_session is None and initial_configuration and initial_configuration.mode_id:
+            child_env["INITIAL_AGENT_MODE"] = initial_configuration.mode_id
         if spec.id == "codex":
             child_env = apply_codex_owner_sandbox_environment(
                 child_env, self.settings
@@ -1457,6 +1476,12 @@ class AgentConnection:
                 ),
             )
         await self._abort_connect_if_shutting_down(stage="post-initialize")
+        if initial_configuration and initial_configuration.additional_directories:
+            metadata = _to_plain(self._init_response) or {}
+            capabilities = metadata.get("agentCapabilities", metadata.get("agent_capabilities", {})) or {}
+            lifecycle = capabilities.get("sessionCapabilities", capabilities.get("session_capabilities", {})) or {}
+            if lifecycle.get("additionalDirectories", lifecycle.get("additional_directories")) is None:
+                raise ACPConfigurationError("Provider does not advertise additional directories support")
         self._resume_supported = _agent_supports_resume(self._init_response)
         self._load_supported = _agent_supports_load(self._init_response)
         self._list_supported = _agent_supports_session_list(self._init_response)
@@ -2147,6 +2172,12 @@ class AgentConnection:
             previous_request = SessionConfigurationRequest.from_dict(
                 previous.get("requested")
             )
+            if requested.additional_directories and requested.additional_directories != previous_request.additional_directories:
+                raise ACPConfigurationError("Additional directories are fixed at session creation; start a new session")
+            if previous_request.additional_directories and not requested.additional_directories:
+                requested = SessionConfigurationRequest.from_dict({
+                    **requested.as_dict(), "additional_directories": list(previous_request.additional_directories),
+                })
             desired = previous_request.merged(requested) if merge else requested
             requested_dict = desired.as_dict()
             native = confirmed_session_configuration(

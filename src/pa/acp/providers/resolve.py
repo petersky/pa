@@ -96,6 +96,7 @@ def resolve_surface_preferences(
         model_id=user_surface.model_id or global_surface.model_id,
         mode_id=user_surface.mode_id or global_surface.mode_id,
         effort=user_surface.effort or global_surface.effort,
+        additional_directories=user_surface.additional_directories or global_surface.additional_directories,
         config={**global_surface.config, **user_surface.config},
     )
 

@@ -142,7 +142,10 @@ async def _branch(request, source_id, body):
             title=None, principal_id=principal, project_id=source.project_id,
             realm_id=source.realm_id, provider_override=source.agent_name,
             execution_preferences=_preferences(source),
-            initial_configuration=SessionConfigurationRequest.from_values(model_id=source.model_id, mode_id=source.mode_id),
+            initial_configuration=SessionConfigurationRequest.from_values(
+                model_id=source.model_id, mode_id=source.mode_id,
+                additional_directories=((source.config_json or {}).get("configuration") or {}).get("requested", {}).get("additional_directories"),
+            ),
             purpose="chat", control_mode="human", initiating_workflow=workflow,
             _defer_drain=True,
         )

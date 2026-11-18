@@ -182,6 +182,7 @@ class Settings(BaseSettings):
     # Optional spawn overrides (None → use selected provider defaults)
     agent_command: str | None = None
     agent_args: Annotated[list[str] | None, NoDecode] = None
+    agent_additional_directories: Annotated[list[str], NoDecode] = Field(default_factory=list)
     agent_enabled: bool = True
     # Explicitly expose the instance-local PR-supervisor credential to ACP
     # providers as GH_TOKEN. Ambient GitHub token variables are always stripped.
@@ -416,6 +417,7 @@ class Settings(BaseSettings):
         "subscribed_realms",
         "capabilities",
         "agent_args",
+        "agent_additional_directories",
         "web_listeners",
         "telegram_allowed_user_ids",
         "telegram_allowed_conversation_ids",

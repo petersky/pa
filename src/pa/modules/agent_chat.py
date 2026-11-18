@@ -489,6 +489,7 @@ class CreateSessionBody(BaseModel):
     label: str | None = None
     title: str | None = None
     cwd: str | None = None
+    additional_directories: list[str] = Field(default_factory=list)
     card_id: str | None = None
     project_id: str | None = None
     attach_default: bool = False
@@ -564,6 +565,7 @@ def _configuration_request(
     config = dict(defaults.config if defaults else {})
     config.update(body.config)
     return SessionConfigurationRequest.from_values(
+        additional_directories=body.additional_directories or (defaults.additional_directories if defaults else []),
         model_id=body.model_id or (defaults.model_id if defaults else None),
         mode_id=body.mode_id or (defaults.mode_id if defaults else None),
         reasoning=_requested_effort(body.effort)
@@ -1097,7 +1099,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
         # Only permission/mode inheritance stays here. The common selection
         # resolver owns model/backend/reasoning/native option precedence.
         authority_defaults = (
-            SurfaceAgentPrefs(mode_id=new_session_defaults.mode_id)
+            SurfaceAgentPrefs(mode_id=new_session_defaults.mode_id, additional_directories=new_session_defaults.additional_directories)
             if new_session_defaults
             else None
         )

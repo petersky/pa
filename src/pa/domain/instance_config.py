@@ -134,6 +134,7 @@ class InstanceConfig(BaseModel):
     agent_provider: str = "cursor"
     agent_command: str | None = None
     agent_args: list[str] | None = None
+    agent_additional_directories: list[str] = Field(default_factory=list)
     agent_enabled: bool = True
     agent_github_token_enabled: bool = False
     agent_recovery_concurrency: int = Field(default=2, ge=1, le=16)

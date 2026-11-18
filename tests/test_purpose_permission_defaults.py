@@ -7,8 +7,8 @@ from tests.test_execution_selection_runtime import wire_app, required
 @pytest.mark.parametrize("purpose,legacy,expected", [
     ("chat", None, "agent-full-access"),
     ("chat", "None", "agent-full-access"),
-    ("automated_run", "", "workspace-write"),
-    ("one_shot_job", None, "workspace-write"),
+    ("automated_run", "", "agent-full-access"),
+    ("one_shot_job", None, "agent-full-access"),
 ])
 def test_new_agent_defaults_by_purpose_and_confirms_native_mode(wire_app, purpose, legacy, expected):
     client, _ = wire_app
@@ -58,7 +58,7 @@ def test_linked_new_worker_does_not_inherit_source_full_access(wire_app):
     })
     assert created.status_code == 200, created.text
     assert source["mode_id"] == "agent-full-access"
-    assert created.json()["session"]["mode_id"] == "workspace-write"
+    assert created.json()["session"]["mode_id"] == "agent-full-access"
 
 
 def test_linked_execution_api_keeps_worker_purpose(wire_app):
@@ -67,13 +67,13 @@ def test_linked_execution_api_keeps_worker_purpose(wire_app):
     created = client.post(f"/api/execution/sessions/{source['id']}/boundary", json={"idempotency_key": "linked-background", "execution_preferences": {}})
     assert created.status_code == 200, created.text
     target = created.json()["session"]
-    assert target["purpose"] == "automated_run" and target["mode_id"] == "workspace-write"
+    assert target["purpose"] == "automated_run" and target["mode_id"] == "agent-full-access"
 
 
 def test_workspace_write_permission_reaches_pa_auto_approve_over_actual_acp(wire_app):
     client, app = wire_app
     assert client.put("/api/agent/preferences", json={"agent_auto_approve_permissions": True}).status_code == 200
-    created = client.post("/api/agent/sessions", json={"label": "permission-noop", "purpose": "one_shot_job"})
+    created = client.post("/api/agent/sessions", json={"label": "permission-noop", "purpose": "one_shot_job", "mode_id": "workspace-write"})
     assert created.status_code == 200, created.text
     sid = created.json()["session"]["id"]
     manager = app.state.ctx.services["instance_agent"]

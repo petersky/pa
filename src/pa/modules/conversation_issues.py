@@ -236,7 +236,7 @@ async def _execute(request, session_id, request_id, manager, notes):
                         # Retain the exact legacy instruction on an ambiguous
                         # replay. Current guidance interprets it with standing
                         # authority and later user direction, not as a new gate.
-                        message=group.get("dispatch_message") or "Implement only the selected scope recorded on this card. Preserve its completion requirements and existing authorization. Source conversation: " + session_id,
+                        message=group.get("dispatch_message") or "Carry the authorized work on this card through completion, including necessary related corrections. Preserve its completion requirements and explicit user restrictions. Source conversation: " + session_id,
                         idempotency_key=key + ":dispatch")
                     # Re-enter only the canonical idempotent admission, with the
                     # frozen body and identity. Routine pending/transport states

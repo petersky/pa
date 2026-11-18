@@ -6766,6 +6766,7 @@
       "[data-agent-new-model-provider]": defaults.model_provider || "",
       "[data-agent-new-model]": defaults.model_id || "",
       "[data-agent-new-mode]": defaults.mode_id || "",
+      "[name=additional_directories]": (defaults.additional_directories || []).join("\n"),
       "[data-agent-new-effort]": defaults.effort || "",
     };
     Object.keys(values).forEach(function (selector) {
@@ -7063,6 +7064,7 @@
           const value = String(data.get(key) || "").trim();
           if (value) body[key] = value;
         });
+        body.additional_directories = String(data.get("additional_directories") || "").split("\n").map(function (p) { return p.trim(); }).filter(Boolean);
         body.config = {};
         dialog.querySelectorAll("[data-agent-new-config]").forEach(function (select) {
           if (select.value && !select.closest("fieldset[disabled]")) body.config[select.dataset.agentNewConfig] = select.value;
