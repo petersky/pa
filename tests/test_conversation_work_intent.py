@@ -26,8 +26,8 @@ async def test_later_start_keeps_one_receipt_and_authorized_scope_on_successor(s
     dispatch = AsyncMock(return_value={"dispatch_id": "worker-1"})
     monkeypatch.setattr("pa.modules.fleet.dispatch_fleet_work", dispatch)
     await edit_issues(req(), "discussion", IssueEdit(revision=0, issues=[
-        Issue(id="fix", title="Fix the selected behavior", detail="Earlier notes: creation only."),
-        Issue(id="unrelated", title="Unrelated Inbox idea"),
+        Issue(id="fix", title="Fix the selected behavior", detail="Earlier notes: creation only.", deferred=True),
+        Issue(id="unrelated", title="Unrelated Inbox idea", deferred=True),
     ]))
     assert store.get_card(captured.id).lane == CardLane.INBOX
     assert dispatch.await_count == 0
@@ -45,6 +45,7 @@ async def test_later_start_keeps_one_receipt_and_authorized_scope_on_successor(s
     assert "Older create-only/deferred notes" in dispatch.call_args.args[1].message
     assert len(store.list_cards()) == 2
     assert not first["issues"][1].get("request_id")
+    assert not first["issues"][0]["deferred"] and first["issues"][1]["deferred"]
     for sid in ("worker", "successor"):
         worker = AgentSession(id=sid, agent_name="codex", purpose="automated_run", card_id=card_id, mode_id="workspace-write")
         store.save_session(worker)

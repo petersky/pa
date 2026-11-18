@@ -4,6 +4,8 @@ Discussion and creation-only requests capture work without starting it. An
 explicit fix/start request authorizes only its selected scope. Later starts
 supersede historical create-only/deferred notes for that scope; unrelated Inbox
 cards remain unstarted.
+Selecting a deferred issue and starting it clears only that issue's deferral;
+restoring the list entry first is not a separate authorization prerequisite.
 
 `conversation_issues` owns the existing durable request identity, frozen selection
 and admission receipts. Exact reload/retry uses the original request ID,

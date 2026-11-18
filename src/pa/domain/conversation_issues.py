@@ -168,13 +168,16 @@ class ConversationIssues:
             if len(state["requests"]) >= 100:
                 raise IssueConflict("This conversation has reached its work-request limit; start a new thread")
             selected = [i for i in state["issues"] if i["id"] in body.issue_ids]
-            if len(selected) != len(body.issue_ids) or any(i["deferred"] or i.get("request_id") for i in selected):
-                raise IssueConflict("Select only current, unstarted, non-deferred issues")
+            if len(selected) != len(body.issue_ids) or any(i.get("request_id") for i in selected):
+                raise IssueConflict("Select only current, unstarted issues")
             groups = {}
             for issue in selected:
                 key = "group:" + issue["group"] if issue["group"] else "issue:" + issue["id"]
                 group = groups.setdefault(key, {"title": issue["group"] or issue["title"], "issues": [], "state": "accepted"})
                 group["issues"].append(dict(issue))
+                # This explicit start supersedes the earlier deferral for only
+                # the selected issue; unrelated discussion stays deferred.
+                issue["deferred"] = False
                 issue["request_id"] = body.request_id
             state["requests"].append({
                 "request_id": body.request_id, "fingerprint": digest,

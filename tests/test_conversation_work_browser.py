@@ -28,8 +28,8 @@ async def test_one_click_retry_results_and_exact_native_permissions(operator_ser
     captured = ctx.store.create_card(CardCreate(title="Captured only", body="Creation only; do not implement yet."))
     notes = ConversationIssues(ctx.store)
     notes.edit(source.id, IssueEdit(revision=0, issues=[
-        Issue(id="fix", title="Fix selected behavior"),
-        Issue(id="other", title="Unrelated idea"),
+        Issue(id="fix", title="Fix selected behavior", deferred=True),
+        Issue(id="other", title="Unrelated idea", deferred=True),
     ]))
     calls, workers = [], {}
     async def dispatch(request, body):
@@ -120,6 +120,7 @@ async def test_one_click_retry_results_and_exact_native_permissions(operator_ser
         await wait_for("document.querySelector('[data-issues-receipts]').innerText.includes('Work admitted')")
         assert len(calls) == 2 and len(notes.read(source.id)["requests"]) == 1
         assert not notes.read(source.id)["issues"][1].get("request_id")
+        assert notes.read(source.id)["issues"][1]["deferred"]
         (tmp_path / "selected-work.png").write_bytes(await manager.screenshot(scope))
     finally:
         for owned in agent._runtimes.values():

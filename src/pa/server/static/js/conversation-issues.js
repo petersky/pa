@@ -32,8 +32,8 @@
     });
     this.panel.querySelector("[data-issues-start]").addEventListener("click", function () {
       if (!self.state || !self.selected.size) return self.message("Select the issues to start.");
-      const ids = self.state.issues.filter(i => self.selected.has(i.id) && !i.request_id && !i.deferred).map(i => i.id);
-      if (!ids.length) return self.message("Deferred issues must be restored before starting.");
+      const ids = self.state.issues.filter(i => self.selected.has(i.id) && !i.request_id).map(i => i.id);
+      if (!ids.length) return self.message("Select unstarted issues to start.");
       if (ids.length > 20) return self.message("Start at most 20 issues at once.");
       self.start({request_id: crypto.randomUUID(), revision: self.state.revision, issue_ids: ids});
     });
