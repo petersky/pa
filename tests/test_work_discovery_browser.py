@@ -24,6 +24,50 @@ def work_server(operator_server):
 
 @pytest.mark.skipif(not _browser_executable(), reason="managed Chromium is not installed")
 @pytest.mark.asyncio
+async def test_done_expansion_survives_live_refresh(operator_server, tmp_path):
+    app, base = operator_server
+    store = app.state.ctx.store
+    [store.create_card(CardCreate(title=f"Finished {i}", lane="done")) for i in range(35)]
+    browser = BrowserManager(tmp_path / "pagination-browser")
+    manager = BrowserSessionManager(browser, instance_id="pagination-test")
+    scope = BrowserScope("user:test", "pagination-browser", "pagination-test")
+    try:
+        await manager.attach(scope, url=base + "/work?lane=done", width=1440, height=900)
+        page = manager.resolve(scope).page
+        async def wait_count(count):
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                if await page.evaluate(f"document.querySelectorAll('#lane-done .compact-card[data-card-id]').length === {count}"):
+                    return
+                await asyncio.sleep(.05)
+            state = await page.evaluate("document.querySelector('#lane-done .board-column-body').innerHTML")
+            pytest.fail(f"Done lane did not render {count} cards: {state[-2000:]}")
+        await wait_count(10)
+        for count in (20, 30):
+            await asyncio.sleep(.15)  # HTMX processes new controls after settling.
+            await page.evaluate("document.querySelector('#lane-done [data-done-show-more]').click()")
+            await wait_count(count)
+        before = await page.evaluate("Array.from(document.querySelectorAll('#lane-done [data-card-id]')).map(e=>e.dataset.cardId)")
+        await page.evaluate("document.body.dispatchEvent(new CustomEvent('boardRefresh'))")
+        await asyncio.sleep(1)
+        await wait_count(30)
+        after = await page.evaluate("Array.from(document.querySelectorAll('#lane-done [data-card-id]')).map(e=>e.dataset.cardId)")
+        assert after == before and len(set(after)) == 30
+        completed = store.create_card(CardCreate(title="Newly completed", lane="done"))
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            ids = await page.evaluate("Array.from(document.querySelectorAll('#lane-done article[data-card-id]')).map(e=>e.dataset.cardId)")
+            if ids and ids[0] == completed.id:
+                break
+            await asyncio.sleep(.05)
+        assert ids[0] == completed.id
+        assert len(ids) == len(set(ids)) == 30
+    finally:
+        await browser.close()
+
+
+@pytest.mark.skipif(not _browser_executable(), reason="managed Chromium is not installed")
+@pytest.mark.asyncio
 async def test_work_disclosure_chips_results_and_responsive_layout(work_server, tmp_path):
     base = work_server
     browser = BrowserManager(tmp_path / "browser")
