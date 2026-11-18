@@ -102,13 +102,12 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
     "/work?card=legacy-card",
   ]);
   assert.ok(links.every(link => link.textContent === "Open card"));
-  const parent = element("div"), recovery = controller(() => {throw new Error("review cannot start work");});
+  const parent = element("div"), recovery = controller(() => {throw new Error("render cannot start work");});
   let resumed;
   recovery.start = value => {resumed = value;};
   recovery.retryButton(parent, body);
+  assert.equal(parent.children.length, 1, "saved authorization needs no review gate");
+  assert.equal(parent.children[0].textContent, "Retry saved request");
   parent.children[0].events.click();
-  assert.equal(resumed, undefined, "review is separate from resuming the request");
-  assert.equal(parent.children.at(-1).textContent, "Resume saved request");
-  parent.children.at(-1).events.click();
   assert.equal(resumed, body, "recovery retains the original request and selection");
 })().catch(error => {console.error(error); process.exitCode = 1;});

@@ -3601,13 +3601,13 @@
     else if (authority) state = "rejected";
 
     const lane = payload.lane_after || contract.lane || "unknown";
-    const outcome = contract.outcome || reason || "Card disposition could not be validated.";
+    const outcome = contract.outcome || "PA could not save the card status. The previous result and lane are retained.";
     const created = this.addBubble("system", "", ts, { forceVisible: true });
     created.row.hidden = false;
     created.bubble.classList.add("acw-disposition");
     created.bubble.dataset.cardDispositionStatus = state;
     created.bubble.setAttribute("role", "status");
-    created.bubble.setAttribute("aria-label", "Card disposition " + state);
+    created.bubble.setAttribute("aria-label", "Card result");
 
     const heading = document.createElement("strong");
     heading.className = "acw-disposition-title";
@@ -3615,11 +3615,16 @@
     created.bubble.appendChild(heading);
     const meta = document.createElement("p");
     meta.className = "acw-disposition-meta";
-    meta.textContent = "Lane: " + lane + " · " + (
-      authority ? "PA authority acknowledged: " + state : "Awaiting durable PA authority acknowledgement"
+    const laneLabel = {inbox: "Inbox", active: "Active", waiting: "Waiting", done: "Done"}[lane] || lane;
+    meta.textContent = "Card: " + laneLabel + " · " + (
+      state === "persistence-failed" ? "Status could not be saved; retry is needed."
+      : state === "invalid" ? "Status could not be read; inspect diagnostics and retry."
+      : state === "accepted" ? "Status saved."
+      : authority ? "Completion requirements remain; inspect the reason below."
+      : "Saving card status…"
     );
     created.bubble.appendChild(meta);
-    if (reason && reason !== outcome) {
+    if (reason && reason !== outcome && state !== "accepted") {
       const explanation = document.createElement("p");
       explanation.className = "acw-disposition-reason";
       explanation.textContent = reason;
@@ -3633,6 +3638,10 @@
       ["Head", evidence.watched_head_sha],
       ["Merge", evidence.merge_commit_sha],
     ].filter(function (item) { return item[1] !== null && item[1] !== undefined && item[1] !== ""; });
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = "Status diagnostics";
+    details.appendChild(summary);
     if (evidenceItems.length) {
       const list = document.createElement("dl");
       list.className = "acw-disposition-evidence";
@@ -3644,15 +3653,11 @@
         list.appendChild(dt);
         list.appendChild(dd);
       });
-      created.bubble.appendChild(list);
+      details.appendChild(list);
     }
 
-    const details = document.createElement("details");
-    const summary = document.createElement("summary");
-    summary.textContent = "Diagnostics and raw payload";
-    details.appendChild(summary);
     const pre = document.createElement("pre");
-    pre.textContent = raw || JSON.stringify(payload, null, 2);
+    pre.textContent = JSON.stringify(payload, null, 2);
     details.appendChild(pre);
     const copy = document.createElement("button");
     copy.type = "button";
@@ -4087,6 +4092,10 @@
       "</p>" +
       '<div class="acw-permission-actions"></div>';
     const actions = card.querySelector(".acw-permission-actions");
+    const responseStatus = document.createElement("p");
+    responseStatus.setAttribute("role", "alert");
+    responseStatus.textContent = card.dataset.responseError || "";
+    card.appendChild(responseStatus);
     options.forEach(function (opt) {
       const btn = document.createElement("button");
       btn.type = "button";
@@ -4095,6 +4104,8 @@
       btn.addEventListener("click", function () {
         if (!self._isCurrentSessionRequest(requestSessionId, generation)) return;
         const allow = opt.kind && String(opt.kind).indexOf("allow") === 0;
+        delete card.dataset.responseError;
+        responseStatus.textContent = "";
         self.api("/sessions/" + requestSessionId + "/permissions/" + reqId, {
           method: "POST",
           body: JSON.stringify({
@@ -4103,30 +4114,15 @@
             remember: opt.kind === "allow_always",
             scope: "user",
           }),
+        }).catch(function (error) {
+          if (!self._isCurrentSessionRequest(requestSessionId, generation)) return;
+          card.dataset.responseError = "Permission response could not be delivered: " + error.message + " Request: " + reqId;
+          const currentStatus = card.querySelector('[role="alert"]');
+          if (currentStatus) currentStatus.textContent = card.dataset.responseError;
         });
       });
       actions.appendChild(btn);
     });
-    const always = document.createElement("button");
-    always.type = "button";
-    always.className = "ghost small";
-    always.textContent = "Always allow";
-    always.addEventListener("click", function () {
-      if (!self._isCurrentSessionRequest(requestSessionId, generation)) return;
-      const allowOpt = options.find(function (o) {
-        return o.kind === "allow_always" || o.kind === "allow_once";
-      });
-      self.api("/sessions/" + requestSessionId + "/permissions/" + reqId, {
-        method: "POST",
-        body: JSON.stringify({
-          allow: true,
-          option_id: allowOpt ? allowOpt.optionId || allowOpt.option_id : null,
-          remember: true,
-          scope: "user",
-        }),
-      });
-    });
-    actions.appendChild(always);
   };
 
   AgentChatWidget.prototype.hidePermission = function (requestId) {

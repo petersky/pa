@@ -304,6 +304,13 @@ class CompletionReconciler:
             return True
         if record.reconciliation_state == "prompted" and not is_followup:
             return False
+        # Reconciliation repairs administrative status. Keep the substantive
+        # result from the original turn through both successful and failed
+        # retries, while retaining the recovery prompt's delivery identity.
+        reconciliation_text = str(payload.get("final_outcome_text") or "")
+        original_text = (record.completion_payload or {}).get("final_outcome_text")
+        if is_followup and original_text:
+            payload = {**payload, "final_outcome_text": original_text}
         if disposition:
             payload["card_disposition"] = disposition.model_dump(mode="json")
             payload.pop("card_disposition_error", None)
@@ -341,9 +348,8 @@ class CompletionReconciler:
             record.completion_payload = payload
             record.card_disposition_error = error
             record.reconciliation_parse_errors.append(error or "missing payload")
-            final_text = str(payload.get("final_outcome_text") or "")
             record.reconciliation_final_excerpt = (
-                final_text[:500].replace("\x00", "�") or "<empty>"
+                reconciliation_text[:500].replace("\x00", "�") or "<empty>"
             )
             if record.reconciliation_prompt_count < 2:
                 record.reconciliation_state = "pending"
@@ -403,9 +409,8 @@ class CompletionReconciler:
         """Finish a turn that never produced a disposition without hiding it.
 
         Reconciliation is out of attempts.  The completion is still delivered,
-        but it carries an explicit Waiting disposition (the authority applies it
-        under its usual lane rules, so a newer Done is preserved) and the owner
-        is told, instead of the card silently keeping its lane.
+        and its real diagnostic remains visible to the owner. Missing PA
+        bookkeeping is not evidence of a business blocker or a lane change.
         """
         if not (
             self.escalate_missing_disposition
@@ -415,20 +420,10 @@ class CompletionReconciler:
             return await self._queue_delivery(session_id, payload)
         why = (record.reconciliation_reason or "no valid disposition")[:600]
         outcome = (
-            "The agent finished a turn but never reported a valid card "
-            f"disposition after reconciliation ({why}). Parked in Waiting for "
-            "review."
+            "The turn ended, but PA could not reconcile its card status. "
+            "The card's current lane and prior result are preserved. "
+            f"Inspect the saved result and retry status reconciliation. Details: {why}"
         )[:4000]
-        payload = {
-            **payload,
-            "card_disposition": {
-                "contract": "pa.card-disposition/v1",
-                "lane": CardLane.WAITING.value,
-                "outcome": outcome,
-                "evidence": {},
-            },
-        }
-        payload.pop("card_disposition_error", None)
         if self.stall_notifier:
             try:
                 await self._offload(

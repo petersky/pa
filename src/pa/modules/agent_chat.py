@@ -4966,14 +4966,17 @@ async def session_permission(
     body: PermissionBody,
 ) -> dict:
     runtime = await _runtime_or_404_async(request, session_id)
-    ok = await runtime.respond_permission(
-        request_id,
-        allow=body.allow,
-        option_id=body.option_id,
-        remember=body.remember,
-        scope=body.scope,
-        principal_id=get_principal_id(request),
-    )
+    try:
+        ok = await runtime.respond_permission(
+            request_id,
+            allow=body.allow,
+            option_id=body.option_id,
+            remember=body.remember,
+            scope=body.scope,
+            principal_id=get_principal_id(request),
+        )
+    except ValueError as exc:
+        raise HTTPException(409, {"code": "permission_option_changed", "message": str(exc), "request_id": request_id}) from exc
     if not ok:
         raise HTTPException(status_code=404, detail="Permission request not found")
     return {"ok": True}

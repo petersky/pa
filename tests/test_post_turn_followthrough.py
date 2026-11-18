@@ -507,7 +507,7 @@ def _reconciler_fixture(tmp_path, **kwargs):
 
 @pytest.mark.parametrize("enabled", [True, False])
 @pytest.mark.asyncio
-async def test_two_failed_reconciliation_prompts_park_the_card_and_notify(
+async def test_two_failed_reconciliation_prompts_preserve_lane_and_notify(
     tmp_path, enabled
 ):
     ledger, runtime, _supervisor, outbox, reconciler = _reconciler_fixture(tmp_path)
@@ -529,12 +529,11 @@ async def test_two_failed_reconciliation_prompts_park_the_card_and_notify(
     )
     assert ledger.get("dispatch-1").reconciliation_state == "failed"
     delivered = outbox.payloads[-1][1]
+    assert "card_disposition" not in delivered
+    assert delivered["card_disposition_error"] == "y"
     if enabled:
-        assert delivered["card_disposition"]["lane"] == "waiting"
-        assert "never reported a valid card disposition" in (
-            delivered["card_disposition"]["outcome"]
-        )
         assert len(notices) == 1 and notices[0][0] == "dispatch-1"
+        assert "current lane and prior result are preserved" in notices[0][1]
     else:
         # Old behaviour: delivered with no disposition and no notice.
         assert "card_disposition" not in delivered
@@ -542,7 +541,7 @@ async def test_two_failed_reconciliation_prompts_park_the_card_and_notify(
 
 
 @pytest.mark.asyncio
-async def test_exhausted_blocked_reconciliation_parks_the_card_and_notifies(tmp_path):
+async def test_exhausted_blocked_reconciliation_preserves_lane_and_notifies(tmp_path):
     ledger, runtime, _supervisor, outbox, reconciler = _reconciler_fixture(
         tmp_path, supervisor_state="authority_unreachable", max_attempts=2
     )
@@ -555,7 +554,7 @@ async def test_exhausted_blocked_reconciliation_parks_the_card_and_notifies(tmp_
     ledger.put(blocked)
     await reconciler._advance(blocked)
     assert ledger.get("dispatch-1").reconciliation_state == "exhausted"
-    assert outbox.payloads[-1][1]["card_disposition"]["lane"] == "waiting"
+    assert "card_disposition" not in outbox.payloads[-1][1]
     assert len(notices) == 1
 
 

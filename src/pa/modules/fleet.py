@@ -12624,7 +12624,12 @@ async def execute_post_turn_action(
                     project_id=record.project_id,
                     provider=None if provider == "default" else provider,
                     mode_id=action.parameters.get("mode"),
-                    message=action.parameters["reason"],
+                    # A successor changes the attempt, not the selected task's
+                    # original instruction/authorization (including remote work).
+                    message="\n\n".join(filter(None, [
+                        record.request_payload.get("message"),
+                        action.parameters["reason"],
+                    ])),
                     idempotency_key=body.idempotency_key,
                 ),
             )

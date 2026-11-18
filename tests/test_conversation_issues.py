@@ -130,7 +130,7 @@ async def test_legacy_missing_chat_mode_does_not_block_worker_default(setup, mon
     monkeypatch.setattr("pa.modules.fleet.dispatch_fleet_work", dispatch)
     await edit_issues(req(), "discussion", ten_issues())
     with pytest.raises(HTTPException):
-        await start_issues(req(), "discussion", StartIssues(request_id="start-1234", revision=1, issue_ids=["issue-9"]))
+        await start_issues(req(), "discussion", StartIssues(request_id="start-1234", revision=1, issue_ids=["missing"]))
     session = store.get_session("discussion")
     session.mode_id = None
     store.save_session(session)

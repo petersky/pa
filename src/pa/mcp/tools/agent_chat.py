@@ -57,6 +57,8 @@ def register_mcp(mcp, ctx) -> None:
 
         Discussion, speculation and listing issues are not execution permission.
         Reuse the exact request_id/selection/revision after timeout or reload.
+        That saved request retains its bounded authorization across recovery;
+        later explicit starts supersede older create-only notes for this scope.
         PA creates/links cards and admits workers using existing permission and
         workspace fencing. Accepted/admitted is not task completion.
         """
