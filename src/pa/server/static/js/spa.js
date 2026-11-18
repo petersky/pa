@@ -1846,6 +1846,18 @@
   }
 
   document.body.addEventListener("htmx:configRequest", function (event) {
+    var detail = event.detail;
+    var source = detail && detail.elt;
+    if (source && source.matches(".board-column-body")) {
+      var refreshUrl = new URL(detail.path, window.location.origin);
+      var loaded = source.querySelectorAll(".compact-card[data-card-id]").length;
+      if (loaded && refreshUrl.searchParams.get("lane") === "done" &&
+          !refreshUrl.searchParams.get("attention")) {
+        refreshUrl.searchParams.set("limit", String(Math.max(loaded,
+          Number(refreshUrl.searchParams.get("limit")) || 10)));
+        detail.path = refreshUrl.pathname + refreshUrl.search;
+      }
+    }
     var headers = csrfHeader();
     var target = event.detail && event.detail.headers;
     if (!target) return;
@@ -1931,6 +1943,8 @@
 
   document.addEventListener("htmx:historyRestore", function () {
     restoreCardFromHistory();
+    initBoardLiveUpdates();
+    document.body.dispatchEvent(new CustomEvent("boardRefresh"));
   });
 
   function readableRequestError(value, fallback) {
