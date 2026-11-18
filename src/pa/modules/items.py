@@ -1556,22 +1556,29 @@ def _cards_context(
     except ValueError:
         updated = ""
         updated_days = None
-    page_limit = 100 if result_limit is None else max(1, min(int(result_limit), 100))
-    cards = store.list_card_work_projections(
-        realm_id=realm,
-        lane=lane,
-        kind=kind,
-        project_id=project_id,
-        query=query,
-        owner=owner,
-        instance=instance,
-        blocked=blocked,
-        tags=tags,
-        tag_mode=tag_mode,
-        updated_days=updated_days,
-        limit=page_limit,
-        offset=max(0, result_offset),
-    )
+    page_limit = 100 if result_limit is None else max(1, int(result_limit))
+    # Expanded UI prefixes may exceed one storage page. Keep each read bounded.
+    cards = []
+    while len(cards) < page_limit:
+        batch_limit = min(100, page_limit - len(cards))
+        batch = store.list_card_work_projections(
+            realm_id=realm,
+            lane=lane,
+            kind=kind,
+            project_id=project_id,
+            query=query,
+            owner=owner,
+            instance=instance,
+            blocked=blocked,
+            tags=tags,
+            tag_mode=tag_mode,
+            updated_days=updated_days,
+            limit=batch_limit,
+            offset=max(0, result_offset) + len(cards),
+        )
+        cards.extend(batch)
+        if len(batch) < batch_limit:
+            break
     total_cards = store.count_card_work_projections(
         realm_id=realm,
         lane=lane,
@@ -3834,7 +3841,7 @@ def cards_partial(
     limit: int = 10,
     offset: int = 0,
 ) -> HTMLResponse:
-    page_limit = min(100, max(10, limit))
+    page_limit = max(10, limit)
     attention_filter = request.query_params.get("attention", "").strip()
     filtered_pagination = attention_filter in ATTENTION_FILTERS
     page_offset = max(0, offset) if filtered_pagination else 0
@@ -3849,7 +3856,7 @@ def cards_partial(
         filtered_total, page_offset + len(context["cards"])
     )
     filtered_show_more_count = min(
-        page_limit, max(0, filtered_total - filtered_visible)
+        10, max(0, filtered_total - filtered_visible)
     )
     filtered_show_more_query = ""
     if filtered_show_more_count:
@@ -3859,7 +3866,7 @@ def cards_partial(
         ]
         if lane:
             continuation_params.append(("lane", lane.value))
-        continuation_params.extend([("limit", str(page_limit)), ("offset", str(filtered_visible))])
+        continuation_params.extend([("limit", str(filtered_visible + filtered_show_more_count))])
         filtered_show_more_query = urlencode(continuation_params)
 
     done_total = 0

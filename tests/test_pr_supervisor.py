@@ -2514,6 +2514,37 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         update = self.domain.update_card.call_args
         self.assertEqual(update.args[1].lane, CardLane.DONE)
 
+    async def test_partial_or_missing_originating_outcome_cannot_complete_merged_card(self):
+        service = await self.make_service([])
+        self.domain.get_card.return_value = Card(id="card-1", title="partial", lane=CardLane.WAITING)
+        current = self.store.get_watch("watch-1").model_copy(update={"dispatch_id": "origin"})
+        self.domain.update_card.reset_mock()
+        service.dispatch_store = None
+        await service._complete_merged_card(current)
+        self.domain.update_card.assert_not_called()
+        service.dispatch_store = MagicMock()
+        for payload in (None, {}, {"lane": "active"}, {"lane": "waiting", "outcome": "Remaining acceptance work"}):
+            service.dispatch_store.get.return_value = SimpleNamespace(card_disposition_payload=payload)
+            await service._complete_merged_card(current)
+            self.domain.update_card.assert_not_called()
+
+    async def test_followup_remaining_work_supersedes_original_done_intent(self):
+        service = await self.make_service([])
+        self.domain.get_card.return_value = Card(id="card-1", title="partial", lane=CardLane.WAITING)
+        service.dispatch_store = MagicMock()
+        current = self.store.get_watch("watch-1").model_copy(update={"dispatch_id": "origin"})
+        self.domain.update_card.reset_mock()
+        for followup in (
+            {"state": "accepted"},
+            {"state": "ended", "final_report": {"card_disposition": {"lane": "waiting"}}},
+            {"state": "ended", "result": {"card_disposition": {"lane": "active"}}},
+        ):
+            service.dispatch_store.get.return_value = SimpleNamespace(
+                card_disposition_payload={"lane": "done"}, followup_turns=[followup],
+            )
+            await service._complete_merged_card(current)
+            self.domain.update_card.assert_not_called()
+
     async def test_pending_restart_blocks_merge_completion_and_cleanup(self) -> None:
         service = await self.make_service([])
         self.domain.pending_restart_continuation.return_value = True

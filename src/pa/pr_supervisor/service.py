@@ -2841,6 +2841,24 @@ class PRSupervisor:
         ):
             await self._defer_card_completion(watch, "restart_continuation_pending")
             return
+        # Integration proves a PR landed, not that the originating task finished.
+        # Declared acceptance remains authoritative; legacy cards need explicit task intent.
+        if not card.completion_requirement and watch.dispatch_id and not self.dispatch_store:
+            await self._defer_card_completion(watch, "originating_dispatch_store_unavailable")
+            return
+        if not card.completion_requirement and watch.dispatch_id and self.dispatch_store:
+            dispatch = await self._offload(
+                "dispatch.record_read", self.dispatch_store.get, watch.dispatch_id
+            )
+            payload = getattr(dispatch, "card_disposition_payload", None)
+            followups = getattr(dispatch, "followup_turns", [])
+            if isinstance(followups, list) and followups:
+                latest = followups[-1]
+                report = latest.get("final_report") or latest.get("result") or {}
+                payload = report.get("card_disposition") if latest.get("state") == "ended" else None
+            if not isinstance(payload, dict) or payload.get("lane") != "done":
+                await self._defer_card_completion(watch, "originating_task_completion_pending")
+                return
         decision = decide_card_disposition(
             disposition_for_merged_watch(watch),
             current_lane=card.lane,

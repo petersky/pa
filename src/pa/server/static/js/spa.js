@@ -1853,8 +1853,9 @@
       var refreshUrl = new URL(detail.path, window.location.origin);
       var loaded = column.querySelectorAll(".compact-card[data-card-id]").length;
       if (refreshUrl.pathname === "/partials/cards" &&
-          refreshUrl.searchParams.get("lane") === "done" &&
-          !refreshUrl.searchParams.get("attention")) {
+          (refreshUrl.searchParams.get("lane") === "done" ||
+           refreshUrl.searchParams.get("attention")) &&
+          !refreshUrl.searchParams.has("offset")) {
         var requested = Math.max(loaded, Number(column.dataset.loadedLimit) || 10,
           Number(refreshUrl.searchParams.get("limit")) || 10);
         column.dataset.loadedLimit = String(requested);
@@ -1873,6 +1874,15 @@
   document.body.addEventListener("htmx:beforeSwap", function (event) {
     var target = swapTarget(event);
     if (!target || !target.closest || !target.closest(".board-column-body")) return;
+    var column = target.closest(".board-column-body");
+    column.dataset.refreshScrollTop = String(column.scrollTop);
+    var columnTop = column.getBoundingClientRect().top;
+    var anchor = Array.from(column.querySelectorAll(".compact-card[data-card-id]"))
+      .find(function (row) { return row.getBoundingClientRect().bottom > columnTop; });
+    if (anchor) {
+      column.dataset.refreshAnchor = anchor.dataset.cardId;
+      column.dataset.refreshAnchorOffset = String(anchor.getBoundingClientRect().top - columnTop);
+    }
     var active = document.activeElement;
     var card = active && active.closest && active.closest(".compact-card[data-card-id]");
     if (!card) return;
@@ -1909,6 +1919,18 @@
       ? target.closest(".board-column-body")
       : null;
     if (boardBody) {
+      if (boardBody.dataset.refreshScrollTop !== undefined) {
+        boardBody.scrollTop = Number(boardBody.dataset.refreshScrollTop);
+        var anchorId = boardBody.dataset.refreshAnchor;
+        var anchor = anchorId && boardBody.querySelector('.compact-card[data-card-id="' + CSS.escape(anchorId) + '"]');
+        if (anchor) {
+          boardBody.scrollTop += anchor.getBoundingClientRect().top -
+            boardBody.getBoundingClientRect().top - Number(boardBody.dataset.refreshAnchorOffset);
+        }
+        delete boardBody.dataset.refreshScrollTop;
+        delete boardBody.dataset.refreshAnchor;
+        delete boardBody.dataset.refreshAnchorOffset;
+      }
       initBoardDragDrop(boardBody.closest(".board-grid") || document);
       if (boardRefreshFocus) {
         var refreshedCard = document.querySelector('.compact-card[data-card-id="' +

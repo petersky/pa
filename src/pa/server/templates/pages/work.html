@@ -118,6 +118,7 @@
       <div class="board-column-body"
            hx-get="/partials/cards?{{ filter_query }}{% if filter_query %}&{% endif %}attention={{ bucket.value }}"
            hx-trigger="load, every 15s, boardRefresh from:body"
+           hx-sync="closest .board-column-body:replace"
            hx-swap="innerHTML">
         <p class="muted" role="status">Loading…</p>
       </div>
@@ -138,6 +139,7 @@
       <div class="board-column-body"
            hx-get="/partials/cards?{{ filter_query }}{% if filter_query %}&{% endif %}lane={{ lane.value }}"
            hx-trigger="load, every 15s, boardRefresh from:body"
+           hx-sync="closest .board-column-body:replace"
            hx-swap="innerHTML">
         <p class="muted" role="status">Loading {{ lane.value }} cards…</p>
       </div>

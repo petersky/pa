@@ -29,8 +29,8 @@
           class="ghost"
           data-filter-show-more
           hx-get="/partials/cards?{{ filtered_show_more_query }}"
-          hx-target="closest .card-page-continuation"
-          hx-swap="outerHTML"
+          hx-target="closest .board-column-body"
+          hx-swap="innerHTML"
           aria-label="Show {{ filtered_show_more_count }} more {{ filters.attention }} cards{% if lane %} in {{ lane.value }}{% endif %}">
     Show {{ filtered_show_more_count }} more
   </button>

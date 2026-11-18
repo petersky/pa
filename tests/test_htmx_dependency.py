@@ -52,6 +52,7 @@ class HtmxDependencyContractTests(unittest.TestCase):
             "hx-post",
             "hx-preserve",
             "hx-push-url",
+            "hx-sync",  # Work column refreshes replace overlapping requests.
             "hx-swap",
             "hx-swap-oob",  # Exact card header action, alongside progress refresh.
             "hx-target",
