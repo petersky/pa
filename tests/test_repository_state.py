@@ -352,3 +352,46 @@ def test_unreachable_repository_instances_excludes_local(tmp_path: Path) -> None
     ctx.services = {"fleet_registry": fleet}
 
     assert _unreachable_repository_instances(ctx) == {"peer"}
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_deleted_upstream_keeps_clean_repository_inspectable(tmp_path: Path, asynchronous: bool) -> None:
+    repo = tmp_path / "repo"
+    make_repo(repo)
+    git(repo, "remote", "add", "origin", "https://example.test/repo.git")
+    git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git(repo, "branch", "--set-upstream-to=origin/main")
+    git(repo, "update-ref", "-d", "refs/remotes/origin/main")
+    service = RepositoryStateService(tmp_path / "data", "macbook")
+
+    async def inspect():
+        runtime = AsyncRuntime(max_workers=2, max_queue=2)
+        await runtime.start()
+        try:
+            return await service.refresh_async(repo, runtime)
+        finally:
+            await runtime.close()
+
+    result = asyncio.run(inspect()) if asynchronous else service.refresh(repo)
+    assert result.state == "fresh"
+    assert result.snapshot.head
+    assert result.snapshot.branch == "main"
+    assert result.snapshot.upstream is None
+    assert result.snapshot.ahead is None
+    assert result.snapshot.behind is None
+    assert not result.snapshot.dirty
+    assert result.snapshot.inspection_error is None
+
+
+def test_fleet_session_status_read_uses_covering_index(tmp_path: Path) -> None:
+    from pa.domain.projection import CardProjection
+    from pa.domain.models import AgentSession
+
+    store = CardProjection(tmp_path / "pa.db")
+    session = store.save_session(AgentSession(
+        id="large-session", agent_name="codex", metrics_json={"large": "x" * 1_000_000},
+    ))
+    assert store.list_session_statuses() == {session.id: session.status}
+    with store._conn() as conn:
+        plan = conn.execute("EXPLAIN QUERY PLAN SELECT id, status FROM agent_sessions").fetchall()
+    assert any("COVERING INDEX" in row[3] for row in plan)
