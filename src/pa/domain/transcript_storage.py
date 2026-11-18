@@ -553,6 +553,70 @@ class TranscriptStorage:
         return self._find_prompt_event(session_id, prompt_id, types,
                                        newest=False, fields=("id",))
 
+    def prompt_evidence_metadata(self, session_id, prompt_id, handoff_id, attempt,
+                                 *, after_seq=-1, limit=64, expected_snapshot=None):
+        """Bounded hot-index projection; never hydrate private/cold payloads.
+
+        Pages cover canonical sequence rows. A positive exact prompt match is
+        retained evidence; an absent match is always unknown, even at exhaustion.
+        """
+        if not 1 <= limit <= 128 or not -1 <= after_seq <= 2**63-1 or (after_seq >= 0 and not expected_snapshot):
+            raise ValueError('Invalid evidence page')
+        def snapshot(conn):
+            result = []
+            for table in ('transcript_events', 'transcript_evidence'):
+                result.append(tuple(conn.execute(
+                    f'SELECT COUNT(*),MIN(seq),MAX(seq) FROM {table} WHERE session_id=?',
+                    (session_id,)).fetchone()))
+            return hashlib.sha256(json.dumps(result, separators=(',', ':')).encode()).hexdigest()
+        def rows(conn):
+            # CASE bounds JSON processing before extracting any scalar. No raw
+            # payload, prompt text, answer, preview, error or config is returned.
+            return [dict(r) for r in conn.execute('''SELECT id,seq,event_type,created_at,
+                payload_hash, cold_hash IS NOT NULL AS is_cold,
+                CASE WHEN cold_hash IS NULL AND length(CAST(hot_payload AS BLOB))<=32768
+                    AND json_valid(hot_payload) THEN
+                    CASE WHEN (event_type IN ('queue_enqueued','queue_dequeued','user_message','prompt_blocked','error','connection_lost')
+                         AND (json_extract(hot_payload,'$.id')=? OR json_extract(hot_payload,'$.queued_prompt_id')=?))
+                         OR (event_type='turn_completed' AND json_extract(hot_payload,'$.queued_prompt_id')=?)
+                         THEN 1 ELSE 0 END ELSE -1 END AS prompt_match,
+                CASE WHEN cold_hash IS NULL AND length(CAST(hot_payload AS BLOB))<=32768
+                    AND json_valid(hot_payload) THEN
+                    CASE WHEN json_extract(hot_payload,'$.handoff_id')=?
+                         AND json_type(hot_payload,'$.attempt')='integer'
+                         AND json_extract(hot_payload,'$.attempt')=? THEN 1 ELSE 0 END
+                    ELSE 0 END AS attempt_match
+                FROM transcript_events WHERE session_id=? AND seq>?
+                ORDER BY seq LIMIT ?''',
+                (prompt_id, prompt_id, prompt_id, handoff_id, attempt, session_id, after_seq, limit+1))]
+        with self._conn() as conn:
+            before = snapshot(conn)
+            if expected_snapshot is not None and expected_snapshot != before:
+                raise ValueError('Evidence page snapshot changed')
+            candidates = rows(conn)
+            if snapshot(conn) != before or rows(conn) != candidates:
+                raise ValueError('Evidence changed during read')
+        selected = candidates[:limit]
+        events = []
+        for r in selected:
+            if r['prompt_match'] != 1:
+                continue
+            if any(not isinstance(r[k], str) or len(r[k]) > 256
+                   for k in ('id', 'event_type', 'created_at', 'payload_hash')):
+                raise ValueError('Unsupported evidence metadata')
+            events.append({k: r[k] for k in ('id','seq','event_type','created_at','payload_hash')} |
+                          {'prompt_identity': 'exact',
+                           'receipt_attempt_identity': 'explicit' if r['attempt_match'] else 'unverified'})
+        return {'source': 'canonical_transcript_hot_index', 'snapshot': before,
+                'events': events, 'rows_examined': len(selected),
+                'uninspectable_rows': sum(r['prompt_match'] == -1 for r in selected),
+                'truncated': len(candidates) > limit,
+                'next_after_seq': selected[-1]['seq'] if len(candidates)>limit else None,
+                'prompt_completion_observed': any(e['event_type']=='turn_completed' for e in events),
+                'attempt_completion_observed': any(e['event_type']=='turn_completed'
+                    and e['receipt_attempt_identity']=='explicit' for e in events),
+                'absence_means': 'unknown', 'retention_complete': 'unknown'}
+
     def find_prompt_completion(self, session_id: str, prompt_id: str) -> TranscriptEvent | None:
         return self._find_prompt_event(session_id, prompt_id, ("turn_completed",),
                                        newest=True, fields=("queued_prompt_id",))
