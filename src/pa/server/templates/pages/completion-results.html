@@ -1,0 +1,48 @@
+<section class="completion-results page-stack" aria-labelledby="results-heading" data-completion-results>
+  <header class="page-header">
+    <p><a href="/work?card={{ card.id | urlencode }}&amp;realm={{ card.realm_id | urlencode }}">← {{ card.title }}</a></p>
+    <h1 id="results-heading">{% if record %}{{ record.title }}{% else %}Results · {{ card.title }}{% endif %}</h1>
+    <p class="muted">Substantive results reported by their authors. Saving a result does not approve it or authorize next steps.</p>
+  </header>
+  {% if record %}
+  <article class="panel result-record" data-result-id="{{ record.record_id }}">
+    <p><a href="{{ results_url(card.id, card.realm_id) }}">All results ({{ completion_records.total }})</a></p>
+    <p class="result-summary">{{ record.summary }}</p>
+    <dl class="detail-list">
+      <div><dt>Reported by</dt><dd>{% if record.source_session_id %}Agent session · {% else %}API principal · {% endif %}{{ record.author_principal }}</dd></div>
+      <div><dt>Execution instance</dt><dd>{{ record.author_instance }}</dd></div>
+      <div><dt>Created</dt><dd><time datetime="{{ record.created_at.isoformat() }}">{{ record.created_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}</time></dd></div>
+      <div><dt>Record</dt><dd>{{ record.record_id }} · v{{ record.schema_version }}</dd></div>
+      <div><dt>Session</dt><dd>{% if record.source_session_id %}<a href="/agent?session={{ record.source_session_id | urlencode }}&amp;instance={{ record.author_instance | urlencode }}">{{ record.source_session_id }}</a>{% else %}Not recorded (direct API submission){% endif %}</dd></div>
+      <div><dt>Dispatch / attempt</dt><dd>{{ record.source_dispatch_id or 'Not recorded' }}</dd></div>
+    </dl>
+    {% if record.supersedes_record_id %}<p>This record supersedes <a href="{{ results_url(card.id, card.realm_id, record.supersedes_record_id) }}">{{ record.supersedes_record_id }}</a>. Earlier content and provenance are retained.</p>{% endif %}
+    {% if successors %}<aside aria-label="Later revisions"><p>Superseded by:</p><ul>{% for successor in successors %}<li><a href="{{ results_url(card.id, card.realm_id, successor.record_id) }}">{{ successor.title }}</a> · {{ successor.record_id }}</li>{% endfor %}</ul>{% if successors | length > 1 %}<p>Multiple revisions exist; none implies independent acceptance.</p>{% endif %}</aside>{% endif %}
+    {% for section in record.sections %}<section class="card-detail-section">
+      <h2>{{ section.heading }}</h2>
+      <div class="card-markdown" data-card-markdown><span hidden data-card-markdown-source>{{ section.content | tojson }}</span></div>
+    </section>{% endfor %}
+    {% if reference_links %}<section aria-label="Evidence and resources"><h2>Evidence and resources</h2><ul>
+      {% for reference in reference_links %}<li><a href="{{ reference.url }}"{% if reference.kind == 'external' %} rel="noopener noreferrer"{% endif %}>{{ reference.label }}</a>
+        {% if reference.sha256 %}<small class="muted">SHA-256 {{ reference.sha256 }}</small>{% endif %}
+        {% if reference.removed %}<p class="muted">Removed from current card attachments; original evidence retained for this result.</p>{% endif %}
+        {% if reference.kind == 'external' %}<small class="muted">External resource; availability and claims are not verified by PA.</small>{% endif %}
+      </li>{% endfor %}
+    </ul></section>{% endif %}
+  </article>
+  {% else %}
+  <p>{{ completion_records.total }} structured result(s) · newest first; revisions remain separate.</p>
+  {% for result in completion_records['items'] %}<article class="panel result-record" data-result-id="{{ result.record_id }}">
+    <h2><a href="{{ results_url(card.id, card.realm_id, result.record_id) }}">{{ result.title }}</a></h2>
+    <p>{{ result.summary }}</p>
+    <p class="muted">{{ result.author_principal }} · <time datetime="{{ result.created_at }}">{{ result.created_at }}</time> · Session {{ result.source_session_id or 'not recorded' }} · Dispatch {{ result.source_dispatch_id or 'not recorded' }}</p>
+    {% if result.supersedes_record_id %}<p>Supersedes <a href="{{ results_url(card.id, card.realm_id, result.supersedes_record_id) }}">{{ result.supersedes_record_id }}</a></p>{% endif %}
+  </article>{% else %}<div class="panel"><p>No structured results recorded.</p><p>Existing <a href="/work?card={{ card.id | urlencode }}&amp;realm={{ card.realm_id | urlencode }}&amp;tab=agent">sessions and outputs</a> remain available. PA has not converted legacy outputs into verified records.</p></div>{% endfor %}
+  <nav aria-label="Result pages">{% if offset %}<a href="{{ results_url(card.id, card.realm_id) }}&amp;offset={{ [offset - 20, 0] | max }}">Newer results</a>{% endif %}{% if completion_records.next_offset is not none %}<a href="{{ results_url(card.id, card.realm_id) }}&amp;offset={{ completion_records.next_offset }}">Older results</a>{% endif %}</nav>
+  {% endif %}
+  <aside class="panel" aria-label="Separately recorded acceptance">
+    <h2>Separately recorded card acceptance</h2>
+    <p>Card acceptance applies to the subject named in its receipt; it does not verify every result above.</p>
+    {% for receipt in acceptance_receipts %}<p>{{ receipt.outcome }} · {{ receipt.actor }} · {{ receipt.recorded_at }} · Subject {{ receipt.subject_revision }}</p>{% else %}<p>No independently recorded acceptance receipt.</p>{% endfor %}
+  </aside>
+</section>

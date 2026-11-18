@@ -26,8 +26,9 @@ def test_new_agent_defaults_by_purpose_and_confirms_native_mode(wire_app, purpos
     assert snap["execution_selection"]["provider_confirmation"]["effective"]["mode_id"] == expected
 
 
+@pytest.mark.parametrize("prompted", [False, True])
 @pytest.mark.parametrize("chosen_mode", ["read-only", "workspace-write", "agent", "agent-full-access"])
-def test_explicit_worker_choices_and_existing_mode_survive_recovery(wire_app, chosen_mode):
+def test_explicit_worker_choices_and_existing_mode_survive_recovery(wire_app, chosen_mode, prompted):
     client, app = wire_app
     created = client.post("/api/agent/sessions", json={
         "label": "intentional-worker", "purpose": "automated_run", "mode_id": chosen_mode,
@@ -37,11 +38,14 @@ def test_explicit_worker_choices_and_existing_mode_survive_recovery(wire_app, ch
     sid = created.json()["session"]["id"]
     assert client.put("/api/agent/preferences", json={"agent_surfaces": {"execution": {"mode_id": "agent-full-access"}}}).status_code == 200
     manager = app.state.ctx.services["instance_agent"]
+    if prompted:
+        client.portal.call(manager.get(sid).connection.prompt, "fixture first turn")
     async def recover():
         await manager.get(sid).close(reason="permission-recovery-fixture", reconcile_workspace=False)
         return (await manager.recover_session(sid)).snapshot()
     restored = client.portal.call(recover)
-    assert restored["session"]["external_session_id"] == created.json()["session"]["external_session_id"]
+    assert restored["session"]["id"] == sid
+    assert (restored["session"]["external_session_id"] == created.json()["session"]["external_session_id"]) is prompted
     assert restored["session"]["mode_id"] == chosen_mode
     assert restored["modes"]["currentModeId"] == chosen_mode
     assert restored["execution_selection"]["provider_confirmation"]["effective"]["mode_id"] == chosen_mode
