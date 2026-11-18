@@ -52,6 +52,14 @@ def manifest_digest(manifest: Iterable[CardAttachment | dict]) -> str:
         item.model_dump(mode="json") if isinstance(item, CardAttachment) else dict(item)
         for item in manifest
     ]
+    # Default editing metadata must not invalidate legacy admitted manifests.
+    defaults = {"name": "", "description": "", "kind": "file", "resource_url": None,
+                "revision": 1, "modified_at": None, "modified_by_principal": None,
+                "modified_by_instance": None}
+    for record in records:
+        for field, default in defaults.items():
+            if record.get(field) == default:
+                record.pop(field, None)
     canonical = __import__("json").dumps(records, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode()).hexdigest()
 

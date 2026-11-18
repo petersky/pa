@@ -12,6 +12,10 @@
     <p>{{ event.author_principal }} · {{ event.author_instance }} · <time datetime="{{ event.timestamp }}">{{ event.timestamp }}</time></p>
     <p class="muted">Revision {{ row.event_hash }} · {{ row.projection_effect }}</p>
     {% if 'body' in event.payload %}<details><summary>Description at this revision ({{ event.payload.body | length }} characters)</summary><pre>{{ event.payload.body }}</pre></details>{% endif %}
+    {% if event.type == 'attachment_updated' or event.type == 'attachment_created' %}
+    <p><a href="/api/cards/{{ card.id }}/attachments/{{ event.payload.attachment_id }}/preview?realm={{ card.realm_id | urlencode }}&amp;revision={{ event.payload.revision or 1 }}">View saved revision {{ event.payload.revision or 1 }}</a> · <a href="/api/cards/{{ card.id }}/attachments/{{ event.payload.attachment_id }}?realm={{ card.realm_id | urlencode }}&amp;revision={{ event.payload.revision or 1 }}&amp;download=true">Download revision</a></p>
+    {% if event.payload.previous %}<p><a href="/api/cards/{{ card.id }}/attachments/{{ event.payload.attachment_id }}/preview?realm={{ card.realm_id | urlencode }}&amp;revision={{ event.payload.previous.revision or 1 }}">View preceding revision {{ event.payload.previous.revision or 1 }}</a></p>{% endif %}
+    {% endif %}
     {% if event.type.startswith('attachment_') %}<pre>{{ event.payload | tojson(indent=2) }}</pre>{% endif %}
     {% if event.payload.attachments %}<details><summary>Original attachment manifest</summary><pre>{{ event.payload.attachments | tojson(indent=2) }}</pre></details>{% endif %}
   </article>

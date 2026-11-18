@@ -5835,3 +5835,17 @@ a.ghost:hover {
 .completion-results { display: grid; gap: 1rem; max-width: 70rem; margin-inline: auto; }
 .completion-results .result-record { min-width: 0; overflow-wrap: anywhere; }
 .completion-results .result-summary { font-size: 1.1em; }
+
+/* Card supporting materials remain usable in the narrow detail dialog. */
+.card-attachments .attachment-list { display: grid; gap: .75rem; }
+.card-attachments .attachment-item { border: 1px solid var(--border-color, #8885); border-radius: .5rem; padding: .75rem; min-width: 0; }
+.card-attachments h4 { margin: 0 0 .35rem; overflow-wrap: anywhere; }
+.card-attachments p, .card-attachments a { overflow-wrap: anywhere; }
+.card-attachments details { margin-top: .6rem; }
+.card-attachments summary { cursor: pointer; }
+.card-attachments form { display: grid; gap: .5rem; margin-top: .6rem; }
+.card-attachments form[hidden] { display: none; }
+.card-attachments label { display: grid; gap: .25rem; }
+.card-attachments input, .card-attachments textarea { width: 100%; min-width: 0; box-sizing: border-box; }
+.card-attachments .attachment-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
+.card-attachments .attachment-digest { font-family: monospace; overflow-wrap: anywhere; }

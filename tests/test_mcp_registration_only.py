@@ -247,6 +247,7 @@ async def test_all_ordinary_tool_schemas_match_pre_repair_contract(tmp_path, mon
     # and add optional CAS/idempotency selectors to removal. Restricted tools
     # and every other ordinary schema retain their existing contracts.
     baseline.update(json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_card_materials.json').read_text()))
+    baseline.update(json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_attachment_editing.json').read_text()))
     assert actual == baseline
 
 

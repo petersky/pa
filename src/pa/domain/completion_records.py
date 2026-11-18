@@ -152,10 +152,10 @@ def append_record(store, card_id, realm_id, data, *, principal_id, instance_id,
     return payload
 
 
-def retained_attachment(store, card_id, realm_id, attachment_id, sha256=None):
+def retained_attachment(store, card_id, realm_id, attachment_id, sha256=None, *, revision=None):
     with store._conn() as conn:
-        rows = conn.execute("SELECT payload FROM completion_records WHERE realm_id=? AND card_id=? AND EXISTS (SELECT 1 FROM json_each(payload, '$.retained_attachments') WHERE json_extract(value, '$.attachment_id')=?) LIMIT 1",
-                            (realm_id, card_id, attachment_id)).fetchall()
+        rows = conn.execute("SELECT payload FROM completion_records WHERE realm_id=? AND card_id=? AND EXISTS (SELECT 1 FROM json_each(payload, '$.retained_attachments') WHERE json_extract(value, '$.attachment_id')=? AND (? IS NULL OR json_extract(value, '$.sha256')=?) AND (? IS NULL OR coalesce(json_extract(value, '$.revision'), 1)=?)) LIMIT 1",
+                            (realm_id, card_id, attachment_id, sha256, sha256, revision, revision)).fetchall()
     for row in rows:
         for item in json.loads(row["payload"]).get("retained_attachments", []):
             if item["attachment_id"] == attachment_id and (sha256 is None or item["sha256"] == sha256):

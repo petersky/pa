@@ -120,6 +120,7 @@
              tabindex="0"
              aria-labelledby="card-tab-summary-{{ card.id }}"
              data-card-tab-panel="summary">
+      {% include "partials/card-attachments.html" %}
       {% set repeats_title = (card.summary or '').strip() == card.title.strip() or card.summary_source.value == 'fallback' %}
       <section class="card-detail-section" aria-labelledby="card-summary-title">
         <div class="section-heading-inline">
