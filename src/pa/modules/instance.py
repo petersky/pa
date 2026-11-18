@@ -588,6 +588,15 @@ async def tracked_prefix_custody(request: Request, body: WorkspaceTrackedCustody
     principal = get_principal_id(request)
     service = TrackedPrefixCustody(agent.workspace_manager)
 
+    def refused(stage: str, message: str) -> HTTPException:
+        # The owner API proxy renders structured code/message details. A plain
+        # string leaves MCP callers with only HTTP409 and hides the failed guard.
+        return HTTPException(409, {
+            'code': 'tracked_custody_guard_rejected',
+            'stage': stage,
+            'message': message[:1000],
+        })
+
     async def owned():
         if body.action == 'status':
             return await runtime.run_blocking('workspace.tracked_custody_status', service.operate,
@@ -596,14 +605,14 @@ async def tracked_prefix_custody(request: Request, body: WorkspaceTrackedCustody
             lease = (await runtime.run_blocking('workspace.tracked_custody_lease',
                 agent.workspace_manager.selected_cleanup_leases, [body.target]))[0]
         except WorkspaceProvisioningError as exc:
-            raise HTTPException(409, str(exc)) from None
+            raise refused('lease', str(exc)) from None
         if lease.session_id in agent._admitting_sessions:
-            raise HTTPException(409, 'Exact custody owner is being admitted')
+            raise refused('admission', 'Exact custody owner is being admitted')
         agent._admitting_sessions.add(lease.session_id)
         try:
             live = agent.get(lease.session_id)
             if live is not None and not live._closed:
-                raise HTTPException(409, 'Exact custody owner has a live runtime')
+                raise refused('runtime', 'Exact custody owner has a live runtime')
 
             def operate():
                 paths = []
@@ -631,7 +640,7 @@ async def tracked_prefix_custody(request: Request, body: WorkspaceTrackedCustody
                 return await runtime.run_blocking('workspace.tracked_prefix_custody', operate,
                     timeout=120.0, wait_for_completion=True)
             except (WorkspaceProvisioningError, ValueError, KeyError) as exc:
-                raise HTTPException(409, str(exc)) from None
+                raise refused('custody', str(exc)) from None
         finally:
             agent._admitting_sessions.discard(lease.session_id)
     key = hashlib.sha256(json.dumps([principal, body.model_dump(mode='json')], sort_keys=True).encode()).hexdigest()

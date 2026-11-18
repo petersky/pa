@@ -181,7 +181,7 @@ def test_prefix_capacity_is_checked_before_archive_creation(tmp_path,monkeypatch
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('fault',['live','admitting','missing_blob','wrong_hash','attachment_race',None])
+@pytest.mark.parametrize('fault',['lease','custody','live','admitting','missing_blob','wrong_hash','attachment_race',None])
 async def test_api_fences_owner_and_requires_durable_attachment(tmp_path,monkeypatch,fault):
     from fastapi import HTTPException
     from pa.core.async_runtime import AsyncRuntime
@@ -197,9 +197,34 @@ async def test_api_fences_owner_and_requires_durable_attachment(tmp_path,monkeyp
     monkeypatch.setattr(instance,'get_principal_id',lambda _:'user:local')
     body=instance.WorkspaceTrackedCustodyRequest(target=params['target'],idempotency_key='api-custody',action='prepare')
     before=originals(tree)
+    if fault == 'lease':
+        def reject_lease(*_):
+            raise WorkspaceProvisioningError('Selected lease changed')
+        monkeypatch.setattr(manager, 'selected_cleanup_leases', reject_lease)
+    if fault == 'custody':
+        def reject_owner(*_):
+            raise WorkspaceProvisioningError('Exact bound owner idle/control evidence is unavailable')
+        monkeypatch.setattr(TrackedPrefixCustody, 'guard', reject_owner)
     try:
-        if fault in {'live','admitting'}:
-            with pytest.raises(HTTPException): await instance.tracked_prefix_custody(req,body)
+        if fault in {'lease','custody','live','admitting'}:
+            with pytest.raises(HTTPException) as rejection:
+                await instance.tracked_prefix_custody(req,body)
+            assert rejection.value.status_code == 409
+            assert rejection.value.detail['code'] == 'tracked_custody_guard_rejected'
+            assert rejection.value.detail['stage'] == {'live':'runtime','admitting':'admission','lease':'lease','custody':'custody'}[fault]
+            assert rejection.value.detail['message']
+            assert originals(tree) == before
+            assert not (manager.root/'tracked-prefix-custody').exists()
+            assert agent._admitting_sessions == ({lease.session_id} if fault == 'admitting' else set())
+            import httpx
+            from pa.mcp.local_api import _http_error
+            response = httpx.Response(409, json={'detail': rejection.value.detail},
+                request=httpx.Request('POST', 'http://localhost/api/workspaces/tracked-prefix-custody'))
+            proxy_error = _http_error(response, method='POST',
+                path='/api/workspaces/tracked-prefix-custody',
+                correlation_id='custody-test', expected_instance_id='')
+            assert 'tracked_custody_guard_rejected' in str(proxy_error)
+            assert rejection.value.detail['message'] in str(proxy_error)
             return
         prepared=await instance.tracked_prefix_custody(req,body)
         blob=durable_parts(prepared,tmp_path)[0]
