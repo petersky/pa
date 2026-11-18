@@ -41,20 +41,52 @@ async def _call(manager, call, *args, **kwargs):
 @router.get("/{session_id}/issues")
 async def get_issues(request: Request, session_id: str):
     started = perf_counter()
-    manager, _, notes = await _context(request, session_id)
+    manager, session, notes = await _context(request, session_id)
     state = await _call(manager, notes.read, session_id)
     for record in state["requests"]:
         if record["state"] in {"accepted", "admitting"}:
             state = await _run_request(request, session_id, record["request_id"], manager, notes)
     result = notes.public(state)
+    result["realm_id"] = session.realm_id
     result["diagnostics"] = {"read_ms": round((perf_counter() - started) * 1000, 2)}
     return result
 
 
 @router.put("/{session_id}/issues")
 async def edit_issues(request: Request, session_id: str, body: IssueEdit):
-    manager, _, notes = await _context(request, session_id)
-    return notes.public(await _call(manager, notes.edit, session_id, body))
+    manager, session, notes = await _context(request, session_id)
+    state = await _call(manager, notes.read, session_id)
+    old = {i["id"]: i for i in state["issues"]}
+    for issue in body.issues:
+        previous = old.get(issue.id, {})
+        if issue.card_id and not previous.get("request_id"):
+            card = await _linked_card(request, manager, session, issue.card_id)
+            # Unrelated edits retain the version originally reviewed. To use
+            # newer material the caller must deliberately refresh the link.
+            if issue.card_execution_version is None:
+                issue.card_execution_version = (previous.get("card_execution_version")
+                    if previous.get("card_id") == issue.card_id else None) or card.execution_version
+            if issue.card_execution_version != card.execution_version:
+                raise HTTPException(409, {"code": "conversation_link_changed", "message": "Linked card material changed. Review the card and refresh card_execution_version before saving."})
+    return {**notes.public(await _call(manager, notes.edit, session_id, body)), "realm_id": session.realm_id}
+
+
+async def _linked_card(request, manager, session, card_id):
+    card = await _call(manager, manager.store.get_card, card_id, realm_id=session.realm_id)
+    if not card:
+        raise HTTPException(404, {"code": "conversation_link_unavailable", "message": "Linked card is unavailable in this conversation's realm."})
+    if not card.project_id:
+        raise HTTPException(409, {"code": "conversation_project_required", "message": "Choose a project on the linked card before linking it."})
+    await _check_project(request, manager, card.project_id, session.realm_id)
+    return card
+
+
+@router.get("/{session_id}/issues/cards/{card_id}")
+async def issue_card_version(request: Request, session_id: str, card_id: str):
+    manager, session, _ = await _context(request, session_id)
+    card = await _linked_card(request, manager, session, card_id)
+    return {"card_id": card.id, "realm_id": card.realm_id, "title": card.title,
+            "execution_version": card.execution_version, "updated_at": card.updated_at.isoformat()}
 
 
 def _preferences(session):
@@ -112,6 +144,11 @@ async def _prepare_card(request, manager, context, group):
     card = await _call(manager, manager.store.get_card, group["card_id"], realm_id=context["realm_id"])
     if not card:
         raise HTTPException(409, {"code": "conversation_card_unavailable", "message": "The saved card is unavailable. Restore it before reviewing this start."})
+    if group.get("linked_card"):
+        if card.execution_version != group["card_execution_version"]:
+            raise HTTPException(409, {"code": "conversation_link_changed", "message": "Linked card material changed after this start was saved. Review and start the current card directly; this saved request retains its original scope."})
+        await _check_project(request, manager, card.project_id, context["realm_id"])
+        return card.project_id
     if not card.project_id:
         matches = await _call(manager, referenced_projects, manager.store, card)
         if len(matches) > 1:
@@ -209,6 +246,8 @@ async def _execute(request, session_id, request_id, manager, notes):
                         await _call(manager, notes.update_request, session_id, request_id, groups=groups)
                     if "dispatch_inputs" not in group:
                         inputs = dict(context["dispatch"])
+                        if group.get("linked_card"):
+                            inputs["expected_execution_version"] = group["card_execution_version"]
                         # Older notebooks froze the chat's mode, although the
                         # start contract never accepted a worker-mode selection.
                         # Normalize only before definitive first admission. An
@@ -277,8 +316,17 @@ async def start_issues(request: Request, session_id: str, body: StartIssues):
     previous = await _call(manager, notes.read, session_id)
     existing = next((r for r in previous["requests"] if r["request_id"] == body.request_id), None)
     context = existing["context"] if existing else await _start_context(request, manager, session)
+    if not existing:
+        # Validate the reviewed link before freezing the issue. Canonical fleet
+        # admission also checks this version atomically with its normal duplicate
+        # execution and workspace fences; no material is copied into the notebook.
+        for issue in previous["issues"]:
+            if issue["id"] in body.issue_ids and issue.get("card_id"):
+                card = await _linked_card(request, manager, session, issue["card_id"])
+                if card.execution_version != issue.get("card_execution_version"):
+                    raise HTTPException(409, {"code": "conversation_link_changed", "message": "Linked card material changed. Review it and refresh the issue link before starting."})
     await _call(manager, notes.admit, session_id, body, context)
-    return notes.public(await _run_request(request, session_id, body.request_id, manager, notes))
+    return {**notes.public(await _run_request(request, session_id, body.request_id, manager, notes)), "realm_id": session.realm_id}
 
 
 async def _run_request(request, session_id, request_id, manager, notes):

@@ -12,6 +12,8 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from pa.domain.card_limits import CONVERSATION_ISSUES, ISSUE_DETAIL_CHARACTERS, START_SELECTED_ISSUES, material_limits
+
 
 class IssueConflict(ValueError):
     pass
@@ -21,7 +23,12 @@ class Issue(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=1, max_length=80, pattern=r"^[a-zA-Z0-9_-]+$")
     title: str = Field(min_length=1, max_length=300)
-    detail: str = Field(default="", max_length=4000)
+    detail: str = Field(default="", max_length=ISSUE_DETAIL_CHARACTERS,
+                        description="Discussion detail, up to 16,000 characters. For larger specifications, create a card and set card_id; its body and attachments stay on the card.")
+    card_id: str | None = Field(default=None, min_length=1, max_length=80, pattern=r"^[a-zA-Z0-9_-]+$",
+                                description="Existing specification/work card in this conversation's realm. Linking only saves notes; Start selected dispatches this card without creating another.")
+    card_execution_version: str | None = Field(default=None, max_length=100,
+                                              description="Linked card execution_version from get_card. PA captures it when first linking; refresh explicitly after reviewing changed material. Start rejects stale material.")
     group: str = Field(default="", max_length=80)
     deferred: bool = False
 
@@ -52,12 +59,19 @@ class Issue(BaseModel):
 class IssueEdit(BaseModel):
     model_config = ConfigDict(extra="forbid")
     revision: int = Field(ge=0)
-    issues: list[Issue] = Field(max_length=100)
+    issues: list[Issue] = Field(max_length=CONVERSATION_ISSUES)
 
     @model_validator(mode="after")
     def unique_ids(self):
         if len({i.id for i in self.issues}) != len(self.issues):
             raise ValueError("Issue IDs must be unique")
+        linked = [i.card_id for i in self.issues if i.card_id]
+        if len(set(linked)) != len(linked):
+            raise ValueError("Link each card only once per conversation")
+        if any(i.card_id and i.group for i in self.issues):
+            raise ValueError("A linked card is its own work scope; leave its group empty")
+        if any(i.card_execution_version and not i.card_id for i in self.issues):
+            raise ValueError("card_execution_version requires card_id")
         return self
 
 
@@ -65,7 +79,7 @@ class StartIssues(BaseModel):
     model_config = ConfigDict(extra="forbid")
     request_id: str = Field(min_length=8, max_length=80, pattern=r"^[a-zA-Z0-9_-]+$")
     revision: int = Field(ge=0)
-    issue_ids: list[str] = Field(min_length=1, max_length=20)
+    issue_ids: list[str] = Field(min_length=1, max_length=START_SELECTED_ISSUES)
 
     @model_validator(mode="after")
     def unique_ids(self):
@@ -136,13 +150,16 @@ class ConversationIssues:
         with self.store._conn() as conn:
             conn.execute("BEGIN IMMEDIATE")
             state = self._read(conn, session_id)
+            # Legacy notebooks predate optional links. Normalize before comparing
+            # frozen issues so unchanged old records remain editable/retryable.
+            state["issues"] = [Issue.model_validate(i).model_dump() | ({"request_id": i["request_id"]} if i.get("request_id") else {}) for i in state["issues"]]
             incoming = [i.model_dump() for i in body.issues]
             old = {i["id"]: i for i in state["issues"]}
             by_id = {i["id"]: i for i in incoming}
             for issue in old.values():
                 if issue.get("request_id"):
                     candidate = by_id.get(issue["id"])
-                    if candidate != {k: v for k, v in issue.items() if k != "request_id"}:
+                    if candidate != Issue.model_validate(issue).model_dump():
                         raise IssueConflict("Started issues are frozen; make further changes on their card")
                     candidate["request_id"] = issue["request_id"]
             # Exact retries are harmless even after the revision increment.
@@ -174,6 +191,8 @@ class ConversationIssues:
             for issue in selected:
                 key = "group:" + issue["group"] if issue["group"] else "issue:" + issue["id"]
                 group = groups.setdefault(key, {"title": issue["group"] or issue["title"], "issues": [], "state": "accepted"})
+                if issue.get("card_id"):
+                    group.update(card_id=issue["card_id"], card_execution_version=issue["card_execution_version"], linked_card=True)
                 group["issues"].append(dict(issue))
                 # This explicit start supersedes the earlier deferral for only
                 # the selected issue; unrelated discussion stays deferred.
@@ -199,7 +218,7 @@ class ConversationIssues:
     @staticmethod
     def public(state):
         # Execution inputs remain durable but are not repeated in compact reads.
-        return {"revision": state["revision"], "issues": state["issues"],
+        return {"revision": state["revision"], "issues": state["issues"], "limits": material_limits(),
                 "editable_issues": [{k: v for k, v in i.items() if k != "request_id"} for i in state["issues"]], "requests": [
             {k: v for k, v in r.items() if k not in {"context", "fingerprint"}} | {
                 "realm_id": r["context"]["realm_id"],

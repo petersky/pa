@@ -120,6 +120,7 @@
              tabindex="0"
              aria-labelledby="card-tab-summary-{{ card.id }}"
              data-card-tab-panel="summary">
+      {% include "partials/card-attachments.html" %}
       {% set repeats_title = (card.summary or '').strip() == card.title.strip() or card.summary_source.value == 'fallback' %}
       <section class="card-detail-section" aria-labelledby="card-summary-title">
         <div class="section-heading-inline">
@@ -190,6 +191,7 @@
         {% set selection_purpose = 'edit' %}
         {% include 'partials/execution-preferences.html' %}
         <h3 id="card-details-title">Description</h3>
+        <p class="muted small">Use the full description for specifications and keep the summary concise. Saving descriptive material does not start work. <a href="/card-history?card_id={{ card.id | urlencode }}&amp;realm={{ card.realm_id | urlencode }}">Description and material history</a></p>
         <div class="inline-edit-field" data-inline-edit-field>
           <div class="inline-edit-trigger inline-edit-block" data-inline-edit-open tabindex="0" aria-label="Edit description">
             {% if card.body %}

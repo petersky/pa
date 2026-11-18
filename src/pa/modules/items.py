@@ -57,6 +57,7 @@ from pa.core.ui.instance_identity import (
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.core.ui.work_presentation import child_work_status, present_work_item
 from pa.domain.card_enrichment import explicit_enrichment_fields
+from pa.domain.card_limits import ATTACHMENT_BYTES, CARD_ATTACHMENT_BYTES, CARD_ATTACHMENTS, material_limits
 from pa.domain.completion_records import CompletionRecordInput, get_record, list_records, results_url, retained_attachment
 from pa.domain.models import (
     CardAttachment,
@@ -98,9 +99,9 @@ router = APIRouter()
 ui_router = APIRouter()
 logger = logging.getLogger(__name__)
 
-MAX_CARD_ATTACHMENTS = 10
-MAX_CARD_ATTACHMENT_BYTES = 25 * 1024 * 1024
-MAX_CARD_ATTACHMENTS_TOTAL_BYTES = 100 * 1024 * 1024
+MAX_CARD_ATTACHMENTS = CARD_ATTACHMENTS
+MAX_CARD_ATTACHMENT_BYTES = ATTACHMENT_BYTES
+MAX_CARD_ATTACHMENTS_TOTAL_BYTES = CARD_ATTACHMENT_BYTES
 ATTACHMENT_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 SAFE_IMAGE_TYPES = {
     "image/avif",
@@ -808,6 +809,12 @@ def _card_summary_context(request: Request, card) -> dict:
     summary_service = request.app.state.ctx.require_service("card_summary_service")
     dispatch_store = request.app.state.ctx.services.get("dispatch_store")
     realm_id = card.realm_id
+    _attachment_access(request, realm_id, write=False)
+    try:
+        _attachment_access(request, realm_id, write=True)
+        attachments_writable = True
+    except HTTPException:
+        attachments_writable = False
     project = (
         store.get_project(card.project_id, realm_id=realm_id)
         if card.project_id
@@ -840,6 +847,8 @@ def _card_summary_context(request: Request, card) -> dict:
             ))
     return {
         "card": card,
+        "attachment_presentation": attachment_presentation,
+        "attachments_writable": attachments_writable,
         "completion_records": list_records(store, card.id, realm_id, limit=3),
         "summary_diagnostics": summary_service.diagnostics(),
         "browser_signed_in": browser_signed_in(request),
@@ -2633,6 +2642,20 @@ def get_card_api(request: Request, card_id: str, realm: str | None = None) -> di
             "execution_version": card.execution_version}
 
 
+@router.get("/cards/{card_id}/materials")
+def card_materials_api(request: Request, card_id: str, realm: str | None = None) -> dict:
+    """Discover current material without returning descriptions or artifact bytes."""
+    card = get_card_api(request, card_id, realm)
+    _attachment_access(request, card["realm_id"], write=False)
+    query = urlencode({"realm": card["realm_id"]})
+    base = f"/api/cards/{quote(card_id, safe='')}"
+    return {"card_id": card_id, "realm_id": card["realm_id"],
+            "updated_at": card["updated_at"], "execution_version": card["execution_version"],
+            "description_characters": len(card["body"]), "card_url": base + "?" + query,
+            "history_url": base + "/history?" + query, "limits": material_limits(),
+            "attachments": [{**a, "description": a.get("description", "")[:240], "description_characters": len(a.get("description", "")), **attachment_presentation(CardAttachment.model_validate(a)), "url": base + "/attachments/" + quote(a["attachment_id"], safe='') + "?" + query} for a in card["attachments"]]}
+
+
 def _card_history_payload(
     request: Request,
     card_id: str,
@@ -2657,6 +2680,18 @@ def _card_history_payload(
     except EventHistoryError as exc:
         raise HTTPException(status_code=422, detail=exc.as_detail()) from exc
     return {"card_id": card_id, "realm_id": realm_id, **page}
+
+
+def _card_material_history_context(request):
+    card_id = request.query_params.get("card_id", "")
+    realm_id = request.query_params.get("realm") or _active_realm(request)
+    card = get_store().get_card(card_id, realm_id=realm_id)
+    if not card:
+        raise HTTPException(404, "Card not found")
+    page = _card_history_payload(request, card_id, realm_id, limit=50, cursor=request.query_params.get("cursor"))
+    events = [row for row in page["events"] if row["event"]["type"].startswith("attachment_")
+              or {"body", "attachments"}.intersection(row["event"]["payload"])]
+    return {"card": card, "material_events": events, "history_page": page, "material_limits": material_limits()}
 
 
 @router.get("/cards/{card_id}/history", response_model=dict)
@@ -2921,19 +2956,45 @@ def _attachment_store(request: Request) -> AttachmentStore:
     return service
 
 
+def _require_attachment_card(request, card_id, realm=None):
+    realm_id = realm or request.app.state.ctx.settings.primary_realm
+    card = get_store().get_card(card_id, realm_id=realm_id)
+    if not card:
+        raise HTTPException(404, "Card not found")
+    _attachment_access(request, realm_id)
+    return card
+
+
+def _attachment_access(request, realm_id, *, write=None):
+    from pa.domain.models import RealmRole
+    write = request.method in {"POST", "PUT", "PATCH", "DELETE"} if write is None else write
+    user = getattr(request.state, "user", None)
+    if write and user is not None and user.role not in {"editor", "admin"}:
+        raise HTTPException(403, "Attachment changes require an editor")
+    if request.app.state.ctx.settings.auth_required:
+        from pa.modules.sync import _membership_principal
+        membership = request.app.state.ctx.require_service("membership")
+        if not membership.has_role(realm_id, _membership_principal(request), min_role=RealmRole.EDITOR if write else RealmRole.VIEWER):
+            raise HTTPException(403, "No permission for attachments in this realm")
+
+
 def _card_attachment_or_404(
     request: Request, card_id: str, attachment_id: str, realm: str | None = None,
-    *, include_retained: bool = False,
+    *, include_retained: bool = False, revision: int | None = None, sha256: str | None = None,
 ):
     realm_id = realm or request.app.state.ctx.settings.primary_realm
     card = get_store().get_card(card_id, realm_id=realm_id)
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
+    _attachment_access(request, realm_id)
     attachment = next(
         (item for item in card.attachments if item.attachment_id == attachment_id), None
     )
+    if attachment is not None and ((revision is not None and attachment.revision != revision) or (sha256 is not None and attachment.sha256 != sha256)):
+        from pa.domain.attachment_revisions import historical_attachment
+        attachment = historical_attachment(get_store(), card_id, realm_id, attachment_id, revision=revision, sha256=sha256)
     if attachment is None and include_retained:
-        attachment = retained_attachment(get_store(), card_id, realm_id, attachment_id)
+        attachment = retained_attachment(get_store(), card_id, realm_id, attachment_id, sha256, revision=revision)
     if not attachment:
         raise HTTPException(status_code=404, detail="Attachment not found")
     return card, attachment
@@ -2941,19 +3002,20 @@ def _card_attachment_or_404(
 
 def _publish_card_attachment(
     request: Request, card_id: str, realm_id: str, sha256: str, size: int,
-    filename: str, media_type: str,
+    filename: str, media_type: str, metadata: dict | None = None,
 ) -> dict:
     """Publish bytes and receipt identity in the same canonical event.
 
     This whole operation runs in an owned executor invocation: cancellation of
     the HTTP waiter cannot abandon the post-commit receipt update. Replay is
-    checked before mutable card state (including the ten-attachment limit).
+    checked before mutable card state (including attachment quotas).
     """
     store = get_store()
+    _attachment_access(request, realm_id)
     key, fingerprint, replay = _begin_operation(
         request, operation="card.attachment.create", realm_id=realm_id,
         payload={"card_id": card_id, "sha256": sha256, "size": size,
-                 "filename": filename, "media_type": media_type}, store=store,
+                 "filename": filename, "media_type": media_type, **({"metadata": metadata} if metadata else {})}, store=store,
     )
     if replay is not None:
         return replay
@@ -2968,6 +3030,7 @@ def _publish_card_attachment(
             created_by_principal=get_principal_id(request),
             created_by_instance=request.app.state.ctx.settings.instance_id,
             visibility=card.visibility,
+            **(metadata or {}),
         )
         store.add_attachment(
             attachment, principal_id=get_principal_id(request),
@@ -3076,7 +3139,7 @@ def _completion_results_context(request):
     if record:
         for reference in record.references:
             url = reference.url if reference.kind == "external" else (
-                f"/api/cards/{quote(card.id, safe='')}/attachments/{quote(reference.attachment_id, safe='')}?" + urlencode({"realm": card.realm_id})
+                f"/api/cards/{quote(card.id, safe='')}/attachments/{quote(reference.attachment_id, safe='')}?" + urlencode({"realm": card.realm_id, "sha256": reference.sha256})
                 if reference.kind == "attachment" else results_url(card.id, card.realm_id, reference.record_id))
             reference_links.append({"label": reference.label, "url": url, "kind": reference.kind, "sha256": reference.sha256,
                                     "removed": reference.kind == "attachment" and not any(a.attachment_id == reference.attachment_id for a in card.attachments)})
@@ -3098,6 +3161,7 @@ async def create_card_attachment_api(
     realm_id = realm or request.app.state.ctx.settings.primary_realm
     runtime = request.app.state.ctx.require_service("async_runtime")
     try:
+        _require_attachment_card(request, card_id, realm_id)
         sha256, size = await runtime.run_blocking(
             "cards.attachments.ingest",
             _attachment_store(request).ingest,
@@ -3127,11 +3191,26 @@ def download_card_attachment_api(
     attachment_id: str,
     realm: str | None = None,
     download: bool = False,
-) -> FileResponse:
-    _card, attachment = _card_attachment_or_404(request, card_id, attachment_id, realm, include_retained=True)
+    view: bool = False,
+    revision: int | None = Query(default=None, ge=1),
+    sha256: str | None = Query(default=None, pattern=r"^[0-9a-f]{64}$"),
+) -> Response:
+    _card, attachment = _card_attachment_or_404(request, card_id, attachment_id, realm, include_retained=True, revision=revision, sha256=sha256)
     blobs = _ensure_attachment_available(request, attachment)
+    if view and not download and attachment.media_type.split(";", 1)[0] == "text/html":
+        from pa.modules.card_attachments import inert_html, TEXT_EDIT_BYTES
+        if attachment.size > TEXT_EDIT_BYTES:
+            raise HTTPException(413, "HTML preview is limited to 1 MiB. Download the original.")
+        try:
+            source = blobs.blob_path(attachment.sha256).read_text("utf-8")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(415, "HTML preview requires UTF-8. Download the original.") from exc
+        return HTMLResponse(inert_html(source), headers={
+            "Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'",
+            "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"})
     inline = (
-        attachment.media_type in SAFE_IMAGE_TYPES
+        (view and attachment.media_type == "text/html")
+        or attachment.media_type in SAFE_IMAGE_TYPES
         or attachment.media_type.startswith(("video/", "audio/"))
     )
     return FileResponse(
@@ -3140,7 +3219,7 @@ def download_card_attachment_api(
         media_type=attachment.media_type,
         content_disposition_type="attachment" if download or not inline else "inline",
         headers={
-            "Content-Security-Policy": "sandbox; default-src 'none'; img-src 'self'; media-src 'self'",
+            "Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; media-src 'self'; base-uri 'none'; form-action 'none'",
             "X-Content-Type-Options": "nosniff",
             "Accept-Ranges": "bytes",
             "Cache-Control": "private, no-store",
@@ -3151,18 +3230,36 @@ def download_card_attachment_api(
 
 @router.delete("/cards/{card_id}/attachments/{attachment_id}")
 def remove_card_attachment_api(
-    request: Request, card_id: str, attachment_id: str, realm: str | None = None
+    request: Request, card_id: str, attachment_id: str, realm: str | None = None,
+    expected_version: datetime | None = None,
 ) -> dict:
     realm_id = realm or request.app.state.ctx.settings.primary_realm
-    _card_attachment_or_404(request, card_id, attachment_id, realm_id)
-    card = get_store().remove_attachment(
-        card_id,
-        attachment_id,
-        realm_id=realm_id,
-        principal_id=get_principal_id(request),
-        instance_id=request.app.state.ctx.settings.instance_id,
-    )
-    return {**card.model_dump(mode="json"), "completion_status": card.completion_status}
+    store = get_store()
+    _attachment_access(request, realm_id)
+    key, fingerprint, replay = _begin_operation(request, operation="card.attachment.remove", realm_id=realm_id,
+        payload={"card_id": card_id, "attachment_id": attachment_id,
+                 "expected_version": expected_version.isoformat() if expected_version else None})
+    if replay is not None:
+        return replay
+    try:
+        card = store.remove_attachment(card_id, attachment_id, realm_id=realm_id,
+            principal_id=get_principal_id(request), instance_id=request.app.state.ctx.settings.instance_id,
+            expected_version=expected_version, idempotency_key=key, request_fingerprint=fingerprint)
+        if card is None:
+            raise HTTPException(404, "Attachment not found")
+    except CardVersionConflict as exc:
+        store.fail_operation(key, "stale_card_version")
+        raise HTTPException(409, {"code": "stale_card_version", "message": "Card changed. Refresh its materials before removing the attachment.",
+                                  "actual_version": exc.actual.isoformat()}) from exc
+    except ValueError as exc:
+        store.fail_operation(key, "attachment_referenced")
+        raise HTTPException(409, {"code": "attachment_referenced", "message": str(exc)}) from exc
+    except Exception as exc:
+        store.fail_operation(key, type(exc).__name__)
+        raise
+    result = store.get_operation_outcome(key, realm_id=realm_id)["result"]
+    store.complete_operation(key, result)
+    return result
 
 
 @router.post("/items", status_code=201)
@@ -3600,7 +3697,7 @@ def _ensure_attachment_available(
             with httpx.stream(
                 "GET",
                 f"{source.url.rstrip('/')}/api/fleet/attachments/{attachment.card_id}/{attachment.attachment_id}",
-                params={"realm_id": attachment.realm_id},
+                params={"realm_id": attachment.realm_id, "sha256": attachment.sha256},
                 headers=headers,
                 timeout=120.0,
             ) as response:
@@ -4301,6 +4398,9 @@ class ItemsModule(Module):
         pages.register(PageDefinition(id="results", path="/results", label="Card results", icon="file-text",
                                       template="pages/completion-results.html", nav=False,
                                       context_builder=_completion_results_context))
+        pages.register(PageDefinition(id="card-history", path="/card-history", label="Card material history", icon="file-text",
+                                      template="pages/card-material-history.html", nav=False,
+                                      context_builder=_card_material_history_context))
         pages.register(
             PageDefinition(
                 id="home",
@@ -4366,3 +4466,7 @@ class ItemsModule(Module):
         from pa.mcp.tools.items import register_mcp
 
         register_mcp(mcp, ctx)
+
+
+from pa.modules.card_attachments import router as attachment_router, attachment_presentation
+router.include_router(attachment_router)

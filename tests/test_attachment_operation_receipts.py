@@ -11,6 +11,7 @@ from pa.auth.users import UserDirectory
 from pa.config import Settings, reset_settings
 from pa.core.kernel import Kernel
 from pa.domain.models import CardCreate
+from pa.domain.card_limits import CARD_ATTACHMENTS
 from pa.domain.projection import CardProjection
 from pa.domain.store import reset_store
 from pa.instance.agent_session import reset_instance_agent
@@ -43,13 +44,15 @@ def test_same_key_replays_at_capacity_and_rejects_changed_bytes(publication):
     app, client, card = publication
     first = upload(client, card, "attachment-once")
     assert first.status_code == 201, first.text
-    for number in range(9):
+    for number in range(CARD_ATTACHMENTS - 1):
         response = upload(client, card, f"other-{number}", str(number).encode())
         assert response.status_code == 201, response.text
     replay = upload(client, card, "attachment-once")
     assert replay.status_code == 201, replay.text
     assert replay.json() == first.json()
-    assert len(app.state.ctx.store.get_card(card.id).attachments) == 10
+    assert len(app.state.ctx.store.get_card(card.id).attachments) == CARD_ATTACHMENTS
+    overflow = upload(client, card, "over-capacity")
+    assert overflow.status_code == 413 and str(CARD_ATTACHMENTS) in overflow.text
     conflict = upload(client, card, "attachment-once", b"different")
     assert conflict.status_code == 409, conflict.text
     assert conflict.json()["detail"]["code"] == "idempotency_conflict"

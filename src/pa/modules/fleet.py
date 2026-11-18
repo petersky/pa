@@ -2039,7 +2039,7 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
     response_model=None,
 )
 def fetch_fleet_attachment(
-    request: Request, card_id: str, attachment_id: str, realm_id: str
+    request: Request, card_id: str, attachment_id: str, realm_id: str, sha256: str | None = None
 ) -> FileResponse:
     _require_instance(request)
     caller = request.headers.get("X-PA-Origin-Instance-ID", "").strip()
@@ -2050,9 +2050,12 @@ def fetch_fleet_attachment(
     attachment = next(
         (item for item in card.attachments if item.attachment_id == attachment_id), None
     )
+    if attachment is not None and sha256 is not None and attachment.sha256 != sha256:
+        from pa.domain.attachment_revisions import historical_attachment
+        attachment = historical_attachment(request.app.state.ctx.store, card_id, realm_id, attachment_id, sha256=sha256)
     if attachment is None:
         from pa.domain.completion_records import retained_attachment
-        attachment = retained_attachment(request.app.state.ctx.store, card_id, realm_id, attachment_id)
+        attachment = retained_attachment(request.app.state.ctx.store, card_id, realm_id, attachment_id, sha256)
     if (
         not attachment
         or attachment.realm_id != realm_id

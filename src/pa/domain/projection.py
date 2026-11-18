@@ -18,6 +18,8 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from pydantic import ValidationError
 
+from pa.domain.card_limits import CARD_ATTACHMENT_BYTES, CARD_ATTACHMENTS
+
 from pa.core.operation_budget import current_operation, measured_lock, report_work_progress
 from pa.core.performance import retention_phase
 from pa.core.sqlite_metrics import ObservedConnection
@@ -750,6 +752,8 @@ class CardProjection:
             init_limbic_schema(conn)
             from pa.domain.completion_records import init_schema as init_results_schema
             init_results_schema(conn)
+            from pa.domain.attachment_revisions import init_schema as init_attachment_schema
+            init_attachment_schema(conn)
 
     def _migrate_schema(self, conn: sqlite3.Connection) -> None:
         card_cols = {
@@ -1328,7 +1332,7 @@ class CardProjection:
             self._apply_updated(event)
         elif event.type == EventType.CARD_DELETED:
             self._apply_deleted(event)
-        elif event.type == EventType.ATTACHMENT_CREATED:
+        elif event.type in {EventType.ATTACHMENT_CREATED, EventType.ATTACHMENT_UPDATED}:
             self._apply_attachment_created(event)
         elif event.type == EventType.ATTACHMENT_REMOVED:
             self._apply_attachment_removed(event)
@@ -2652,6 +2656,12 @@ class CardProjection:
         if not card:
             return
         attachment = CardAttachment.model_validate(event.payload)
+        from pa.domain.attachment_revisions import record_revision
+        previous = next((a for a in card.attachments if a.attachment_id == attachment.attachment_id), None)
+        with self._conn() as conn:
+            if previous:
+                record_revision(conn, previous)
+            record_revision(conn, attachment)
         existing = {item.attachment_id: item for item in card.attachments}
         existing[attachment.attachment_id] = attachment
         card.attachments = list(existing.values())
@@ -2876,11 +2886,11 @@ class CardProjection:
         card = self.get_card(attachment.card_id, realm_id=attachment.realm_id)
         if not card:
             raise ValueError("Card not found")
-        if len(card.attachments) >= 10:
-            raise ValueError("A card can have at most 10 attachments")
+        if len(card.attachments) >= CARD_ATTACHMENTS:
+            raise ValueError(f"A card can have at most {CARD_ATTACHMENTS} attachments; remove unused references or use a linked specification card")
         if (
             sum(item.size for item in card.attachments) + attachment.size
-            > 100 * 1024 * 1024
+            > CARD_ATTACHMENT_BYTES
         ):
             raise ValueError("Card attachments exceed the 100 MB total limit")
         payload = attachment.model_dump(mode="json")
@@ -2901,6 +2911,16 @@ class CardProjection:
         return self.get_card(attachment.card_id, realm_id=attachment.realm_id)
 
     @serialized_mutation
+    def revise_attachment(self, card_id, attachment_id, *, realm_id, changes,
+                          expected_revision, principal_id, instance_id,
+                          expected_version=None, idempotency_key=None, request_fingerprint=None):
+        from pa.domain.attachment_revisions import revise
+        return revise(self, card_id, attachment_id, realm_id=realm_id, changes=changes,
+                      expected_revision=expected_revision, expected_version=expected_version,
+                      principal_id=principal_id, instance_id=instance_id,
+                      idempotency_key=idempotency_key, request_fingerprint=request_fingerprint)
+
+    @serialized_mutation
     def remove_attachment(
         self,
         card_id: str,
@@ -2909,12 +2929,30 @@ class CardProjection:
         realm_id: str,
         principal_id: str,
         instance_id: str,
+        expected_version: datetime | None = None,
+        idempotency_key: str | None = None,
+        request_fingerprint: str | None = None,
     ) -> Card | None:
         card = self.get_card(card_id, realm_id=realm_id)
         if not card or not any(
             item.attachment_id == attachment_id for item in card.attachments
         ):
             return None
+        if expected_version is not None and card.updated_at != expected_version:
+            raise CardVersionConflict(card_id, expected_version, card.updated_at)
+        from pa.domain.card_material import removal_result
+        from pa.domain.completion_records import retained_attachment
+        current = next(a for a in card.attachments if a.attachment_id == attachment_id)
+        retained = retained_attachment(self, card_id, realm_id, attachment_id, current.sha256) is not None
+        prior_evidence_retained = retained_attachment(self, card_id, realm_id, attachment_id) is not None
+        if not retained and (attachment_id in card.body or any(
+            attachment_id in reference for evidence in card.completion_evidence for reference in evidence.references
+        )):
+            raise ValueError("Attachment is referenced by the description or completion evidence. Update those references or retain the original in a completion record before removing it.")
+        # Keep the result in the same event as the removal, so rebuilding the
+        # operation ledger can recover an acknowledgement lost after commit.
+        updated_at = datetime.now(UTC)
+        result_card = card.model_copy(update={"attachments": [a for a in card.attachments if a.attachment_id != attachment_id], "updated_at": updated_at})
         event = CardEvent(
             type=EventType.ATTACHMENT_REMOVED,
             realm_id=realm_id,
@@ -2923,8 +2961,13 @@ class CardProjection:
             author_instance=instance_id,
             payload={
                 "attachment_id": attachment_id,
-                "card_updated_at": datetime.now(UTC).isoformat(),
+                "card_updated_at": updated_at.isoformat(),
             },
+            source_operation="card.attachment.remove",
+            causal_card_version=card.updated_at.isoformat(),
+            idempotency_key=idempotency_key,
+            request_fingerprint=request_fingerprint,
+            operation_result=removal_result(result_card, attachment_id, retained, prior_evidence_retained) if idempotency_key else None,
         )
         self.commit_event(event)
         return self.get_card(card_id, realm_id=realm_id)
@@ -7100,6 +7143,7 @@ class CardProjection:
         with self._conn() as conn:
             conn.execute("DELETE FROM cards WHERE realm_id = ?", (realm_id,))
             conn.execute("DELETE FROM completion_records WHERE realm_id = ?", (realm_id,))
+            conn.execute("DELETE FROM card_attachment_revisions WHERE realm_id = ?", (realm_id,))
             # Goal state and its event/index projections are all derived from the
             # same durable realm log.  Leaving any of them behind makes an ID
             # canonicalization rebuild append a second logical entity beside the
