@@ -1706,7 +1706,7 @@ async def read_restart_canonical_evidence(
     expected_version: int = Query(ge=0), expected_attempt: int = Query(ge=0),
     expected_session_version: datetime = Query(),
     expected_native_id: str = Query(max_length=200),
-    after_seq: int = Query(-1, ge=-1), limit: int = Query(64, ge=1, le=128),
+    after_seq: int = Query(-1, ge=-1, le=2**63-1), limit: int = Query(64, ge=1, le=128),
     expected_snapshot: str | None = Query(None, pattern=r'^[0-9a-f]{64}$'),
 ) -> dict:
     """Canonical metadata only. No audit, receipt transition or provider access."""

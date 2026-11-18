@@ -560,7 +560,7 @@ class TranscriptStorage:
         Pages cover canonical sequence rows. A positive exact prompt match is
         retained evidence; an absent match is always unknown, even at exhaustion.
         """
-        if not 1 <= limit <= 128 or after_seq < -1 or (after_seq >= 0 and not expected_snapshot):
+        if not 1 <= limit <= 128 or not -1 <= after_seq <= 2**63-1 or (after_seq >= 0 and not expected_snapshot):
             raise ValueError('Invalid evidence page')
         def snapshot(conn):
             result = []

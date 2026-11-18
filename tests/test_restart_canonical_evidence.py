@@ -126,6 +126,7 @@ def test_bounded_pages_include_sequence_zero_and_reject_changed_population(tmp_p
     ({'expected_native_id':''},ValueError),
     ({'expected_session_version':datetime(2000,1,1,tzinfo=UTC)},ValueError),
     ({'limit':129},ValueError), ({'after_seq':-2},ValueError),
+    ({'after_seq':2**63,'expected_snapshot':'0'*64},ValueError),
 ])
 def test_identity_auth_and_capacity_fences(tmp_path,change,error):
     store,h,s,args=setup(tmp_path)

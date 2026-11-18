@@ -8,7 +8,7 @@ def inspect_restart_evidence(store, session_id, handoff_id, *, owner_instance_id
                             expected_attempt, expected_session_version,
                             expected_native_id, after_seq=-1, limit=64,
                             expected_snapshot=None):
-    if not 1 <= limit <= 128 or after_seq < -1 or (after_seq >= 0 and not expected_snapshot):
+    if not 1 <= limit <= 128 or not -1 <= after_seq <= 2**63-1 or (after_seq >= 0 and not expected_snapshot):
         raise ValueError('Invalid evidence bounds')
     identity = store.restart_evidence_identity(session_id, handoff_id)
     if identity is None:
