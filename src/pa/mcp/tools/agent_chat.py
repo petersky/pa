@@ -134,6 +134,26 @@ def register_mcp(mcp, ctx) -> None:
             timeout_seconds=15.0, max_response_bytes=256 * 1024)
 
     @mcp.tool()
+    def get_agent_session_recovery_custody(
+        session_id: str, expected_authority_instance_id: str,
+        expected_session_version: str, expected_native_id: str,
+        expected_binding_hash: str, expected_lease_hash: str,
+    ) -> dict:
+        """Read bounded checkpoint identities/native registry; never restore or load.
+
+        Missing, null and in-flight checkpoints remain distinct. Registry
+        uniqueness is not exclusive native ownership or historical outcome proof.
+        Empty expected_native_id explicitly asserts no saved native identity.
+        """
+        from urllib.parse import quote
+        return request_local_pa(ctx.settings, 'GET',
+            f'/api/agent/observability/v1/sessions/{quote(session_id, safe="")}/recovery-custody',
+            params=dict(expected_authority_instance_id=expected_authority_instance_id,
+                expected_session_version=expected_session_version, expected_native_id=expected_native_id,
+                expected_binding_hash=expected_binding_hash, expected_lease_hash=expected_lease_hash),
+            timeout_seconds=15.0, max_response_bytes=64 * 1024)
+
+    @mcp.tool()
     def get_agent_session_wire_metadata(
         session_id: str, handoff_id: str, expected_native_id: str,
         expected_version: int, expected_attempt: int,

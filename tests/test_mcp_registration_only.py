@@ -249,6 +249,7 @@ async def test_all_ordinary_tool_schemas_match_pre_repair_contract(tmp_path, mon
     baseline.update(json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_card_materials.json').read_text()))
     baseline.update(json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_attachment_editing.json').read_text()))
     baseline.update(json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_restart_evidence.json').read_text()))
+    baseline.update(json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_recovery_custody.json').read_text()))
     assert actual == baseline
 
 
