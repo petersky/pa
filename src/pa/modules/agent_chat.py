@@ -2032,6 +2032,42 @@ async def inspect_session_workspace_binding(
         raise HTTPException(503, 'Binding inspection temporarily unavailable; outcome unknown') from None
 
 
+@router.get("/observability/v1/sessions/{session_id}/recovery-custody")
+async def read_session_recovery_custody(
+    request: Request, session_id: str,
+    expected_authority_instance_id: str = Query(min_length=1, max_length=200),
+    expected_session_version: datetime = Query(),
+    expected_native_id: str = Query(max_length=200),
+    expected_binding_hash: str = Query(pattern=r'^[0-9a-f]{64}$'),
+    expected_lease_hash: str = Query(pattern=r'^[0-9a-f]{64}$'),
+) -> dict:
+    """Read metadata only; never admit, restore, renew, load or deliver."""
+    from sqlite3 import Error as SQLiteError
+    from pa.instance.recovery_custody import inspect_recovery_custody
+    owner = request.app.state.ctx.settings.instance_id
+    headers = {'Cache-Control': 'private, no-store'}
+    if expected_authority_instance_id != owner:
+        return JSONResponse({'detail': {'code': 'authority_precondition_changed'}}, status_code=409, headers=headers)
+    if expected_session_version.tzinfo is None:
+        return JSONResponse({'detail': {'code': 'version_timezone_required'}}, status_code=422, headers=headers)
+    try:
+        result = await _offload(_manager(request), 'workspace.recovery_custody',
+            inspect_recovery_custody, _manager(request), session_id,
+            owner_instance_id=owner, principal_id=get_principal_id(request),
+            is_admin=getattr(getattr(request.state, 'user', None), 'role', None) == 'admin',
+            expected_session_version=expected_session_version, expected_native_id=expected_native_id,
+            expected_binding_hash=expected_binding_hash, expected_lease_hash=expected_lease_hash, timeout=10.0)
+        return JSONResponse(result, headers=headers)
+    except PermissionError:
+        return JSONResponse({'detail': {'code': 'custody_owner_mismatch'}}, status_code=403, headers=headers)
+    except LookupError:
+        return JSONResponse({'detail': {'code': 'custody_session_missing'}}, status_code=404, headers=headers)
+    except (ValueError, RecursionError):
+        return JSONResponse({'detail': {'code': 'custody_snapshot_unavailable'}}, status_code=409, headers=headers)
+    except (OSError, SQLiteError, TimeoutError):
+        return JSONResponse({'detail': {'code': 'custody_unavailable_effect_unknown'}}, status_code=503, headers=headers)
+
+
 @router.post("/observability/v1/sessions/{session_id}/diagnostics")
 def request_session_diagnostics(
     request: Request, session_id: str, limit: int = 50

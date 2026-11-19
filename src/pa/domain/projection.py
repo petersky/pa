@@ -5285,6 +5285,58 @@ class CardProjection:
         result['execution_binding'] = json.loads(row['binding_json'])
         return result
 
+    def recovery_custody_metadata(self, session_id: str) -> dict | None:
+        """Project checkpoint types/IDs in SQL; never hydrate private config.
+
+        The native index bounds alias lookup to the exact saved native ID.
+        No transcript, provider file, prompt body or runtime action is involved.
+        """
+        source = '''WITH source AS (SELECT id,
+            CASE WHEN length(CAST(agent_name AS BLOB))<=200 THEN agent_name END AS agent_name,
+            external_session_id,updated_at,
+            length(CAST(config_json AS BLOB)) AS config_bytes,
+            CASE WHEN length(CAST(config_json AS BLOB))<=262144 THEN
+                CASE WHEN json_valid(config_json) THEN config_json END END AS safe_config
+            FROM agent_sessions WHERE id=?) '''
+        with self._conn() as conn:
+            row = conn.execute(source + '''SELECT id,agent_name,external_session_id,updated_at,config_bytes,
+                json_type(safe_config) AS root_type,
+                EXISTS(SELECT 1 FROM json_tree(safe_config) WHERE typeof(key)='text'
+                    GROUP BY parent,key HAVING COUNT(*)>1) AS duplicate_keys,
+                json_type(safe_config,'$.durable_runtime') AS checkpoint_type,
+                json_type(safe_config,'$.durable_runtime.in_flight') AS in_flight_type,
+                json_type(safe_config,'$.durable_runtime.in_flight.id') AS in_flight_id_type,
+                CASE WHEN json_type(safe_config,'$.durable_runtime.in_flight.id')='text'
+                    AND length(json_extract(safe_config,'$.durable_runtime.in_flight.id'))<=200
+                    THEN json_extract(safe_config,'$.durable_runtime.in_flight.id') END AS in_flight_id,
+                json_type(safe_config,'$.durable_runtime.queued_prompts') AS queue_type,
+                CASE WHEN json_type(safe_config,'$.durable_runtime.queued_prompts')='array'
+                    THEN json_array_length(safe_config,'$.durable_runtime.queued_prompts') END AS queue_count
+                FROM source''', (session_id,)).fetchone()
+            if row is None:
+                return None
+            result = dict(row)
+            queue = conn.execute(source + '''SELECT q.key AS position,q.type AS item_type,
+                CASE WHEN q.type='object' THEN json_type(q.value,'$.id') END AS id_type,
+                CASE WHEN q.type='object' THEN
+                    CASE WHEN json_type(q.value,'$.id')='text' AND length(json_extract(q.value,'$.id'))<=200
+                        THEN json_extract(q.value,'$.id') END END AS id
+                FROM source,json_each(CASE WHEN json_type(safe_config,'$.durable_runtime.queued_prompts')='array'
+                    AND json_array_length(safe_config,'$.durable_runtime.queued_prompts')<=32
+                    THEN json_extract(safe_config,'$.durable_runtime.queued_prompts') ELSE '[]' END) AS q
+                ORDER BY q.key LIMIT 33''', (session_id,)).fetchall()
+            result['queue'] = [dict(r) for r in queue]
+            native = result['external_session_id']
+            aliases = conn.execute('''SELECT
+                CASE WHEN length(CAST(id AS BLOB))<=800 THEN id END AS id,
+                CASE WHEN length(CAST(principal_id AS BLOB))<=800 THEN principal_id END AS principal_id,
+                CASE WHEN length(CAST(authority_instance_id AS BLOB))<=800 THEN authority_instance_id END AS authority_instance_id,
+                CASE WHEN length(CAST(updated_at AS BLOB))<=200 THEN updated_at END AS updated_at
+                FROM agent_sessions WHERE external_session_id=? AND agent_name=? ORDER BY id LIMIT 33''',
+                (native, result['agent_name'])).fetchall() if native else []
+            result['aliases'] = [dict(r) for r in aliases]
+        return result
+
     def binding_inspection_history(self, session_id: str, *, limit: int, offset: int) -> dict:
         """Read a fixed-size page without loading oversized JSON or raw payloads."""
         from pa.instance.binding_inspection import decode_binding, REASONS
