@@ -6308,7 +6308,7 @@ class CardProjection:
             return result
 
     def retry_restart_handoff(
-        self, handoff_id: str, *, session_id: str
+        self, handoff_id: str, *, session_id: str, expected_version: int | None = None
     ) -> RestartHandoff:
         """Re-arm one failed receipt without changing its continuation identity."""
         now = datetime.now(UTC)
@@ -6320,6 +6320,9 @@ class CardProjection:
             if row is None:
                 raise ValueError("Restart handoff not found for this session")
             handoff = self._row_to_restart_handoff(row)
+            if expected_version is not None and handoff.phase_version != expected_version:
+                from pa.instance.restart_lifecycle import RestartTransitionConflict
+                raise RestartTransitionConflict("The restart receipt advanced; reread the same operation")
             if handoff.status in {
                 "resuming",
                 "continuation_queued",

@@ -60,6 +60,15 @@ def restart_reason_code(error: BaseException) -> str:
     return "restart_operation_failed"
 
 
+def restart_failure_reason_code(error: BaseException, *, stage: str) -> str:
+    # The owning worker records this fact, rather than inferring it later from
+    # an error string or a legacy receipt. It describes this execution only;
+    # earlier attempts and the continuation's overall effect remain independent.
+    if stage in {"waiting_for_turn_end", "quiescing"}:
+        return "failed_before_host_restart_request"
+    return restart_reason_code(error)
+
+
 def retryable_owner_failure(receipt) -> bool:
     if receipt.reason_code:
         return receipt.failure_stage == "resuming" and receipt.reason_code == "owner_not_ready"

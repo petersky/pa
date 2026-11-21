@@ -5780,12 +5780,12 @@ class AgentSessionManager:
         except RestartTransitionConflict:
             return  # A competing durable transition owns the next action.
         except Exception as exc:
-            from pa.instance.restart_lifecycle import restart_reason_code
+            from pa.instance.restart_lifecycle import restart_failure_reason_code
             logger.exception("Deferred restart handoff %s failed", handoff_id)
             handoff = await self._offload(
                 "sqlite.restart_handoff_failed", self.store.update_restart_handoff,
                 handoff_id, status="failed", error=(str(exc) or type(exc).__name__)[:1000],
-                failure_stage=stage, reason_code=restart_reason_code(exc), expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id,
+                failure_stage=stage, reason_code=restart_failure_reason_code(exc, stage=stage), expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id,
             )
             await self._surface_restart_failure(handoff)
 
@@ -6080,7 +6080,7 @@ class AgentSessionManager:
         )
 
     async def retry_restart_handoff(
-        self, *, session_id: str, handoff_id: str
+        self, *, session_id: str, handoff_id: str, expected_version: int | None = None
     ) -> RestartHandoff:
         """Retry exact-session continuation delivery from the same durable receipt."""
         session = await self._offload(
@@ -6093,6 +6093,7 @@ class AgentSessionManager:
             self.store.retry_restart_handoff,
             handoff_id,
             session_id=session_id,
+            **({"expected_version": expected_version} if expected_version is not None else {}),
         )
         if handoff.status == "requested":
             self._schedule_restart_handoff(handoff.id)

@@ -3,6 +3,7 @@ from datetime import datetime,timedelta,timezone
 from decimal import Decimal
 from unittest.mock import patch
 import warnings
+import gc
 import pytest
 from pydantic import BaseModel,ConfigDict,Field,field_serializer,json_schema
 from pydantic.type_adapter import TypeAdapter
@@ -42,6 +43,9 @@ class Outer(BaseModel):
 def test_nested_configs_custom_encoders_and_field_serializers(model,mode,alias):
     results=[];warning_sets=[]
     for generate in (json_schema.GenerateJsonSchema,candidate_factory(json_schema.GenerateJsonSchema)):
+        # Finalizers from previous tests must run outside this comparison of
+        # schema-generation warnings. Keep their warnings visible to pytest.
+        gc.collect()
         with warnings.catch_warnings(record=True) as observed:
             warnings.simplefilter('always')
             results.append(model.model_json_schema(mode=mode,by_alias=alias,schema_generator=generate))
