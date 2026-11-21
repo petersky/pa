@@ -18,7 +18,7 @@ import threading
 import time
 import zlib
 from collections import Counter, defaultdict
-from contextlib import contextmanager, nullcontext
+from contextlib import closing, contextmanager, nullcontext
 from datetime import datetime
 from itertools import islice
 from pathlib import Path
@@ -180,7 +180,7 @@ class TranscriptStorage:
         self.maintenance = DatabaseMaintenanceGate()
         self._object_readers = 0
         self.performance = PerformanceMetrics()
-        with sqlite3.connect(self.db_path, timeout=30) as conn:
+        with closing(sqlite3.connect(self.db_path, timeout=30)) as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
         self._init_db()
