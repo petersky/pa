@@ -1,6 +1,9 @@
 import asyncio
+import json
 import os
 import signal
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,6 +17,11 @@ from pa.browser.manager import (
     BrowserAttachment,
     BrowserManager,
     _browser_executable,
+    _owned_browsers,
+    _register_browser,
+    _registry_dir,
+    _terminate_owned_browsers_at_exit,
+    reap_orphaned_browsers,
 )
 from pa.instance.agent_session import AgentSessionRuntime
 
@@ -137,6 +145,8 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
                     AsyncMock(return_value=process),
                 ),
                 patch("pa.browser.manager.os.killpg") as killpg,
+                patch("pa.browser.manager.reap_orphaned_browsers"),
+                patch("pa.browser.manager._register_browser"),
             ):
                 task = asyncio.create_task(manager.attach("session-cancel"))
                 await asyncio.wait_for(started.wait(), timeout=1)
@@ -147,6 +157,147 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
             killpg.assert_called_once_with(4321, signal.SIGTERM)
             process.wait.assert_awaited_once()
             self.assertNotIn("session-cancel", manager._attachments)
+
+
+def _fake_browser(profile_dir: Path) -> subprocess.Popen:
+    """A stand-in process whose command line looks like a launched browser."""
+    return subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import time; time.sleep(120)",
+            "--headless=new",
+            f"--user-data-dir={profile_dir}",
+        ],
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+class OrphanedBrowserTests(unittest.TestCase):
+    """Browsers whose owner died must not survive to hijack the user's Chrome."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.registry = Path(self.tmp.name) / "registry"
+        patcher = patch.dict(os.environ, {"PA_BROWSER_REGISTRY_DIR": str(self.registry)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.processes: list[subprocess.Popen] = []
+        self.addCleanup(self._kill_processes)
+        _owned_browsers.clear()
+        self.addCleanup(_owned_browsers.clear)
+
+    def _kill_processes(self):
+        for process in self.processes:
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+
+    def _launch(self, name: str) -> tuple[subprocess.Popen, Path]:
+        profile = Path(self.tmp.name) / name
+        process = _fake_browser(profile)
+        self.processes.append(process)
+        return process, profile
+
+    def _record(self, browser, profile, *, owner_pid, owner_started=""):
+        self.registry.mkdir(parents=True, exist_ok=True)
+        (self.registry / f"{browser.pid}.json").write_text(
+            json.dumps(
+                {
+                    "pid": browser.pid,
+                    "profile_dir": str(profile),
+                    "owner_pid": owner_pid,
+                    "owner_started": owner_started,
+                }
+            )
+        )
+
+    def _dead_pid(self) -> int:
+        finished = subprocess.Popen([sys.executable, "-c", "pass"])
+        finished.wait()
+        return finished.pid
+
+    def test_registry_dir_is_private_to_the_user_by_default(self):
+        with patch.dict(os.environ):
+            os.environ.pop("PA_BROWSER_REGISTRY_DIR")
+            self.assertIn("pa-browser-registry", str(_registry_dir()))
+
+    def test_reaps_browser_whose_owner_is_gone(self):
+        browser, profile = self._launch("orphan")
+        self._record(browser, profile, owner_pid=self._dead_pid())
+
+        reaped = reap_orphaned_browsers()
+
+        self.assertEqual(reaped, [browser.pid])
+        self.assertIsNotNone(browser.wait(timeout=10))
+        self.assertEqual(list(self.registry.glob("*.json")), [])
+
+    def test_keeps_browser_whose_owner_is_still_running(self):
+        browser, profile = self._launch("live-owner")
+        owner = subprocess.Popen(["sleep", "60"])
+        self.addCleanup(lambda: (owner.kill(), owner.wait()))
+        started = subprocess.run(
+            ["ps", "-o", "lstart=", "-p", str(owner.pid)],
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        self._record(browser, profile, owner_pid=owner.pid, owner_started=started)
+
+        self.assertEqual(reap_orphaned_browsers(), [])
+
+        self.assertIsNone(browser.poll())
+        self.assertEqual(len(list(self.registry.glob("*.json"))), 1)
+
+    def test_owner_pid_reuse_is_not_mistaken_for_a_live_owner(self):
+        browser, profile = self._launch("reused-owner")
+        # A live pid, but with a different start time than the recorded owner:
+        # the original owner died and the pid now belongs to something else.
+        stranger = subprocess.Popen(["sleep", "60"])
+        self.addCleanup(lambda: (stranger.kill(), stranger.wait()))
+        self._record(
+            browser,
+            profile,
+            owner_pid=stranger.pid,
+            owner_started="Mon Jan  1 00:00:00 2001",
+        )
+
+        self.assertEqual(reap_orphaned_browsers(), [browser.pid])
+
+        self.assertIsNotNone(browser.wait(timeout=10))
+        self.assertIsNone(stranger.poll())
+
+    def test_never_signals_a_reused_pid_that_is_not_the_browser(self):
+        bystander, _ = self._launch("bystander")
+        self._record(
+            bystander,
+            Path(self.tmp.name) / "some-other-profile",
+            owner_pid=self._dead_pid(),
+        )
+
+        self.assertEqual(reap_orphaned_browsers(), [])
+
+        self.assertIsNone(bystander.poll())
+        self.assertEqual(list(self.registry.glob("*.json")), [])
+
+    def test_corrupt_registry_entries_are_discarded(self):
+        self.registry.mkdir(parents=True)
+        (self.registry / "garbage.json").write_text("{not json")
+        self.assertEqual(reap_orphaned_browsers(), [])
+        self.assertEqual(list(self.registry.glob("*.json")), [])
+
+    def test_exit_hook_terminates_browsers_this_process_still_owns(self):
+        browser, profile = self._launch("owned")
+        _register_browser(browser.pid, profile)
+        self.assertEqual(len(list(self.registry.glob("*.json"))), 1)
+
+        _terminate_owned_browsers_at_exit()
+
+        self.assertIsNotNone(browser.wait(timeout=10))
+        self.assertEqual(list(self.registry.glob("*.json")), [])
+        self.assertEqual(_owned_browsers, {})
 
 
 class BrowserSessionRuntimeTests(unittest.IsolatedAsyncioTestCase):
