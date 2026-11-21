@@ -35,6 +35,14 @@ files under the data dir) — there is no separate database, cache, or broker to
   worktree; update idle owners through supported PA lifecycle rather than editing their checkout.
 
 ### Non-obvious caveats
+- **Agent/test browsers must not outlive their owner.** `BrowserManager` launches headless
+  Chrome in its own session and records it in a per-user registry
+  (`$TMPDIR/pa-browser-registry-<uid>`, override with `PA_BROWSER_REGISTRY_DIR`). The next launch
+  reaps browsers whose owning process is gone, and a normal interpreter exit terminates the ones
+  it still owns. Always launch browsers through `BrowserManager` and release them with
+  `detach()`/`close()` (in `addAsyncCleanup` or `finally`), never with a raw `chrome` subprocess.
+  On macOS a leaked headless Chrome registers as the running "Google Chrome" app, so the user's
+  next normal launch shows no window and cannot quit.
 - **Isolate instance state with `PA_DATA_DIR`.** For a throwaway dev instance, set
   `PA_DATA_DIR=.dev/pa-data`, then `uv run pa init --name dev` once before `pa serve`.
   This avoids touching the host default `~/.pa`.

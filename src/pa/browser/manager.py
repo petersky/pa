@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
+import json
 import logging
 import os
 import shutil
 import signal
 import socket
+import subprocess
+import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import uuid4
@@ -44,6 +49,186 @@ def _free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
+
+
+# Browsers are launched in their own session so that terminal signals aimed at
+# the owner do not reach them. The cost is that a browser outlives an owner that
+# is killed without running its cleanup (a timed-out or SIGKILLed test run, a
+# crashed worker). On macOS such a leftover headless Chrome also registers as the
+# running "Google Chrome" application, so the user's next normal launch only
+# re-activates the windowless process and "quit" never completes. To bound that,
+# every launch is recorded in a small per-user registry. Later launches reap
+# browsers whose owner is gone, and a normal interpreter exit terminates the
+# browsers it still owns.
+_REGISTRY_ENV = "PA_BROWSER_REGISTRY_DIR"
+_REAP_GRACE_SECONDS = 3.0
+
+_owned_browsers: dict[int, str] = {}
+_reaped_this_process = False
+
+
+def _registry_dir() -> Path:
+    override = os.environ.get(_REGISTRY_ENV)
+    if override:
+        return Path(override)
+    uid = os.getuid() if hasattr(os, "getuid") else 0
+    return Path(tempfile.gettempdir()) / f"pa-browser-registry-{uid}"
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _ps_field(pid: int, field_name: str) -> str:
+    try:
+        result = subprocess.run(
+            ["ps", "-o", f"{field_name}=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def _profile_marker(profile_dir: str | Path) -> str:
+    return f"--user-data-dir={profile_dir}"
+
+
+def _is_registered_browser(pid: int, profile_dir: str) -> bool:
+    """True when ``pid`` is still the browser launched for ``profile_dir``.
+
+    Guards against signalling an unrelated process that reused the pid.
+    """
+    return _profile_marker(profile_dir) in _ps_field(pid, "command")
+
+
+def _terminate_browsers(
+    browsers: dict[int, str], grace: float = _REAP_GRACE_SECONDS
+) -> list[int]:
+    """SIGTERM then SIGKILL the verified browser process groups in ``browsers``."""
+    targets = [
+        pid
+        for pid, profile_dir in browsers.items()
+        if _pid_alive(pid) and _is_registered_browser(pid, profile_dir)
+    ]
+
+    def signal_all(sig: int) -> None:
+        for pid in targets:
+            try:
+                if os.getpgid(pid) == pid:
+                    os.killpg(pid, sig)
+                else:
+                    os.kill(pid, sig)
+            except (ProcessLookupError, PermissionError):
+                continue
+
+    signal_all(signal.SIGTERM)
+    deadline = time.monotonic() + grace
+    while time.monotonic() < deadline and any(_pid_alive(pid) for pid in targets):
+        time.sleep(0.05)
+    if any(_pid_alive(pid) for pid in targets):
+        signal_all(signal.SIGKILL)
+    return targets
+
+
+def _register_browser(pid: int, profile_dir: Path) -> None:
+    _owned_browsers[pid] = str(profile_dir)
+    if os.name != "posix":  # pragma: no cover - registry is POSIX-only
+        return
+    try:
+        registry = _registry_dir()
+        registry.mkdir(parents=True, exist_ok=True)
+        record = {
+            "pid": pid,
+            "profile_dir": str(profile_dir),
+            "owner_pid": os.getpid(),
+            "owner_started": _ps_field(os.getpid(), "lstart"),
+        }
+        temporary = registry / f".{pid}.tmp"
+        temporary.write_text(json.dumps(record))
+        os.replace(temporary, registry / f"{pid}.json")
+    except OSError:
+        logger.debug("Could not record browser %s in the registry", pid, exc_info=True)
+
+
+def _unregister_browser(pid: int) -> None:
+    _owned_browsers.pop(pid, None)
+    try:
+        (_registry_dir() / f"{pid}.json").unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def reap_orphaned_browsers() -> list[int]:
+    """Terminate registered browsers whose owning process no longer exists."""
+    if os.name != "posix":  # pragma: no cover - registry is POSIX-only
+        return []
+    registry = _registry_dir()
+    try:
+        entries = sorted(registry.glob("*.json"))
+    except OSError:
+        return []
+    orphans: dict[int, str] = {}
+    stale: list[Path] = []
+    for entry in entries:
+        try:
+            record = json.loads(entry.read_text())
+            pid = int(record["pid"])
+            profile_dir = str(record["profile_dir"])
+            owner_pid = int(record["owner_pid"])
+            owner_started = str(record.get("owner_started", ""))
+        except (OSError, ValueError, KeyError, TypeError):
+            stale.append(entry)
+            continue
+        if owner_pid == os.getpid():
+            continue
+        owner_alive = (
+            _pid_alive(owner_pid)
+            and bool(owner_started)
+            and _ps_field(owner_pid, "lstart") == owner_started
+        )
+        if owner_alive:
+            continue
+        stale.append(entry)
+        orphans[pid] = profile_dir
+    reaped = _terminate_browsers(orphans) if orphans else []
+    for entry in stale:
+        try:
+            entry.unlink(missing_ok=True)
+        except OSError:
+            pass
+    if reaped:
+        logger.warning(
+            "Terminated %d orphaned browser process(es) left by a previous run: %s",
+            len(reaped),
+            reaped,
+        )
+    return reaped
+
+
+def _terminate_owned_browsers_at_exit() -> None:
+    if not _owned_browsers:
+        return
+    owned = dict(_owned_browsers)
+    try:
+        _terminate_browsers(owned, grace=1.5)
+    finally:
+        for pid in owned:
+            _unregister_browser(pid)
+
+
+atexit.register(_terminate_owned_browsers_at_exit)
 
 
 @dataclass
@@ -168,6 +353,16 @@ class BrowserManager:
                 if url and url != "about:blank":
                     await existing.page.navigate(url)
                 return existing
+            global _reaped_this_process
+            if not _reaped_this_process:
+                _reaped_this_process = True
+                try:
+                    await asyncio.wait_for(
+                        asyncio.to_thread(reap_orphaned_browsers),
+                        timeout=_REAP_GRACE_SECONDS * 3,
+                    )
+                except Exception:
+                    logger.debug("Orphaned browser reaping failed", exc_info=True)
             executable = await self._offload(
                 "browser.executable_lookup", _browser_executable
             )
@@ -203,6 +398,8 @@ class BrowserManager:
                         stderr=asyncio.subprocess.DEVNULL,
                         start_new_session=os.name == "posix",
                     )
+                    if isinstance(getattr(process, "pid", None), int):
+                        _register_browser(process.pid, profile_dir)
                     endpoint = f"http://127.0.0.1:{port}"
                     target = None
                     client = self._http_client()
@@ -288,6 +485,15 @@ class BrowserManager:
                     raise
 
     async def _terminate_process(self, process: asyncio.subprocess.Process) -> None:
+        try:
+            await self._terminate_process_group(process)
+        finally:
+            if isinstance(getattr(process, "pid", None), int):
+                _unregister_browser(process.pid)
+
+    async def _terminate_process_group(
+        self, process: asyncio.subprocess.Process
+    ) -> None:
         if process.returncode is not None:
             return
         try:

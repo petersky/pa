@@ -2520,6 +2520,14 @@ _ENVIRONMENT_ONLY_DEFINITIONS = (
         rationale="Host/platform discovery override; manage it in the service environment until a browser-provider setting is available.",
     ),
     _env_only(
+        "browser_registry_dir",
+        "PA_BROWSER_REGISTRY_DIR",
+        "Orphaned-browser registry directory override.",
+        "Bootstrap",
+        35,
+        rationale="Host-level location where launched browsers are recorded so a later run can reap ones whose owner died; defaults to a per-user temp directory and is overridden mainly by tests.",
+    ),
+    _env_only(
         "browser_width",
         "PA_BROWSER_WIDTH",
         "Default isolated browser width.",
