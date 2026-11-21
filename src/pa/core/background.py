@@ -15,6 +15,16 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _safe_failure_kind(error: BaseException) -> str:
+    if isinstance(error, OSError):
+        return "io_error"
+    if isinstance(error, RuntimeError):
+        return "runtime_error"
+    if isinstance(error, (TypeError, ValueError)):
+        return "invalid_data"
+    return "exception"
+
+
 class BackgroundTaskSupervisor:
     """Restart a failed or stalled loop while exposing privacy-safe liveness."""
 
@@ -43,6 +53,7 @@ class BackgroundTaskSupervisor:
         self._last_save_monotonic = 0.0
         self._save_task: asyncio.Task[None] | None = None
         self._save_lock = asyncio.Lock()
+        self._clock = time.monotonic
         self._state: dict[str, Any] = self._load()
 
     def _load(self) -> dict[str, Any]:
@@ -64,8 +75,26 @@ class BackgroundTaskSupervisor:
 
             await asyncio.to_thread(write)
 
+    async def _save_diagnostics(self) -> None:
+        """Diagnostic persistence must not terminate essential supervision."""
+        try:
+            await self._save()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            kind = _safe_failure_kind(exc)
+            self._state.update(
+                diagnostics_state="write_failed",
+                diagnostics_failure_count=int(self._state.get("diagnostics_failure_count") or 0) + 1,
+                last_diagnostics_failure_at=datetime.now(UTC).isoformat(),
+                last_diagnostics_failure_kind=kind,
+            )
+            logger.error("%s diagnostic persistence failed (%s); supervision continues", self.name, kind)
+        else:
+            self._state["diagnostics_state"] = "ready"
+
     def heartbeat(self) -> None:
-        now = asyncio.get_running_loop().time()
+        now = self._clock()
         self._last_progress_monotonic = now
         self._state["last_progress_at"] = datetime.now(UTC).isoformat()
         self._state["state"] = "ready"
@@ -74,10 +103,14 @@ class BackgroundTaskSupervisor:
             and (not self._save_task or self._save_task.done())
         ):
             self._last_save_monotonic = now
-            self._save_task = asyncio.create_task(self._save())
+            self._save_task = asyncio.create_task(self._save_diagnostics())
 
     def start(self) -> None:
         if self._task and not self._task.done():
+            return
+        # Never create a second controller around an orphaned live worker.
+        # Diagnosis/recovery must preserve that worker's unknown effects.
+        if self._worker and not self._worker.done():
             return
         self._closing = False
         self._task = asyncio.create_task(self._supervise(), name=f"{self.name}-supervisor")
@@ -87,8 +120,9 @@ class BackgroundTaskSupervisor:
         for task in (self._worker, self._task):
             if task and not task.done():
                 task.cancel()
-        if self._task:
-            await asyncio.gather(self._task, return_exceptions=True)
+        tasks = [task for task in (self._worker, self._task) if task is not None]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         if self._save_task:
             await asyncio.gather(self._save_task, return_exceptions=True)
         self._worker = self._task = None
@@ -96,11 +130,11 @@ class BackgroundTaskSupervisor:
     async def _supervise(self) -> None:
         failures = 0
         while not self._closing:
-            self._last_progress_monotonic = asyncio.get_running_loop().time()
+            self._last_progress_monotonic = self._clock()
             self._state.update(
                 state="starting", started_at=datetime.now(UTC).isoformat()
             )
-            await self._save()
+            await self._save_diagnostics()
             self._worker = asyncio.create_task(
                 self.runner(self.heartbeat), name=f"{self.name}-worker"
             )
@@ -109,7 +143,7 @@ class BackgroundTaskSupervisor:
             try:
                 while not self._worker.done():
                     await asyncio.sleep(min(1.0, self.stale_seconds / 2))
-                    age = asyncio.get_running_loop().time() - self._last_progress_monotonic
+                    age = self._clock() - self._last_progress_monotonic
                     if age > self.stale_seconds:
                         failure_kind = "stalled"
                         failure_detail = f"no progress for {age:.1f}s"
@@ -136,7 +170,7 @@ class BackgroundTaskSupervisor:
                 last_failure_kind=failure_kind,
                 last_failure_detail=failure_detail,
             )
-            await self._save()
+            await self._save_diagnostics()
             logger.error("%s %s; restarting", self.name, failure_detail)
             delay = min(
                 self.backoff_max_seconds,
@@ -145,15 +179,32 @@ class BackgroundTaskSupervisor:
             await asyncio.sleep(delay * self.rng.uniform(0.8, 1.2))
 
     def health(self) -> dict[str, Any]:
-        now = time.monotonic()
+        now = self._clock()
         age = max(0.0, now - self._last_progress_monotonic)
         alive = bool(self._worker and not self._worker.done())
         stale = not alive or age > self.stale_seconds
+        controller_alive = bool(self._task and not self._task.done())
+        controller_state = "closed" if self._closing else "not_started"
+        controller_failure = None
+        if self._task is not None:
+            if self._task.cancelled():
+                controller_state = "cancelled"
+            elif self._task.done():
+                error = self._task.exception()
+                controller_state = "failed" if error else "exited"
+                controller_failure = _safe_failure_kind(error) if error else None
+            else:
+                controller_state = "running"
         return {
             **self._state,
             "name": self.name,
             "state": "stale" if stale else "ready",
             "alive": alive,
+            "supervisor_alive": controller_alive,
+            "supervisor_state": controller_state,
+            "supervisor_failure_kind": controller_failure,
+            "orphaned_worker": alive and not controller_alive,
+            "closing": self._closing,
             "stale": stale,
             "progress_age_seconds": round(age, 3),
             "stale_after_seconds": self.stale_seconds,

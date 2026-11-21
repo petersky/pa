@@ -1073,6 +1073,8 @@ class PRSupervisor:
         )
         if replicate:
             await self._replicate(stored)
+        if stored.actionable:
+            self._ensure_watch_worker()
         return stored
 
     async def resolve_session_provenance(self, watch: PRWatch) -> PRWatch:
@@ -1688,7 +1690,19 @@ class PRSupervisor:
             "sqlite.pr_supervisor_watch_read", self.store.get_watch, watch_id
         )
         await self._replicate(watch)
+        self._ensure_watch_worker()
         return watch
+
+    def _ensure_watch_worker(self) -> None:
+        """Explicit scheduling may revive a failed controller, never a live worker.
+
+        Do not start services before normal startup or during shutdown. The
+        resumed loop still probes capabilities and acquires the original lease.
+        """
+        controller = self._loop_supervisor._task
+        if not self._stopping and controller is not None and controller.done():
+            self._loop_supervisor.start()
+            self._task = self._loop_supervisor._task
 
     async def _refresh_merged_evidence(self, watch):
         """The existing per-watch refresh also reconciles legacy terminal proof."""
@@ -3642,7 +3656,9 @@ class PRSupervisor:
         else:
             state = "ready"
         worker = self._loop_supervisor.health()
-        if self._loop_supervisor._task is not None and worker["stale"]:
+        if self._loop_supervisor._task is not None and (
+            worker["stale"] or not worker["supervisor_alive"]
+        ):
             state = "worker_stale"
         return {
             "state": state,

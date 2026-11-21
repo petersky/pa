@@ -1242,6 +1242,99 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.dispatcher.calls), 1)
         self.assertIn("independently re-fetch", self.dispatcher.calls[0][1].lower())
 
+    async def test_refresh_recovers_failed_controller_without_skipping_stability(self) -> None:
+        service = await self.make_service([snapshot(), snapshot()])
+        current = self.store.get_watch("watch-1")
+        current.policy.stable_observations = 2
+        self.store.upsert_watch(current)
+        service.migrate_discoverable_associations = AsyncMock()
+        service._reconcile_merged_cards = AsyncMock()
+        service.LOOP_SECONDS = 0.01
+        observations = asyncio.Queue()
+        process_watch = service._process_watch
+
+        async def capture(target, grant):
+            await process_watch(target, grant)
+            observations.put_nowait(self.store.get_watch(target.id))
+
+        service._process_watch = capture
+
+        async def failed_controller():
+            raise RuntimeError("PRIVATE_CONTROLLER_DETAIL")
+
+        failed = asyncio.create_task(failed_controller())
+        await asyncio.gather(failed, return_exceptions=True)
+        service._task = service._loop_supervisor._task = failed
+        try:
+            refreshed = await service.refresh_watch("watch-1")
+            first = await asyncio.wait_for(observations.get(), 2)
+            self.assertEqual(refreshed.id, "watch-1")
+            self.assertEqual(first.stable_head_observations, 1)
+            self.assertNotIn("stable_green_evidence", first.state)
+            self.assertEqual(self.dispatcher.calls, [])
+            self.store.schedule_now(watch_id="watch-1")
+            second = await asyncio.wait_for(observations.get(), 2)
+            self.assertEqual(second.stable_head_observations, 2)
+            self.assertTrue(second.state["stable_green_evidence"]["green"])
+            self.assertEqual(second.owner_instance_id, "instance-a")
+            self.assertGreater(second.fence_token, 0)
+            self.assertEqual(len(self.dispatcher.calls), 1)
+            self.assertTrue(service._loop_supervisor.health()["supervisor_alive"])
+        finally:
+            await service.stop()
+
+    async def test_refresh_recovery_preserves_repository_eligibility(self) -> None:
+        service = await self.make_service([snapshot()])
+        service.migrate_discoverable_associations = AsyncMock()
+        service._reconcile_merged_cards = AsyncMock()
+        checked = asyncio.Event()
+        denied = service.capability.model_copy(update={
+            "scope_mode": "allowlist", "allowed_repositories": ["other/repo"]
+        })
+        service.github.probe = AsyncMock(return_value=denied)
+        poll_due = service._poll_due
+
+        async def capture(capability):
+            await poll_due(capability)
+            checked.set()
+
+        service._poll_due = capture
+        finished = asyncio.create_task(asyncio.sleep(0))
+        await finished
+        service._task = service._loop_supervisor._task = finished
+        try:
+            await service.refresh_watch("watch-1")
+            await asyncio.wait_for(checked.wait(), 2)
+            current = self.store.get_watch("watch-1")
+            self.assertEqual(current.owner_instance_id, None)
+            self.assertEqual(current.fence_token, 0)
+            self.assertEqual(service.github.calls, 0)
+            self.assertEqual(self.dispatcher.calls, [])
+            self.assertEqual(current.state["supervisor_state"], "supervision_eligibility_blocked")
+        finally:
+            await service.stop()
+
+    async def test_refresh_does_not_start_before_startup_or_during_shutdown(self) -> None:
+        service = await self.make_service([snapshot()])
+        with patch.object(service._loop_supervisor, "start") as start:
+            await service.refresh_watch("watch-1")
+            start.assert_not_called()
+            finished = asyncio.create_task(asyncio.sleep(0))
+            await finished
+            service._task = service._loop_supervisor._task = finished
+            service._stopping = True
+            await service.refresh_watch("watch-1")
+            start.assert_not_called()
+
+    async def test_registration_revives_only_a_previously_started_controller(self) -> None:
+        service = await self.make_service([snapshot()])
+        finished = asyncio.create_task(asyncio.sleep(0))
+        await finished
+        service._task = service._loop_supervisor._task = finished
+        with patch.object(service._loop_supervisor, "start") as start:
+            await service.register_watch(watch(policy=self.policy()), replicate=False)
+            start.assert_called_once()
+
     async def test_implemented_independent_completion_support_can_own_protected_watch(self) -> None:
         required = {"completion-requirements:v1", "completion-agent-verification:v1"}
         self.domain.card_completion_capabilities.return_value = required
