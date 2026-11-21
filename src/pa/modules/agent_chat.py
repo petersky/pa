@@ -719,6 +719,11 @@ class RestartHandoffReconcileBody(BaseModel):
     expected_version: int = Field(ge=0)
 
 
+class RestartHandoffRetryBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_version: int = Field(ge=0)
+
+
 class SessionRecoveryAuditBody(BaseModel):
     expected_version: int = Field(ge=0)
     expected_session_version: datetime
@@ -1671,7 +1676,8 @@ async def edit_restart_handoff(
 
 @router.post("/sessions/{session_id}/restart-handoffs/{handoff_id}/retry")
 async def retry_restart_handoff(
-    request: Request, session_id: str, handoff_id: str
+    request: Request, session_id: str, handoff_id: str,
+    body: RestartHandoffRetryBody | None = None,
 ) -> dict:
     """Retry one repaired exact-session handoff without creating a new receipt."""
     mgr = _require_session_traffic_ready(request)
@@ -1689,10 +1695,16 @@ async def retry_restart_handoff(
         and getattr(user, "role", None) != "admin"
     ):
         raise HTTPException(status_code=403, detail="Session is owned by another principal")
+    from pa.instance.restart_lifecycle import RestartTransitionConflict
     try:
         handoff = await mgr.retry_restart_handoff(
-            session_id=session_id, handoff_id=handoff_id
+            session_id=session_id, handoff_id=handoff_id,
+            **({"expected_version": body.expected_version} if body is not None else {}),
         )
+    except RestartTransitionConflict as exc:
+        raise HTTPException(status_code=409, detail={
+            "code": exc.code, "message": str(exc), "committed": False,
+        }) from exc
     except (ValueError, AgentSessionRecoveryError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     from pa.instance.restart_lifecycle import restart_observation_fields
