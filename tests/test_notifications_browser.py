@@ -186,6 +186,60 @@ window.PAAgentChat = {renderMarkdownAsync: function (text) { return Promise.reso
         self.thread.join(timeout=2)
         self.tmp.cleanup()
 
+    async def test_real_drag_selection_inside_and_outside_does_not_navigate(self) -> None:
+        page = self.manager.resolve(self.scope).page
+        await page.evaluate("document.querySelector('#pa-notification-bell').click()")
+        await asyncio.sleep(.2)
+        # Use a plain notice so its summary/body are visible and selectable.
+        await page.evaluate("""(() => {
+          const n = window.__notificationPayload.items[0]; n.interaction = null;
+          n.summary = 'Select this recovery summary text and copy it safely.';
+          n.body = 'Select this recovery notice text and copy it safely.';
+          window.PANotificationsTest.render([n], false);
+          document.querySelector('.notification-full').open = true;
+        })()""")
+        await page.evaluate("document.addEventListener('copy', () => { window.__copiedText = getSelection().toString(); })")
+        original = await page.evaluate("location.href")
+        for selector, outside in ((".notification-summary", False), (".notification-summary", True), ("[data-notification-markdown-body]", False), ("[data-notification-markdown-body]", True)):
+            await page.evaluate("getSelection().removeAllRanges()")
+            rect = await page.evaluate("""(() => { const r=document.querySelector(SELECTOR).getBoundingClientRect(); return {x:r.x+3,y:r.y+10,end:r.x+190}; })()""".replace("SELECTOR", json.dumps(selector)))
+            await page.command("Input.dispatchMouseEvent", {"type":"mousePressed", "x":rect["x"], "y":rect["y"], "button":"left", "clickCount":1})
+            end_x = 10 if outside else rect["end"]
+            for step in range(1, 11):
+                await page.command("Input.dispatchMouseEvent", {"type":"mouseMoved", "x":rect["x"]+(end_x-rect["x"])*step/10, "y":rect["y"], "button":"left", "buttons":1})
+            await page.command("Input.dispatchMouseEvent", {"type":"mouseReleased", "x":end_x, "y":rect["y"], "button":"left", "clickCount":1})
+            self.assertTrue(await page.evaluate("getSelection().toString().length > 0"))
+            await page.command("Input.dispatchKeyEvent", {"type":"keyDown", "key":"c", "code":"KeyC", "modifiers":4, "commands":["Copy"]})
+            await page.command("Input.dispatchKeyEvent", {"type":"keyUp", "key":"c", "code":"KeyC", "modifiers":4})
+            self.assertTrue(await page.evaluate("Boolean(window.__copiedText)"))
+            self.assertFalse(await page.evaluate("document.querySelector('#pa-notification-panel').hidden"))
+            self.assertEqual(await page.evaluate("location.href"), original)
+            selected = await page.evaluate("getSelection().toString()")
+            await page.evaluate("window.PANotificationsTest.load(false)")
+            self.assertEqual(await page.evaluate("getSelection().toString()"), selected)
+            self.assertFalse(await page.evaluate("document.querySelector('#pa-notification-panel').hidden"))
+        await page.evaluate("getSelection().removeAllRanges()")
+        await page.command("Input.dispatchMouseEvent", {"type":"mousePressed", "x":10, "y":500, "button":"left", "clickCount":1})
+        await page.command("Input.dispatchMouseEvent", {"type":"mouseReleased", "x":10, "y":500, "button":"left", "clickCount":1})
+        self.assertTrue(await page.evaluate("document.querySelector('#pa-notification-panel').hidden"))
+
+    async def test_explicit_link_keyboard_navigation_and_escape(self) -> None:
+        page = self.manager.resolve(self.scope).page
+        await page.evaluate("""(() => {
+          document.querySelector('#pa-notification-panel').hidden = false;
+          const n=window.__notificationPayload.items[0]; n.interaction=null;
+          n.actions=[{id:'open', kind:'navigate', label:'Open current run', href:'/index.html?current=1'}];
+          window.PANotificationsTest.render([n], false);
+          document.querySelector('.notification-secondary a').focus();
+        })()""")
+        await page.command("Input.dispatchKeyEvent", {"type":"keyDown", "key":"Enter", "code":"Enter", "windowsVirtualKeyCode":13})
+        await page.command("Input.dispatchKeyEvent", {"type":"keyUp", "key":"Enter", "code":"Enter", "windowsVirtualKeyCode":13})
+        await asyncio.sleep(.2)
+        self.assertIn('?current=1', await page.evaluate('location.href'))
+        await page.evaluate("document.querySelector('#pa-notification-bell').click()")
+        await page.command("Input.dispatchKeyEvent", {"type":"keyDown", "key":"Escape", "code":"Escape", "windowsVirtualKeyCode":27})
+        self.assertTrue(await page.evaluate("document.querySelector('#pa-notification-panel').hidden"))
+
     async def test_contract_states_full_content_and_responsive_layout(self) -> None:
         session = self.manager.resolve(self.scope)
         await session.page.evaluate(

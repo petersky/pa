@@ -17,6 +17,7 @@ from pa.core.context import AppContext
 from pa.core.contracts import Module
 from pa.domain.notifications import (
     RESTART_FAILURE_NOTICE_CAPABILITY,
+    SESSION_ATTENTION_NOTICE_CAPABILITY,
     ContinuationTransferRequest,
     InteractionKind,
     InteractionResponse,
@@ -335,8 +336,54 @@ def _delivery_recovery(request: Request, item: Notification) -> dict[str, Any] |
     }
 
 
+def _attention_actions(request: Request, item: Notification) -> list[dict] | None:
+    if item.capability != SESSION_ATTENTION_NOTICE_CAPABILITY or not item.session_id:
+        return None
+    ctx = request.app.state.ctx
+    if item.owner_instance_id not in {None, ctx.settings.instance_id}:
+        destination = _route_metadata(request, item).get("destination")
+        return [{"id": "open-owner", "kind": "navigate", "label": "Open owning instance",
+                 "href": destination, "enabled": True}] if destination else []
+    source = ctx.store.get_session(item.session_id)
+    ledger = ctx.services.get("dispatch_store")
+    record = ledger.get(item.dispatch_id) if ledger and item.dispatch_id else None
+    owner = ctx.store.get_session(record.session_id) if record and record.session_id else source
+    if (not owner or owner.realm_id != item.realm_id or owner.card_id != item.card_id
+            or (source and owner.principal_id != source.principal_id)):
+        owner = source
+    manager = ctx.services.get("instance_agent")
+    if owner == source and source and source.card_id and manager:
+        leases = [l for l in manager.workspace_manager.list()
+                  if l.card_id == source.card_id and l.session_id != source.id and l.state == "ready"]
+        candidates = {l.session_id for l in leases}
+        if len(candidates) == 1:
+            candidate = ctx.store.get_session(next(iter(candidates)))
+            if (candidate and candidate.status != "closed" and candidate.realm_id == source.realm_id
+                    and candidate.principal_id == source.principal_id):
+                owner = candidate
+    if not owner:
+        return []
+    actions = [{"id": "open-current", "kind": "recover", "label": "Open current run",
+             "href": "/agent?" + urlencode({"session": owner.id}), "enabled": True,
+             "owner_session_id": owner.id, "owner_label": owner.title or f"{owner.agent_name} run"}]
+    manager = ctx.services.get("instance_agent")
+    if (not item.resolved_at and source and manager
+            and item.owner_instance_id in {None, ctx.settings.instance_id}
+            and manager.superseding_startup_run(source)):
+        actions.append({"id": "close-obsolete", "kind": "recover",
+                        "label": "Close obsolete attempt", "enabled": True})
+    return actions
+
+
 def _public_notice(request: Request, item: Notification, labels: dict | None = None) -> dict[str, Any]:
     presentation = _presentation_metadata(item)
+    attention_actions = _attention_actions(request, item) if item.capability == SESSION_ATTENTION_NOTICE_CAPABILITY else None
+    summary = item.summary
+    if item.capability == SESSION_ATTENTION_NOTICE_CAPABILITY:
+        summary = "This run needs attention. Open the current run to review recovery options."
+        owner = next((a for a in attention_actions or [] if a.get("owner_session_id")), None)
+        if owner and owner["owner_session_id"] != item.session_id:
+            summary = f"This workspace is already in use by {owner['owner_label']}. Open the current run to continue."
     recovery = _delivery_recovery(request, item)
     if recovery:
         presentation["recovery"] = recovery
@@ -351,6 +398,9 @@ def _public_notice(request: Request, item: Notification, labels: dict | None = N
             "Retrying cannot succeed until the destination is repaired. "
             "The recorded response is preserved either way."
         )
+    if item.capability == SESSION_ATTENTION_NOTICE_CAPABILITY:
+        presentation["required_action"] = "Open the current run to review its state and recovery options."
+        presentation["next_effect"] = "PA keeps one writer per workspace. Independent parallel work needs a separate session and workspace."
     interaction = item.interaction
     if interaction:
         # Only a delivery this process is running right now is "in flight"; any other
@@ -401,6 +451,8 @@ def _public_notice(request: Request, item: Notification, labels: dict | None = N
         }
     return {
         **item.public_dict(),
+        "summary": summary,
+        "actions": attention_actions if attention_actions is not None else [a.model_dump() for a in item.actions],
         "routing": _route_metadata(request, item),
         "context": _context_metadata(request, item, labels),
         "presentation": presentation,
@@ -479,6 +531,36 @@ def get_notification(request: Request, notification_id: str) -> dict[str, Any]:
         **_public_notice(request, item),
         "audit": request.app.state.ctx.store.list_notification_audit(item.id),
     }
+
+
+class RecoveryActionMutation(IdempotentMutation):
+    expected_version: int = Field(ge=1)
+    action_id: str = Field(min_length=1, max_length=100)
+
+
+@router.post("/notifications/{notification_id}/recovery-action")
+async def recovery_action(request: Request, notification_id: str, body: RecoveryActionMutation) -> dict:
+    item = _authorized_notice(request, notification_id)
+    _require_operator_credentials(request)
+    if item.version != body.expected_version or (item.resolved_at and body.action_id != "open-current"):
+        raise HTTPException(409, detail={"message": "This notice changed. Refresh notifications and open the current run."})
+    actions = _attention_actions(request, item) or []
+    if body.action_id == "open-current":
+        current = next((a for a in actions if a["id"] == "open-current"), None)
+        if current:
+            return {"destination": current["href"]}
+    if body.action_id != "close-obsolete" or not any(a["id"] == body.action_id for a in actions):
+        raise HTTPException(409, detail={"message": "This attempt cannot be safely closed. Open the current run to review its state."})
+    manager = request.app.state.ctx.require_service("instance_agent")
+    source = request.app.state.ctx.store.get_session(item.session_id)
+    from pa.instance.agent_session import SessionAdmissionInProgress
+    try:
+        retired = bool(source and await manager.retire_superseded_startup(source))
+    except SessionAdmissionInProgress:
+        retired = False
+    if not retired:
+        raise HTTPException(409, detail={"message": "The run changed. Refresh notifications and open the current run."})
+    return {"closed": True}
 
 
 @router.post("/notifications/{notification_id}/read")

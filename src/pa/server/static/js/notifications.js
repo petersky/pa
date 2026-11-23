@@ -6,6 +6,7 @@
   var state = { filter: "outstanding", offset: 0, next: null, loading: false, refreshPending: false };
   var drafts = new Map();
   var pollTimer = null;
+  var pointerInPanel = false;
   var DRAFT_PREFIX = "pa.notification.draft.";
 
   function root() { return document.querySelector("[data-notification-chrome]"); }
@@ -128,6 +129,9 @@
     ["project", "card", "session", "dispatch", "owner"].forEach(function (kind) {
       if (context[kind] && context[kind].id) rows.push("<dt>" + esc(kind) + "</dt><dd><code>" + esc(context[kind].id) + "</code></dd>");
     });
+    (item.actions || []).forEach(function (action) {
+      if (action.owner_session_id && action.owner_session_id !== item.session_id) rows.push("<dt>current run</dt><dd><code>" + esc(action.owner_session_id) + "</code></dd>");
+    });
     if (item.interaction && item.interaction.request_id) rows.push("<dt>request</dt><dd><code>" + esc(item.interaction.request_id) + "</code></dd>");
     if (item.interaction && item.interaction.protocol_method) rows.push("<dt>protocol</dt><dd><code>" + esc(item.interaction.protocol_method) + "</code></dd>");
     return rows.length ? '<details class="notification-identifiers"><summary>Technical details</summary><dl>' + rows.join("") + "</dl></details>" : "";
@@ -200,7 +204,7 @@
     var summary = item.summary || "";
     var markdown = '<div class="notification-markdown card-markdown" data-notification-markdown-body>' + esc(body) + "</div>";
     if (summary && summary !== body) {
-      return '<p class="notification-summary">' + esc(summary) + '</p><details class="notification-full"><summary>Full request and details</summary>' + markdown + "</details>";
+      return '<p class="notification-summary">' + esc(summary) + '</p><details class="notification-full"><summary>' + (item.capability === "session-attention:v1" ? "Technical context" : "Full request and details") + '</summary>' + markdown + "</details>";
     }
     return markdown;
   }
@@ -215,6 +219,27 @@
     }
     return '<button type="button" class="ghost small" data-notification-resolve>Dismiss notice</button>';
   }
+  function actionControls(item) {
+    var actions = (item.actions || []).filter(function (action) {
+      return action.kind === "navigate" && action.enabled !== false && (/^\/(?![\/\\])/.test(action.href || "") || /^https:\/\//.test(action.href || ""));
+    });
+    if (!(item.actions || []).length && item.routing && /^\/(?!\/)/.test(item.routing.destination || "")) {
+      actions = [{ label: "Open current run", href: item.routing.destination }];
+    }
+    var recovery = (item.actions || []).filter(function (action) { return action.kind === "recover" && action.enabled !== false; });
+    return recovery.map(function (action) {
+      return '<button type="button" class="ghost small" data-notification-recovery="' + esc(action.id) + '">' + esc(action.label) + '</button>';
+    }).join(" ") + actions.map(function (action) {
+      return '<a class="ghost small" href="' + esc(action.href) + '">' + esc(action.label) + '</a>';
+    }).join(" ");
+  }
+  function hasSelection() {
+    var selection = window.getSelection && window.getSelection();
+    var list = panel();
+    return Boolean(list && selection && !selection.isCollapsed &&
+      (list.contains(selection.anchorNode) || list.contains(selection.focusNode)));
+  }
+  function isReading() { return pointerInPanel || hasSelection() || hasFocusedControl(); }
   function renderMarkdownBodies(items) {
     var list = panel();
     if (!list) return;
@@ -224,7 +249,7 @@
       var target = article && article.querySelector("[data-notification-markdown-body]");
       if (!target || !window.PAAgentChat || typeof window.PAAgentChat.renderMarkdownAsync !== "function") return;
       window.PAAgentChat.renderMarkdownAsync(safeMarkdownSource((item.interaction && item.interaction.details) || item.body || item.summary || ""), { allowEmbeddedMedia: false }).then(function (html) {
-        if (!target.isConnected) return;
+        if (!target.isConnected || hasSelection() || pointerInPanel) return;
         target.innerHTML = html;
         if (window.PALinks) window.PALinks.decorate(target);
       });
@@ -251,7 +276,7 @@
         (!remote ? interactionControls(item) : "") +
         '<p class="notification-feedback" data-notification-feedback role="status" aria-live="polite"></p>' +
         identityDetails(item) +
-        '<div class="notification-secondary">' + secondaryControls(item) + "</div>" +
+        '<div class="notification-secondary">' + actionControls(item) + secondaryControls(item) + "</div>" +
         "</article>";
     }).join("");
     if (append) list.insertAdjacentHTML("beforeend", html);
@@ -270,7 +295,7 @@
     return Boolean(flyout && !flyout.hidden && flyout.contains(document.activeElement) && document.activeElement !== flyout);
   }
   function load(append, force) {
-    if (!append && !force && hasFocusedControl()) { state.refreshPending = true; return Promise.resolve(); }
+    if (!append && !force && isReading()) { state.refreshPending = true; return Promise.resolve(); }
     if (state.loading) return Promise.resolve();
     state.loading = true;
     return fetch("/api/notifications?" + query(), { credentials: "same-origin", cache: "no-store" })
@@ -283,6 +308,8 @@
         badge.textContent = data.outstanding_count > 99 ? "99+" : String(data.outstanding_count || "");
         state.next = data.next_offset;
         chrome.querySelector("[data-notification-more]").hidden = state.next == null;
+        if (!append && !force && isReading()) { state.refreshPending = true; return; }
+        state.refreshPending = false;
         render(data.items || [], append);
         chrome.querySelector("[data-notification-status]").textContent = data.outstanding_count ? " · " + data.outstanding_count + " outstanding" : "";
       })
@@ -290,7 +317,7 @@
         var chrome = root();
         if (chrome) chrome.querySelector("[data-notification-status]").textContent = " · unavailable";
       })
-      .finally(function () { state.loading = false; state.refreshPending = false; });
+      .finally(function () { state.loading = false; });
   }
   function postAction(id, action, body) {
     return fetch("/api/notifications/" + encodeURIComponent(id) + "/" + action, {
@@ -312,7 +339,13 @@
     var run = postAction(item.dataset.notificationId, action, body);
     // A second step (retry after routing) runs only when the first one succeeded.
     if (followUp) run = run.then(function () { return postAction(item.dataset.notificationId, followUp.action, followUp.body); });
-    return run.then(function () {
+    return run.then(function (response) {
+      if (action === "recovery-action" && body.action_id === "open-current") {
+        return response.json().then(function (data) {
+          if (/^\/(?![\/\\])/.test(data.destination || "")) window.location.assign(data.destination);
+          else throw new Error("The current run is unavailable. Refresh notifications.");
+        });
+      }
       clearDrafts(item.dataset.notificationId);
       state.offset = 0;
       return load(false, true);
@@ -326,16 +359,6 @@
     });
   }
   function key() { return "ui:" + Date.now() + ":" + Math.random().toString(36).slice(2); }
-  function navigateFrom(item) {
-    var destination = item.dataset.notificationDestination;
-    if (!destination) return;
-    fetch("/api/notifications/" + encodeURIComponent(item.dataset.notificationId) + "/read", {
-      method: "POST", credentials: "same-origin", keepalive: true,
-      headers: Object.assign({ "Content-Type": "application/json" }, csrf()),
-      body: JSON.stringify({ idempotency_key: key() })
-    }).catch(function () {});
-    window.location.assign(destination);
-  }
   function fieldValues(item) {
     var fields = {};
     var invalid = null;
@@ -369,6 +392,13 @@
     flyout.hidden = true;
     var bell = chrome.querySelector("#pa-notification-bell"); bell.setAttribute("aria-expanded", "false"); bell.focus();
   }
+  document.addEventListener("pointerdown", function (event) {
+    var list = panel(); pointerInPanel = Boolean(list && list.contains(event.target));
+  });
+  document.addEventListener("pointerup", function () {
+    window.setTimeout(function () { pointerInPanel = false; }, 0);
+  });
+  document.addEventListener("pointercancel", function () { pointerInPanel = false; });
   document.addEventListener("click", function (event) {
     var chrome = root(); if (!chrome) return;
     if (event.target.closest("#pa-notification-bell")) { chrome.querySelector("#pa-notification-panel").hidden ? open() : close(); return; }
@@ -376,7 +406,12 @@
     var filter = event.target.closest("[data-notification-filter]");
     if (filter) { state.filter = filter.dataset.notificationFilter; state.offset = 0; chrome.querySelectorAll("[data-notification-filter]").forEach(function (button) { var active = button === filter; button.classList.toggle("active", active); button.classList.toggle("ghost", !active); button.setAttribute("aria-pressed", active ? "true" : "false"); }); load(false, true); return; }
     if (event.target.closest("[data-notification-more]")) { state.offset = state.next || 0; load(true); return; }
-    var item = event.target.closest("[data-notification-id]"); if (!item) { if (!event.target.closest("[data-notification-chrome]")) close(); return; }
+    var item = event.target.closest("[data-notification-id]"); if (!item) { if (!event.target.closest("[data-notification-chrome]") && !pointerInPanel && !hasSelection()) close(); return; }
+    var recoveryAction = event.target.closest("[data-notification-recovery]");
+    if (recoveryAction) return void mutate(item, "recovery-action", {
+      idempotency_key: key(), expected_version: Number(item.dataset.notificationVersion),
+      action_id: recoveryAction.dataset.notificationRecovery
+    }, "Revalidating the obsolete attempt…");
     if (event.target.closest("[data-notification-read]")) return void mutate(item, "read", { idempotency_key: key() }, "Marking read…");
     if (event.target.closest("[data-notification-resolve]")) return void mutate(item, "resolve", { idempotency_key: key() }, "Dismissing notice…");
     if (event.target.closest("[data-notification-retry]")) return void mutate(item, "respond", { idempotency_key: key(), retry: true }, "Retrying the recorded response…");
@@ -414,24 +449,23 @@
       mutate(item, "respond", { idempotency_key: key(), fields: result.fields }, "Submitting response details…"); return;
     }
     if (event.target.closest("[data-notification-cancel]")) return void mutate(item, "respond", { idempotency_key: key(), cancel: true }, "Cancelling request…");
-    if (!event.target.closest("button,textarea,input,select,a,summary,details")) navigateFrom(item);
+
   });
   document.addEventListener("keydown", function (event) {
     if (event.key === "Escape") { var chrome = root(); if (chrome && !chrome.querySelector("#pa-notification-panel").hidden) close(); }
-    var item = event.target.closest && event.target.closest("[data-notification-id]");
-    if (item && (event.key === "Enter" || event.key === " ") && event.target === item && item.dataset.notificationDestination) { event.preventDefault(); navigateFrom(item); }
+
   });
   document.addEventListener("focusout", function (event) {
     var chrome = root();
     var flyout = chrome && chrome.querySelector("#pa-notification-panel");
     if (!flyout || !flyout.contains(event.target)) return;
-    window.setTimeout(function () { if (state.refreshPending && !hasFocusedControl()) { state.offset = 0; load(false, true); } }, 0);
+    window.setTimeout(function () { if (state.refreshPending && !isReading()) { state.offset = 0; load(false, true); } }, 0);
   });
   function boot() {
     load(false);
     window.clearInterval(pollTimer); pollTimer = window.setInterval(function () { state.offset = 0; load(false); }, 15000);
     try { var source = new EventSource("/api/cards/events"); source.addEventListener("cards-changed", function (event) { try { var data = JSON.parse(event.data); if (data.type === "notifications-changed") { state.offset = 0; load(false); } } catch (_error) {} }); } catch (_error) {}
   }
-  window.PANotificationsTest = { render: render, bodyMarkup: bodyMarkup, fieldValues: fieldValues, interactionControls: interactionControls, routeContext: routeContext, safeMarkdownSource: safeMarkdownSource };
+  window.PANotificationsTest = { render: render, load: load, bodyMarkup: bodyMarkup, fieldValues: fieldValues, interactionControls: interactionControls, routeContext: routeContext, actionControls: actionControls, safeMarkdownSource: safeMarkdownSource };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot); else boot();
 })();
