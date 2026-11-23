@@ -151,7 +151,7 @@ class NotificationAction(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str = Field(min_length=1, max_length=100)
-    kind: Literal["respond", "acknowledge", "resolve", "navigate"]
+    kind: Literal["respond", "acknowledge", "resolve", "navigate", "recover"]
     label: str = Field(min_length=1, max_length=200)
     href: str | None = Field(default=None, max_length=2000)
     method: str | None = Field(default=None, max_length=10)

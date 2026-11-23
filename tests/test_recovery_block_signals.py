@@ -67,7 +67,8 @@ async def test_blocking_notifies_once_with_high_priority_and_retry_action(lab):
     notice, principal = lab.notices[0]
     assert notice.priority == "high"
     assert notice.session_id == "run" and notice.card_id == lab.card.id
-    assert "Ship the importer" in notice.summary
+    assert "Open the current run" in notice.summary
+    assert "workspace_lease_conflict" not in notice.summary
     assert "workspace_lease_conflict" in notice.body
     assert notice.deduplication_key == "session-recovery-blocked:run:workspace_lease_conflict"
     assert [a.id for a in notice.actions] == ["retry"]
@@ -190,3 +191,58 @@ async def test_startup_sweep_announces_sessions_blocked_before_this_boot(lab):
     lab.manager._blocked_sessions_signalled = False
     await lab.manager._recovery_once()
     assert len(lab.notices) == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_workspace_source_retires_only_after_confirmed_retry(lab):
+    source = lab.store.get_session("run")
+    source.config_json = {"provisioning": {"stage": "workspace", "state": "failed"}}
+    source.status = "provisioning_failed"
+    lab.store.save_session(source)
+    successor = lab.store.save_session(AgentSession(
+        id="successor", agent_name="codex", dispatch_id="d1", card_id=source.card_id,
+        external_session_id="native-successor", status="busy", principal_id=source.principal_id))
+    lab.manager._runtimes[successor.id] = SimpleNamespace(_closed=False, connection=object())
+    assert not await lab.manager.retire_superseded_startup(source)
+    record = lab.ledger.get("d1")
+    record.session_id = successor.id
+    lab.ledger.put(record)
+    from pa.notifications.service import NotificationService
+    from pa.domain.notifications import NotificationCreate, NotificationType
+    service = NotificationService(SimpleNamespace(store=lab.store, settings=lab.manager.settings, services={}))
+    lab.manager.notification_service = service
+    notice = service.create(NotificationCreate(type=NotificationType.SERVICE_HEALTH,
+        title="Old attempt blocked", summary="Needs attention", session_id=source.id,
+        capability="session-attention:v1"), principal_id="user:local")
+    assert await lab.manager.retire_superseded_startup(source)
+    assert lab.store.get_notification(notice.id).resolved_at is not None
+    assert lab.store.get_session("run").status == "closed"
+    assert lab.store.get_session("successor").status == "busy"
+    assert lab.ledger.get("d1").session_id == "successor"
+    late = service.create(NotificationCreate(type=NotificationType.SERVICE_HEALTH,
+        title="Late old notice", summary="Needs attention", session_id=source.id,
+        capability="session-attention:v1"), principal_id="user:local")
+    lab.manager.settle_retired_startup_notices()
+    assert lab.store.get_notification(late.id).resolved_at is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("uncertainty", ["native", "queue", "runtime", "admitting", "history", "unknown_successor"])
+async def test_startup_retirement_preserves_uncertain_or_live_work(lab, uncertainty):
+    from pa.domain.models import TranscriptEvent
+    source = lab.store.get_session("run")
+    source.config_json = {"provisioning": {"stage": "workspace", "state": "failed"}}
+    source.status = "provisioning_failed"
+    successor = lab.store.save_session(AgentSession(id="successor", agent_name="codex",
+        dispatch_id="d1", card_id=source.card_id, external_session_id="native", status="busy", principal_id=source.principal_id))
+    lab.manager._runtimes[successor.id] = SimpleNamespace(_closed=False, connection=object())
+    record = lab.ledger.get("d1"); record.session_id = successor.id; lab.ledger.put(record)
+    if uncertainty == "native": source.external_session_id = "old-native"
+    if uncertainty == "queue": source.config_json["durable_runtime"] = {"queued_prompts": [{"id": "owed"}]}
+    if uncertainty == "runtime": lab.manager._runtimes[source.id] = SimpleNamespace(_closed=False)
+    if uncertainty == "admitting": lab.manager._admitting_sessions.add(source.id)
+    if uncertainty == "history": lab.store.append_transcript_events([TranscriptEvent(session_id=source.id, seq=1, event_type="user_message", payload={"text": "keep"})])
+    if uncertainty == "unknown_successor": successor.external_session_id = None; lab.store.save_session(successor)
+    lab.store.save_session(source)
+    assert not await lab.manager.retire_superseded_startup(source)
+    assert lab.store.get_session(source.id).status != "closed"

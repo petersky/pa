@@ -4281,6 +4281,10 @@ class AgentSessionManager:
         if not self._startup_complete or self._should_abort_recovery():
             return
         now = now or datetime.now(UTC)
+        try:
+            await self._offload("agent.settle_retired_notices", self.settle_retired_startup_notices)
+        except Exception:
+            logger.exception("Could not settle retired startup notices")
         sessions = await self._offload(
             "agent.recovery_sessions", self.store.list_sessions,
             exclude_statuses=("closed",), include_archived=False, timeout=30.0
@@ -4305,6 +4309,11 @@ class AgentSessionManager:
                         )
         due: list[AgentSession] = []
         for session in sessions:
+            try:
+                if await self.retire_superseded_startup(session):
+                    continue
+            except Exception:
+                logger.exception("Could not reconcile startup successor for %s", session.id)
             if session.id in self._admitting_sessions:
                 continue
             if session.archived_at or session.status == "closed":
@@ -6234,7 +6243,7 @@ class AgentSessionManager:
                 NotificationAction(
                     id="retry",
                     kind="navigate",
-                    label="Open session and retry",
+                    label="Open current run",
                     href=destination,
                 )
             ],
@@ -6253,6 +6262,92 @@ class AgentSessionManager:
         except Exception:
             return card_id
 
+    def superseding_startup_run(self, session: AgentSession, *, reserved: bool = False) -> AgentSession | None:
+        """Prove a failed pre-provider attempt was replaced by this dispatch's run.
+
+        No card-wide inference: accepted work, a native identity, a live runtime,
+        or an admission in progress makes automatic retirement unsafe.
+        """
+        if (not self.dispatch_store or not session.dispatch_id or session.external_session_id
+                or session.status not in {"provisioning_failed", RECOVERY_BLOCKED_STATUS}):
+            return None
+        provisioning = (session.config_json or {}).get("provisioning") or {}
+        if provisioning.get("stage") != "workspace" or provisioning.get("state") not in {"failed", "blocked"}:
+            return None
+        durable = (session.config_json or {}).get(_DURABLE_RUNTIME_KEY) or {}
+        if durable.get("queued_prompts") or durable.get("active_prompt") or durable.get("in_flight"):
+            return None
+        events = self.store.list_transcript_events(session.id, limit=1000)
+        if len(events) == 1000 or any(e.event_type != "session_admission_failed" for e in events):
+            # Preserve even unfamiliar history rather than guessing its meaning.
+            return None
+        record = self.dispatch_store.get(session.dispatch_id)
+        if not record or record.session_id in {None, session.id} or record.state != "running":
+            return None
+        if (record.card_id != session.card_id or record.project_id != session.project_id
+                or record.realm_id != session.realm_id or record.principal_id != session.principal_id
+                or record.target_instance_id != self.settings.instance_id):
+            return None
+        successor = self.store.get_session(record.session_id)
+        if (not successor or successor.dispatch_id != session.dispatch_id
+                or successor.realm_id != session.realm_id or successor.card_id != session.card_id
+                or successor.project_id != session.project_id or successor.principal_id != session.principal_id
+                or successor.status not in {"idle", "busy", "prompting", "connected"}
+                or not successor.external_session_id):
+            return None
+        with self._runtime_lifecycle_lock:
+            target_runtime = self.get(successor.id)
+            if not target_runtime or target_runtime._closed or not target_runtime.connection:
+                return None
+            runtime = self.get(session.id)
+            if (not reserved and session.id in self._admitting_sessions) or (runtime and not runtime._closed):
+                return None
+        return successor
+
+    def settle_retired_startup_notices(self) -> None:
+        """Finish notice settlement after a crash between closure and resolution."""
+        service = getattr(self, "notification_service", None)
+        if service is None:
+            return
+        from pa.domain.notifications import SESSION_ATTENTION_NOTICE_CAPABILITY
+        for realm_id in self.settings.subscribed_realms:
+            for notice in self.store.list_notifications(realm_id=realm_id, resolved=False, limit=1000):
+                if notice.capability != SESSION_ATTENTION_NOTICE_CAPABILITY or not notice.session_id:
+                    continue
+                source = self.store.get_session(notice.session_id)
+                if not source or source.status != "closed":
+                    continue
+                closure = self.store.transcript_lifecycle_summary(source.id).get("closure_reason", "")
+                if not str(closure).startswith("superseded_startup:"):
+                    continue
+                service.supersede(notice, principal_id="system:startup-successor",
+                    idempotency_key=f"settled-startup:{source.id}:{notice.id}")
+
+    async def retire_superseded_startup(self, session: AgentSession) -> bool:
+        successor = await self._offload("agent.startup_successor", self.superseding_startup_run, session)
+        if successor is None:
+            return False
+        async with self.continuation_transfer_guard(session.id, successor.id):
+            # Re-read after reserving both identities. Never close a live owner.
+            source = await self._offload("agent.startup_source", self.store.get_session, session.id)
+            if source is None:
+                return False
+            confirmed = self.superseding_startup_run(source, reserved=True)
+            if confirmed is None or confirmed.id != successor.id:
+                return False
+            await self._offload("agent.retire_startup", self.store.close_session, source.id,
+                reason=f"superseded_startup:{successor.id}")
+            service = getattr(self, "notification_service", None)
+            if service:
+                notices = await self._offload("agent.startup_notices", self.store.list_notifications,
+                    realm_id=source.realm_id, resolved=False, limit=1000)
+                for notice in notices:
+                    if notice.session_id == source.id and notice.capability == "session-attention:v1":
+                        await self._offload("agent.settle_startup_notice", service.supersede, notice,
+                            principal_id="system:startup-successor",
+                            idempotency_key=f"startup-successor:{source.id}:{successor.id}:{notice.id}")
+        return True
+
     def _signal_recovery_block(self, session_id: str) -> None:
         """Tell a person a session is blocked and stop its dispatch waiting on it."""
         session = self.store.get_session(session_id)
@@ -6269,7 +6364,7 @@ class AgentSessionManager:
                 "Agent session gave up recovering"
                 if exhausted else "Agent session cannot recover on its own"
             ),
-            summary=f"{self._card_title(session.card_id)}: {code}. {remedy}",
+            summary="This run needs attention. Open the current run to review recovery options.",
             body=(
                 f"Card: {self._card_title(session.card_id)}\n"
                 f"Session: {session.id}\n"
