@@ -13,6 +13,7 @@ from pa.auth.users import UserDirectory
 from pa.config import Settings
 from pa.domain.models import FleetInstance
 from pa.execution.lease import LeaseManager
+from pa.execution.target import worker_target
 from pa.fleet.registry import FleetRegistry
 from pa.network.peer_table import PeerTable
 
@@ -175,8 +176,9 @@ class ExecutionRouter:
         )
         if not card:
             return None
-        if card.preferred_instance:
-            return card.preferred_instance
+        target, _ = worker_target(explicit, card)
+        if target:
+            return target
         if card.preferred_capabilities:
             inst = self._find_capable_instance(card.preferred_capabilities)
             if inst:

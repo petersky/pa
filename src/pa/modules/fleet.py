@@ -8207,6 +8207,11 @@ async def _resolve_policy_placement(
 ) -> tuple[Any, Any]:
     ctx = request.app.state.ctx
     _check_dispatch_preview(body, card)
+    from pa.execution.target import worker_target
+    target, target_source = worker_target(body.target_instance_id, card)
+    if target:
+        body.target_instance_id = target
+        body.placement_policy = None
     # A completed design run may still have an idle connected provider when
     # its card is reopened. Settle it through the normal lifecycle guards
     # before taking the placement snapshot; never ignore a live writer lease.
@@ -8343,7 +8348,9 @@ async def _resolve_policy_placement(
                 "privileged_named_override"
                 if body.participation_override
                 else (
-                    "named_manual_dispatch"
+                    ("card_preferred_instance"
+                     if target_source == "card_preferred_instance"
+                     else "named_manual_dispatch")
                     if body.target_instance_id
                     else group.default_source
                 )

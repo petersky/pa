@@ -11,6 +11,7 @@ from pa.core.async_runtime import AsyncRuntime, BlockingOperationTimeout
 from pa.domain.conversation_issues import ConversationIssues, IssueConflict, IssueEdit, StartIssues, fingerprint
 from pa.domain.models import CardCreate
 from pa.execution.selection import ExecutionPreferences, SelectionConstraints
+from pa.execution.target import worker_target
 from pa.prompts import PROMPTS
 
 router = APIRouter(prefix="/agent/sessions")
@@ -130,8 +131,7 @@ async def _start_context(request, manager, session):
         "source_session_id": session.id, "source_card_id": session.card_id,
         "principal_id": get_principal_id(request), "instance_id": settings.instance_id,
         "dispatch": {"provider": session.agent_name, "model_id": session.model_id,
-                     "execution_preferences": _preferences(session),
-                     "target_instance_id": settings.instance_id},
+                     "execution_preferences": _preferences(session)},
     }
 
 
@@ -246,6 +246,15 @@ async def _execute(request, session_id, request_id, manager, notes):
                         await _call(manager, notes.update_request, session_id, request_id, groups=groups)
                     if "dispatch_inputs" not in group:
                         inputs = dict(context["dispatch"])
+                        card = await _call(manager, manager.store.get_card,
+                            group["card_id"], realm_id=context["realm_id"])
+                        target, source = worker_target(inputs.get("target_instance_id"), card)
+                        if target:
+                            inputs["target_instance_id"] = target
+                            inputs.pop("placement_policy", None)
+                        else:
+                            inputs.setdefault("placement_policy", "best_match")
+                        group["placement_source"] = source
                         if group.get("linked_card"):
                             inputs["expected_execution_version"] = group["card_execution_version"]
                         # Older notebooks froze the chat's mode, although the
