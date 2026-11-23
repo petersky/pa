@@ -157,6 +157,8 @@ class NotificationAction(BaseModel):
     method: str | None = Field(default=None, max_length=10)
     input_schema: dict[str, Any] | None = None
     enabled: bool = True
+    owner_session_id: str | None = Field(default=None, max_length=200)
+    owner_label: str | None = Field(default=None, max_length=500)
 
 
 class InteractionRequest(BaseModel):

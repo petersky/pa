@@ -129,6 +129,9 @@
     ["project", "card", "session", "dispatch", "owner"].forEach(function (kind) {
       if (context[kind] && context[kind].id) rows.push("<dt>" + esc(kind) + "</dt><dd><code>" + esc(context[kind].id) + "</code></dd>");
     });
+    (item.actions || []).forEach(function (action) {
+      if (action.owner_session_id && action.owner_session_id !== item.session_id) rows.push("<dt>current run</dt><dd><code>" + esc(action.owner_session_id) + "</code></dd>");
+    });
     if (item.interaction && item.interaction.request_id) rows.push("<dt>request</dt><dd><code>" + esc(item.interaction.request_id) + "</code></dd>");
     if (item.interaction && item.interaction.protocol_method) rows.push("<dt>protocol</dt><dd><code>" + esc(item.interaction.protocol_method) + "</code></dd>");
     return rows.length ? '<details class="notification-identifiers"><summary>Technical details</summary><dl>' + rows.join("") + "</dl></details>" : "";

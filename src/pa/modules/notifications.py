@@ -364,7 +364,8 @@ def _attention_actions(request: Request, item: Notification) -> list[dict] | Non
     if not owner:
         return []
     actions = [{"id": "open-current", "kind": "recover", "label": "Open current run",
-             "href": "/agent?" + urlencode({"session": owner.id}), "enabled": True}]
+             "href": "/agent?" + urlencode({"session": owner.id}), "enabled": True,
+             "owner_session_id": owner.id, "owner_label": owner.title or f"{owner.agent_name} run"}]
     manager = ctx.services.get("instance_agent")
     if (not item.resolved_at and source and manager
             and item.owner_instance_id in {None, ctx.settings.instance_id}
@@ -376,6 +377,13 @@ def _attention_actions(request: Request, item: Notification) -> list[dict] | Non
 
 def _public_notice(request: Request, item: Notification, labels: dict | None = None) -> dict[str, Any]:
     presentation = _presentation_metadata(item)
+    attention_actions = _attention_actions(request, item) if item.capability == SESSION_ATTENTION_NOTICE_CAPABILITY else None
+    summary = item.summary
+    if item.capability == SESSION_ATTENTION_NOTICE_CAPABILITY:
+        summary = "This run needs attention. Open the current run to review recovery options."
+        owner = next((a for a in attention_actions or [] if a.get("owner_session_id")), None)
+        if owner and owner["owner_session_id"] != item.session_id:
+            summary = f"This workspace is already in use by {owner['owner_label']}. Open the current run to continue."
     recovery = _delivery_recovery(request, item)
     if recovery:
         presentation["recovery"] = recovery
@@ -392,7 +400,7 @@ def _public_notice(request: Request, item: Notification, labels: dict | None = N
         )
     if item.capability == SESSION_ATTENTION_NOTICE_CAPABILITY:
         presentation["required_action"] = "Open the current run to review its state and recovery options."
-        presentation["next_effect"] = "Opening the run does not start duplicate work or change workspace ownership."
+        presentation["next_effect"] = "PA keeps one writer per workspace. Independent parallel work needs a separate session and workspace."
     interaction = item.interaction
     if interaction:
         # Only a delivery this process is running right now is "in flight"; any other
@@ -443,7 +451,8 @@ def _public_notice(request: Request, item: Notification, labels: dict | None = N
         }
     return {
         **item.public_dict(),
-        "actions": _attention_actions(request, item) if item.capability == SESSION_ATTENTION_NOTICE_CAPABILITY else [a.model_dump() for a in item.actions],
+        "summary": summary,
+        "actions": attention_actions if attention_actions is not None else [a.model_dump() for a in item.actions],
         "routing": _route_metadata(request, item),
         "context": _context_metadata(request, item, labels),
         "presentation": presentation,

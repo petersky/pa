@@ -6269,7 +6269,7 @@ class AgentSessionManager:
         or an admission in progress makes automatic retirement unsafe.
         """
         if (not self.dispatch_store or not session.dispatch_id or session.external_session_id
-                or session.status not in {"provisioning_failed", RECOVERY_BLOCKED_STATUS}):
+                or session.status not in {"idle", "provisioning_failed", RECOVERY_BLOCKED_STATUS}):
             return None
         provisioning = (session.config_json or {}).get("provisioning") or {}
         if provisioning.get("stage") != "workspace" or provisioning.get("state") not in {"failed", "blocked"}:

@@ -194,10 +194,11 @@ async def test_startup_sweep_announces_sessions_blocked_before_this_boot(lab):
 
 
 @pytest.mark.asyncio
-async def test_failed_workspace_source_retires_only_after_confirmed_retry(lab):
+@pytest.mark.parametrize("source_status", ["provisioning_failed", "idle", "recovery_blocked"])
+async def test_failed_workspace_source_retires_only_after_confirmed_retry(lab, source_status):
     source = lab.store.get_session("run")
     source.config_json = {"provisioning": {"stage": "workspace", "state": "failed"}}
-    source.status = "provisioning_failed"
+    source.status = source_status
     lab.store.save_session(source)
     successor = lab.store.save_session(AgentSession(
         id="successor", agent_name="codex", dispatch_id="d1", card_id=source.card_id,

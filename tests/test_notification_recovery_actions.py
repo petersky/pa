@@ -14,6 +14,7 @@ def test_recovery_actions_require_current_version_and_never_retry_source(tmp_pat
     with TestClient(kernel.build_app()) as client:
         data = client.get(f"/api/notifications/{notice.id}").json()
         assert data["actions"][0]["id"] == "open-current"
+        assert "Open the current run" in data["summary"]
         endpoint = f"/api/notifications/{notice.id}/recovery-action"
         headers = {"X-CSRF-Token": client.cookies.get("pa_csrf")}
         stale = client.post(endpoint, headers=headers, json={"idempotency_key":"stale", "expected_version":notice.version + 1, "action_id":"open-current"})
@@ -67,3 +68,6 @@ def test_open_current_revalidates_replaced_dispatch_owner(tmp_path, request):
             json={"idempotency_key":"revalidate", "expected_version":notice.version, "action_id":"open-current"})
         assert response.status_code == 200
         assert response.json()["destination"] == "/agent?session=successor"
+        refreshed = client.get(f"/api/notifications/{notice.id}").json()
+        assert refreshed["actions"][0]["owner_session_id"] == "successor"
+        assert "already in use by codex run" in refreshed["summary"]
