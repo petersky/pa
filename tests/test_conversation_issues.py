@@ -556,3 +556,71 @@ async def test_successful_enrichment_is_awaited_before_freezing_dispatch(setup, 
     result = await pending
     assert result["requests"][0]["state"] == "admitted"
     assert dispatch.call_args.args[1].project_id == project.id
+
+
+@pytest.mark.asyncio
+async def test_each_card_freezes_its_worker_without_pinning_authority(setup, monkeypatch):
+    store, _, req, _ = setup
+    project = store.get_session("discussion").project_id
+    cards = [store.create_card(CardCreate(title=target, preferred_instance=target,
+        project_id=project)) for target in ("host-b", "host-c")]
+    await edit_issues(req(), "discussion", IssueEdit(revision=0, issues=[
+        Issue(id=f"linked-{i}", title=card.title, card_id=card.id)
+        for i, card in enumerate(cards)]))
+    sent = []
+    async def dispatch(request, body):
+        sent.append(body.model_dump(mode="json"))
+        return {"dispatch_id": body.card_id}
+    monkeypatch.setattr("pa.modules.fleet.dispatch_fleet_work", dispatch)
+    body = StartIssues(request_id="multi-target", revision=1,
+        issue_ids=["linked-0", "linked-1"])
+    await start_issues(req("multi-target"), "discussion", body)
+    state = ConversationIssues(store).read("discussion")
+    record = state["requests"][0]
+    assert record["context"]["instance_id"] == "test"
+    assert "target_instance_id" not in record["context"]["dispatch"]
+    assert [s["target_instance_id"] for s in sent] == ["host-b", "host-c"]
+    assert all(s["provider"] == "codex" and s["mode_id"] is None for s in sent)
+    assert all(g["placement_source"] == "card_preferred_instance" for g in record["groups"])
+    await start_issues(req("multi-target"), "discussion", body)
+    assert len(sent) == 2
+
+
+@pytest.mark.asyncio
+async def test_unadmitted_retry_retains_frozen_worker_and_constraints(setup, monkeypatch):
+    store, _, req, _ = setup
+    card = store.create_card(CardCreate(title="Remote", preferred_instance="host-b",
+        project_id=store.get_session("discussion").project_id))
+    await edit_issues(req(), "discussion", IssueEdit(revision=0, issues=[
+        Issue(id="remote", title="Remote", card_id=card.id)]))
+    sent = []
+    async def dispatch(request, body):
+        sent.append(body.model_dump(mode="json"))
+        if len(sent) == 1:
+            raise HTTPException(409, {"code": "preferred_worker_unavailable"})
+        return {"dispatch_id": "recovered"}
+    monkeypatch.setattr("pa.modules.fleet.dispatch_fleet_work", dispatch)
+    body = StartIssues(request_id="retry-target", revision=1, issue_ids=["remote"])
+    first = await start_issues(req("retry-target"), "discussion", body)
+    assert first["requests"][0]["state"] == "blocked"
+    session = store.get_session("discussion")
+    session.model_id = "different-model"
+    store.save_session(session)
+    second = await start_issues(req("retry-target"), "discussion", body)
+    assert second["requests"][0]["state"] == "admitted"
+    assert sent[0] == sent[1]
+    assert sent[1]["target_instance_id"] == "host-b"
+
+
+@pytest.mark.asyncio
+async def test_no_worker_preference_uses_policy(setup, monkeypatch):
+    store, _, req, _ = setup
+    dispatch = AsyncMock(return_value={"dispatch_id": "policy"})
+    monkeypatch.setattr("pa.modules.fleet.dispatch_fleet_work", dispatch)
+    await edit_issues(req(), "discussion", ten_issues())
+    await start_issues(req(), "discussion", StartIssues(request_id="start-1234",
+        revision=1, issue_ids=["issue-0"]))
+    sent = dispatch.call_args.args[1]
+    assert sent.target_instance_id is None
+    assert sent.placement_policy == "best_match"
+    assert ConversationIssues(store).read("discussion")["requests"][0]["groups"][0]["placement_source"] == "placement_policy"

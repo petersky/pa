@@ -1980,3 +1980,97 @@ def test_dead_owner_lease_that_will_be_reclaimed_does_not_reject_placement(
         with pytest.raises(PlacementError) as error:
             service.resolve(request, [candidate])
         assert "workspace_unavailable" in error.value.rejected_candidates[0]["rejection_codes"]
+
+
+@pytest.mark.parametrize("explicit,available,authorized", [
+    (None, True, True), ("local", True, True),
+    (None, False, True), (None, True, False),
+])
+def test_saved_card_worker_preview_and_admission(tmp_path, explicit, available, authorized):
+    settings = Settings(data_dir=tmp_path, instance_id="local", instance_name="Local",
+        instance_url="http://pa.test:8080", agent_enabled=False,
+        subscribed_realms=["default"], peers=[])
+    app = Kernel.boot(settings=settings).build_app()
+    inspected = []
+    async def candidates(request, instances):
+        inspected.append([i.instance_id for i in instances])
+        return [_candidate(i.instance_id, local=i.instance_id == "local",
+            authorized=authorized if i.instance_id == "remote" else True)
+            for i in instances]
+    with patch("pa.modules.fleet._placement_candidates", side_effect=candidates), TestClient(app) as client:
+        registry = app.state.ctx.require_service("fleet_registry")
+        if available:
+            registry.upsert_instance(FleetInstance(instance_id="remote", name="Remote",
+                url="http://remote.test:8080"))
+        card = app.state.ctx.store.create_card(CardCreate(title="Saved preference",
+            preferred_instance="remote"))
+        client.get("/")
+        headers = {"X-CSRF-Token": client.cookies.get("pa_csrf")}
+        body = {"card_id": card.id, "provider": "codex",
+            "idempotency_key": "saved-worker", "execution_contract":
+            {"version": 1, "profile": "research", "confirmed": True}}
+        body.update({"target_instance_id": explicit} if explicit else {"placement_policy": "best_match"})
+        preview = client.post("/api/fleet/placement/preview", headers=headers, json=body)
+        first = client.post("/api/fleet/dispatch", headers=headers, json=body)
+        if available and authorized or explicit:
+            assert preview.status_code == 200, preview.text
+            assert first.status_code == 202, first.text
+            target = explicit or "remote"
+            assert preview.json()["selected_instance_id"] == target
+            assert first.json()["dispatch"]["target_instance_id"] == target
+            assert first.json()["dispatch"]["authority_instance_id"] == "local"
+            second = client.post("/api/fleet/dispatch", headers=headers, json=body)
+            assert second.status_code == 202, second.text
+            assert second.json()["duplicate"] is True
+            assert second.json()["dispatch_id"] == first.json()["dispatch_id"]
+            assert len(inspected) == 2
+        else:
+            assert preview.status_code >= 400
+            assert first.status_code >= 400
+            assert preview.json()["detail"]["code"] == first.json()["detail"]["code"]
+            assert first.json()["detail"]["code"] in {"instance_not_found", "no_eligible_instance"}
+        assert all(ids == ([explicit or "remote"] if available or explicit else []) for ids in inspected)
+
+
+def test_conversation_start_admits_saved_remote_worker_with_local_authority(tmp_path):
+    from pa.domain.models import AgentSession
+    settings = Settings(data_dir=tmp_path, instance_id="local", agent_enabled=False,
+        instance_url="http://pa.test:8080", subscribed_realms=["default"], peers=[])
+    app = Kernel.boot(settings=settings).build_app()
+    async def candidates(request, instances):
+        return [_candidate(i.instance_id, local=i.instance_id == "local") for i in instances]
+    with patch("pa.modules.fleet._placement_candidates", side_effect=candidates), TestClient(app) as client:
+        ctx = app.state.ctx
+        ctx.require_service("fleet_registry").upsert_instance(FleetInstance(
+            instance_id="remote", name="Remote", url="http://remote.test:8080"))
+        project = ctx.store.create_project(ProjectCreate(title="Routing test", tool_config={
+            "execution_contract": {"version": 1, "profile": "research", "confirmed": True}}))
+        card = ctx.store.create_card(CardCreate(title="Remote work",
+            preferred_instance="remote", project_id=project.id))
+        ctx.store.save_session(AgentSession(id="routing-chat", purpose="chat",
+            agent_name="codex", principal_id="user:local", project_id=project.id))
+        client.get("/")
+        headers = {"X-CSRF-Token": client.cookies.get("pa_csrf")}
+        saved = client.put("/api/agent/sessions/routing-chat/issues", headers=headers,
+            json={"revision": 0, "issues": [{"id": "remote-work",
+                "title": "Remote work", "card_id": card.id}]})
+        assert saved.status_code == 200, saved.text
+        headers["Idempotency-Key"] = "conversation-routing"
+        body = {"request_id": "conversation-routing", "revision": saved.json()["revision"],
+            "issue_ids": ["remote-work"]}
+        first = client.post("/api/agent/sessions/routing-chat/issues/start",
+            headers=headers, json=body)
+        assert first.status_code == 202, first.text
+        record = first.json()["requests"][0]
+        for _ in range(30):
+            if record["state"] not in {"accepted", "admitting"}:
+                break
+            record = client.get("/api/agent/sessions/routing-chat/issues").json()["requests"][0]
+        assert record["state"] == "admitted", record.get("error")
+        dispatch_id = record["groups"][0]["dispatch_id"]
+        dispatch = ctx.require_service("dispatch_store").get(dispatch_id)
+        assert dispatch.target_instance_id == "remote"
+        assert dispatch.authority_instance_id == "local"
+        second = client.post("/api/agent/sessions/routing-chat/issues/start",
+            headers=headers, json=body)
+        assert second.json()["requests"][0]["groups"][0]["dispatch_id"] == dispatch_id
