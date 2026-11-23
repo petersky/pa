@@ -24,6 +24,11 @@ def test_recovery_actions_require_current_version_and_never_retry_source(tmp_pat
         unsafe = client.post(endpoint, headers=headers, json={"idempotency_key":"close", "expected_version":notice.version, "action_id":"close-obsolete"})
         assert unsafe.status_code == 409
         assert kernel.ctx.store.get_session(source.id).status != "closed"
+        resolved = kernel.ctx.require_service("notifications").resolve(notice,
+            principal_id="user:local", idempotency_key="dismiss")
+        history = client.post(endpoint, headers=headers, json={"idempotency_key":"history-open", "expected_version":resolved.version, "action_id":"open-current"})
+        assert history.status_code == 200
+        assert history.json()["destination"] == "/agent?session=old"
 
 
 def test_recovery_action_rejects_fleet_credential():

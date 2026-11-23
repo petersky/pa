@@ -533,7 +533,7 @@ class RecoveryActionMutation(IdempotentMutation):
 async def recovery_action(request: Request, notification_id: str, body: RecoveryActionMutation) -> dict:
     item = _authorized_notice(request, notification_id)
     _require_operator_credentials(request)
-    if item.version != body.expected_version or item.resolved_at:
+    if item.version != body.expected_version or (item.resolved_at and body.action_id != "open-current"):
         raise HTTPException(409, detail={"message": "This notice changed. Refresh notifications and open the current run."})
     actions = _attention_actions(request, item) or []
     if body.action_id == "open-current":
