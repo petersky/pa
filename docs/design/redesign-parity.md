@@ -6,24 +6,24 @@ Status: implementation in progress. Retaining a template/handler is source parit
 
 | Existing feature | Current entry/behavior | Redesigned successor | Verification | Status / gap |
 |---|---|---|---|---|
-| Home attention, motion, outcomes | /; partials/home/sections.html | Same route and live sections | test_home_attention_queue, test_home_lifecycle_evidence | Retained; visual acceptance pending |
+| Home attention, motion, outcomes | /; partials/home/sections.html | Same route and live sections | test_home_attention_queue, test_home_lifecycle_evidence | Isolated destination/layout checks passed; active runtime acceptance pending |
 | Global Work and capture | /work; optional project; state/lane boards, saved views, search, facets, pagination, drag/drop | Work rail destination; existing boards and forms retained | test_work_facets, test_work_board_by_state, test_work_discovery_browser | Global list and No project filter implemented; targeted real-app verification passed; PR integration pending |
-| Card details, materials, completion | partials/card-detail*; tabs; edit/share/source/download/revisions; assignment, dispatch defaults; acceptance separate from lane | Same dialogs and URLs | test_card_work_ux, card attachments and completion tests | Retained; browser parity pending |
-| Goals | /goals; packages, retry, lifecycle | Goals rail destination | goals tests | Retained; visual acceptance pending |
-| Projects and repositories | /projects; sticky count tabs, settings dialog, repositories, worker groups, defaults, PRs | Same project navigation, scoped Work | test_projects_workspace_browser, test_projects_accessibility | Preserve merged #768; runtime verification pending |
+| Card details, materials, completion | partials/card-detail*; tabs; edit/share/source/download/revisions; assignment, dispatch defaults; acceptance separate from lane | Same dialogs and URLs | test_card_work_ux, card attachments and completion tests | Existing material/detail regressions passed; active runtime acceptance pending |
+| Goals | /goals; packages, retry, lifecycle | Goals rail destination | goals tests | Isolated destination/layout checks passed; active runtime acceptance pending |
+| Projects and repositories | /projects; sticky count tabs, settings dialog, repositories, worker groups, defaults, PRs | Same project navigation, scoped Work | test_projects_workspace_browser, test_projects_accessibility | Merged #768 preserved; project browser actions passed; active runtime acceptance pending |
 | Pull requests | /pull-requests; durable watches, evidence, review and merge state | Registered navigation retained | pr supervisor tests | Retained |
 | Conversation selection and history | /agent; new/select/branch/thread/archive/search; deep links and recovery | Conversations rail destination; original workspace | test_chat_shell, test_agent_history_sidebar, navigation browser tests | Retained |
-| Live conversation control | agent-chat.js; streaming, queue/steering/cancel, drafts, agent/model/effort/permission selectors | Original chat widgets and handler lifecycle | conversation browser tests, agent chat tests | Retained; active session browser acceptance pending |
+| Live conversation control | agent-chat.js; streaming, queue/steering/cancel, drafts, agent/model/effort/permission selectors | Original chat widgets and handler lifecycle | conversation browser tests, agent chat tests | Conversation chrome/reentry/queue/browser actions passed; original live-chat acceptance pending |
 | Conversation outputs and interactions | tools/Terminal; issues/start; permissions/questions; attachments/resources; visualizations/results | Original tool views, dialogs and preview sandbox | test_conversation_work_browser, visualizations/file viewer tests | Retain #769; original chat acceptance remains separate |
 | Loops and reminders | /loops; scheduling.js; session-reminders.js | Loops rail destination; same forms | loop and reminder tests | Retained |
 | Reports and results | /reports; telemetry; completion-results and material-history deep links | Same pages and chrome telemetry links | telemetry and completion records tests | Retained |
 | Memory and knowledge | /knowledge, /memory-audit; knowledge partials; browse files | All registered links retained | knowledge and memory tests | Retained |
 | Workshop | /workshop; floor and compact views; live stream | Workshop rail destination | workshop browser/model tests | Retained |
-| Fleet and operations | /fleet; realms, instances, remote operations, workers, health, backups | Fleet rail destination; original sections | fleet tests | Retained; responsive acceptance pending |
+| Fleet and operations | /fleet; realms, instances, remote operations, workers, health, backups | Fleet rail destination; original sections | fleet tests | Desktop/narrow destination checks passed; active runtime acceptance pending |
 | Settings and configuration | /settings; appearance, agent, MCP, GitHub scope, prompts, telemetry, config, backups, instance | Settings at rail bottom; all sections retained; density under Appearance | test_themes, configuration tests | Density added; remaining settings unchanged |
 | Appearance | Theme catalog; system/light/dark; cookies, local storage, personal preferences | Same themes; theme icon directly below Settings | test_themes; redesign browser regression | Retained; density preference is per browser |
 | Account and notifications | Sign in/out, next URL, account, notifications filters/read/actions/pagination; agent status | Original chrome actions retained | test_auth_navigation, test_auth_navigation_browser, notifications tests | Retained |
-| Navigation and accessibility | HTMX app-view swaps; shareable URLs; history/focus/scroll; CSRF; mobile menu | Persistent rail desktop, accessible menu narrow; same route manager | test_browser_navigation_readiness; redesign browser regression | Keyboard, touch and zoom verification pending |
+| Navigation and accessibility | HTMX app-view swaps; shareable URLs; history/focus/scroll; CSRF; mobile menu | Persistent rail desktop, accessible menu narrow; same route manager | test_browser_navigation_readiness; redesign browser regression | Keyboard/touch, page scale 2 and half-width reflow passed in fixtures; active runtime acceptance pending |
 
 ## Source inventory
 
@@ -121,7 +121,7 @@ These controls retain their existing handlers or templates; the verification col
 | Queue/steer/cancel | Original composer/queue controls | `test_agent_queue_browser.py`, `test_agent_chat_queue_stop.py` | Queue browser passed |
 | Agent/model/effort/permission/defaults | Original settings and execution-selection forms | `test_agent_effort_browser.py`, `test_native_effort.py`, `test_purpose_permission_defaults.py` | Retained; no default changes |
 | Tools/Terminal/plans | Original named activity controls and tabs | `test_chat_detail_tabs_browser.py`, `test_conversation_titles_terminal.py` | Details browser passed; Terminal handler unchanged |
-| Issues/start workflows and correlated questions | Original Issues tab and interactions | `test_conversation_work_browser.py`, `test_goal_session_permissions.py` | Retained; full interaction acceptance still open |
+| Issues/start workflows and correlated questions | Original Issues tab and interactions | `test_conversation_work_browser.py`, `test_goal_session_permissions.py` | Issues workflow browser and permission-policy regressions passed; active runtime acceptance pending |
 | File/resource attachments, edit/source/download/history | Original card material dialogs and revision routes | `test_card_attachments_browser.py`, `test_attachment_materialization_api.py` | Attachment browser passed |
 | Visualization/media previews and results | Original sandbox renderer and results route | `test_visualization_chat_browser.py`, `test_completion_records_browser.py` | Results browser passed; #769 retained |
 | Capture/edit/assign/optional project | Original New card/detail forms; global list adds No project | `test_card_work_ux.py`, `test_global_work_list.py` | Global fixture/unit/browser checks passed |
@@ -144,3 +144,11 @@ The direct-navigation uncertainty above was resolved in the deterministic regres
 Shell PR #770 merged as `551a62835beb8341091b5c2f93225ba65673a416`. Global Work PR #771, including the 1024 px container-based board correction, merged as `b3c077c34701e280daf8839d85877548f7b856a8`, watched final head `ada81bf06dc455999e142d9479c42452d1c9699e`. Both had stable-green PA supervision and independent exact-head CI/review/thread/mergeability checks before merge.
 
 Desktop chrome now includes the approved Search all work form. It submits only query/view/realm and synchronizes the realm from the current URL before submission; project scope is never inherited. Narrow layouts retain global search through the Work destination. The shared-shell browser regression searches from a project page in a separate research realm and verifies the unassigned matching card and absence of a project parameter. This, the sign-in/return-layout browser journey, and the all-destination/theme/direct-navigation sweep passed together after the header addition.
+
+### Final selector, defaults and permission coverage
+
+Twenty-three additional tests passed across `test_conversation_work_browser.py`, `test_agent_effort_browser.py`, `test_settings_scope_browser.py`, `test_purpose_permission_defaults.py` and `test_goal_session_permissions.py`. This closes the isolated fixture gaps for issues/start editing/conflict/retry, effort selection, personal versus instance settings scope, and goal/session permission boundaries. The original live conversation still requires post-rollout acceptance.
+
+CI found two test fixture/selector assumptions after global search was added: the file-browser ASGI fixture lacked `query_string` (corrected; all 8 file-browser tests passed), and a Work filter test's unscoped `input[name=q]` selected the new global search instead of the local filter form (scoped to `.work-filters`; the full existing filter/history/touch browser regression passed). Product filtering semantics were retained.
+
+All source changes remain subject to final PR #772 CI/review/merge. Active runtime rollout and verification of the originating conversation are the remaining acceptance stages; no broad completion has been recorded.
