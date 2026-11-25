@@ -81,22 +81,25 @@ class ProjectsHealthRouteTests(unittest.TestCase):
             )
 
             response = client.get(f"/projects?realm=default&project={project.id}")
+            live = client.get(f"/projects?project={project.id}&tab=live")
+            history = client.get(f"/projects?project={project.id}&tab=history")
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("25%", response.text)
         self.assertIn("1 of 4 complete", response.text)
-        self.assertIn("Blocked (Waiting)", response.text)
-        self.assertIn("Completion means cards in Done", response.text)
-        self.assertIn("Live agent sessions (1)", response.text)
-        self.assertIn("Historical agent sessions (1)", response.text)
-        self.assertIn("Live execution", response.text)
-        self.assertIn("Historical execution", response.text)
+        self.assertNotIn("Completion means cards in Done", response.text)
+        self.assertNotIn("Refreshed", response.text)
+        self.assertIn("Live agent sessions (1)", live.text)
+        self.assertIn("Historical agent sessions (1)", history.text)
+        self.assertIn("Live execution", live.text)
+        self.assertIn("Historical execution", history.text)
+        self.assertNotIn("Historical execution", live.text)
+        self.assertNotIn('id="project-live-sessions"', response.text)
         self.assertIn("Open agent", response.text)
         self.assertNotIn('aria-label="Dispatch active card"', response.text)
-        self.assertIn("Refreshed", response.text)
         for lane in CardLane:
             self.assertIn(
-                f"project={project.id}&amp;lane={lane.value}#lane-{lane.value}",
+                f"project={project.id}&amp;tab={lane.value}",
                 response.text,
             )
 
@@ -142,8 +145,8 @@ class ProjectsHealthRouteTests(unittest.TestCase):
             'aria-label="Open live agent session for Still working"', response.text
         )
         self.assertNotIn('aria-label="Dispatch Still working"', response.text)
-        self.assertIn("Live agent sessions (1)", response.text)
-        self.assertIn("Historical agent sessions (1)", response.text)
+        self.assertIn('data-project-work-tab="live"', response.text)
+        self.assertIn('data-project-work-tab="history"', response.text)
 
     def test_create_partial_selects_the_project_and_pushes_the_same_url(self) -> None:
         with TestClient(self.app) as client:
@@ -184,11 +187,12 @@ class ProjectsHealthRouteTests(unittest.TestCase):
                 side_effect=RuntimeError("projection unavailable"),
             ):
                 response = client.get(f"/projects?project={project.id}")
+                unavailable = client.get(f"/projects?project={project.id}&tab=live")
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("Still canonical", response.text)
-        self.assertIn("session counts", response.text)
-        self.assertIn("Card counts are current", response.text)
+        self.assertIn("session counts", unavailable.text)
+        self.assertIn("Card counts are current", unavailable.text)
         self.assertNotIn("projection unavailable", response.text)
 
     def test_history_queries_and_rendering_are_bounded_and_paginated(self) -> None:
@@ -261,11 +265,12 @@ class ProjectsHealthRouteTests(unittest.TestCase):
                     side_effect=AssertionError("unbounded watch projection"),
                 ),
             ):
-                first = client.get(f"/projects?project={project.id}")
+                first = client.get(f"/projects?project={project.id}&tab=history")
                 second = client.get(
-                    f"/projects?project={project.id}"
-                    "&session_history_page=2&pr_history_page=2"
+                    f"/projects?project={project.id}&tab=history&session_history_page=2"
                 )
+                first_pr = client.get(f"/projects?project={project.id}&tab=prs")
+                second_pr = client.get(f"/projects?project={project.id}&tab=prs&pr_history_page=2")
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
@@ -275,24 +280,24 @@ class ProjectsHealthRouteTests(unittest.TestCase):
         self.assertIn("Historical session 24", first.text)
         self.assertNotIn("Historical session 14", first.text)
         self.assertIn("session_history_page=2", first.text)
-        self.assertIn("Supervised pull request history (23)", first.text)
-        self.assertIn("petersky/pa #1022", first.text)
-        self.assertNotIn("petersky/pa #1012", first.text)
-        self.assertEqual(first.text.count("/pull-requests?watch="), 10)
+        self.assertIn("Supervised pull request history (23)", first_pr.text)
+        self.assertIn("petersky/pa #1022", first_pr.text)
+        self.assertNotIn("petersky/pa #1012", first_pr.text)
+        self.assertEqual(first_pr.text.count("/pull-requests?watch="), 10)
 
         self.assertIn("Showing 11–20 of 25", second.text)
         self.assertIn("Historical session 14", second.text)
         self.assertNotIn("Historical session 24", second.text)
-        self.assertIn("petersky/pa #1012", second.text)
-        self.assertNotIn("petersky/pa #1022", second.text)
+        self.assertIn("petersky/pa #1012", second_pr.text)
+        self.assertNotIn("petersky/pa #1022", second_pr.text)
         self.assertIn("Page 2 of 3", second.text)
         self.assertIn(
-            f"project={project.id}&amp;pr_history_page=2&amp;session_history_page=1",
+            f"project={project.id}&amp;tab=history&amp;session_history_page=1",
             second.text,
         )
         self.assertIn(
-            f"project={project.id}&amp;session_history_page=2&amp;pr_history_page=1",
-            second.text,
+            f"project={project.id}&amp;tab=prs&amp;pr_history_page=1",
+            second_pr.text,
         )
 
     def test_work_lane_query_selects_the_exact_metric_destination(self) -> None:
@@ -307,6 +312,37 @@ class ProjectsHealthRouteTests(unittest.TestCase):
             'id="lane-waiting" data-lane="waiting" data-mobile-active="true"',
             response.text,
         )
+
+    def test_lane_tabs_are_project_scoped_bounded_and_settings_are_in_dialog(self) -> None:
+        with TestClient(self.app) as client:
+            store = self.app.state.ctx.store
+            project = store.create_project(ProjectCreate(title="Tab project"))
+            for index in range(22):
+                store.create_card(CardCreate(
+                    title=f"Active task {index:02d}", project_id=project.id, lane="active"
+                ))
+            store.create_card(CardCreate(title="Unrelated active task", lane="active"))
+            store.create_card(CardCreate(title="Project inbox task", project_id=project.id))
+            first = client.get(f"/projects?project={project.id}&tab=active")
+            second = client.get(f"/projects?project={project.id}&tab=active&card_page=999")
+            invalid = client.get(f"/projects?project={project.id}&tab=invalid")
+            legacy_history = client.get(f"/projects?project={project.id}&session_history_page=1")
+
+        self.assertIn("Active cards (22)", first.text)
+        self.assertNotIn("Unrelated active task", first.text)
+        self.assertNotIn("Project inbox task", first.text)
+        self.assertIn("Page 1 of 2", first.text)
+        self.assertIn("Page 2 of 2", second.text)
+        self.assertIn("Active task 00", second.text)
+        self.assertNotIn("Active task 21", second.text)
+        self.assertIn("All cards (23)", invalid.text)
+        self.assertIn('id="project-historical-sessions"', legacy_history.text)
+        before_dialog, dialog = first.text.split('<dialog id="project-settings-dialog"', 1)
+        self.assertNotIn("Worker group defaults", before_dialog)
+        self.assertNotIn("Pull request policy", before_dialog)
+        self.assertIn("Worker group defaults", dialog)
+        self.assertIn("Pull request policy", dialog)
+        self.assertIn("Linked repositories &amp; worktrees", dialog)
 
     def test_new_project_uses_an_accessible_modal_instead_of_a_sidebar_disclosure(
         self,

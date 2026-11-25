@@ -274,6 +274,115 @@
     });
   }
 
+  // Keep the configuration in the top layer so it never changes the workspace
+  // height. Reopen the same project after an HTMX save replaces the app view.
+  var projectSettingsReturn = null;
+  var projectSettingsReady = new WeakSet();
+  function initProjectSettings(root) {
+    var scope = root || document;
+    scope.querySelectorAll("[data-project-settings-dialog]").forEach(function (dialog) {
+      if (projectSettingsReady.has(dialog)) return;
+      projectSettingsReady.add(dialog);
+      var workspace = dialog.closest(".projects-workspace");
+      var button = workspace.querySelector("[data-project-settings-open]");
+      var identity = workspace.dataset.projectsDisclosureScope;
+      function openDialog() {
+        // A settings save replaces the dialog during HTMX's settle phase.
+        // Bind the replacement forms before making them interactive again.
+        if (window.htmx) window.htmx.process(dialog);
+        dialog.showModal();
+        dialog.querySelector("#project-settings-title").focus();
+      }
+      function closeDialog() {
+        projectSettingsReturn = null;
+        dialog.querySelectorAll("form").forEach(function (form) { form.reset(); });
+        dialog.close();
+        button.focus({ preventScroll: true });
+      }
+      button.addEventListener("click", openDialog);
+      dialog.querySelectorAll("[data-project-settings-close]").forEach(function (close) {
+        close.addEventListener("click", closeDialog);
+      });
+      dialog.addEventListener("cancel", function (event) {
+        event.preventDefault();
+        closeDialog();
+      });
+      dialog.addEventListener("click", function (event) {
+        if (event.target !== dialog) return;
+        var rect = dialog.getBoundingClientRect();
+        if (event.clientX < rect.left || event.clientX > rect.right ||
+            event.clientY < rect.top || event.clientY > rect.bottom) closeDialog();
+      });
+      dialog.addEventListener("htmx:beforeRequest", function () {
+        projectSettingsReturn = {
+          identity: identity,
+          scrollTop: dialog.scrollTop,
+          openSections: Object.fromEntries(Array.from(dialog.querySelectorAll("details")).map(function (details) {
+            return [projectDisclosureKey(details.querySelector("summary").textContent), details.open];
+          }))
+        };
+      });
+      if (projectSettingsReturn && projectSettingsReturn.identity === identity) {
+        openDialog();
+        dialog.querySelectorAll("details").forEach(function (details) {
+          details.open = !!projectSettingsReturn.openSections[
+            projectDisclosureKey(details.querySelector("summary").textContent)
+          ];
+        });
+        dialog.scrollTop = projectSettingsReturn.scrollTop;
+        projectSettingsReturn = null;
+      }
+    });
+  }
+
+  var projectTabReturn = false;
+  var projectTabsReady = new WeakSet();
+  function initProjectWorkTabs(root) {
+    var scope = root || document;
+    scope.querySelectorAll(".project-work-tabs").forEach(function (tablist) {
+      if (projectTabsReady.has(tablist)) return;
+      projectTabsReady.add(tablist);
+      tablist.dataset.tabsReady = "1";
+      var tabs = Array.from(tablist.querySelectorAll("[data-project-work-tab]"));
+      tablist.addEventListener("pointerdown", function (event) {
+        if (event.target.closest("[data-project-work-tab]") &&
+            event.button === 0 &&
+            !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
+          projectTabReturn = true;
+        }
+      });
+      tablist.addEventListener("keydown", function (event) {
+        var current = tabs.indexOf(event.target);
+        if (current < 0) return;
+        if (event.key === "Enter") { projectTabReturn = true; return; }
+        var target;
+        if (event.key === "ArrowRight") target = (current + 1) % tabs.length;
+        else if (event.key === "ArrowLeft") target = (current + tabs.length - 1) % tabs.length;
+        else if (event.key === "Home") target = 0;
+        else if (event.key === "End") target = tabs.length - 1;
+        else if (event.key === " ") target = current;
+        else return;
+        event.preventDefault();
+        projectTabReturn = true;
+        tabs[target].focus();
+        tabs[target].click();
+      });
+      var selected = tablist.querySelector('[aria-selected="true"]');
+      if (projectTabReturn) {
+        selected.focus({ preventScroll: true });
+        projectTabReturn = false;
+      }
+      selected.scrollIntoView({ block: "nearest", inline: "nearest" });
+      updateProjectScrollPadding();
+    });
+  }
+
+  function updateProjectScrollPadding() {
+    var header = document.querySelector(".project-workspace-header");
+    if (header) header.closest(".projects-editor").style.scrollPaddingTop = header.offsetHeight + "px";
+  }
+  window.addEventListener("resize", updateProjectScrollPadding);
+
   document.addEventListener("click", function (e) {
     var link = e.target.closest("[data-section-link]");
     if (!link) return;
@@ -373,6 +482,7 @@
       var stored = projectDisclosureState(workspace).value;
       var used = {};
       workspace.querySelectorAll("details").forEach(function (details) {
+        if (details.closest("[data-project-settings-dialog]")) return;
         if (details.dataset.projectDisclosureReady) return;
         var summary = details.querySelector(":scope > summary");
         if (!summary) return;
@@ -496,6 +606,8 @@
 
   document.addEventListener("submit", rememberProjectDisclosureSubmit);
   document.body.addEventListener("htmx:responseError", function () {
+    projectSettingsReturn = null;
+    projectTabReturn = false;
     try { sessionStorage.removeItem(PROJECT_DISCLOSURE_RETURN); } catch (_error) {}
   });
 
@@ -504,6 +616,8 @@
     initSections(root);
     initProjectFilters(root);
     initProjectCreateDialogs(root);
+    initProjectSettings(root);
+    initProjectWorkTabs(root);
     transformProjectDisclosures(root);
     initProjectDisclosureJumps(root);
     restoreProjectDisclosureFocus(root);
@@ -517,9 +631,22 @@
     boot(document);
   }
 
-  document.body.addEventListener("htmx:afterSwap", function (evt) {
-    var target = (evt.detail && evt.detail.target) || null;
-    if (target && target.id === "app-view") boot(target);
+  document.body.addEventListener("htmx:afterSwap", function () {
+    // Some HTMX swaps report the source or the replaced node as their target.
+    // Initialize the connected DOM so newly loaded project controls always bind.
+    boot(document);
+  });
+
+  document.addEventListener("htmx:historyRestore", function () {
+    projectSettingsReturn = null;
+    projectTabReturn = false;
+    initProjectSettings(document);
+    initProjectWorkTabs(document);
+  });
+
+  document.body.addEventListener("htmx:sendError", function () {
+    projectSettingsReturn = null;
+    projectTabReturn = false;
   });
 
   window.PALayout = { boot: boot, showSection: showSection };

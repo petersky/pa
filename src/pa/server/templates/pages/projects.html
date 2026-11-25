@@ -194,20 +194,97 @@
   {% endif %}
 
   {% if projects_view != 'repos' and project %}
-  <div class="panel" style="margin-bottom: 1rem;">
-    <header class="page-heading">
-      <div>
-        <div class="metadata-row"><span class="badge">{{ project.status.value }}</span>{% for tag in project.tags %}<span class="badge">{{ tag }}</span>{% endfor %}</div>
-        <h1>{{ project.title }}</h1>
-        {% if project.description %}<p>{{ project.description }}</p>{% else %}<p class="muted">Add a goal and success context so people and agents can make aligned decisions.</p>{% endif %}
+  <header class="project-workspace-header">
+    <div class="page-heading">
+      <div class="project-heading-copy">
+        <div class="project-title-row"><h1>{{ project.title }}</h1><span class="badge">{{ project.status.value }}</span></div>
+        {% if project.description %}<p class="project-description">{{ project.description }}</p>{% endif %}
+        {% if project.tags %}<div class="metadata-row">{% for tag in project.tags %}<span class="badge">{{ tag }}</span>{% endfor %}</div>{% endif %}
       </div>
       <div class="project-heading-actions">
-        <button type="button"
-                data-new-card-open
-                data-new-card-project="{{ project.id }}">Create Card</button>
-        <details class="panel-inset">
-          <summary>Edit project settings</summary>
-          <form class="stack" hx-post="/projects/{{ project.id }}?realm={{ active_realm }}&project={{ project.id }}" hx-target="#app-view" hx-swap="innerHTML">
+        <button type="button" data-new-card-open data-new-card-project="{{ project.id }}">Create Card</button>
+        <button type="button" class="ghost" data-project-settings-open aria-haspopup="dialog" aria-controls="project-settings-dialog">Edit project settings</button>
+      </div>
+    </div>
+    <nav class="project-work-tabs" role="tablist" aria-label="Project work">
+      {% for tab in project_tabs %}
+      <a id="project-tab-{{ tab.id }}" role="tab" aria-selected="{{ 'true' if project_tab == tab.id else 'false' }}"
+         aria-controls="project-work-panel" tabindex="{{ '0' if project_tab == tab.id else '-1' }}"
+         href="{{ tab.url }}" hx-get="{{ tab.url }}" hx-target="#app-view" hx-swap="innerHTML" hx-push-url="true"
+         data-project-work-tab="{{ tab.id }}">
+        <strong>{{ tab.count }}</strong><span>{{ tab.label }}</span>
+        {% if tab.id == 'all' %}<small>{{ done_count }} of {{ cards | length }} complete · {{ progress_percent }}%</small>{% endif %}
+      </a>
+      {% endfor %}
+    </nav>
+  </header>
+  <section id="project-work-panel" class="project-work-panel" role="tabpanel" aria-labelledby="project-tab-{{ project_tab }}" tabindex="0">
+    {% if project_tab in ['live', 'history'] %}
+      {% if not sessions_available %}<p class="notice" role="status">{{ sessions_error }}</p>
+      {% elif project_tab == 'live' %}
+    <section id="project-live-sessions" aria-labelledby="project-live-sessions-title">
+      <h2 id="project-live-sessions-title">Live agent sessions ({{ live_project_session_total }})</h2>
+      {% if live_project_sessions %}
+      <ul class="item-list">
+        {% for session in live_project_sessions %}<li class="item"><a href="/agent?session={{ session.id }}"><strong>{{ session.title or session.label or session.agent_name }}</strong></a><span class="badge">{{ session.status }}</span><p class="muted">Last activity {{ session.updated_at.strftime('%Y-%m-%d %H:%M') }}</p></li>{% endfor %}
+      </ul>
+      {% if live_project_sessions_truncated %}<p class="muted small">Showing the {{ live_project_sessions | length }} most recently active sessions.</p>{% endif %}
+      {% else %}<p class="empty">No live agent sessions.</p>{% endif %}
+    </section>
+      {% else %}
+    <section id="project-historical-sessions">
+      <h2>Historical agent sessions ({{ historical_project_session_total }})</h2>
+      {% if historical_project_sessions %}
+      <p class="muted small">Showing {{ session_history_pagination.start }}–{{ session_history_pagination.end }} of {{ historical_project_session_total }}, newest activity first.</p>
+      <ul class="item-list">
+        {% for session in historical_project_sessions %}<li class="item"><a href="/agent?session={{ session.id }}"><strong>{{ session.title or session.label or session.agent_name }}</strong></a><span class="badge">{{ session.status }}</span><p class="muted">Last activity {{ session.updated_at.strftime('%Y-%m-%d %H:%M') }}</p></li>{% endfor %}
+      </ul>
+      {% if session_history_pagination.page_count > 1 %}
+      <nav class="project-history-pagination" aria-label="Historical agent session pages">
+        {% if session_history_pagination.previous_url %}<a class="ghost small" href="{{ session_history_pagination.previous_url }}">Previous</a>{% endif %}
+        <span>Page {{ session_history_pagination.page }} of {{ session_history_pagination.page_count }}</span>
+        {% if session_history_pagination.next_url %}<a class="ghost small" href="{{ session_history_pagination.next_url }}">Next</a>{% endif %}
+      </nav>
+      {% endif %}
+      {% else %}<p class="empty">No historical agent sessions.</p>{% endif %}
+    </section>
+      {% endif %}
+    {% elif project_tab == 'prs' %}
+    <section id="project-pr-history">
+      <h2>Supervised pull request history ({{ pr_watch_history_total }})</h2>
+      {% if pr_watches_available %}
+        {% if pr_watches %}
+        <p class="muted small">Showing {{ pr_watch_history_pagination.start }}–{{ pr_watch_history_pagination.end }} of {{ pr_watch_history_total }}, newest activity first.</p>
+        <ul class="item-list">{% for watch in pr_watches %}<li class="item"><a href="/pull-requests?watch={{ watch.id }}"><strong>{{ watch.repository }} #{{ watch.pr_number }}</strong></a><span class="badge">{{ watch.status.value }}</span></li>{% endfor %}</ul>
+        {% if pr_watch_history_pagination.page_count > 1 %}
+        <nav class="project-history-pagination" aria-label="Supervised pull request history pages">
+          {% if pr_watch_history_pagination.previous_url %}<a class="ghost small" href="{{ pr_watch_history_pagination.previous_url }}">Previous</a>{% endif %}
+          <span>Page {{ pr_watch_history_pagination.page }} of {{ pr_watch_history_pagination.page_count }}</span>
+          {% if pr_watch_history_pagination.next_url %}<a class="ghost small" href="{{ pr_watch_history_pagination.next_url }}">Next</a>{% endif %}
+        </nav>
+        {% endif %}
+        {% else %}<p class="empty">No supervised pull requests.</p>{% endif %}
+      {% else %}<p class="notice" role="status">{{ pr_watches_error }}</p>{% endif %}
+    </section>
+    {% else %}
+      <h2>{{ selected_cards_label }} ({{ selected_card_total }})</h2>
+      {% if selected_cards %}
+      {% with cards=selected_cards %}{% include "partials/cards.html" %}{% endwith %}
+      {% if card_pagination.page_count > 1 %}
+      <nav class="project-history-pagination" aria-label="Project card pages">
+        {% if card_pagination.previous_url %}<a class="ghost small" href="{{ card_pagination.previous_url }}">Previous</a>{% endif %}
+        <span>Page {{ card_pagination.page }} of {{ card_pagination.page_count }}</span>
+        {% if card_pagination.next_url %}<a class="ghost small" href="{{ card_pagination.next_url }}">Next</a>{% endif %}
+      </nav>
+      {% endif %}
+      {% else %}<div class="empty-state"><h3>No {{ 'cards' if project_tab == 'all' else project_tab + ' cards' }} yet</h3><button type="button" data-new-card-open data-new-card-project="{{ project.id }}">Create a card</button></div>{% endif %}
+    {% endif %}
+  </section>
+  <dialog id="project-settings-dialog" class="project-create-dialog project-settings-dialog" aria-labelledby="project-settings-title" data-project-settings-dialog>
+    <div class="project-settings-header"><h2 id="project-settings-title" tabindex="-1">Project settings</h2><button type="button" class="ghost" data-project-settings-close aria-label="Close project settings">Close</button></div>
+    <div class="stack project-settings-body">
+      <section aria-labelledby="project-details-title"><h3 id="project-details-title">Project details</h3>
+          <form class="stack" hx-post="/projects/{{ project.id }}?realm={{ active_realm }}&project={{ project.id }}&tab={{ project_tab }}" hx-target="#app-view" hx-swap="innerHTML">
             <input type="hidden" name="csrf" value="{{ csrf_token }}">
             <label>Project title <input name="title" value="{{ project.title }}" required></label>
             <label>Goal and description <textarea name="description" rows="4">{{ project.description }}</textarea></label>
@@ -216,39 +293,7 @@
             <label>Lifecycle <select name="status"><option value="active" {% if project.status.value == 'active' %}selected{% endif %}>Active</option><option value="archived" {% if project.status.value == 'archived' %}selected{% endif %}>Archived</option></select></label>
             <button type="submit">Save project</button>
           </form>
-        </details>
-      </div>
-    </header>
-
-    <section class="project-health-summary" aria-labelledby="project-health-title" aria-describedby="project-health-semantics">
-      <div class="project-health-heading">
-        <div>
-          <h2 id="project-health-title">Project health</h2>
-          <p id="project-health-semantics" class="muted small">Completion means cards in Done. Blocked means cards in Waiting. Live sessions are canonical sessions not closed or quiesced; historical sessions are closed or quiesced.</p>
-        </div>
-        <p class="muted small">Refreshed <time datetime="{{ health_refreshed_at.isoformat() }}">{{ health_refreshed_at.strftime('%Y-%m-%d %H:%M UTC') }}</time> from canonical cards and sessions.</p>
-      </div>
-      <div class="project-health">
-        <a href="/work?realm={{ active_realm }}&amp;project={{ project.id }}&amp;lane=done#lane-done"><strong>{{ progress_percent }}%</strong><span>{{ done_count }} of {{ cards | length }} complete</span></a>
-        {% for lane in lanes %}
-        <a href="/work?realm={{ active_realm }}&amp;project={{ project.id }}&amp;lane={{ lane.value }}#lane-{{ lane.value }}"><strong>{{ lane_counts[lane.value] }}</strong><span>{{ 'Blocked (Waiting)' if lane.value == 'waiting' else lane.value | title }}</span></a>
-        {% endfor %}
-        {% if sessions_available %}
-        <a href="#project-live-sessions"><strong>{{ live_project_session_total }}</strong><span>live sessions</span></a>
-        <a href="#project-historical-sessions" data-project-disclosure-jump="Historical agent sessions"><strong>{{ historical_project_session_total }}</strong><span>historical sessions</span></a>
-        {% else %}
-        <div class="project-health-unavailable" role="status"><strong>Unavailable</strong><span>session counts</span></div>
-        {% endif %}
-      </div>
-      {% if sessions_error %}<p class="notice" role="status">{{ sessions_error }}</p>{% endif %}
-    </section>
-    {% if project.agent_prompt %}
-    <details>
-      <summary>Agent prompt</summary>
-      <pre class="code-block">{{ project.agent_prompt }}</pre>
-    </details>
-    {% endif %}
-
+      </section>
     <h2>Linked repositories &amp; worktrees ({{ linked_repositories | length }})</h2>
     {% if linked_repositories %}
     <ul class="item-list">
@@ -261,7 +306,7 @@
             <span class="badge">{{ repository.status.value }}</span>
             <span class="badge">{{ repository.visibility.value }}</span>
           </div>
-          <form hx-post="/projects/{{ project.id }}/repositories/{{ repository.id }}/unlink?realm={{ active_realm }}&project={{ project.id }}"
+          <form hx-post="/projects/{{ project.id }}/repositories/{{ repository.id }}/unlink?realm={{ active_realm }}&project={{ project.id }}&tab={{ project_tab }}"
                 hx-target="#app-view"
                 hx-swap="innerHTML">
             <input type="hidden" name="csrf" value="{{ csrf_token }}">
@@ -271,7 +316,7 @@
         <p class="muted">{{ repository.url }}{% if linked.link.branch %} · branch {{ linked.link.branch }}{% endif %}{% if repository.default_branch %} · default {{ repository.default_branch }}{% endif %}</p>
         {% if linked.local_checkout %}
         <p>Local checkout: <code>{{ linked.local_checkout.path }}</code>{% if linked.local_checkout.branch %} ({{ linked.local_checkout.branch }}){% endif %}</p>
-        <form hx-post="/projects/repositories/{{ repository.id }}/checkout/remove?realm={{ active_realm }}&project={{ project.id }}"
+        <form hx-post="/projects/repositories/{{ repository.id }}/checkout/remove?realm={{ active_realm }}&project={{ project.id }}&tab={{ project_tab }}"
               hx-target="#app-view"
               hx-swap="innerHTML">
           <input type="hidden" name="csrf" value="{{ csrf_token }}">
@@ -279,7 +324,7 @@
         </form>
         {% else %}
         <form class="stack"
-              hx-post="/projects/repositories/{{ repository.id }}/checkout?realm={{ active_realm }}&project={{ project.id }}"
+              hx-post="/projects/repositories/{{ repository.id }}/checkout?realm={{ active_realm }}&project={{ project.id }}&tab={{ project_tab }}"
               hx-target="#app-view"
               hx-swap="innerHTML">
           <input type="hidden" name="csrf" value="{{ csrf_token }}">
@@ -309,7 +354,7 @@
     <details class="panel-inset">
       <summary>Link repository</summary>
       <form class="stack"
-            hx-post="/projects/{{ project.id }}/repositories?realm={{ active_realm }}&project={{ project.id }}"
+            hx-post="/projects/{{ project.id }}/repositories?realm={{ active_realm }}&project={{ project.id }}&tab={{ project_tab }}"
             hx-target="#app-view"
             hx-swap="innerHTML">
         <input type="hidden" name="csrf" value="{{ csrf_token }}">
@@ -339,7 +384,7 @@
       <p class="notice">The configured {{ profile }} group <code>{{ current_default.group_id }}</code> is missing or archived. Dispatch will fail until an administrator selects an active replacement.</p>
       {% endif %}
       <form class="stack"
-            hx-post="/projects/{{ project.id }}/worker-default?realm={{ active_realm }}&project={{ project.id }}"
+            hx-post="/projects/{{ project.id }}/worker-default?realm={{ active_realm }}&project={{ project.id }}&tab={{ project_tab }}"
             hx-target="#app-view"
             hx-swap="innerHTML">
         <input type="hidden" name="csrf" value="{{ csrf_token }}">
@@ -358,7 +403,7 @@
     <details class="panel-inset">
       <summary>Pull request policy</summary>
       <form class="stack"
-            hx-post="/partials/projects/{{ project.id }}/pr-policy"
+            hx-post="/partials/projects/{{ project.id }}/pr-policy?realm={{ active_realm }}&project={{ project.id }}&tab={{ project_tab }}"
             hx-target="#app-view"
             hx-swap="innerHTML">
         <input type="hidden" name="realm" value="{{ active_realm }}">
@@ -392,63 +437,9 @@
       {% set pr_policy_audit = (project.tool_config or {}).get('pr_policy_audit', []) %}
       {% if pr_policy_audit %}<h4>Policy change history</h4><ul class="item-list">{% for change in pr_policy_audit | reverse %}<li class="item"><code>{{ change.field }}</code> {{ change.old_value }} → {{ change.new_value }}<p class="muted small">{{ change.scope }} · {{ change.actor }} · {{ change.instance_id }} · {{ change.timestamp }}</p></li>{% endfor %}</ul>{% endif %}
     </details>
-    <h2>Work overview</h2>
-    {% if not cards %}
-    <div class="empty-state"><h3>No work is linked yet</h3><p class="muted">Create a card from Home or Work, then assign it to this project to start tracking progress.</p><button type="button" data-new-card-open data-new-card-project="{{ project.id }}">Create a card</button></div>
-    {% else %}
-      <h3>Blocked ({{ blocked_cards | length }})</h3>
-      {% with cards=blocked_cards %}{% include "partials/cards.html" %}{% endwith %}
-      <h3>Active ({{ active_cards | length }})</h3>
-      {% with cards=active_cards %}{% include "partials/cards.html" %}{% endwith %}
-      <h3>Recently updated</h3>
-      {% with cards=recent_cards %}{% include "partials/cards.html" %}{% endwith %}
-    {% endif %}
 
-    <h2>Agents &amp; pull requests</h2>
-    {% if sessions_available %}
-    <section id="project-live-sessions" aria-labelledby="project-live-sessions-title">
-      <h3 id="project-live-sessions-title">Live agent sessions ({{ live_project_session_total }})</h3>
-      {% if live_project_sessions %}
-      <ul class="item-list">
-        {% for session in live_project_sessions %}<li class="item"><a href="/agent?session={{ session.id }}"><strong>{{ session.title or session.label or session.agent_name }}</strong></a><span class="badge">{{ session.status }}</span><p class="muted">Last activity {{ session.updated_at.strftime('%Y-%m-%d %H:%M') }}</p></li>{% endfor %}
-      </ul>
-      {% if live_project_sessions_truncated %}<p class="muted small">Showing the {{ live_project_sessions | length }} most recently active sessions.</p>{% endif %}
-      {% else %}<p class="empty">No live agent sessions.</p>{% endif %}
-    </section>
-    <details class="panel-inset" id="project-historical-sessions">
-      <summary>Historical agent sessions ({{ historical_project_session_total }})</summary>
-      {% if historical_project_sessions %}
-      <p class="muted small">Showing {{ session_history_pagination.start }}–{{ session_history_pagination.end }} of {{ historical_project_session_total }}, newest activity first.</p>
-      <ul class="item-list">
-        {% for session in historical_project_sessions %}<li class="item"><a href="/agent?session={{ session.id }}"><strong>{{ session.title or session.label or session.agent_name }}</strong></a><span class="badge">{{ session.status }}</span><p class="muted">Last activity {{ session.updated_at.strftime('%Y-%m-%d %H:%M') }}</p></li>{% endfor %}
-      </ul>
-      {% if session_history_pagination.page_count > 1 %}
-      <nav class="project-history-pagination" aria-label="Historical agent session pages">
-        {% if session_history_pagination.previous_url %}<a class="ghost small" href="{{ session_history_pagination.previous_url }}">Previous</a>{% endif %}
-        <span>Page {{ session_history_pagination.page }} of {{ session_history_pagination.page_count }}</span>
-        {% if session_history_pagination.next_url %}<a class="ghost small" href="{{ session_history_pagination.next_url }}">Next</a>{% endif %}
-      </nav>
-      {% endif %}
-      {% else %}<p class="empty">No historical agent sessions.</p>{% endif %}
-    </details>
-    {% endif %}
-    <details class="panel-inset" id="project-pr-history">
-      <summary>Supervised pull request history ({{ pr_watch_history_total }})</summary>
-      {% if pr_watches_available %}
-        {% if pr_watches %}
-        <p class="muted small">Showing {{ pr_watch_history_pagination.start }}–{{ pr_watch_history_pagination.end }} of {{ pr_watch_history_total }}, newest activity first.</p>
-        <ul class="item-list">{% for watch in pr_watches %}<li class="item"><a href="/pull-requests?watch={{ watch.id }}"><strong>{{ watch.repository }} #{{ watch.pr_number }}</strong></a><span class="badge">{{ watch.status.value }}</span></li>{% endfor %}</ul>
-        {% if pr_watch_history_pagination.page_count > 1 %}
-        <nav class="project-history-pagination" aria-label="Supervised pull request history pages">
-          {% if pr_watch_history_pagination.previous_url %}<a class="ghost small" href="{{ pr_watch_history_pagination.previous_url }}">Previous</a>{% endif %}
-          <span>Page {{ pr_watch_history_pagination.page }} of {{ pr_watch_history_pagination.page_count }}</span>
-          {% if pr_watch_history_pagination.next_url %}<a class="ghost small" href="{{ pr_watch_history_pagination.next_url }}">Next</a>{% endif %}
-        </nav>
-        {% endif %}
-        {% else %}<p class="empty">No supervised pull requests.</p>{% endif %}
-      {% else %}<p class="notice" role="status">{{ pr_watches_error }}</p>{% endif %}
-    </details>
-  </div>
+    </div>
+  </dialog>
   {% endif %}
 
   </section>

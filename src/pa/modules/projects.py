@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Form, HTTPException, Request
@@ -37,6 +36,7 @@ ui_router = APIRouter()
 PROJECT_SESSION_HISTORY_PAGE_SIZE = 10
 PROJECT_LIVE_SESSION_LIMIT = 20
 PROJECT_PR_HISTORY_PAGE_SIZE = 10
+PROJECT_CARD_PAGE_SIZE = 20
 
 
 def _pagination_context(
@@ -268,7 +268,68 @@ def _projects_context(request: Request) -> dict:
         for item in store.list_placement_defaults(realm)
         if project and item.project_id == project.id
     }
+    project_tab = request.query_params.get("tab", "all")
+    # Existing history pagination URLs still select their list.
+    if "tab" not in request.query_params:
+        if "pr_history_page" in request.query_params:
+            project_tab = "prs"
+        elif "session_history_page" in request.query_params:
+            project_tab = "history"
+    tab_specs = [
+        ("all", "All cards", len(cards)),
+        *[
+            (lane.value, lane.value.title(), lane_counts[lane.value])
+            for lane in CardLane
+        ],
+        (
+            "live", "Live sessions",
+            live_project_session_total if sessions_available else "—",
+        ),
+        (
+            "history", "Past sessions",
+            historical_project_session_total if sessions_available else "—",
+        ),
+        ("prs", "Pull requests", pr_watch_history_total if pr_watches_available else "—"),
+    ]
+    if project_tab not in {tab_id for tab_id, _, _ in tab_specs}:
+        project_tab = "all"
+    project_tabs = [
+        {
+            "id": tab_id,
+            "label": label,
+            "count": count,
+            "url": "/projects?" + urlencode(
+                {"realm": realm, "project": project.id, "tab": tab_id}
+            ),
+        }
+        for tab_id, label, count in tab_specs
+    ] if project else []
+    selected_cards = sorted(
+        (
+            card for card in cards
+            if project_tab == "all" or card.lane.value == project_tab
+        ),
+        key=lambda card: card.updated_at,
+        reverse=True,
+    )
+    card_pagination = _pagination_context(
+        request,
+        parameter="card_page",
+        total=len(selected_cards),
+        page_size=PROJECT_CARD_PAGE_SIZE,
+        fragment="project-work-panel",
+    )
     return {
+        "project_tab": project_tab,
+        "project_tabs": project_tabs,
+        "selected_card_total": len(selected_cards),
+        "selected_cards": selected_cards[
+            card_pagination["offset"] : card_pagination["offset"] + PROJECT_CARD_PAGE_SIZE
+        ],
+        "card_pagination": card_pagination,
+        "selected_cards_label": (
+            "All cards" if project_tab == "all" else project_tab.title() + " cards"
+        ),
         "projects": store.list_projects(realm_id=realm),
         "repositories": repositories,
         "linked_repositories": linked_repositories,
@@ -301,7 +362,6 @@ def _projects_context(request: Request) -> dict:
         "done_count": done_count,
         "lane_counts": lane_counts,
         "progress_percent": round(done_count * 100 / len(cards)) if cards else 0,
-        "health_refreshed_at": datetime.now(UTC),
         "pr_watches": pr_watches,
         "pr_watches_available": pr_watches_available,
         "pr_watches_error": pr_watches_error,
