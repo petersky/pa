@@ -85,3 +85,9 @@ html[data-density="compact"] .compact-card { padding-block: 4px; }
   .work-space:has(.work-list) .work-filter-primary { grid-template-columns: minmax(0, 1fr); }
   .work-list .compact-card-footer { grid-column: 1 / -1; grid-row: auto; }
 }
+
+/* Board columns respond to the space remaining beside the workspace rail. */
+.work-space { container: work / inline-size; }
+@container work (max-width: 1000px) {
+  .work-space .board-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
