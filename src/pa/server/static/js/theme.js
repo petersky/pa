@@ -85,6 +85,7 @@
     if (!btn) return;
     btn.dataset.appearance = appearance;
     btn.title = "Theme: " + appearance;
+    btn.setAttribute("aria-label", "Theme appearance: " + appearance + "; switch to next mode");
     btn.innerHTML = `<span class="icon" aria-hidden="true">${ICONS[appearance] || ICONS.system}</span>`;
   }
 

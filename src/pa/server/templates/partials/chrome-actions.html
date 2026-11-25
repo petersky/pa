@@ -74,30 +74,4 @@
     <span class="status-label">{{ 'Agent' if agent_connected else ('Restoring' if not agent_startup.get('complete', true) else 'Ready') }}</span>
   </a>
 
-  <button type="button"
-          id="pa-theme-toggle"
-          class="icon-btn"
-          title="Theme: {{ appearance }}"
-          aria-label="Toggle theme appearance"
-          data-appearance="{{ appearance }}">
-    {% if appearance == 'light' %}
-      {{ icon('theme-light') }}
-    {% elif appearance == 'dark' %}
-      {{ icon('theme-dark') }}
-    {% else %}
-      {{ icon('theme-system') }}
-    {% endif %}
-  </button>
-
-  <a href="/settings"
-     class="icon-btn{% if active_path == '/settings' %} active{% endif %}"
-     {% if active_path == '/settings' %}aria-current="page"{% endif %}
-     title="Settings"
-     aria-label="Settings"
-     hx-get="/settings"
-     hx-target="#app-view"
-     hx-push-url="true"
-     hx-swap="innerHTML">
-    {{ icon('gear') }}
-  </a>
 </div>

@@ -23,7 +23,7 @@
 <header class="page-heading settings-page-heading">
   <div>
     <h1>Settings</h1>
-    <p>Configure this PA instance, its agent behavior, connected tools, and operational safeguards.</p>
+
   </div>
 </header>
 <section class="hidden stack" data-section="github" hidden>
@@ -81,6 +81,12 @@
   </div>
   <div class="panel">
     <div class="panel-header"><h2>Themes</h2></div>
+    <label for="pa-density">Layout density</label>
+    <select id="pa-density" data-density-preference>
+      <option value="default">Default</option>
+      <option value="compact">Compact</option>
+    </select>
+    <p class="muted">Saved in this browser. Compact reduces spacing while keeping text and touch targets readable.</p>
     <ul class="theme-list theme-picker">
       {% for t in themes %}
       <li>
