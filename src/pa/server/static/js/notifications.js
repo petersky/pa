@@ -6,6 +6,7 @@
   var state = { filter: "outstanding", offset: 0, next: null, loading: false, refreshPending: false };
   var drafts = new Map();
   var pollTimer = null;
+  var notificationSource = null;
   var pointerInPanel = false;
   var DRAFT_PREFIX = "pa.notification.draft.";
 
@@ -461,10 +462,21 @@
     if (!flyout || !flyout.contains(event.target)) return;
     window.setTimeout(function () { if (state.refreshPending && !isReading()) { state.offset = 0; load(false, true); } }, 0);
   });
+  function stop() {
+    window.clearInterval(pollTimer);
+    pollTimer = null;
+    if (notificationSource) notificationSource.close();
+    notificationSource = null;
+  }
   function boot() {
+    stop();
     load(false);
     window.clearInterval(pollTimer); pollTimer = window.setInterval(function () { state.offset = 0; load(false); }, 15000);
-    try { var source = new EventSource("/api/cards/events"); source.addEventListener("cards-changed", function (event) { try { var data = JSON.parse(event.data); if (data.type === "notifications-changed") { state.offset = 0; load(false); } } catch (_error) {} }); } catch (_error) {}
+    try { var source = new EventSource("/api/cards/events"); notificationSource = source; source.addEventListener("cards-changed", function (event) { try { var data = JSON.parse(event.data); if (data.type === "notifications-changed") { state.offset = 0; load(false); } } catch (_error) {} }); } catch (_error) {}
+  }
+  if (window.addEventListener) {
+    window.addEventListener("pagehide", stop);
+    window.addEventListener("pageshow", function (event) { if (event.persisted) boot(); });
   }
   window.PANotificationsTest = { render: render, load: load, bodyMarkup: bodyMarkup, fieldValues: fieldValues, interactionControls: interactionControls, routeContext: routeContext, actionControls: actionControls, safeMarkdownSource: safeMarkdownSource };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot); else boot();

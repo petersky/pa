@@ -1463,6 +1463,10 @@
     if (activeRoot && (!target || target === activeRoot || target.contains(activeRoot))) stop();
   });
   document.addEventListener("pa:historyWillReload", stop);
+  if (window.addEventListener) {
+    window.addEventListener("pagehide", stop);
+    window.addEventListener("pageshow", function (event) { if (event.persisted) init(); });
+  }
   if (window.PA_TEST) window.PAWorkshopTest = {
     acceptSnapshot: acceptSnapshot,
     shouldAcceptSnapshot: function (data) {

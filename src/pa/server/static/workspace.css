@@ -91,3 +91,46 @@ html[data-density="compact"] .compact-card { padding-block: 4px; }
 @container work (max-width: 1000px) {
   .work-space .board-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* Home prioritizes the live queue while retaining outcomes and health. */
+.page-home-core .command-center-grid { grid-template-columns: minmax(0, 1fr) minmax(260px, .42fr); gap: 16px; }
+.page-home-core .command-attention { grid-column: 1; grid-row: 1; }
+.page-home-core .command-attention + .command-section { grid-column: 1; grid-row: 2; }
+.page-home-core .command-center-grid > :nth-child(3) { grid-column: 2; grid-row: 1; }
+.page-home-core .command-health { grid-column: 2; grid-row: 2; }
+.page-home-core .command-section { min-height: 0; }
+.page-home-core .attention-card-summary { font-weight: 400; }
+.page-home-core .attention-queue-card { padding: 8px 12px; }
+.page-home-core .health-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.page-home-core .health-summary > div { flex-wrap: wrap; gap: 4px; padding: 8px; }
+
+/* Conversation chrome shares control geometry; content and handlers stay intact. */
+.page-agent .page-agent-main { padding: 12px; }
+.page-agent .acw-messages { padding-inline: 12px; }
+.page-agent .acw-toolbar { gap: 8px; }
+.page-agent .acw-toolbar :is(button, summary, select) { min-height: var(--pa-control-height); }
+.page-agent .acw-toolbar .acw-rail-button,
+.page-agent .acw-sidebar-toggle { width: var(--pa-control-height); height: var(--pa-control-height); }
+.page-agent .acw-settings-menu > summary { overflow-wrap: anywhere; }
+html[data-density="compact"] .page-agent .page-agent-main { padding: 8px; }
+html[data-density="compact"] .page-home-core .attention-queue-card { padding-block: 6px; }
+@media (max-width: 1100px) {
+  .page-home-core .command-center-grid { grid-template-columns: minmax(0, 1fr); }
+  .page-home-core .command-center-grid > :is(.command-section, .command-health) { grid-column: 1; grid-row: auto; }
+}
+@media (max-width: 720px) {
+  .page-agent .page-agent-main { padding: 8px; }
+  .page-agent .acw-messages { padding-inline: 4px; }
+}
+
+/* Long work titles must shrink inside Workshop's floor slots. */
+.floor-unit, .workshop-card-chip { min-width: 0; max-width: 100%; }
+
+.work-list .compact-card-project { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+
+.page-home-core .page-main { padding: var(--pa-page-gutter); }
+.page-home-core .compact-empty { min-height: 5rem; padding: 12px; }
+
+.chrome-global-search { display: flex; align-items: center; gap: 4px; margin-right: auto; min-width: 0; flex: 0 1 300px; }
+.chrome-global-search input[type="search"] { width: 100%; min-width: 0; }
+@media (max-width: 1100px) { .chrome-global-search { display: none; } }

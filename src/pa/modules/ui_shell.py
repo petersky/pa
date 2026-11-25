@@ -83,6 +83,7 @@ def _shell_context(request: Request) -> dict:
     agent_startup = startup_state(agent)
 
     return {
+        "primary_realm": settings.primary_realm,
         "instance_id": settings.instance_id,
         "instance_name": settings.instance_name,
         "principal_id": get_principal_id(request),
