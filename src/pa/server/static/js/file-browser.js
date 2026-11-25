@@ -73,6 +73,13 @@
         return button.classList.contains("active");
       }) || tabs[0];
       if (selectedTab) showView(browser, selectedTab.dataset.fileView);
+      var htmlFrame = browser.querySelector("[data-file-html]");
+      var htmlSource = browser.querySelector("[data-file-html-source]");
+      if (htmlFrame && htmlSource && window.PAVisualizations) {
+        htmlFrame.srcdoc = window.PAVisualizations.frameDocument(htmlSource.value, {
+          token: crypto.randomUUID(), state: null, scheme: "light dark"
+        });
+      }
       var markdown = browser.querySelector("[data-file-markdown]");
       var source = browser.querySelector("[data-file-markdown-source]");
       if (markdown && source && window.PAAgentChat) {

@@ -202,6 +202,15 @@ class FileBrowserTests(unittest.TestCase):
         self.assertIn('role="tabpanel"', file_html)
         self.assertIn('aria-labelledby="file-view-tab-rendered"', file_html)
 
+        html_path = self.root / "preview.html"
+        html_path.write_text('<h1>Rendered</h1><script>parent.bad=true</script>')
+        html_response = asyncio.run(browse_files(self.request, str(html_path)))
+        html_preview = html_response.body.decode()
+        self.assertIn('data-file-html', html_preview)
+        self.assertIn('sandbox="allow-scripts"', html_preview)
+        self.assertIn('&lt;script&gt;parent.bad=true&lt;/script&gt;', html_preview)
+        self.assertNotIn('<script>parent.bad=true</script>', html_preview)
+
         directory_response = asyncio.run(browse_files(self.request, str(self.root)))
         directory_html = directory_response.body.decode()
         self.assertIn("README.md", directory_html)

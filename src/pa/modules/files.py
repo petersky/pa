@@ -320,6 +320,7 @@ def _file_context(request: Request, path: Path, root: Path, line: int | None, ba
         "download_url": "/api/files/raw?" + urlencode({"path": str(path), "download": "1"}),
         "is_image": path.suffix.lower() in IMAGE_SUFFIXES,
         "is_markdown": path.suffix.lower() in MARKDOWN_SUFFIXES,
+        "is_html": path.suffix.lower() in {".html", ".htm"},
         "is_text": _is_text(path, mime),
     }
     if context["is_text"]:

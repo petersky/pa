@@ -274,6 +274,9 @@
         var browserLink = document.createElement("a");
         browserLink.href = "/browse?" + params.toString();
         browserLink.className = "pa-file-browser-link";
+        browserLink.target = "_blank";
+        browserLink.rel = "noopener noreferrer";
+        browserLink.setAttribute("hx-boost", "false");
         browserLink.setAttribute("aria-label", "View " + file.path + " in PA");
         browserLink.title = "View in PA";
         browserLink.textContent = "▣";
@@ -283,7 +286,8 @@
       }
       try {
         var url = new URL(raw, window.location.href);
-        if (url.origin !== window.location.origin || !/^https?:$/.test(url.protocol)) {
+        if (url.origin !== window.location.origin || !/^https?:$/.test(url.protocol) || url.pathname === "/browse") {
+          if (url.origin === window.location.origin && url.pathname === "/browse") link.setAttribute("hx-boost", "false");
           link.target = "_blank";
           link.rel = "noopener noreferrer";
         }
