@@ -4261,7 +4261,7 @@ a.acw-mention:hover, a.acw-mention:focus-visible { border-color: var(--pa-accent
 .projects-tab:hover { color: var(--pa-text); text-decoration: none; }
 .projects-tab.is-active {
   border-bottom-color: var(--pa-accent);
-  color: var(--pa-accent-text, #fff);
+  color: var(--pa-surface);
   background: var(--pa-accent);
 }
 .projects-create { margin: 0.8rem; }
