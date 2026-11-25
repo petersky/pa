@@ -816,11 +816,16 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             response = client.get(f"/projects?project={project.id}")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Project health", response.text)
+        self.assertIn('role="tablist" aria-label="Project work"', response.text)
+        self.assertIn("All cards (1)", response.text)
+        self.assertIn("0 of 1 complete", response.text)
         self.assertIn("Edit project settings", response.text)
         self.assertIn("Blocked navigation work", response.text)
-        self.assertIn("Linked repositories &amp; worktrees", response.text)
-        self.assertIn("Agents &amp; pull requests", response.text)
+        self.assertIn('data-project-work-tab="live"', response.text)
+        self.assertIn('data-project-work-tab="prs"', response.text)
+        workspace, settings = response.text.split('<dialog id="project-settings-dialog"', 1)
+        self.assertNotIn("Linked repositories &amp; worktrees", workspace)
+        self.assertIn("Linked repositories &amp; worktrees", settings)
 
     def test_project_overview_create_card_opens_shared_modal_for_project(self) -> None:
         with TestClient(self.app) as client:
