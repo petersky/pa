@@ -5,9 +5,10 @@
   <div class="rail-instance">{{ instance_identity(instance_id, 'instance-identity-brand') }}</div>
   <nav class="top-nav" aria-label="Main">
     {% for nav_page in nav_pages %}
-    <a href="{{ nav_page.path }}" class="nav-btn{% if active_path == nav_page.path %} active{% endif %}"
+    {% set nav_href = '/work?view=list' if nav_page.path == '/work' else nav_page.path %}
+    <a href="{{ nav_href }}" class="nav-btn{% if active_path == nav_page.path %} active{% endif %}"
        {% if active_path == nav_page.path %}aria-current="page"{% endif %}
-       hx-get="{{ nav_page.path }}" hx-target="#app-view" hx-push-url="true" hx-swap="innerHTML">
+       hx-get="{{ nav_href }}" hx-target="#app-view" hx-push-url="true" hx-swap="innerHTML">
       {{ icon(nav_page.icon) }}<span>{{ nav_page.label }}</span>
     </a>
     {% endfor %}

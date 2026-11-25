@@ -6,6 +6,10 @@
 {% if cards %}
 <div class="compact-card-list">
   {% for card in cards %}
+    {% if request.query_params.get('view') == 'list' %}
+    <div class="work-list-entry">
+      <div class="work-list-status"><span class="status">{{ card_presentations[card.id].state_label }}</span><span class="muted small">Lane: {{ card.lane.value | capitalize }}</span></div>
+    {% endif %}
     {{ compact_card(
       card,
       card_projects.get(card.id),
@@ -14,8 +18,9 @@
       presentation=(card_presentations.get(card.id) if card_presentations is defined else none),
       movable=(lane is defined and lane),
       lanes=lanes,
-      title_only=(lane and lane.value == 'done') or (not lane and card.lane.value == 'done' and card_presentations is defined and card_presentations.get(card.id) and card_presentations.get(card.id).state == 'completed')
+      title_only=request.query_params.get('view') != 'list' and ((lane and lane.value == 'done') or (not lane and card.lane.value == 'done' and card_presentations is defined and card_presentations.get(card.id) and card_presentations.get(card.id).state == 'completed'))
     ) }}
+    {% if request.query_params.get('view') == 'list' %}</div>{% endif %}
   {% endfor %}
 </div>
 {% if filtered_pagination %}

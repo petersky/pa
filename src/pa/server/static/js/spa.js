@@ -1858,7 +1858,8 @@
       var loaded = column.querySelectorAll(".compact-card[data-card-id]").length;
       if (refreshUrl.pathname === "/partials/cards" &&
           (refreshUrl.searchParams.get("lane") === "done" ||
-           refreshUrl.searchParams.get("attention")) &&
+           refreshUrl.searchParams.get("attention") ||
+           refreshUrl.searchParams.get("view") === "list") &&
           !refreshUrl.searchParams.has("offset")) {
         var requested = Math.max(loaded, Number(column.dataset.loadedLimit) || 10,
           Number(refreshUrl.searchParams.get("limit")) || 10);

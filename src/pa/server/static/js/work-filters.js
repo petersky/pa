@@ -24,7 +24,9 @@
     });
     var total = Array.from(counts).reduce(function (sum, node) { return sum + Number(node.dataset.total); }, 0);
     var shown = board.querySelectorAll(".compact-card").length;
-    var message = total + (total === 1 ? " card" : " cards") + " across all lanes" + (shown < total ? " · " + shown + " loaded" : "");
+    var scopeLabel = board.dataset.boardGroup === "list" && board.dataset.listLane
+      ? " in " + board.dataset.listLane + " lane" : " across all lanes";
+    var message = total + (total === 1 ? " card" : " cards") + scopeLabel + (shown < total ? " · " + shown + " loaded" : "");
     if (status.textContent !== message) status.textContent = message;
   }
 
