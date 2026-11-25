@@ -1,0 +1,61 @@
+/* Shared workspace geometry. Theme variant colors remain user selectable. */
+:root {
+  --pa-rail-width: 184px;
+  --pa-page-gutter: 16px;
+  --pa-control-height: 32px;
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+}
+body.app-shell { padding-inline-start: var(--pa-rail-width); }
+.workspace-rail {
+  position: fixed; inset: 0 auto 0 0; width: var(--pa-rail-width);
+  display: flex; flex-direction: column; gap: 12px; padding: 12px 8px;
+  background: var(--pa-surface); border-right: 1px solid var(--pa-border);
+  overflow-y: auto; z-index: 160;
+}
+.rail-brand { padding: 0 10px; font-size: 20px; font-weight: 700; color: var(--pa-text); }
+.workspace-rail .top-nav { display: flex; flex-direction: column; align-items: stretch; gap: 2px; }
+.workspace-rail .nav-btn { justify-content: flex-start; width: 100%; min-height: 34px; padding: 5px 10px; white-space: normal; }
+.workspace-rail .nav-btn span { overflow-wrap: anywhere; }
+.rail-preferences { margin-top: auto; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding-top: 12px; }
+.rail-preferences #pa-theme-toggle { margin-left: 4px; }
+.workspace-menu-toggle { display: none; }
+.site-header { min-height: 44px; padding: 4px 16px; box-shadow: none; flex-wrap: wrap; }
+.header-start { flex: 0 1 auto; }
+.chrome-actions { flex-wrap: wrap; min-width: 0; margin-left: auto; }
+.page-main { padding: var(--pa-page-gutter); }
+.page-heading { margin-bottom: 12px; gap: 12px; }
+.page-heading h1 { font-size: 1.6rem; }
+.panel { border-radius: var(--radius); }
+button, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select { padding-block: 4px; }
+button, select, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]) { font-size: 14px; }
+:where(a, button, input, select, textarea, summary):focus-visible { outline: 2px solid var(--pa-accent); outline-offset: 3px; }
+html[data-density="compact"] { --pa-page-gutter: 12px; }
+html[data-density="compact"] .panel { padding: 10px; }
+html[data-density="compact"] .page-heading { margin-bottom: 8px; }
+html[data-density="compact"] .compact-card { padding-block: 4px; }
+@media (pointer: coarse), (max-width: 720px) {
+  :root { --pa-control-height: 44px; }
+  .workspace-rail .nav-btn, .workspace-rail .icon-btn { min-height: 44px; }
+}
+@media (max-width: 720px) {
+  :root { --pa-page-gutter: 12px; }
+  body.app-shell { padding-inline-start: 0; }
+  .workspace-rail { display: none; top: 56px; width: min(280px, 88vw); box-shadow: var(--pa-shadow); }
+  .is-navigation-open .workspace-rail { display: flex; }
+  .workspace-menu-toggle { display: inline-flex; }
+  .site-header { padding: 4px 12px; min-height: 56px; }
+  .header-start { gap: 6px; }
+  .brand-block { display: none; }
+  .chrome-actions { gap: 4px; }
+  .chrome-actions .new-card-button { padding-inline: 6px; }
+}
+
+/* Page containers share the gutter instead of adding a second outer inset. */
+.command-center, .work-space { padding: 0; }
+@media (max-width: 720px) {
+  .site-header .brand-instance { max-width: 5rem; }
+}
+
+.rail-instance { padding-inline: 10px; font-size: 13px; color: var(--pa-text-muted); overflow-wrap: anywhere; }

@@ -1,47 +1,47 @@
 {% from "macros/icons.html" import icon %}
-
-<nav class="top-nav" aria-label="Main">
-  {% for nav_page in nav_pages %}
-  <a href="{{ nav_page.path }}"
-     class="nav-btn{% if active_path == nav_page.path %} active{% endif %}"
-     {% if active_path == nav_page.path %}aria-current="page"{% endif %}
-     hx-get="{{ nav_page.path }}"
+<aside class="workspace-rail" id="workspace-rail" aria-label="Workspace navigation">
+  <a class="rail-brand" href="/" hx-get="/" hx-target="#app-view" hx-push-url="true" hx-swap="innerHTML">PA</a>
+  {% from "macros/instance_identity.html" import instance_identity %}
+  <div class="rail-instance">{{ instance_identity(instance_id, 'instance-identity-brand') }}</div>
+  <nav class="top-nav" aria-label="Main">
+    {% for nav_page in nav_pages %}
+    <a href="{{ nav_page.path }}" class="nav-btn{% if active_path == nav_page.path %} active{% endif %}"
+       {% if active_path == nav_page.path %}aria-current="page"{% endif %}
+       hx-get="{{ nav_page.path }}" hx-target="#app-view" hx-push-url="true" hx-swap="innerHTML">
+      {{ icon(nav_page.icon) }}<span>{{ nav_page.label }}</span>
+    </a>
+    {% endfor %}
+    <a href="/agent" class="nav-btn{% if active_path == '/agent' %} active{% endif %}"
+       hx-get="/agent" hx-target="#app-view" hx-push-url="true" hx-swap="innerHTML">
+      {{ icon('agent') }}<span>Conversations</span>
+    </a>
+  </nav>
+  <div class="rail-preferences">
+  <a href="/settings"
+     class="nav-btn{% if active_path == '/settings' %} active{% endif %}"
+     {% if active_path == '/settings' %}aria-current="page"{% endif %}
+     title="Settings"
+     aria-label="Settings"
+     hx-get="/settings"
      hx-target="#app-view"
      hx-push-url="true"
      hx-swap="innerHTML">
-    {{ icon(nav_page.icon) }}
-    <span>{{ nav_page.label }}</span>
+    {{ icon('gear') }}<span>Settings</span>
   </a>
-  {% endfor %}
-</nav>
+  <button type="button"
+          id="pa-theme-toggle"
+          class="icon-btn"
+          title="Theme: {{ appearance }}"
+          aria-label="Toggle theme appearance"
+          data-appearance="{{ appearance }}">
+    {% if appearance == 'light' %}
+      {{ icon('theme-light') }}
+    {% elif appearance == 'dark' %}
+      {{ icon('theme-dark') }}
+    {% else %}
+      {{ icon('theme-system') }}
+    {% endif %}
+  </button>
 
-<details class="responsive-nav" data-responsive-nav>
-  <summary class="nav-menu-button" aria-label="Open main navigation; current page {{ page.label | default('PA') }}">
-    {{ icon('menu') }}
-    <span data-responsive-nav-label>{{ page.label | default('Menu') }}</span>
-  </summary>
-  <nav class="responsive-nav-menu" aria-label="Main navigation menu">
-    {% for nav_page in nav_pages %}
-    <a href="{{ nav_page.path }}"
-       class="nav-btn{% if active_path == nav_page.path %} active{% endif %}"
-       {% if active_path == nav_page.path %}aria-current="page"{% endif %}
-       hx-get="{{ nav_page.path }}"
-       hx-target="#app-view"
-       hx-push-url="true"
-       hx-swap="innerHTML">
-      {{ icon(nav_page.icon) }}
-      <span>{{ nav_page.label }}</span>
-    </a>
-    {% endfor %}
-    <a href="/agent" class="nav-btn responsive-nav-system{% if active_path == '/agent' %} active{% endif %}"
-       {% if active_path == '/agent' %}aria-current="page"{% endif %}
-       hx-get="/agent" hx-target="#app-view" hx-push-url="true" hx-swap="innerHTML">
-      {{ icon('agent') }}<span>Sessions</span>
-    </a>
-    <a href="/settings" class="nav-btn{% if active_path == '/settings' %} active{% endif %}"
-       {% if active_path == '/settings' %}aria-current="page"{% endif %}
-       hx-get="/settings" hx-target="#app-view" hx-push-url="true" hx-swap="innerHTML">
-      {{ icon('gear') }}<span>Settings</span>
-    </a>
-  </nav>
-</details>
+  </div>
+</aside>

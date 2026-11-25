@@ -1021,12 +1021,12 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             response = client.get("/work")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn('class="responsive-nav" data-responsive-nav', response.text)
+        self.assertIn('id="workspace-rail" aria-label="Workspace navigation"', response.text)
         self.assertIn(
-            'aria-label="Open main navigation; current page Work"', response.text
+            'aria-controls="workspace-rail" aria-expanded="false"', response.text
         )
-        self.assertIn('aria-label="Main navigation menu"', response.text)
-        self.assertIn('<span>Sessions</span>', response.text)
+        self.assertIn('aria-label="Open workspace navigation"', response.text)
+        self.assertIn('<span>Conversations</span>', response.text)
         self.assertIn('<span>Settings</span>', response.text)
 
         root = Path(__file__).parents[1] / "src" / "pa" / "server"
@@ -1400,8 +1400,9 @@ class CoreWorkUiRouteTests(unittest.TestCase):
         styles = (root.parent / "static" / "style.css").read_text()
 
         self.assertIn('aria-label="Open Sessions; agent is', chrome)
-        self.assertIn('aria-label="Toggle theme appearance"', chrome)
-        self.assertIn('aria-label="Settings"', chrome)
+        rail = (root / "partials" / "top-nav.html").read_text()
+        self.assertIn('aria-label="Toggle theme appearance"', rail)
+        self.assertIn('aria-label="Settings"', rail)
         self.assertIn('aria-label="Tool activity"', agent)
         self.assertIn('aria-label="Session plans"', agent)
         self.assertIn('aria-live="polite"', memory)
