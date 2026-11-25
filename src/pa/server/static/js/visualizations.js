@@ -169,7 +169,13 @@
   function mount(card, ref, options) {
     const base = options.apiBase + "/sessions/" + encodeURIComponent(options.sessionId) + "/visualizations";
     let payload;
-    if (!ref.complete) { card._status.textContent = "Preparing preview…"; return; }
+    if (!ref.complete) {
+      card._status.textContent = "Preparing preview…";
+      card._pendingTimer = setTimeout(() => {
+        card._status.textContent = "Preview reference is incomplete. Wait for the response to finish or ask the author to resend it.";
+      }, 15000);
+      return;
+    }
     try { payload = JSON.parse(ref.raw); } catch (_) { fallback(card, "malformed"); return; }
     if (payload && typeof payload.title === "string") card._title.textContent = payload.title.slice(0,160) || "Interactive preview";
     card.classList.toggle("is-wide", !!payload && payload.wide === true);
@@ -265,7 +271,7 @@
     const parts = []; let offset = 0;
     refs.forEach((ref,i) => {
       parts.push({key:"text-"+i, text:text.slice(offset,ref.start)});
-      parts.push({key:"preview-"+i+":"+ref.raw, ref}); offset = ref.end;
+      parts.push({key:"preview-"+i+":"+ref.complete+":"+ref.raw, ref}); offset = ref.end;
     });
     parts.push({key:"text-"+refs.length,text:text.slice(offset)});
     if (!bubble._vizParts) { bubble.replaceChildren(); bubble._vizParts = new Map(); }
@@ -291,7 +297,7 @@
       if (node !== cursor) bubble.insertBefore(node,cursor);
       cursor = node.nextSibling;
     });
-    prior.forEach((node,key) => { if (!current.has(key)) node.remove(); });
+    prior.forEach((node,key) => { if (!current.has(key)) { clearTimeout(node._pendingTimer); node.remove(); } });
     bubble._vizParts = current;
     return true;
   }

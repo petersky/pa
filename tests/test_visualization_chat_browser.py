@@ -179,6 +179,79 @@ async def test_real_chat_visualization_controls_state_reload_and_isolation(opera
         assert await frame("window.openai.widgetState.privateContent.density") == "Compact"
         assert await frame("[...document.querySelectorAll('.pa-machine')].every(e=>e.hidden)")
         assert await frame("window.openai.widgetState.privateContent.density",2)=="Compact"
+        # Exercise the real chat rendering path with END arriving alone.
+        await page.evaluate("""(()=>{
+          const w=document.querySelector('[data-agent-chat]')._acw;
+          const original=[...document.querySelectorAll('.acw-bubble-agent')].find(b=>b.dataset.markdown?.includes('\ue200visualize\ue202'));
+          const text=original.dataset.markdown;
+          window.streamText=text.slice(0,text.indexOf('\ue201'));
+          const b=window.streamBubble=document.createElement('div');
+          b.className='acw-bubble-agent';b.dataset.markdown=streamText;
+          document.body.append(b);
+          const timer=window.setTimeout;
+          window.setTimeout=(fn,ms,...args)=>timer(fn,ms===15000?200:ms,...args);
+          w.renderMarkdownBubble(b);window.setTimeout=timer;
+        })()""")
+        assert await page.evaluate("streamBubble.textContent.includes('Preparing preview')")
+        await wait_for("streamBubble.textContent.includes('reference is incomplete')")
+        assert not await page.evaluate("!!streamBubble.querySelector('iframe')")
+        await page.evaluate("""(()=>{
+          streamBubble.dataset.markdown=streamText+'\ue201';
+          document.querySelector('[data-agent-chat]')._acw.renderMarkdownBubble(streamBubble);
+        })()""")
+        await wait_for("streamBubble.textContent.includes('Interactive preview loaded')")
+        await page.evaluate("""(()=>{
+          window.streamFrame=streamBubble.querySelector('iframe');
+          document.querySelector('[data-agent-chat]')._acw.renderMarkdownBubble(streamBubble);
+        })()""")
+        assert await page.evaluate("streamFrame===streamBubble.querySelector('iframe')")
+        await page.evaluate("streamBubble.remove()")
+
+        # Both generated and explicit viewer links leave the chat in its tab.
+        viewer = app.state.ctx.settings.data_dir / "viewer.html"
+        viewer.write_text('<!doctype html><h1 id="rendered">HTML rendered</h1>'
+                          '<button onclick="this.textContent=42">Change</button>'
+                          '<script>window.ran=true</script>')
+        await page.evaluate("""(()=>{
+          const p=document.createElement('p');p.id='viewer-links';
+          const a=document.createElement('a');a.href="""+json.dumps(str(viewer))+""";a.textContent='Local HTML';p.append(a);
+          const explicit=document.createElement('a');explicit.href='/browse?path='+encodeURIComponent(a.getAttribute('href'));explicit.textContent='Explicit viewer';p.append(explicit);
+          document.querySelector('[data-agent-chat]').append(p);PALinks.decorate(p);
+        })()""")
+        assert await page.evaluate("[...document.querySelectorAll('#viewer-links a[href^=\"/browse\"]')].every(a=>a.target==='_blank'&&a.rel.includes('noopener')&&a.getAttribute('hx-boost')==='false')")
+        from pa.browser.cdp import CdpPage, list_targets
+        before_targets = {t['id'] for t in await list_targets(page.endpoint)}
+        await page.evaluate("document.querySelector('#viewer-links .pa-file-browser-link').click()")
+        targets = await list_targets(page.endpoint)
+        opened = [t for t in targets if t['id'] not in before_targets and '/browse?' in t.get('url','')]
+        assert len(opened) == 1
+        assert await page.evaluate("new URL(location.href).searchParams.get('session')") == 'viz-session'
+        viewer_page = CdpPage(page.endpoint, target_id=opened[0]['id'])
+        chat_page = page
+        try:
+            await viewer_page.wait_until_usable()
+            deadline=time.monotonic()+10
+            while time.monotonic()<deadline and not await viewer_page.evaluate("!!document.querySelector('[data-file-html]')?.srcdoc"):
+                await asyncio.sleep(.05)
+            assert await viewer_page.evaluate("!!document.querySelector('[data-file-html]')?.srcdoc"), await viewer_page.evaluate("document.body.innerText")
+            page = viewer_page
+            assert await frame("window.ran") is True
+            assert await frame("document.querySelector('#rendered').textContent") == 'HTML rendered'
+            await frame("document.querySelector('button').click()")
+            assert await frame("document.querySelector('button').textContent") == '42'
+            assert await frame("(()=>{try{return parent.document.cookie}catch(e){return e.name}})()") == 'SecurityError'
+            assert await frame("fetch('/api/agent/sessions').then(()=>false,()=>true)")
+            assert await viewer_page.evaluate("document.querySelector('[data-file-html]').getAttribute('sandbox')") == 'allow-scripts'
+            assert await viewer_page.evaluate("document.querySelector('[data-file-html]').srcdoc.includes(\"connect-src 'none'\")")
+            assert await viewer_page.evaluate("!document.querySelector('[data-file-view-panel=rendered]').hidden")
+            await viewer_page.evaluate("document.querySelector('[data-file-view=source]').click()")
+            assert await viewer_page.evaluate("document.querySelector('[data-source-code]').textContent.includes('HTML rendered')")
+            assert await viewer_page.evaluate("document.querySelector('[data-file-view-panel=rendered]').hidden")
+        finally:
+            page = chat_page
+            await viewer_page.command('Target.closeTarget', {'targetId':opened[0]['id']})
+            await viewer_page.close()
+
         second = BrowserScope("user:test","second-viewer","visualization-test")
         await manager.attach(second,url=base+"/agent?session=viz-session",width=820,height=1000)
         second_page = manager.resolve(second).page

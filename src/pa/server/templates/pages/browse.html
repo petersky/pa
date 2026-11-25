@@ -39,8 +39,8 @@
   {% elif is_text %}
   <div class="file-view-tabs">
     <div class="file-view-tablist" role="tablist" aria-label="File preview">
-    {% if is_markdown %}<button type="button" id="file-view-tab-rendered" class="ghost small active" role="tab" aria-selected="true" aria-controls="file-view-panel-rendered" tabindex="0" data-file-view="rendered">Rendered</button>{% endif %}
-    <button type="button" id="file-view-tab-source" class="ghost small{% if not is_markdown %} active{% endif %}" role="tab" aria-selected="{{ 'false' if is_markdown else 'true' }}" aria-controls="file-view-panel-source" tabindex="{{ '-1' if is_markdown else '0' }}" data-file-view="source">Source</button>
+    {% if is_markdown or is_html %}<button type="button" id="file-view-tab-rendered" class="ghost small active" role="tab" aria-selected="true" aria-controls="file-view-panel-rendered" tabindex="0" data-file-view="rendered">Rendered</button>{% endif %}
+    <button type="button" id="file-view-tab-source" class="ghost small{% if not (is_markdown or is_html) %} active{% endif %}" role="tab" aria-selected="{{ 'false' if (is_markdown or is_html) else 'true' }}" aria-controls="file-view-panel-source" tabindex="{{ '-1' if (is_markdown or is_html) else '0' }}" data-file-view="source">Source</button>
     {% if inline_diff %}
     <button type="button" id="file-view-tab-inline-diff" class="ghost small" role="tab" aria-selected="false" aria-controls="file-view-panel-inline-diff" tabindex="-1" data-file-view="inline-diff">Inline diff</button>
     <button type="button" id="file-view-tab-side-diff" class="ghost small" role="tab" aria-selected="false" aria-controls="file-view-panel-side-diff" tabindex="-1" data-file-view="side-diff">Side-by-side diff</button>
@@ -50,11 +50,18 @@
     <span class="muted small">against {{ diff_base }}</span>
     {% endif %}
   </div>
-  {% if is_markdown %}
+  {% if is_markdown or is_html %}
+  {% if is_html %}
+  <div id="file-view-panel-rendered" role="tabpanel" aria-labelledby="file-view-tab-rendered" data-file-view-panel="rendered">
+    <iframe title="{{ path.name }} rendered preview" sandbox="allow-scripts" referrerpolicy="no-referrer" data-file-html style="width:100%;height:75vh;border:0"></iframe>
+  </div>
+  <textarea data-file-html-source hidden>{{ text }}</textarea>
+  {% else %}
   <article id="file-view-panel-rendered" class="file-markdown-view" role="tabpanel" aria-labelledby="file-view-tab-rendered" tabindex="0" data-file-view-panel="rendered" data-file-markdown></article>
   <textarea data-file-markdown-source hidden>{{ text }}</textarea>
   {% endif %}
-  <div id="file-view-panel-source" class="file-source-view" role="tabpanel" aria-labelledby="file-view-tab-source" tabindex="0" data-file-view-panel="source" {% if is_markdown %}hidden{% endif %}>
+  {% endif %}
+  <div id="file-view-panel-source" class="file-source-view" role="tabpanel" aria-labelledby="file-view-tab-source" tabindex="0" data-file-view-panel="source" {% if is_markdown or is_html %}hidden{% endif %}>
     <pre><code data-source-code data-language="{{ language }}" data-focus-line="{{ line or '' }}">{{ text }}</code></pre>
   </div>
   {% if inline_diff %}
