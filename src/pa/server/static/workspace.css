@@ -7,7 +7,7 @@
   --radius: 8px;
   --radius-lg: 12px;
 }
-body.app-shell { padding-inline-start: var(--pa-rail-width); }
+body.app-shell:not(.login-page) { padding-inline-start: var(--pa-rail-width); }
 .workspace-rail {
   position: fixed; inset: 0 auto 0 0; width: var(--pa-rail-width);
   display: flex; flex-direction: column; gap: 12px; padding: 12px 8px;
@@ -41,7 +41,7 @@ html[data-density="compact"] .compact-card { padding-block: 4px; }
 }
 @media (max-width: 720px) {
   :root { --pa-page-gutter: 12px; }
-  body.app-shell { padding-inline-start: 0; }
+  body.app-shell:not(.login-page) { padding-inline-start: 0; }
   .workspace-rail { display: none; top: 56px; width: min(280px, 88vw); box-shadow: var(--pa-shadow); }
   .is-navigation-open .workspace-rail { display: flex; }
   .workspace-menu-toggle { display: inline-flex; }
