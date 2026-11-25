@@ -18,6 +18,8 @@ async def test_redesign_shell_navigation_appearance_and_global_scope(operator_se
     project = store.create_project(ProjectCreate(title="Redesign project"))
     store.create_card(CardCreate(title="Unassigned global fixture", lane="inbox"))
     store.create_card(CardCreate(title="Project global fixture", project_id=project.id, lane="inbox"))
+    research_project = store.create_project(ProjectCreate(title="Research project", realm_id="research"))
+    store.create_card(CardCreate(title="Research global fixture", realm_id="research", lane="inbox"))
     browser = BrowserManager(tmp_path / "browser")
     manager = BrowserSessionManager(browser, instance_id="redesign-test")
     scope = BrowserScope("user:test", "redesign", "redesign-test")
@@ -61,6 +63,14 @@ async def test_redesign_shell_navigation_appearance_and_global_scope(operator_se
                 assert await page.evaluate("document.activeElement.hasAttribute('data-workspace-menu')")
                 assert not await page.evaluate("document.body.classList.contains('is-navigation-open')")
             (tmp_path / f'redesign-{width}.png').write_bytes(await page.screenshot())
+        await manager.resize(scope, width=1440, height=1000)
+        await page.evaluate("PANavigation.navigate('/projects?project=" + research_project.id + "&realm=research')")
+        await wait("location.pathname === '/projects'")
+        await manager.type_text(scope, selector='[data-global-work-search] input[name=q]', text='global fixture', submit=True)
+        await wait("location.pathname === '/work' && document.querySelector('[data-work-results]')?.textContent.includes('1 card')")
+        assert await page.evaluate("new URL(location.href).searchParams.get('realm')") == 'research'
+        assert not await page.evaluate("new URL(location.href).searchParams.has('project')")
+        assert await page.evaluate("document.querySelector('.work-list').textContent.includes('Research global fixture')")
         # 200% zoom reflow equivalent: half of the desktop CSS viewport.
         await manager.resize(scope, width=720, height=500)
         assert await page.evaluate("document.documentElement.scrollWidth <= innerWidth")

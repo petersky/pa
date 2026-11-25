@@ -1,6 +1,16 @@
 (function () {
   var button = document.querySelector('[data-workspace-menu]');
   var rail = document.getElementById('workspace-rail');
+  function syncSearchRealm() {
+    var form = document.querySelector('[data-global-work-search]');
+    if (!form) return;
+    form.elements.realm.value = new URL(location.href).searchParams.get('realm') ||
+      document.documentElement.dataset.paPrimaryRealm;
+  }
+  syncSearchRealm();
+  document.addEventListener('submit', function (event) {
+    if (event.target.matches('[data-global-work-search]')) syncSearchRealm();
+  }, true);
   function setOpen(open, restoreFocus) {
     document.body.classList.toggle('is-navigation-open', open);
     if (button) {
@@ -26,7 +36,7 @@
     setOpen(false);
   });
   ['htmx:pushedIntoHistory', 'htmx:replacedInHistory', 'htmx:historyRestore'].forEach(function (name) {
-    document.body.addEventListener(name, function () { setOpen(false); });
+    document.body.addEventListener(name, function () { setOpen(false); syncSearchRealm(); });
   });
   function bindDensity() {
     document.querySelectorAll('[data-density-preference]').forEach(function (select) {

@@ -4,6 +4,7 @@
       data-theme="{{ theme_id | default('pa') }}"
       data-theme-id="{{ theme_id | default('pa') }}"
       data-appearance-pref="{{ appearance | default('system') }}"
+      data-pa-primary-realm="{{ primary_realm }}"
       data-pa-instance-id="{{ instance_id }}"
       data-pa-principal-id="{{ principal_id }}">
 <head>
@@ -118,6 +119,13 @@
       <button type="button" class="icon-btn workspace-menu-toggle" data-workspace-menu
               aria-label="Open workspace navigation" aria-controls="workspace-rail" aria-expanded="false">☰</button>
     </div>
+    <form class="chrome-global-search" role="search" aria-label="Search all work" action="/work" method="get"
+          hx-get="/work" hx-target="#app-view" hx-push-url="true" hx-swap="innerHTML" data-global-work-search>
+      <input type="hidden" name="view" value="list">
+      <input type="hidden" name="realm" value="{{ request.query_params.get('realm') or primary_realm }}">
+      <input type="search" name="q" aria-label="Search all work" placeholder="Search all work…">
+      <button type="submit" class="ghost">Search</button>
+    </form>
     {% include "partials/chrome-actions.html" %}
   </header>
   <main id="app-view" class="app-view" hx-history-elt="true" tabindex="-1">

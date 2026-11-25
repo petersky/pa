@@ -56,6 +56,7 @@ class FileBrowserTests(unittest.TestCase):
                 "type": "http",
                 "method": "GET",
                 "path": "/browse",
+                "query_string": b"",
                 "headers": [],
                 "app": app,
             }

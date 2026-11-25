@@ -115,7 +115,7 @@ async def test_work_disclosure_chips_results_and_responsive_layout(work_server, 
         await wait_for("!!document.querySelector('[data-applied-filter=tag]') && document.querySelector('[data-work-results]')?.textContent === '1 card across all lanes'")
         assert not await page.evaluate("document.querySelector('.work-filter-disclosure').open")
         assert await page.evaluate("new URL(location.href).searchParams.get('tag')") == "ops & qa"
-        await manager.type_text(scope, selector='input[name=q]', text="Find", submit=True)
+        await manager.type_text(scope, selector='.work-filters input[name=q]', text="Find", submit=True)
         await wait_for("!!document.querySelector('[data-applied-filter=q]')")
         # Applying Search with the disclosure closed retains its hidden selected tag.
         assert await page.evaluate("new URL(location.href).searchParams.get('tag')") == "ops & qa"
