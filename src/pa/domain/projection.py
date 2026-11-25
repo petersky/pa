@@ -3162,7 +3162,9 @@ class CardProjection:
         if kind:
             clauses.append("kind = ?")
             params.append(kind.value)
-        if project_id:
+        if project_id == "none":
+            clauses.append("(project_id IS NULL OR project_id = '')")
+        elif project_id:
             clauses.append("project_id = ?")
             params.append(project_id)
         if query:

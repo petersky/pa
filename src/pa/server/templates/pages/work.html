@@ -8,9 +8,10 @@
       <h1>Work</h1>
     </div>
     <div class="work-heading-actions">
-      <nav class="work-group-toggle" aria-label="Group board by" hx-target="#app-view" hx-swap="innerHTML" hx-push-url="true">
-        <a class="{{ 'is-current' if group == 'state' else '' }}" href="/work?realm={{ active_realm }}" hx-get="/work?realm={{ active_realm }}" {% if group == 'state' %}aria-current="true"{% endif %}>By state</a>
-        <a class="{{ 'is-current' if group == 'lane' else '' }}" href="/work?realm={{ active_realm }}&amp;group=lane" hx-get="/work?realm={{ active_realm }}&amp;group=lane" {% if group == 'lane' %}aria-current="true"{% endif %}>By lane</a>
+      <nav class="work-group-toggle" aria-label="Work display" hx-target="#app-view" hx-swap="innerHTML" hx-push-url="true">
+        <a class="{{ 'is-current' if work_view == 'list' else '' }}" href="/work?{{ view_query }}&amp;view=list" hx-get="/work?{{ view_query }}&amp;view=list" {% if work_view == 'list' %}aria-current="true"{% endif %}>List</a>
+        <a class="{{ 'is-current' if work_view == 'board' and group == 'state' else '' }}" href="/work?{{ view_query }}" hx-get="/work?{{ view_query }}" {% if work_view == 'board' and group == 'state' %}aria-current="true"{% endif %}>By state</a>
+        <a class="{{ 'is-current' if work_view == 'board' and group == 'lane' else '' }}" href="/work?{{ view_query }}&amp;group=lane" hx-get="/work?{{ view_query }}&amp;group=lane" {% if work_view == 'board' and group == 'lane' %}aria-current="true"{% endif %}>By lane</a>
       </nav>
       <button type="button" class="ghost" data-new-card-open>New card</button>
     </div>
@@ -32,7 +33,8 @@
     {% if filters.attention %}
     <input type="hidden" name="attention" value="{{ filters.attention }}">
     {% endif %}
-    {% if request.query_params.get('lane') %}<input type="hidden" name="lane" value="{{ selected_lane }}">{% endif %}
+    {% if work_view == 'list' %}<input type="hidden" name="view" value="list">{% endif %}
+    {% if work_view != 'list' and request.query_params.get('lane') %}<input type="hidden" name="lane" value="{{ selected_lane }}">{% endif %}
     {% if group == 'lane' and not filters.attention and not request.query_params.get('lane') %}<input type="hidden" name="group" value="lane">{% endif %}
     <div class="work-filter-primary">
       <label class="filter-search">
@@ -41,9 +43,16 @@
       </label>
       <label><span class="sr-only">Project</span><select name="project" aria-label="Project">
         <option value="">All projects</option>
+        <option value="none" {% if filters.project == 'none' %}selected{% endif %}>No project</option>
         {% for project in projects %}<option value="{{ project.id }}" {% if filters.project == project.id %}selected{% endif %}>{{ project.title }}</option>{% endfor %}
       </select></label>
-      <div class="filter-actions"><button type="submit">Apply filters</button><a hx-get="/work?realm={{ active_realm }}" href="/work?realm={{ active_realm }}" class="ghost">Reset</a></div>
+      {% if work_view == 'list' %}
+      <label><span class="sr-only">Lane</span><select name="lane" aria-label="Lane">
+        <option value="">All lanes</option>
+        {% for lane in lanes %}<option value="{{ lane.value }}" {% if request.query_params.get('lane') == lane.value %}selected{% endif %}>{{ lane.value | capitalize }}</option>{% endfor %}
+      </select></label>
+      {% endif %}
+      <div class="filter-actions"><button type="submit">Apply filters</button><a hx-get="/work?realm={{ active_realm }}{% if work_view == 'list' %}&amp;view=list{% endif %}" href="/work?realm={{ active_realm }}{% if work_view == 'list' %}&amp;view=list{% endif %}" class="ghost">Reset</a></div>
     </div>
     <details class="work-filter-disclosure">
       <summary>Filters <span class="work-filter-count" aria-label="{{ advanced_filter_count }} applied">{{ advanced_filter_count }}</span></summary>
@@ -104,7 +113,16 @@
 
   <p class="work-results muted" role="status" aria-live="polite" data-work-results>Loading results…</p>
 
-  {% if group == 'state' %}
+  {% if work_view == 'list' %}
+  <section class="work-list" aria-label="Global work list" data-work-board data-realm="{{ active_realm }}" data-board-group="list" data-list-lane="{{ request.query_params.get('lane', '') }}">
+    <section class="board-column" data-mobile-active="true">
+      <div class="board-column-body" hx-get="/partials/cards?{{ list_query }}"
+           hx-trigger="load, every 15s, boardRefresh from:body" hx-sync="closest .board-column-body:replace" hx-swap="innerHTML">
+        <p class="muted" role="status">Loading work…</p>
+      </div>
+    </section>
+  </section>
+  {% elif group == 'state' %}
   <nav class="board-lane-switcher" aria-label="Board column">
     {% for bucket in state_buckets %}
     <button type="button" data-board-lane="{{ bucket.value }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ bucket.label }}</button>

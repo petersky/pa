@@ -7,7 +7,7 @@ Status: implementation in progress. Retaining a template/handler is source parit
 | Existing feature | Current entry/behavior | Redesigned successor | Verification | Status / gap |
 |---|---|---|---|---|
 | Home attention, motion, outcomes | /; partials/home/sections.html | Same route and live sections | test_home_attention_queue, test_home_lifecycle_evidence | Retained; visual acceptance pending |
-| Global Work and capture | /work; optional project; state/lane boards, saved views, search, facets, pagination, drag/drop | Work rail destination; existing boards and forms retained | test_work_facets, test_work_board_by_state, test_work_discovery_browser | Retained; global list and No project filter pending |
+| Global Work and capture | /work; optional project; state/lane boards, saved views, search, facets, pagination, drag/drop | Work rail destination; existing boards and forms retained | test_work_facets, test_work_board_by_state, test_work_discovery_browser | Global list and No project filter implemented; targeted real-app verification passed; PR integration pending |
 | Card details, materials, completion | partials/card-detail*; tabs; edit/share/source/download/revisions; assignment, dispatch defaults; acceptance separate from lane | Same dialogs and URLs | test_card_work_ux, card attachments and completion tests | Retained; browser parity pending |
 | Goals | /goals; packages, retry, lifecycle | Goals rail destination | goals tests | Retained; visual acceptance pending |
 | Projects and repositories | /projects; sticky count tabs, settings dialog, repositories, worker groups, defaults, PRs | Same project navigation, scoped Work | test_projects_workspace_browser, test_projects_accessibility | Preserve merged #768; runtime verification pending |
@@ -94,3 +94,11 @@ Run relevant tests, real fixture browser coverage (desktop, narrow, 200% zoom, d
 Implemented shared workspace rail, preserved registered navigation, Settings/theme placement, 32 px desktop and 44 px touch geometry, 16/12 px gutters and browser-persisted density. Added `tests/test_redesign_shell_browser.py`: actual HTMX shell navigation, mixed project/unassigned global counts, persistent density, dark/light, 1440/720/390/320 widths, Escape and focus restoration. Desktop and narrow screenshots inspected. Half-width viewport tests reflow; native browser 200% zoom remains an explicit acceptance gap.
 
 No backend workflows, agent/model/permission defaults or data migrations changed. All existing forms, card views, project tabs and chat widget handlers remain in place. Full per-destination visual/action acceptance and global list design are subsequent work, not completed by these source-retention checks.
+
+## Slice 2: global Work list
+
+The rail Work link opens `/work?view=list`; `/work` and explicit state/lane board URLs retain their existing behavior. List uses the same real card presenters, contextual actions, dialogs and bounded projection queries. Project `none` means unassigned within the selected realm; no schema migration. Project selection remains optional. All project, kind, owner, instance, lifecycle, blocked, tag and updated filters remain; list adds lane selection. List pagination retains expanded rows during live refresh, and saved views now retain view/group/lane instead of dropping those parameters.
+
+Validation: `tests/test_global_work_list.py` checks mixed assigned/unassigned counts, realm isolation, filtered pagination, saved URL parameters, actual HTMX filters, expanded refresh, card dialog/history, switching back to lane board, and 1440/720/390/320 widths. The unit test, real-app browser test and shared-shell browser test passed together. Work facet regressions passed. Desktop and phone list screenshots inspected; corrected a CSS specificity issue so Work uses the shared gutter and adjusted the four-control filter row.
+
+Remaining: representative Home/conversation styling and remaining destination visual/action acceptance, native 200% browser zoom, error/long/stale states, runtime rollout and original-chat acceptance. The inventory remains open until those checks close.

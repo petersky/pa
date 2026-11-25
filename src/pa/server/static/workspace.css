@@ -59,3 +59,35 @@ html[data-density="compact"] .compact-card { padding-block: 4px; }
 }
 
 .rail-instance { padding-inline: 10px; font-size: 13px; color: var(--pa-text-muted); overflow-wrap: anywhere; }
+
+/* The global list reuses the real card presenters and contextual actions. */
+.work-list { min-height: 0; }
+.work-list > .board-column { display: block; background: transparent; border: 0; padding: 0; }
+.work-list .board-column-body { padding: 0; overflow: visible; }
+.work-list .compact-card-list { gap: 0; border: 1px solid var(--pa-border); border-radius: var(--radius); background: var(--pa-surface); }
+.work-list-entry { display: grid; grid-template-columns: minmax(130px, 16%) minmax(0, 1fr); gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--pa-border); }
+.work-list-entry:last-child { border-bottom: 0; }
+.work-list-status { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px; }
+.work-list .compact-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; border: 0; background: none; padding: 0; }
+.work-list .compact-card h3 { margin: 0; }
+.work-list .compact-card-progress { grid-column: 1; margin: 0; }
+.work-list .compact-card-dispatch { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+.work-list .compact-card-footer { grid-column: 1 / -1; margin: 0; }
+@media (max-width: 720px) {
+  .work-list-entry { grid-template-columns: 1fr; gap: 6px; padding: 12px; }
+  .work-list-status { flex-direction: row; align-items: center; justify-content: flex-start; flex-wrap: wrap; }
+}
+
+.page-work .page-main { padding: var(--pa-page-gutter); }
+.work-space:has(.work-list) .work-filter-primary { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(80px, .5fr) auto; }
+.work-list .compact-card-footer { grid-column: 2; grid-row: 2; align-self: center; }
+@media (max-width: 720px) {
+  .work-space:has(.work-list) .work-filter-primary { grid-template-columns: minmax(0, 1fr); }
+  .work-list .compact-card-footer { grid-column: 1 / -1; grid-row: auto; }
+}
+
+/* Board columns respond to the space remaining beside the workspace rail. */
+.work-space { container: work / inline-size; }
+@container work (max-width: 1000px) {
+  .work-space .board-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

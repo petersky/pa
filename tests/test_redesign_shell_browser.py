@@ -43,7 +43,7 @@ async def test_redesign_shell_navigation_appearance_and_global_scope(operator_se
         assert await page.evaluate("localStorage.getItem('pa.density')") == 'compact'
         await page.evaluate("PATheme.setAppearance('dark')")
         await wait("document.documentElement.dataset.appearance === 'dark'")
-        await manager.click(scope, selector='.workspace-rail a[href="/work"]')
+        await manager.click(scope, selector='.workspace-rail a[href="/work?view=list"]')
         await wait("!!document.querySelector('[data-work-board]')")
         assert await page.evaluate("window.redesignSentinel") == 1
         assert await page.evaluate("new URL(location.href).searchParams.has('project')") is False

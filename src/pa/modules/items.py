@@ -138,7 +138,7 @@ def _selected_tags(request: Request) -> list[str]:
 def _work_query_pairs(request: Request, *, realm: str) -> list[tuple[str, str]]:
     allowed = (
         "attention", "blocked", "instance", "kind", "owner", "project", "q",
-        "tag_mode", "updated",
+        "tag_mode", "updated", "view",
     )
     pairs = [("realm", realm)]
     for key in allowed:
@@ -1695,8 +1695,10 @@ def _work_context(request: Request) -> dict:
         "instance": "Instance", "blocked": "Blocked state", "tag": "Tag",
         "tag_mode": "Match", "updated": "Updated", "attention": "Lifecycle",
     }
+    if request.query_params.get("view") == "list":
+        labels["lane"] = "Lane"
     names = {
-        "project": {project.id: project.title for project in projects},
+        "project": {"none": "No project", **{project.id: project.title for project in projects}},
         "instance": {instance["id"]: instance["display_name"] for instance in instances},
         "blocked": {"blocked": "Blocked", "unblocked": "Not blocked"},
         "updated": {"1": "Past day", "7": "Past week", "30": "Past month"},
@@ -1724,6 +1726,9 @@ def _work_context(request: Request) -> dict:
         or filters["attention"]
     ) else "state"
     return {
+        "work_view": "list" if request.query_params.get("view") == "list" else "board",
+        "view_query": urlencode([(k, v) for k, v in pairs if k not in {"view", "lane"}]),
+        "list_query": urlencode(pairs),
         "group": group,
         "state_buckets": [{"value": value, "label": label} for value, label in STATE_BUCKETS],
         "kinds": list(CardKind),
@@ -2042,7 +2047,7 @@ def card_facets_api(
 
 
 def _canonical_saved_query(raw: str, realm: str) -> str:
-    allowed = {"attention", "blocked", "instance", "kind", "owner", "project", "q", "tag", "tag_mode", "updated"}
+    allowed = {"attention", "blocked", "instance", "kind", "owner", "project", "q", "tag", "tag_mode", "updated", "view", "group", "lane"}
     pairs = [(key, value.strip()) for key, value in parse_qsl(raw.lstrip("?"), keep_blank_values=False) if key in allowed and value.strip()]
     tags = sorted({value for key, value in pairs if key == "tag"}, key=str.casefold)
     singles = {key: value for key, value in pairs if key != "tag"}
@@ -3896,7 +3901,7 @@ def cards_partial(
 ) -> HTMLResponse:
     page_limit = max(10, limit)
     attention_filter = request.query_params.get("attention", "").strip()
-    filtered_pagination = attention_filter in ATTENTION_FILTERS
+    filtered_pagination = attention_filter in ATTENTION_FILTERS or request.query_params.get("view") == "list"
     page_offset = max(0, offset) if filtered_pagination else 0
     context = _cards_context(
         request,
