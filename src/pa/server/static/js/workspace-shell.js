@@ -7,6 +7,10 @@
       button.setAttribute('aria-expanded', String(open));
       button.setAttribute('aria-label', open ? 'Close workspace navigation' : 'Open workspace navigation');
       if (restoreFocus) button.focus();
+      if (open && rail) {
+        var first = rail.querySelector('a[href], button');
+        if (first) first.focus();
+      }
     }
   }
   if (button) button.addEventListener('click', function () {

@@ -56,6 +56,7 @@ async def test_redesign_shell_navigation_appearance_and_global_scope(operator_se
             if width <= 720:
                 await manager.click(scope, selector='[data-workspace-menu]')
                 assert await page.evaluate("document.querySelector('[data-workspace-menu]').getAttribute('aria-expanded')") == 'true'
+                assert await page.evaluate("document.querySelector('.workspace-rail').contains(document.activeElement)")
                 await manager.press(scope, key='Escape')
                 assert await page.evaluate("document.activeElement.hasAttribute('data-workspace-menu')")
                 assert not await page.evaluate("document.body.classList.contains('is-navigation-open')")
