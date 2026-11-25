@@ -45,7 +45,7 @@ async def test_discover_sign_in_return_accept_reopen_and_logout(navigation_card,
               const r=e.getBoundingClientRect();
               const top=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
               const actions=document.querySelector('.chrome-actions').getBoundingClientRect();
-              const nav=Array.from(document.querySelectorAll('.top-nav,.responsive-nav'))
+              const nav=Array.from(document.querySelectorAll('.workspace-menu-toggle,.workspace-rail'))
                 .map(e=>e.getBoundingClientRect()).filter(r=>r.width>0)[0];
               return {visible:r.width>0 && r.height>=44 && r.left>=0 && r.right<=innerWidth,
                 clickable:(e===top || e.contains(top)) && nav.right<=actions.left,
@@ -92,8 +92,8 @@ async def test_discover_sign_in_return_accept_reopen_and_logout(navigation_card,
 
         # The shared shell survives HTMX navigation; its link must capture Settings.
         await page.navigate_and_wait(base + "/")
-        await manager.click(scope, selector="[data-responsive-nav] summary")
-        await manager.click(scope, selector='.responsive-nav-menu a[href="/settings"]')
+        await manager.click(scope, selector="[data-workspace-menu]")
+        await manager.click(scope, selector='.workspace-rail a[href="/settings"]')
         await wait_for("location.pathname === '/settings'")
         await manager.click(scope, selector=".chrome-actions [data-sign-in]")
         await wait_for("location.pathname === '/login'")
